@@ -36,7 +36,7 @@ from PyInstaller.utils.hooks import collect_data_files, collect_submodules, coll
 if SPECPATH not in sys.path:
     sys.path.insert(0, SPECPATH)
 
-from scripts.diarize_bundle_guard import require_diarize_sidecar
+from scripts.sidecar_bundle_guard import require_macos_sidecar
 
 # Apple Silicon uses parakeet-mlx for ASR; Windows / Linux use onnx-asr via
 # ONNX Runtime. The two backends live in src/_parakeet_{mlx,onnx}.py and
@@ -252,10 +252,20 @@ _OLLAMA_GPU_MARKERS = ('lib/ollama/cuda', 'lib/ollama/rocm', 'lib/ollama/vulkan'
 #   - the GPU runner libs are pruned above and there's no pip-mlx build).
 ollama_datas: list[tuple[str, str, str]] = []
 ollama_bin_dir = os.path.join(SPECPATH, 'bin')
-required_diarize_sidecar = require_diarize_sidecar(
-    Path(ollama_bin_dir) / 'steno-diarize',
-    platform=sys.platform,
-)
+required_macos_sidecars = {
+    'steno-diarize': require_macos_sidecar(
+        Path(ollama_bin_dir) / 'steno-diarize',
+        name='speaker-diarization',
+        build_script='scripts/build-diarize-sidecar.sh',
+        platform=sys.platform,
+    ),
+    'steno-transcribe': require_macos_sidecar(
+        Path(ollama_bin_dir) / 'steno-transcribe',
+        name='Apple transcription',
+        build_script='scripts/build-transcribe-sidecar.sh',
+        platform=sys.platform,
+    ),
+}
 if os.path.exists(ollama_bin_dir):
     for root, _dirs, files in os.walk(ollama_bin_dir):
         for filename in files:
@@ -270,15 +280,14 @@ if os.path.exists(ollama_bin_dir):
                 # Put ffmpeg at the root of the bundle for easy PATH access
                 binaries.append((filepath, '.'))
             elif (
-                base == 'steno-diarize'
+                base in required_macos_sidecars
                 and _IS_DARWIN
-                and required_diarize_sidecar is not None
+                and required_macos_sidecars[base] is not None
             ):
-                # macOS-only Swift/CoreML diarization sidecar (built by
-                # scripts/build-diarize-sidecar.sh). It follows ffmpeg into
-                # PyInstaller's _internal directory, which the runtime
-                # resolver probes. The guard above intentionally fails a
-                # macOS build when this required release artifact is absent.
+                # Required macOS Swift sidecars follow ffmpeg into PyInstaller's
+                # _internal directory, which each runtime resolver probes. The
+                # guards above fail the build rather than shipping a latent
+                # first-use error.
                 binaries.append((filepath, '.'))
             elif _IS_DARWIN:
                 # COLLECT DATA TOC 3-tuple: (dest_path_including_filename,

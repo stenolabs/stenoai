@@ -311,7 +311,8 @@ const ANALYTICS_MODEL_ALLOWLIST = new Set([
   'llama3.2:3b',
   'qwen3.5:9b',
   'gpt-oss:20b',
-  // Transcription engines (SUPPORTED_WHISPER_MODELS + the parakeet path)
+  // Transcription engines (Apple system model + local weight registries)
+  'apple',
   'parakeet',
   'large-v3-turbo',
   // Common public cloud ids (cloud model fields are free-form per provider)

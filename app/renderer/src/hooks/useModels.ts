@@ -2,7 +2,7 @@ import * as React from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ipc, type ListedModel, type TranscriptionEngine } from '@/lib/ipc';
 import { unwrap } from '@/lib/result';
-import { PARAKEET_LANGUAGE_CODES } from '@/lib/transcription-languages';
+import { APPLE_LANGUAGE_CODES, PARAKEET_LANGUAGE_CODES } from '@/lib/transcription-languages';
 
 export const modelsKeys = {
   all: ['models'] as const,
@@ -20,6 +20,11 @@ export const parakeetKeys = {
   all: ['parakeetModels'] as const,
   list: () => [...parakeetKeys.all, 'list'] as const,
   status: () => [...parakeetKeys.all, 'status'] as const,
+};
+
+export const appleSpeechKeys = {
+  all: ['appleSpeech'] as const,
+  status: (language: string) => [...appleSpeechKeys.all, 'status', language] as const,
 };
 
 export const transcriptionEngineKeys = {
@@ -64,7 +69,12 @@ export function useModels() {
         mlxSizeGb: parseSizeGb(info.mlx_size),
         ggufInstalled: info.gguf_installed,
       }));
-      return { models, current: raw.current_model, provider: raw.provider, totalRamGb: raw.total_ram_gb };
+      return {
+        models,
+        current: raw.current_model,
+        provider: raw.provider,
+        totalRamGb: raw.total_ram_gb,
+      };
     },
   });
 }
@@ -140,7 +150,10 @@ export function usePullModel() {
   // Ollama, which on Apple Silicon is the NVFP4 sibling (see pullAndSelect
   // below) -- IPC progress/completion events report THAT string, so
   // matching against it (not `name`) is what lets this resolve correctly.
-  const [pendingSelect, setPendingSelect] = React.useState<{ name: string; pullTarget: string } | null>(null);
+  const [pendingSelect, setPendingSelect] = React.useState<{
+    name: string;
+    pullTarget: string;
+  } | null>(null);
   const rate = useByteRateTracker();
 
   React.useEffect(() => {
@@ -236,7 +249,7 @@ export function useSwitchToFasterBuild(onVerified?: (mlxTag: string) => void) {
     model: string,
     success: boolean,
     pullError?: string,
-    cancelled?: boolean,
+    cancelled?: boolean
   ) => {
     setProgress((prev) => {
       const { [model]: _drop, ...rest } = prev;
@@ -282,10 +295,12 @@ export function useSwitchToFasterBuild(onVerified?: (mlxTag: string) => void) {
       setProgress((prev) => ({ ...prev, [model]: p }));
       rate.sample(model, p);
     });
-    const offComplete = ipc().on.modelPullComplete(({ model, success, error: pullError, cancelled: wasCancelled }) => {
-      if (model !== activeTagRef.current) return;
-      void handlePullOutcome(model, success, pullError, wasCancelled);
-    });
+    const offComplete = ipc().on.modelPullComplete(
+      ({ model, success, error: pullError, cancelled: wasCancelled }) => {
+        if (model !== activeTagRef.current) return;
+        void handlePullOutcome(model, success, pullError, wasCancelled);
+      }
+    );
     return () => {
       offProgress();
       offComplete();
@@ -533,6 +548,24 @@ export function usePullParakeetModel() {
   return { ...mutation, progress };
 }
 
+export function useAppleSpeechStatus(language = 'auto') {
+  return useQuery({
+    queryKey: appleSpeechKeys.status(language),
+    queryFn: async () => unwrap(await ipc().appleSpeech.status(language)),
+  });
+}
+
+export function usePrepareAppleSpeech() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (language: string = 'auto') =>
+      unwrap(await ipc().appleSpeech.prepare(language)),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: appleSpeechKeys.all });
+    },
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Active ASR engine — the toggle that gates which engine the live VAD pipeline
 // and the post-stop batch transcriber load.
@@ -549,18 +582,13 @@ export function useTranscriptionEngine() {
 }
 
 /**
- * Whether live (during-recording) transcription is available: Parakeet only —
- * Whisper never spawns the transcribe-stream sidecar, so it has no live
- * drawer, no partials, and its recording pill keeps Pause/Resume inline.
- * Defaults to parakeet while the query hydrates so the first paint doesn't
- * briefly hide live-only controls. Single-sourced here because the
- * pause-reachability invariant spans PrimaryDock (panel gate), LiveDock
- * (inline controls), and LiveTranscriptBar (footer controls) — they must all
- * agree.
+ * Apple SpeechTranscriber and Parakeet both provide live results. Whisper is
+ * post-stop only. Default to live while the query hydrates so the first paint
+ * does not hide pause/reachability controls.
  */
 export function useLiveTranscriptAvailable(): boolean {
   const engineQuery = useTranscriptionEngine();
-  return (engineQuery.data ?? 'parakeet') === 'parakeet';
+  return (engineQuery.data ?? 'apple') !== 'whisper';
 }
 
 // Activating Parakeet must drop a pin Parakeet can't honour as an output
@@ -570,15 +598,21 @@ export function useLiveTranscriptAvailable(): boolean {
 // survives. Shared by every Parakeet-activation path: the explicit engine
 // switch (useSetActiveTranscription) and the post-download auto-select
 // (usePullParakeetModel's complete handler).
-async function coerceLanguageForParakeet(): Promise<void> {
+async function coerceLanguageForEngine(
+  supportedCodes: Readonly<Record<string, true>>
+): Promise<string> {
   try {
     const current = unwrap(await ipc().settings.getLanguage()).language;
-    if (!PARAKEET_LANGUAGE_CODES.has(current)) {
-      unwrap(await ipc().settings.setLanguage('auto'));
-    }
+    if (supportedCodes[current] === true) return current;
+    unwrap(await ipc().settings.setLanguage('auto'));
   } catch {
-    // Best-effort: activation shouldn't fail because the language read errored.
+    // Best-effort: activation should still be able to report its own error.
   }
+  return 'auto';
+}
+
+async function coerceLanguageForParakeet(): Promise<void> {
+  await coerceLanguageForEngine(PARAKEET_LANGUAGE_CODES);
 }
 
 export function useSetActiveTranscription() {
@@ -593,6 +627,9 @@ export function useSetActiveTranscription() {
     }) => {
       if (engine === 'parakeet') {
         await coerceLanguageForParakeet();
+      } else if (engine === 'apple') {
+        const language = await coerceLanguageForEngine(APPLE_LANGUAGE_CODES);
+        unwrap(await ipc().appleSpeech.prepare(language));
       }
       unwrap(await ipc().transcriptionEngine.set(engine));
       if (engine === 'whisper' && whisperModel) {
@@ -603,6 +640,7 @@ export function useSetActiveTranscription() {
       qc.invalidateQueries({ queryKey: transcriptionEngineKeys.all });
       qc.invalidateQueries({ queryKey: whisperKeys.all });
       qc.invalidateQueries({ queryKey: parakeetKeys.all });
+      qc.invalidateQueries({ queryKey: appleSpeechKeys.all });
       // Language might have been coerced; refresh the Settings dropdown
       // and the live dock toggle, both of which read from the same key.
       qc.invalidateQueries({ queryKey: ['settings', 'language'] });

@@ -1,4 +1,4 @@
-import { test, expect } from '../fixtures/electron';
+import { test, expect } from "../fixtures/electron";
 
 /**
  * T1 - renderer-only, mock IPC, no backend. Regression guard for #354: the
@@ -14,7 +14,7 @@ import { test, expect } from '../fixtures/electron';
  * running state so the bar can be observed.
  */
 
-test('summarization step renders a real progress bar + percent from setup-ollama-progress', async ({
+test("summarization step renders a real progress bar + percent from setup-ollama-progress", async ({
   launchApp,
 }) => {
   // Parakeet pre-installed so the transcription step is skipped and the wizard
@@ -22,28 +22,28 @@ test('summarization step renders a real progress bar + percent from setup-ollama
   const { page } = await launchApp({
     mockIpc: true,
     env: {
-      STENOAI_E2E_SETUP_PROGRESS: '1',
-      STENOAI_E2E_MOCK_PARAKEET_INSTALLED: '1',
+      STENOAI_E2E_SETUP_PROGRESS: "1",
+      STENOAI_E2E_MOCK_PARAKEET_INSTALLED: "1",
     },
   });
 
   await page.evaluate(() => {
-    window.location.hash = '#/setup';
+    window.location.hash = "#/setup";
   });
 
-  await page.getByRole('button', { name: 'Begin setup' }).click();
+  await page.getByRole("button", { name: "Begin setup" }).click();
 
   const ollamaStep = page.locator('[data-setup-step="ollama"]');
-  await expect(ollamaStep).toHaveAttribute('data-setup-status', 'running');
+  await expect(ollamaStep).toHaveAttribute("data-setup-status", "running");
 
   // A real bar with the streamed percent + the current status label.
-  const bar = ollamaStep.locator('[data-setup-ollama-progress]');
+  const bar = ollamaStep.locator("[data-setup-ollama-progress]");
   await expect(bar).toBeVisible();
-  await expect(bar.getByText('42%')).toBeVisible();
-  await expect(bar.getByText('pulling sha256:abcd')).toBeVisible();
+  await expect(bar.getByText("42%")).toBeVisible();
+  await expect(bar.getByText("pulling sha256:abcd")).toBeVisible();
 
-  const progressbar = ollamaStep.getByRole('progressbar');
-  await expect(progressbar).toHaveAttribute('aria-valuenow', '42');
+  const progressbar = ollamaStep.getByRole("progressbar");
+  await expect(progressbar).toHaveAttribute("aria-valuenow", "42");
 });
 
 test('transcription step renders an indeterminate "preparing" bar (no fabricated percent)', async ({
@@ -53,70 +53,104 @@ test('transcription step renders an indeterminate "preparing" bar (no fabricated
   // coarse stages, so the UI shows an indeterminate bar, never a percentage.
   const { page } = await launchApp({
     mockIpc: true,
-    env: { STENOAI_E2E_SETUP_PROGRESS: '1' },
+    env: { STENOAI_E2E_SETUP_PROGRESS: "1" },
   });
 
   await page.evaluate(() => {
-    window.location.hash = '#/setup';
+    window.location.hash = "#/setup";
   });
 
-  await page.getByRole('button', { name: 'Begin setup' }).click();
+  await page.getByRole("button", { name: "Begin setup" }).click();
 
   const transcriptionStep = page.locator('[data-setup-step="transcription"]');
-  await expect(transcriptionStep).toHaveAttribute('data-setup-status', 'running');
+  await expect(transcriptionStep).toHaveAttribute(
+    "data-setup-status",
+    "running",
+  );
 
-  const bar = transcriptionStep.locator('[data-setup-transcription-progress]');
+  const bar = transcriptionStep.locator("[data-setup-transcription-progress]");
   await expect(bar).toBeVisible();
-  await expect(bar.getByText('Downloading and preparing model...')).toBeVisible();
-  await expect(transcriptionStep.getByRole('progressbar')).toBeVisible();
+  await expect(
+    bar.getByText("Downloading and preparing model..."),
+  ).toBeVisible();
+  await expect(transcriptionStep.getByRole("progressbar")).toBeVisible();
 
   // No fabricated percentage on the indeterminate bar.
-  await expect(bar.getByText('%')).toHaveCount(0);
+  await expect(bar.getByText("%")).toHaveCount(0);
 });
 
-test('optional speaker model failure does not block the rest of onboarding', async ({
+test("macOS onboarding prepares Apple speech without downloading Parakeet", async ({
   launchApp,
 }) => {
   const { page } = await launchApp({
     mockIpc: true,
     env: {
-      STENOAI_E2E_MOCK_PARAKEET_INSTALLED: '1',
-      STENOAI_E2E_SPEAKER_MODEL_FAILURE: '1',
-      STENOAI_E2E_RENDERER_PLATFORM: 'darwin',
+      STENOAI_E2E_MOCK_ENGINE: "apple",
+      STENOAI_E2E_RENDERER_PLATFORM: "darwin",
+      STENOAI_E2E_FAIL_ON_PARAKEET_SETUP: "1",
     },
   });
 
   await page.evaluate(() => {
-    window.location.hash = '#/setup';
+    window.location.hash = "#/setup";
   });
-  await page.getByRole('button', { name: 'Begin setup' }).click();
+  await page.getByRole("button", { name: "Begin setup" }).click();
 
-  const speakerStep = page.locator('[data-setup-step="speakers"]');
-  await expect(speakerStep).toHaveAttribute('data-setup-status', 'failed');
-  await expect(page.locator('[data-setup-step="ollama"]')).toHaveAttribute(
-    'data-setup-status',
-    'done',
+  const transcriptionStep = page.locator('[data-setup-step="transcription"]');
+  await expect(transcriptionStep).toHaveAttribute("data-setup-status", "done");
+  await expect(transcriptionStep).toContainText(
+    "Apple on-device transcription ready",
   );
-  await expect(page.getByRole('button', { name: 'Continue to app' })).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Continue to app" }),
+  ).toBeVisible();
 });
 
-test('speaker model setup is absent on non-macOS', async ({ launchApp }) => {
+test("optional speaker model failure does not block the rest of onboarding", async ({
+  launchApp,
+}) => {
   const { page } = await launchApp({
     mockIpc: true,
     env: {
-      STENOAI_E2E_MOCK_PARAKEET_INSTALLED: '1',
-      STENOAI_E2E_RENDERER_PLATFORM: 'linux',
+      STENOAI_E2E_MOCK_PARAKEET_INSTALLED: "1",
+      STENOAI_E2E_SPEAKER_MODEL_FAILURE: "1",
+      STENOAI_E2E_RENDERER_PLATFORM: "darwin",
     },
   });
 
   await page.evaluate(() => {
-    window.location.hash = '#/setup';
+    window.location.hash = "#/setup";
   });
-  await page.getByRole('button', { name: 'Begin setup' }).click();
+  await page.getByRole("button", { name: "Begin setup" }).click();
+
+  const speakerStep = page.locator('[data-setup-step="speakers"]');
+  await expect(speakerStep).toHaveAttribute("data-setup-status", "failed");
+  await expect(page.locator('[data-setup-step="ollama"]')).toHaveAttribute(
+    "data-setup-status",
+    "done",
+  );
+  await expect(
+    page.getByRole("button", { name: "Continue to app" }),
+  ).toBeVisible();
+});
+
+test("speaker model setup is absent on non-macOS", async ({ launchApp }) => {
+  const { page } = await launchApp({
+    mockIpc: true,
+    env: {
+      STENOAI_E2E_MOCK_PARAKEET_INSTALLED: "1",
+      STENOAI_E2E_RENDERER_PLATFORM: "linux",
+    },
+  });
+
+  await page.evaluate(() => {
+    window.location.hash = "#/setup";
+  });
+  await page.getByRole("button", { name: "Begin setup" }).click();
 
   await expect(page.locator('[data-setup-step="speakers"]')).toHaveCount(0);
   await expect(page.locator('[data-setup-step="ollama"]')).toHaveAttribute(
-    'data-setup-status',
-    'done',
+    "data-setup-status",
+    "done",
   );
 });

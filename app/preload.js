@@ -255,6 +255,11 @@ const stenoai = {
     status: () => invoke('parakeet-status'),
   },
 
+  appleSpeech: {
+    status: (language) => invoke('apple-speech-status', language ?? 'auto'),
+    prepare: (language) => invoke('prepare-apple-speech', language ?? 'auto'),
+  },
+
   transcriptionEngine: {
     get: () => invoke('get-transcription-engine'),
     set: (engine) => invoke('set-transcription-engine', engine),

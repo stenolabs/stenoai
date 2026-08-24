@@ -64,6 +64,13 @@ if [ "$(uname -s)" = "Darwin" ]; then
         exit 1
     fi
     echo ""
+    echo "Building required Apple transcription sidecar..."
+    "$SCRIPT_DIR/build-transcribe-sidecar.sh" "$(uname -m)"
+    if [ ! -x bin/steno-transcribe ]; then
+        echo "Error: Apple transcription sidecar was not built at bin/steno-transcribe" >&2
+        exit 1
+    fi
+    echo ""
 fi
 
 python3 -m PyInstaller stenoai.spec --noconfirm

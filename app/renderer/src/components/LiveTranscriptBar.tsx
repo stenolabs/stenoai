@@ -1,5 +1,13 @@
 import * as React from 'react';
-import { Check, ChevronDown, Copy, Languages, Play, Search as SearchIcon, Square } from 'lucide-react';
+import {
+  Check,
+  ChevronDown,
+  Copy,
+  Languages,
+  Play,
+  Search as SearchIcon,
+  Square,
+} from 'lucide-react';
 import { AudioWave } from '@/components/AudioWave';
 import { Input } from '@/components/ui/input';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -8,7 +16,8 @@ import { cn } from '@/lib/utils';
 import { useLiveTranscript } from '@/hooks/useLiveTranscript';
 import { useRecording } from '@/hooks/useRecording';
 import { useLanguageSetting, useSetLanguage } from '@/hooks/useSettings';
-import { PARAKEET_LANGUAGES } from '@/lib/transcription-languages';
+import { APPLE_LANGUAGES, PARAKEET_LANGUAGES } from '@/lib/transcription-languages';
+import { useTranscriptionEngine } from '@/hooks/useModels';
 import { useLiveTranscriptOpen } from '@/hooks/liveTranscriptOpenStore';
 import { formatElapsed } from '@/lib/utils';
 
@@ -465,29 +474,19 @@ function EmptyState({ title, subtitle }: { title: string; subtitle: string }) {
 // Language selector (Multi / English) — bottom-right of the panel
 // ---------------------------------------------------------------------------
 
-interface LanguageOption {
-  code: string;
-  label: string;
-  hint: string;
-}
-
-// The pinnable languages (a "Multi" preset + concrete European pins) come
-// straight from the shared PARAKEET_LANGUAGES source of truth, so this picker
-// can't drift from Settings or the engine-switch coercion. Writes the same
-// global language setting as Settings → Transcribe.
-const LANGUAGE_OPTIONS: LanguageOption[] = PARAKEET_LANGUAGES.map((l) => ({ ...l }));
-
+// The live picker follows the active engine's actual locale coverage and
+// writes the same global language setting as Settings → Transcription.
 function LanguageSelector() {
   const language = useLanguageSetting();
   const setLanguage = useSetLanguage();
+  const engine = useTranscriptionEngine();
   const [popoverOpen, setPopoverOpen] = React.useState(false);
+  const options = engine.data === 'parakeet' ? PARAKEET_LANGUAGES : APPLE_LANGUAGES;
 
   const current = language.data ?? 'auto';
-  const selected = LANGUAGE_OPTIONS.find((o) => o.code === current);
-  // Concrete pins show their name; 'auto' shows the compact "Multi". An
-  // out-of-list pin (e.g. a Whisper-only language set in Settings) shows its
-  // code rather than being mislabelled "Multi" and silently reset.
-  const display = current === 'auto' ? 'Multi' : (selected?.label ?? current.toUpperCase());
+  const selected = options.find((option) => option.code === current);
+  const autoLabel = engine.data === 'parakeet' ? 'Multi' : 'System';
+  const display = current === 'auto' ? autoLabel : (selected?.label ?? current.toUpperCase());
 
   const pick = (code: string) => {
     setLanguage.mutate(code);
@@ -517,7 +516,7 @@ function LanguageSelector() {
         <TooltipContent side="top">Transcript language</TooltipContent>
       </Tooltip>
       <PopoverContent align="end" sideOffset={8} className="w-56 p-1">
-        {LANGUAGE_OPTIONS.map((opt) => {
+        {options.map((opt) => {
           const active = opt.code === current;
           return (
             <button

@@ -81,7 +81,13 @@ function OllamaProgressBar({ status, pct }: { status: string; pct: number }) {
 /** Indeterminate bar for the transcription-model download. Parakeet only
  *  exposes coarse stages (no byte counts), so we signal activity without
  *  fabricating a percentage. */
-function IndeterminateBar({ label, kind = 'transcription' }: { label: string; kind?: 'transcription' | 'speakers' }) {
+function IndeterminateBar({
+  label,
+  kind = 'transcription',
+}: {
+  label: string;
+  kind?: 'transcription' | 'speakers';
+}) {
   return (
     <div
       className="mt-2"
@@ -117,7 +123,9 @@ function Badge({ status }: { status: StepStatus }) {
           ? 'bg-destructive text-destructive-foreground'
           : 'bg-transparent text-muted-foreground border border-border';
   return (
-    <span className={`inline-flex items-center rounded px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide ${cls}`}>
+    <span
+      className={`inline-flex items-center rounded px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide ${cls}`}
+    >
       {label}
     </span>
   );
@@ -132,7 +140,13 @@ function StepCard({ step }: { step: Step }) {
       data-setup-status={step.status}
     >
       <div className="flex size-10 shrink-0 items-center justify-center rounded-full bg-muted text-foreground">
-        {step.status === 'done' ? <Check className="size-5" /> : step.status === 'failed' ? <X className="size-5" /> : <Icon className="size-5" />}
+        {step.status === 'done' ? (
+          <Check className="size-5" />
+        ) : step.status === 'failed' ? (
+          <X className="size-5" />
+        ) : (
+          <Icon className="size-5" />
+        )}
       </div>
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
@@ -207,11 +221,8 @@ export function Setup() {
 
   const checkMic = useCheckMicPermission();
   const requestMic = useRequestMicPermission();
-  // Step 2 installs Parakeet TDT v3 by default — the active engine for fresh
-  // installs. Size differs by backend (MLX ~572 MB on mac, ONNX int8 ~670 MB
-  // on Windows/Linux). Existing Whisper users get skipped past this step in
-  // runSetup() once we see their model is already on disk; see the
-  // parakeet-status + list-whisper-models precheck below.
+  // Non-Apple fallback setup still uses the existing Parakeet/Whisper hooks.
+  // Fresh macOS 26+ installs take the system-managed Apple path in runSetup.
   const parakeetStep = useSetupStep('parakeet');
   const speakerModelsStep = useSetupStep('speakerModels');
   const ollamaStep = useSetupStep('ollamaAndModel');
@@ -281,7 +292,7 @@ export function Setup() {
   const [summaryMode, setSummaryMode] = React.useState<SummaryMode>('local');
   const [cloudProvider, setCloudProviderChoice] = React.useState<CloudProvider>('openai');
   const [cloudApiKey, setCloudApiKey] = React.useState('');
-  
+
   const [bedrockRegion, setBedrockRegionState] = React.useState('');
   const [bedrockProfile, setBedrockProfileState] = React.useState('');
   const [apiUrl, setApiUrl] = React.useState('');
@@ -334,7 +345,7 @@ export function Setup() {
               'failed',
               isMac
                 ? 'Permission denied. Grant it in System Settings.'
-                : 'Permission denied. Grant it in Settings > Privacy & security > Microphone.',
+                : 'Permission denied. Grant it in Settings > Privacy & security > Microphone.'
             );
             setRunning(false);
             return;
@@ -344,27 +355,55 @@ export function Setup() {
 
       if (snapshot.transcription !== 'done') {
         setStatus('transcription', 'running', 'Checking transcription model...');
-        // Skip the install if any ASR engine is already on disk — covers
-        // existing Whisper users running setup again and Parakeet users
-        // rerunning to fix a different step.
-        const [parakeetStatus, whisperList] = await Promise.all([
-          ipc().parakeetModels.status(),
-          ipc().whisperModels.list(),
-        ]);
-        const parakeetInstalled =
-          parakeetStatus.success && parakeetStatus.installed === true;
-        const anyWhisperInstalled =
-          whisperList.success &&
-          Object.values(whisperList.supported_models ?? {}).some(
-            (m) => (m as { installed?: boolean }).installed === true,
-          );
-        if (parakeetInstalled || anyWhisperInstalled) {
-          setStatus('transcription', 'done', 'Transcription model ready');
+        const engineResponse = await ipc().transcriptionEngine.get();
+        const selectedEngine =
+          engineResponse.success && engineResponse.engine
+            ? engineResponse.engine
+            : isMac
+              ? 'apple'
+              : 'parakeet';
+
+        if (selectedEngine === 'apple' && isMac) {
+          const languageResponse = await ipc().settings.getLanguage();
+          const language =
+            languageResponse.success && languageResponse.language
+              ? languageResponse.language
+              : 'auto';
+          const appleStatus = await ipc().appleSpeech.status(language);
+          if (!appleStatus.success) throw new Error(appleStatus.error);
+          if (!appleStatus.available || !appleStatus.supported) {
+            throw new Error('Apple on-device transcription is unavailable for this language.');
+          }
+          if (!appleStatus.installed) {
+            setStatus('transcription', 'running', 'Preparing Apple on-device transcription...');
+            const prepared = await ipc().appleSpeech.prepare(language);
+            if (!prepared.success) throw new Error(prepared.error);
+          }
+          setStatus('transcription', 'done', 'Apple on-device transcription ready');
         } else {
-          setStatus('transcription', 'running', `Downloading Parakeet TDT v3 (${isMac ? '~572 MB' : '~670 MB'})...`);
-          await parakeetStep.mutateAsync();
-          setParakeetStage(null);
-          setStatus('transcription', 'done', 'Transcription model ready');
+          // Existing explicit Parakeet/Whisper choices remain supported.
+          const [parakeetStatus, whisperList] = await Promise.all([
+            ipc().parakeetModels.status(),
+            ipc().whisperModels.list(),
+          ]);
+          const parakeetInstalled = parakeetStatus.success && parakeetStatus.installed === true;
+          const anyWhisperInstalled =
+            whisperList.success &&
+            Object.values(whisperList.supported_models ?? {}).some(
+              (model) => model.installed === true
+            );
+          if (parakeetInstalled || anyWhisperInstalled) {
+            setStatus('transcription', 'done', 'Transcription model ready');
+          } else {
+            setStatus(
+              'transcription',
+              'running',
+              `Downloading Parakeet TDT v3 (${isMac ? '~572 MB' : '~670 MB'})...`
+            );
+            await parakeetStep.mutateAsync();
+            setParakeetStage(null);
+            setStatus('transcription', 'done', 'Transcription model ready');
+          }
         }
       }
 
@@ -561,10 +600,7 @@ export function Setup() {
         </div>
 
         {showSummaryChooser && (
-          <div
-            className="mt-3 rounded-md border border-border p-4"
-            data-setup-summary-chooser
-          >
+          <div className="mt-3 rounded-md border border-border p-4" data-setup-summary-chooser>
             <div className="mb-3 text-sm font-medium text-foreground">
               How should Steno summarize meetings?
             </div>
@@ -576,7 +612,7 @@ export function Setup() {
                   'flex flex-col items-start gap-1 rounded-md border p-3 text-left transition-colors',
                   summaryMode === 'local'
                     ? 'border-foreground bg-muted/40'
-                    : 'border-border hover:bg-muted/20',
+                    : 'border-border hover:bg-muted/20'
                 )}
                 aria-pressed={summaryMode === 'local'}
               >
@@ -587,9 +623,7 @@ export function Setup() {
                   </div>
                   {summaryMode === 'local' && <Check className="size-4 text-foreground" />}
                 </div>
-                <Muted className="text-[12px]">
-                  Private. Free. ~2 GB download.
-                </Muted>
+                <Muted className="text-[12px]">Private. Free. ~2 GB download.</Muted>
               </button>
               <button
                 type="button"
@@ -598,7 +632,7 @@ export function Setup() {
                   'flex flex-col items-start gap-1 rounded-md border p-3 text-left transition-colors',
                   summaryMode === 'cloud'
                     ? 'border-foreground bg-muted/40'
-                    : 'border-border hover:bg-muted/20',
+                    : 'border-border hover:bg-muted/20'
                 )}
                 aria-pressed={summaryMode === 'cloud'}
               >
@@ -609,9 +643,7 @@ export function Setup() {
                   </div>
                   {summaryMode === 'cloud' && <Check className="size-4 text-foreground" />}
                 </div>
-                <Muted className="text-[12px]">
-                  Fast. Higher quality. Bring your own API key.
-                </Muted>
+                <Muted className="text-[12px]">Fast. Higher quality. Bring your own API key.</Muted>
               </button>
             </div>
 
@@ -710,8 +742,8 @@ export function Setup() {
                     spellCheck={false}
                   />
                   <Muted className="mt-1 text-[11px]">
-                    Stored locally on this device. Never synced or sent
-                    anywhere except the provider you select.
+                    Stored locally on this device. Never synced or sent anywhere except the provider
+                    you select.
                   </Muted>
                 </div>
               </div>
@@ -724,12 +756,10 @@ export function Setup() {
           data-setup-telemetry
         >
           <div className="min-w-0 flex-1">
-            <div className="text-sm font-medium text-foreground">
-              Anonymous usage analytics
-            </div>
+            <div className="text-sm font-medium text-foreground">Anonymous usage analytics</div>
             <Muted className="mt-0.5">
-              Help improve Steno — meeting content is never sent. You can
-              change this any time in Settings → Advanced.
+              Help improve Steno — meeting content is never sent. You can change this any time in
+              Settings → Advanced.
             </Muted>
           </div>
           <Switch
@@ -745,12 +775,10 @@ export function Setup() {
           data-setup-launch
         >
           <div className="min-w-0 flex-1">
-            <div className="text-sm font-medium text-foreground">
-              Launch on login
-            </div>
+            <div className="text-sm font-medium text-foreground">Launch on login</div>
             <Muted className="mt-0.5">
-              Start Steno automatically when you log in (hidden in the menu
-              bar). You can change this any time in Settings.
+              Start Steno automatically when you log in (hidden in the menu bar). You can change
+              this any time in Settings.
             </Muted>
           </div>
           <Switch
@@ -771,19 +799,13 @@ export function Setup() {
               size="lg"
               onClick={runSetup}
               disabled={running || !canBegin}
-              title={
-                !canBegin
-                  ? 'Enter your cloud API key first'
-                  : undefined
-              }
+              title={!canBegin ? 'Enter your cloud API key first' : undefined}
             >
               {running ? 'Setting up...' : 'Begin setup'}
             </Button>
           )}
           {!done && !running && !canBegin && (
-            <Muted className="text-[12px]">
-              Enter your API key to continue.
-            </Muted>
+            <Muted className="text-[12px]">Enter your API key to continue.</Muted>
           )}
         </div>
 
@@ -798,7 +820,9 @@ export function Setup() {
           </button>
           {debugOpen && (
             <pre className="mt-3 h-64 overflow-auto rounded border border-border bg-muted/40 p-3 font-mono text-[11px] leading-relaxed text-foreground">
-              {logs.length === 0 ? 'Steno Setup\nCommands and output will appear here...\n' : logs.join('\n')}
+              {logs.length === 0
+                ? 'Steno Setup\nCommands and output will appear here...\n'
+                : logs.join('\n')}
             </pre>
           )}
         </div>

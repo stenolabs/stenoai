@@ -51,14 +51,14 @@ If you're looking for a hosted desktop recording API, consider checking out [Rec
 ## Features
 
 - **Privacy-first** — 100% on-device; your recordings, transcripts, and summaries never leave your Mac.
-- **Live transcription with speaker labels** — Real-time on-screen text as you speak via Parakeet TDT v3 on Apple Silicon (MLX). Granola-style chat-bubble view with `[You]` vs `[Others]` attribution live during the recording and on the final transcript.
+- **Live transcription with speaker labels** — Real-time on-screen text as you speak via Apple SpeechTranscriber on macOS 26+, or Parakeet TDT v3 on other supported systems. Granola-style chat-bubble view with `[You]` vs `[Others]` attribution live during the recording and on the final transcript.
 - **Auto start/stop meetings** — Steno notices when a meeting starts and offers to take notes, then offers to summarise when it ends. Granola-style frictionless capture.
 - **System audio capture** — Record both sides of virtual meetings, headphones on, no extra setup or virtual cable. Native Core Audio Tap on macOS 14.4+, with selectable microphone input.
 - **Recording that coexists** — A compact transcription pill docks beside the app instead of taking over; Stop lands you on the note instantly and you can resume recording into an existing note (it appends and re-generates on demand).
 - **Global record shortcut** — Start or stop recording from anywhere with `⌘⇧R` (`Ctrl+Shift+R` on Windows). Toggle it off in Settings if it clashes with another app. On macOS, power users can additionally bind any key of their own via the `stenoai://record/start` / `record/stop` deep links (Shortcuts app).
 - **In-app note-taking** — Jot notes while you record, or keep a dedicated **My notes** tab that stays editable alongside the AI summary; your notes are folded straight into the summary.
 - **Ask your meetings** — Natural-language Q&A across a single note *or* your entire library via the Chat tab. Pulls from summary, key topics, and the full transcript.
-- **Multi-language (25 live, 99 total)** — Parakeet covers 25 European languages with live transcription; Whisper handles 99 languages including Chinese, Japanese, Arabic, and Hindi post-stop.
+- **Multi-language transcription** — Apple SpeechTranscriber covers English, French, German, Spanish, Portuguese, Japanese, Simplified and Traditional Chinese, Korean, and Hindi; Parakeet covers 25 European languages; Whisper handles 99 languages post-stop.
 - **Markdown ownership** — Summaries and transcripts save as clean Markdown you can edit, search, or sync to whatever knowledge base you live in.
 - **Report templates** — Define custom report styles and generate them per meeting; a note can hold multiple reports (the structured summary plus template-driven ones), switchable in the detail view.
 - **Transcript export** — Copy the full transcript or save it as Markdown (with metadata, notes, and speaker labels) to drop into any external tool.
@@ -167,7 +167,8 @@ Have questions or suggestions? [Join our Discord](https://discord.gg/DZ6vcQnxxu)
 ## Models & Performance
 
 **Transcription Models:**
-- `Parakeet TDT v3` (572 MB): Highest quality, supports live transcription, 25 European languages (English, Spanish, French, German, Italian, Portuguese, Dutch, Russian, Polish, Czech, and 15 others). Apple Silicon only via MLX. **(default on fresh installs)**
+- `Apple SpeechTranscriber` (system-managed): On-device live transcription on macOS 26+ with no Steno-managed model download. **(default on fresh supported Macs)**
+- `Parakeet TDT v3` (572 MB): Highest quality, supports live transcription, 25 European languages (English, Spanish, French, German, Italian, Portuguese, Dutch, Russian, Polish, Czech, and 15 others). Apple Silicon only via MLX. **(default elsewhere)**
 - `Whisper Large V3 Turbo` (1.6 GB): Best-accuracy Whisper engine for the languages Parakeet can't speak (Chinese, Japanese, Korean, Arabic, Hindi, and 94 others). Post-stop only.
 
 **Summarization Models** (Ollama):

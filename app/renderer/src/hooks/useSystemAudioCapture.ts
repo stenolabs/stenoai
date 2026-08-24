@@ -45,10 +45,9 @@ export function useSystemAudioCapture() {
   const systemAudio = useSystemAudioSetting();
   const systemAudioSupport = useSystemAudioSupport();
   const engineQuery = useTranscriptionEngine();
-  // Whisper recordings have no live transcript: the transcribe-stream
-  // sidecar isn't spawned by main.js, so any chunks we'd push would be
-  // silently dropped. Skip the tap setup entirely on whisper.
-  const liveTapEnabled = (engineQuery.data ?? 'parakeet') === 'parakeet';
+  // Apple and Parakeet both consume the 16 kHz live tap. Whisper is post-stop
+  // only, so pushing these chunks would be wasted work.
+  const liveTapEnabled = (engineQuery.data ?? 'parakeet') !== 'whisper';
   // Read into a ref so the tap callback (closed over once at startCapture)
   // can be a no-op if the engine flips mid-recording without rebuilding
   // the AudioContext graph.

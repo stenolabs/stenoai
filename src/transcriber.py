@@ -1500,6 +1500,17 @@ def _assemble_diarised_turns(
     )
 
 
+# Apple SpeechTranscriber is exposed through a small Swift sidecar so the
+# Python/Electron pipeline can use the system-managed model without PyObjC or
+# shipping weights.
+from src.apple_speech import (
+    resolve_sidecar as _resolve_apple_speech,
+    transcribe_file as _apple_transcribe_file,
+)
+
+APPLE_SPEECH_AVAILABLE = _resolve_apple_speech() is not None
+
+
 # Try Parakeet first (preferred — same engine as live, arm64 Macs only).
 try:
     from src.parakeet import transcribe_file as _parakeet_transcribe_file
@@ -1518,37 +1529,38 @@ except ImportError:
     WhisperCppModel = None
     WHISPER_CPP_AVAILABLE = False
 
-if not PARAKEET_AVAILABLE and not WHISPER_CPP_AVAILABLE:
+if not APPLE_SPEECH_AVAILABLE and not PARAKEET_AVAILABLE and not WHISPER_CPP_AVAILABLE:
     logger.warning(
-        "No ASR backend importable (parakeet-mlx + pywhispercpp both "
-        "missing); batch transcription will fail",
+        "No ASR backend available (Apple SpeechTranscriber sidecar, "
+        "parakeet, and pywhispercpp are all missing); batch transcription "
+        "will fail",
     )
 
 # Top-level capability flag retained for callers that probed for whisper
 # presence. Means "any working ASR backend at all".
-WHISPER_AVAILABLE = PARAKEET_AVAILABLE or WHISPER_CPP_AVAILABLE
+WHISPER_AVAILABLE = (
+    APPLE_SPEECH_AVAILABLE or PARAKEET_AVAILABLE or WHISPER_CPP_AVAILABLE
+)
 
 
 class WhisperTranscriber:
-    """Batch transcription via Parakeet TDT v3.
+    """Batch transcription with the configured local ASR engine.
 
-    Class name retained from the whisper era so the rest of the codebase
-    (CLI in simple_recorder.py, tests, etc.) doesn't churn. Internally
-    it's just a thin shim over ``src.parakeet.transcribe_file`` plus the
-    stereo-channel split + speaker-bleed collapse + RMS-energy gating
-    logic that the old whisper path had.
-
-    ``model_size`` is accepted for backwards compatibility with the old
-    pywhispercpp interface but ignored — Parakeet TDT v3 is a single
-    model (no size variants).
+    Class name is retained for callers from the whisper-era surface. Apple
+    SpeechTranscriber, Parakeet, and whisper.cpp all normalize into the same
+    transcript/segment shape before the shared stereo split and diarization
+    pipeline runs.
     """
 
     def __init__(self, model_size: str = "large-v3-turbo"):
-        if not (PARAKEET_AVAILABLE or WHISPER_CPP_AVAILABLE):
+        if not (
+            APPLE_SPEECH_AVAILABLE
+            or PARAKEET_AVAILABLE
+            or WHISPER_CPP_AVAILABLE
+        ):
             raise ImportError(
-                "No ASR backend available. Need parakeet-mlx (Apple Silicon) "
-                "or pywhispercpp (cross-platform). Rebuild the PyInstaller "
-                "bundle or `pip install` the relevant package."
+                "No ASR backend available. Rebuild the macOS Apple "
+                "transcription sidecar or install Parakeet/whisper.cpp."
             )
         # Kept on the instance so existing callers / logs that read
         # ``model_size`` and ``backend`` don't change. Backend selection
@@ -1556,11 +1568,10 @@ class WhisperTranscriber:
         # (Config.get_transcription_engine). Without this, an arm64 user
         # who picked Whisper would still get Parakeet on the post-stop
         # pass — live and final would silently use different engines
-        # and the diarised transcript wouldn't match what they previewed
-        # live. Fallback order when the requested engine isn't installed:
-        #   * engine='whisper' but pywhispercpp missing → use Parakeet
-        #   * engine='parakeet' but parakeet-mlx missing (x64 Macs) →
-        #     fall back to whisper.cpp as before
+        # and the diarised transcript wouldn't match what they previewed.
+        # Fallbacks never download implicitly. An explicit Apple choice fails
+        # closed if its required sidecar is absent; it must not surprise the
+        # user by pulling Parakeet weights.
         self.model_size = model_size
         self.model = None
 
@@ -1568,9 +1579,16 @@ class WhisperTranscriber:
             from src.config import get_config
             requested = get_config().get_transcription_engine()
         except Exception:
-            requested = "parakeet"
+            requested = "apple" if APPLE_SPEECH_AVAILABLE else "parakeet"
 
-        if requested == "whisper" and WHISPER_CPP_AVAILABLE:
+        if requested == "apple":
+            if not APPLE_SPEECH_AVAILABLE:
+                raise ImportError(
+                    "Apple on-device transcription is selected, but the "
+                    "steno-transcribe sidecar is unavailable."
+                )
+            self.backend = "apple-speech"
+        elif requested == "whisper" and WHISPER_CPP_AVAILABLE:
             self.backend = "whisper.cpp"
             self._load_whisper_cpp()
         elif PARAKEET_AVAILABLE:
@@ -1578,7 +1596,12 @@ class WhisperTranscriber:
         else:
             self.backend = "whisper.cpp"
             self._load_whisper_cpp()
-        fallback = (self.backend == "whisper.cpp") != (requested == "whisper")
+        expected_backend = {
+            "apple": "apple-speech",
+            "parakeet": "parakeet-tdt-v3",
+            "whisper": "whisper.cpp",
+        }.get(requested)
+        fallback = self.backend != expected_backend
         logger.info(
             "ASR engine selected: requested=%s using=%s fallback=%s",
             requested, self.backend, fallback,
@@ -1753,14 +1776,26 @@ class WhisperTranscriber:
         return audio_filepath, False
 
     # ------------------------------------------------------------------
-    # Core: run Parakeet on a WAV path, return our normalised dict shape.
+    # Core: run the configured ASR backend on one WAV path.
     # ------------------------------------------------------------------
 
     def _run_backend(self, audio_filepath: Path, language: str) -> dict:
         """Dispatch to whichever ASR backend is active for this instance."""
+        if self.backend == "apple-speech":
+            return self._run_apple_speech(audio_filepath, language)
         if self.backend == "parakeet-tdt-v3":
             return self._run_parakeet(audio_filepath, language)
         return self._run_whisper_cpp(audio_filepath, language)
+
+    def _run_apple_speech(self, audio_filepath: Path, language: str) -> dict:
+        """Run Apple's system-managed SpeechTranscriber sidecar."""
+        with _heartbeat_while_waiting(STENO_DIARIZE_HEARTBEAT_INTERVAL_S):
+            result = _apple_transcribe_file(
+                audio_filepath,
+                language=language,
+            )
+        result.setdefault("window_coverage", None)
+        return result
 
     def _run_parakeet(self, audio_filepath: Path, language: str) -> dict:
         """Call into ``src.parakeet`` and normalise the result shape.

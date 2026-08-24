@@ -1,4 +1,4 @@
-import { PARAKEET_LANGUAGE_CODES } from '@/lib/transcription-languages';
+import { APPLE_LANGUAGE_CODES, PARAKEET_LANGUAGE_CODES } from '@/lib/transcription-languages';
 
 export type LangOption = { value: string; label: string };
 
@@ -27,6 +27,12 @@ export const LANGUAGES_WHISPER: LangOption[] = [
 // why pinning matters even though the decoder is language-agnostic). Derived
 // from the Whisper list so labels stay identical and the picker can't drift
 // from the shared code set.
-export const LANGUAGES_PARAKEET: LangOption[] = LANGUAGES_WHISPER.filter((l) =>
-  PARAKEET_LANGUAGE_CODES.has(l.value),
+export const LANGUAGES_PARAKEET: LangOption[] = LANGUAGES_WHISPER.filter(
+  (language) => PARAKEET_LANGUAGE_CODES[language.value] === true
+);
+
+export const LANGUAGES_APPLE: LangOption[] = LANGUAGES_WHISPER.filter(
+  (language) => APPLE_LANGUAGE_CODES[language.value] === true
+).map((language) =>
+  language.value === 'auto' ? { value: 'auto', label: 'Auto (system language)' } : language
 );

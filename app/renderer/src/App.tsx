@@ -71,8 +71,6 @@ export function App() {
     document.documentElement.dataset.privacyGate = String(privacyNotice.data);
   }, [privacyNotice.data]);
 
-
-
   React.useEffect(() => {
     if (typeof window === 'undefined' || !window.stenoai) return;
     const off = [
@@ -145,13 +143,9 @@ export function App() {
     // mid-recording stays put instead of being yanked to a takeover route.
   }, [recording.isLoading, recording.status, route]);
 
-  // First-run onboarding: auto-open the setup wizard when no transcription
-  // model is installed yet (Parakeet or any Whisper). This was wired in the
-  // pre-React renderer and dropped in the rewrite. parakeet-status /
-  // whisper-list read on-disk state (no running service needed), so it's a
-  // reliable "needs setup" signal. We only redirect from a neutral landing
-  // route and never while recording/processing, so we don't yank the user out
-  // of anything in flight. Runs once.
+  // First-run onboarding opens when the selected transcription engine is not
+  // ready. Apple uses a system asset; Parakeet/Whisper use local weight files.
+  // These are cheap status reads and never start a model.
   const didSetupGateRef = React.useRef(false);
   React.useEffect(() => {
     if (didSetupGateRef.current) return;
@@ -165,17 +159,29 @@ export function App() {
     didSetupGateRef.current = true;
     (async () => {
       try {
-        const [parakeet, whisper] = await Promise.all([
+        const language = await ipc().settings.getLanguage();
+        const requestedLanguage =
+          language.success && language.language ? language.language : 'auto';
+        const [engine, apple, parakeet, whisper] = await Promise.all([
+          ipc().transcriptionEngine.get(),
+          ipc().appleSpeech.status(requestedLanguage),
           ipc().parakeetModels.status(),
           ipc().whisperModels.list(),
         ]);
-        const parakeetInstalled = parakeet.success && parakeet.installed === true;
+        const selected = engine.success ? engine.engine : 'parakeet';
+        const appleReady =
+          selected === 'apple' &&
+          apple.success &&
+          apple.available &&
+          apple.supported &&
+          apple.installed;
+        const parakeetInstalled =
+          selected === 'parakeet' && parakeet.success && parakeet.installed === true;
         const anyWhisperInstalled =
+          selected === 'whisper' &&
           whisper.success &&
-          Object.values(whisper.supported_models ?? {}).some(
-            (m) => (m as { installed?: boolean }).installed === true,
-          );
-        if (!parakeetInstalled && !anyWhisperInstalled) {
+          Object.values(whisper.supported_models ?? {}).some((model) => model.installed === true);
+        if (!appleReady && !parakeetInstalled && !anyWhisperInstalled) {
           navigate('/setup');
         }
       } catch {
@@ -203,20 +209,19 @@ export function App() {
     route === '/dev' ||
     route.startsWith('/dev/');
   const showAskBar = !isProcessingRoute && !isChatRoute && !isChromeRoute;
-  const recordingActive =
-    recording.status === 'recording' || recording.status === 'paused';
+  const recordingActive = recording.status === 'recording' || recording.status === 'paused';
 
   return (
     <CommandPaletteProvider>
       <CommandPaletteHotkey />
       <StreamingProvider>
-      <AskBarProvider>
-        <RouteView route={route} />
-        <QuitDialog />
-        <PrivacyConsentModal open={showPrivacyModal} />
-        <ImportDropZone />
+        <AskBarProvider>
+          <RouteView route={route} />
+          <QuitDialog />
+          <PrivacyConsentModal open={showPrivacyModal} />
+          <ImportDropZone />
 
-        {/* Bottom dock — shared anchor across recording → processing → meeting.
+          {/* Bottom dock — shared anchor across recording → processing → meeting.
             Recording is status-driven, not route-driven: PrimaryDock docks the
             transcription pill next to a disabled Ask bar while a recording is
             active (or swaps in the expanded LiveTranscriptBar), and falls back
@@ -224,38 +229,38 @@ export function App() {
             route — UNLESS a new recording is active (back-to-back notes: note
             A processing while note B records); the recording's pill + Stop
             must stay reachable everywhere, so recording wins the slot. */}
-        <BottomDockSlot>
-          {isProcessingRoute && !recordingActive ? (
-            <ProcessingDock />
-          ) : (
-            <PrimaryDock showAskBar={showAskBar} />
-          )}
-        </BottomDockSlot>
+          <BottomDockSlot>
+            {isProcessingRoute && !recordingActive ? (
+              <ProcessingDock />
+            ) : (
+              <PrimaryDock showAskBar={showAskBar} />
+            )}
+          </BottomDockSlot>
 
-        {/* Transcript — floats above the chat bar (only on real meeting routes).
+          {/* Transcript — floats above the chat bar (only on real meeting routes).
             Coexistence invariant: both 72-band panels self-gate on a *saved*
             meeting (activeSummaryFile), and the note being recorded is unsaved
             — so during a recording they can only ever concern a saved meeting
             the user is viewing, never fight the live pill row below. */}
-        {showAskBar && (
-          <BottomDockSlot bottomOffset={72}>
-            <TranscriptBar />
-          </BottomDockSlot>
-        )}
+          {showAskBar && (
+            <BottomDockSlot bottomOffset={72}>
+              <TranscriptBar />
+            </BottomDockSlot>
+          )}
 
-        {/* Generate-notes CTA — floats just above the chat bar for a
+          {/* Generate-notes CTA — floats just above the chat bar for a
             transcript-only note (auto-summarise off). Self-hides when notes
             exist or the transcript panel is open. Shares the bottomOffset={72}
             band with TranscriptBar above; the two stay non-overlapping because
             they're mutually exclusive on `transcriptOpen` (TranscriptBar shows
             only when open, this hides when open) — keep that invariant if either
             gate changes. */}
-        {showAskBar && (
-          <BottomDockSlot bottomOffset={72}>
-            <GenerateNotesBar />
-          </BottomDockSlot>
-        )}
-      </AskBarProvider>
+          {showAskBar && (
+            <BottomDockSlot bottomOffset={72}>
+              <GenerateNotesBar />
+            </BottomDockSlot>
+          )}
+        </AskBarProvider>
       </StreamingProvider>
     </CommandPaletteProvider>
   );

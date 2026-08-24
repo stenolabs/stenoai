@@ -236,10 +236,17 @@ jobs:
           ./scripts/build-diarize-sidecar.sh "$(uname -m)"
           test -x bin/steno-diarize
 
+
+      - name: Build Apple transcription sidecar (Swift/Speech)
+        run: |
+          chmod +x scripts/build-transcribe-sidecar.sh
+          ./scripts/build-transcribe-sidecar.sh "$(uname -m)"
+          test -x bin/steno-transcribe
       - name: Build backend with PyInstaller
         run: |
           pyinstaller stenoai.spec --noconfirm
           test -x dist/stenoai/_internal/steno-diarize
+          test -x dist/stenoai/_internal/steno-transcribe
 
       # Guards the Ollama/pip-mlx libmlx.dylib ABI collision (see
       # scripts/verify_mlx_bundle.py). dlopen probes run here too - GitHub's
@@ -282,10 +289,11 @@ jobs:
       # to PyInstaller's internal layout (e.g. the _internal/ contents dir).
       - name: Restore exec bits on bundled binaries
         run: |
-          find dist/stenoai -type f \( -name stenoai -o -name ffmpeg -o -name ollama -o -name steno-diarize \) \
+          find dist/stenoai -type f \( -name stenoai -o -name ffmpeg -o -name ollama -o -name steno-diarize -o -name steno-transcribe \) \
             -exec chmod +x {} +
           test -x dist/stenoai/stenoai  # fail loud if the launcher didn't get +x
           test -x dist/stenoai/_internal/steno-diarize
+          test -x dist/stenoai/_internal/steno-transcribe
 
       # The app probes 11434 and skips its own `ollama serve` on a 200, so a real
       # Ollama on the runner would answer instead of a test stub. Kill it first
@@ -348,10 +356,11 @@ jobs:
 
       - name: Restore exec bits on bundled binaries
         run: |
-          find dist/stenoai -type f \( -name stenoai -o -name ffmpeg -o -name ollama -o -name steno-diarize \) \
+          find dist/stenoai -type f \( -name stenoai -o -name ffmpeg -o -name ollama -o -name steno-diarize -o -name steno-transcribe \) \
             -exec chmod +x {} +
           test -x dist/stenoai/stenoai
           test -x dist/stenoai/_internal/steno-diarize
+          test -x dist/stenoai/_internal/steno-transcribe
 
       - name: Ensure no stray Ollama
         run: pkill -f ollama || true

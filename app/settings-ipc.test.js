@@ -27,6 +27,7 @@ function harness(overrides = {}) {
       return overrides.pyResult ?? '{"success": true}';
     },
     sendDebugLog: (msg) => { calls.debug.push(msg); },
+    onLanguageChanged: overrides.onLanguageChanged,
   };
   registerSettingsIpc(deps);
   return { handlers, calls };
@@ -174,4 +175,81 @@ test('backend failures surface as { success:false, error } and log via the injec
   // A handler with no error logging (keep-recordings) still fails soft.
   const r2 = await handlers['get-keep-recordings']();
   assert.deepStrictEqual(r2, { success: false, error: 'backend exploded' });
+});
+
+test('set-language awaits and calls onLanguageChanged on success with persisted language (zh-Hant trigger)', async () => {
+  let callbackFinished = false;
+  const hookCalls = [];
+  const onLanguageChanged = async (lang, parsed) => {
+    await new Promise((resolve) => setImmediate(resolve));
+    callbackFinished = true;
+    hookCalls.push({ lang, parsed });
+  };
+
+  const h = harness({
+    pyResult: '{"success": true, "language": "zh-Hant"}',
+    onLanguageChanged,
+  });
+  const res = await h.handlers['set-language']({}, 'zh-Hant');
+  assert.strictEqual(callbackFinished, true, 'set-language must await onLanguageChanged before resolving');
+  assert.deepStrictEqual(hookCalls, [{ lang: 'zh-Hant', parsed: { success: true, language: 'zh-Hant' } }]);
+  assert.deepStrictEqual(res, { success: true, language: 'zh-Hant' });
+
+  // Fallback parsing (non-JSON stdout echoing input):
+  const fallbackCalls = [];
+  const hFallback = harness({
+    pyResult: 'not json',
+    onLanguageChanged: async (lang, parsed) => { fallbackCalls.push({ lang, parsed }); },
+  });
+  const resFallback = await hFallback.handlers['set-language']({}, 'zh-Hant');
+  assert.deepStrictEqual(fallbackCalls, [{ lang: 'zh-Hant', parsed: { success: true, language: 'zh-Hant' } }]);
+  assert.deepStrictEqual(resFallback, { success: true, language: 'zh-Hant' });
+});
+
+test('set-language does not call onLanguageChanged when backend throws or returns failure', async () => {
+  const hookCalls = [];
+  const onLanguageChanged = async (lang, parsed) => { hookCalls.push({ lang, parsed }); };
+
+  // Backend throws
+  const hThrows = harness({
+    pyThrows: 'language persistence failed',
+    onLanguageChanged,
+  });
+  const resThrows = await hThrows.handlers['set-language']({}, 'zh-Hant');
+  assert.deepStrictEqual(resThrows, { success: false, error: 'language persistence failed' });
+  assert.strictEqual(hookCalls.length, 0, 'onLanguageChanged must not be called when backend throws');
+  assert.ok(hThrows.calls.debug.some((m) => m.includes('Error setting language: language persistence failed')));
+
+  // Backend returns explicit failure
+  const hFail = harness({
+    pyResult: '{"success": false, "error": "unsupported language code"}',
+    onLanguageChanged,
+  });
+  const resFail = await hFail.handlers['set-language']({}, 'invalid');
+  assert.deepStrictEqual(resFail, { success: false, error: 'unsupported language code' });
+  assert.strictEqual(hookCalls.length, 0, 'onLanguageChanged must not be called when backend returns success: false');
+});
+
+test('set-language logs onLanguageChanged callback errors without failing the preference save', async () => {
+  const hErr = harness({
+    pyResult: '{"success": true, "language": "zh-Hant"}',
+    onLanguageChanged: async () => {
+      throw new Error('sidecar restart failed');
+    },
+  });
+  const res = await hErr.handlers['set-language']({}, 'zh-Hant');
+  assert.deepStrictEqual(res, { success: true, language: 'zh-Hant' }, 'preference save still returns success');
+  assert.ok(
+    hErr.calls.debug.some((m) => m.includes('Error applying language change: sidecar restart failed')),
+    'callback failure is logged to debug sink',
+  );
+});
+
+test('set-language succeeds cleanly when onLanguageChanged is omitted or null', async () => {
+  const hNull = harness({
+    pyResult: '{"success": true, "language": "zh-Hant"}',
+    onLanguageChanged: null,
+  });
+  const res = await hNull.handlers['set-language']({}, 'zh-Hant');
+  assert.deepStrictEqual(res, { success: true, language: 'zh-Hant' });
 });

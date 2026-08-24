@@ -68,7 +68,7 @@ jobs:
         include:
           - arch: arm64
             build_cmd: build:arm64
-            runner: macos-14
+            runner: macos-26
     runs-on: ${{ matrix.runner }}
 
     steps:
@@ -136,6 +136,14 @@ jobs:
         file bin/steno-diarize
         file bin/steno-diarize | grep -q "arm64"
 
+    - name: Build Apple transcription sidecar (Swift/Speech)
+      run: |
+        chmod +x scripts/build-transcribe-sidecar.sh
+        ./scripts/build-transcribe-sidecar.sh arm64
+        test -x bin/steno-transcribe
+        file bin/steno-transcribe
+        file bin/steno-transcribe | grep -q "arm64"
+
     - name: Build Python backend with PyInstaller
       run: |
         pyinstaller stenoai.spec --noconfirm
@@ -144,6 +152,8 @@ jobs:
         file dist/stenoai/stenoai
         test -x dist/stenoai/_internal/steno-diarize
         file dist/stenoai/_internal/steno-diarize | grep -q "arm64"
+        test -x dist/stenoai/_internal/steno-transcribe
+        file dist/stenoai/_internal/steno-transcribe | grep -q "arm64"
         echo "Expected arch: ${{ matrix.arch }}"
         echo "Backend built successfully"
 

@@ -69,6 +69,11 @@ const { sweepOrphanedLiveSnapshots } = require('./live-snapshot-sweep');
 const { userNotesFilePath } = require('./notes-file');
 const { buildNoteReadyNotificationOptions, buildTranscriptReadyBody } = require('./notification-copy');
 const { makeLineReader } = require('./backend-stream');
+const {
+  defaultTranscriptionEngine,
+  normalizeTranscriptionEngine,
+  isLiveTranscriptionEngine,
+} = require('./transcription-engine');
 // Pure deep-link (stenoai://) parsing/sanitizing lives in ./shortcut-url
 // (unit-tested). The stateful side — window creation, IPC dispatch,
 // notifications — stays here and calls parseShortcutUrl().
@@ -556,6 +561,19 @@ function getMicMonitorPath() {
   } else {
     return path.join(__dirname, '..', 'bin', binName);
   }
+}
+
+// macOS SpeechTranscriber helper. The PyInstaller COLLECT stage places it
+// beside the backend's other native binaries under _internal; source runs use
+// repo-root bin/. The override keeps T2 tests model-free.
+function getAppleTranscribePath() {
+  if (process.env.STENOAI_TRANSCRIBE_SIDECAR_PATH) {
+    return process.env.STENOAI_TRANSCRIBE_SIDECAR_PATH;
+  }
+  if (app.isPackaged) {
+    return path.join(process.resourcesPath, 'stenoai', '_internal', 'steno-transcribe');
+  }
+  return path.join(__dirname, '..', 'bin', 'steno-transcribe');
 }
 
 function ensureMainWindow() {
@@ -4771,10 +4789,10 @@ ipcMain.handle('get-live-transcript-state', async () => {
   };
 });
 
-// Spawn the Python transcribe-stream sidecar that produces live partials for
-// the renderer-driven capture (Parakeet engine only). Wires its stdout NDJSON
-// to the live-transcript-{ready,chunk,error} IPC events the renderer consumes.
-function spawnLiveTranscribe(sessionName) {
+// Spawn the active live ASR sidecar. Parakeet uses the Python backend;
+// Apple uses the native SpeechTranscriber helper. Both emit the same
+// LIVE_READY / LIVE_SEG / LIVE_ERROR line protocol.
+function spawnLiveTranscribe(sessionName, options = {}) {
   if (liveTranscribeProcess) {
     // Race-safe restart: a quick stop→start can land here while the
     // previous subprocess is still draining its stdin. Skipping the
@@ -4791,12 +4809,18 @@ function spawnLiveTranscribe(sessionName) {
   const env = Object.keys(aiEnv).length > 0
     ? { ...require('process').env, ...aiEnv }
     : undefined;
-  parakeetLoadStartedAt = Date.now();
-  liveTranscribeProcess = spawn(getBackendPath(), ['transcribe-stream'], {
+  const transcription = loadTranscriptionContext();
+  const usesAppleSpeech = transcription.engine === 'apple';
+  const executable = usesAppleSpeech ? getAppleTranscribePath() : getBackendPath();
+  const args = usesAppleSpeech
+    ? ['stream', transcription.language || 'auto']
+    : ['transcribe-stream'];
+  parakeetLoadStartedAt = usesAppleSpeech ? 0 : Date.now();
+  liveTranscribeProcess = spawn(executable, args, {
     cwd: getBackendCwd(),
     env,
-    // Default {pipe, pipe, pipe} — we need stdin to push audio in and
-    // stdout to parse the LIVE_* protocol.
+    // Default {pipe, pipe, pipe} — audio enters stdin and the shared live
+    // protocol is read from stdout.
   });
   liveTranscribeSessionName = sessionName;
   liveTranscribeStdoutBuf = '';
@@ -4806,6 +4830,11 @@ function spawnLiveTranscribe(sessionName) {
   // the resolver to `proc` so a quick stop→start can't have the old process's
   // teardown resolve/null the NEW process's state (#207 review-2, Finding 2).
   const proc = liveTranscribeProcess;
+  proc._usesAppleSpeech = usesAppleSpeech;
+  proc._liveLanguage = usesAppleSpeech ? (transcription.language || 'auto') : null;
+  proc._timelineOffset = typeof options.timelineOffset === 'number' && Number.isFinite(options.timelineOffset) && options.timelineOffset > 0
+    ? options.timelineOffset
+    : 0;
   proc._drainResolve = null;
   proc._drainPromise = new Promise((resolve) => {
     proc._drainResolve = resolve;
@@ -4847,7 +4876,7 @@ function spawnLiveTranscribe(sessionName) {
     while ((nl = liveTranscribeStdoutBuf.indexOf('\n')) !== -1) {
       const line = liveTranscribeStdoutBuf.slice(0, nl);
       liveTranscribeStdoutBuf = liveTranscribeStdoutBuf.slice(nl + 1);
-      handleLiveTranscribeLine(line);
+      handleLiveTranscribeLine(line, proc);
     }
   });
 
@@ -4924,7 +4953,7 @@ function spawnLiveTranscribe(sessionName) {
 // Keeps the per-line semantics (buffer mutation + IPC emit) in one place
 // so the legacy `record --live` path and this sidecar path stay in lock
 // step if we ever extend the protocol.
-function handleLiveTranscribeLine(line) {
+function handleLiveTranscribeLine(line, proc = liveTranscribeProcess) {
   const sessionName = liveTranscribeSessionName;
   if (line.startsWith('LIVE_READY:')) {
     if (parakeetLoadStartedAt) {
@@ -4940,10 +4969,15 @@ function handleLiveTranscribeLine(line) {
   if (line.startsWith('LIVE_SEG:')) {
     try {
       const seg = JSON.parse(line.slice('LIVE_SEG:'.length));
+      const offset = (proc && typeof proc._timelineOffset === 'number' && Number.isFinite(proc._timelineOffset))
+        ? proc._timelineOffset
+        : 0;
+      const rawStart = typeof seg.start === 'number' ? seg.start : 0;
+      const rawEnd = typeof seg.end === 'number' ? seg.end : rawStart;
       const segment = {
         text: seg.text,
-        start: seg.start,
-        end: seg.end,
+        start: rawStart + offset,
+        end: rawEnd + offset,
         isFinal: !!seg.is_final,
         // 'You' | 'Others', set directly by the Python sidecar from which
         // channel (mic vs system) produced this segment — a structural
@@ -5049,45 +5083,74 @@ function stopLiveTranscribe() {
   return exited;
 }
 
-// Sync read of the active ASR engine. Reads the JSON directly so we don't
-// spawn a Python subprocess on
-// every recording start just to ask. Default 'parakeet' matches the
-// Python migration (fresh installs default to Parakeet); existing users
-// will have had transcription_engine written on their first launch by
-// Config._migrate_transcription_engine.
-function loadTranscriptionEngine() {
-  try {
-    const cfgPath = path.join(getUserDataDir(), 'config.json');
-    if (!fs.existsSync(cfgPath)) return 'parakeet';
-    const cfg = JSON.parse(fs.readFileSync(cfgPath, 'utf-8'));
-    const engine = cfg.transcription_engine;
-    return engine === 'whisper' ? 'whisper' : 'parakeet';
-  } catch (_) {
-    return 'parakeet';
+async function restartActiveAppleLiveTranscribeAfterLanguageChange() {
+  const proc = liveTranscribeProcess;
+  const sessionName = liveTranscribeSessionName;
+  if (!proc || !proc._usesAppleSpeech || !systemAudioRecordingActive || !sessionName) {
+    return;
+  }
+
+  sendDebugLog('Language changed; restarting active Apple live transcribe sidecar');
+  liveTranscriptState.ready = false;
+  liveTranscriptState.error = null;
+
+  await stopLiveTranscribe();
+
+  // Filter to retained final segments and compute timeline offset from maximum end time
+  const retainedFinals = (liveTranscriptState.segments || [])
+    .filter((segment) => segment && segment.isFinal);
+  liveTranscriptState.segments = retainedFinals;
+
+  let timelineOffset = 0;
+  for (const seg of retainedFinals) {
+    if (typeof seg.end === 'number' && Number.isFinite(seg.end) && seg.end > timelineOffset) {
+      timelineOffset = seg.end;
+    }
+  }
+
+  if (
+    systemAudioRecordingActive
+    && currentRecordingSessionName === sessionName
+    && liveTranscribeProcess === null
+  ) {
+    spawnLiveTranscribe(sessionName, { timelineOffset });
   }
 }
 
-// Sync read of the transcription engine + model + language for
-// transcription_completed's analytics properties. One config.json read
-// (mirrors loadTranscriptionEngine's no-subprocess approach) rather than
-// three separate ones on this hot path.
+
+
+// Sync read avoids spawning a backend process on every recording start.
+function loadTranscriptionEngine() {
+  try {
+    const cfgPath = path.join(getUserDataDir(), 'config.json');
+    if (!fs.existsSync(cfgPath)) return defaultTranscriptionEngine();
+    const cfg = JSON.parse(fs.readFileSync(cfgPath, 'utf-8'));
+    return normalizeTranscriptionEngine(cfg.transcription_engine);
+  } catch (_) {
+    return defaultTranscriptionEngine();
+  }
+}
+
+// Sync read of engine/model/language for live setup and analytics.
 function loadTranscriptionContext() {
   try {
     const cfgPath = path.join(getUserDataDir(), 'config.json');
     if (!fs.existsSync(cfgPath)) {
-      return { engine: 'parakeet', model: 'parakeet', language: 'auto' };
+      const engine = defaultTranscriptionEngine();
+      return { engine, model: engine, language: 'auto' };
     }
     const cfg = JSON.parse(fs.readFileSync(cfgPath, 'utf-8'));
-    const engine = cfg.transcription_engine === 'whisper' ? 'whisper' : 'parakeet';
+    const engine = normalizeTranscriptionEngine(cfg.transcription_engine);
     return {
       engine,
-      // Parakeet has no separate user-selectable model today (single bundled
-      // default) -- report the engine name rather than guess a variant id.
-      model: engine === 'whisper' ? sanitizeModelForAnalytics(cfg.whisper_model) : 'parakeet',
+      model: engine === 'whisper'
+        ? sanitizeModelForAnalytics(cfg.whisper_model)
+        : engine,
       language: cfg.language || 'auto',
     };
   } catch (_) {
-    return { engine: 'parakeet', model: 'parakeet', language: 'auto' };
+    const engine = defaultTranscriptionEngine();
+    return { engine, model: engine, language: 'auto' };
   }
 }
 
@@ -6082,7 +6145,7 @@ ipcMain.handle('start-recording-ui', async (_, sessionName, trigger, appendTo) =
     // so the renderer can show real-time text. Cached read — avoids a
     // Python subprocess on every recording start.
     const engine = loadTranscriptionEngine();
-    const liveEnabled = engine === 'parakeet';
+    const liveEnabled = isLiveTranscriptionEngine(engine);
 
     // Renderer-driven capture (useSystemAudioCapture) is the ONLY recording
     // path: it captures the mic (+ system loopback when the Settings toggle is
@@ -6314,7 +6377,7 @@ ipcMain.handle('stop-recording-ui', async () => {
       const sessionName = currentRecordingSessionName || 'Note';
       if (currentRecordingAppendTarget) {
         instantSummaryFile = currentRecordingAppendTarget;
-      } else if (loadTranscriptionEngine() === 'parakeet' && activeSysAudioSummaryFile) {
+      } else if (isLiveTranscriptionEngine(loadTranscriptionEngine()) && activeSysAudioSummaryFile) {
         const transcriptText = liveTranscriptTextForPlaceholder(sessionName);
         const notesFile = userNotesFilePath(getOutputDir(), sessionName);
         let notesText = '';
@@ -8040,6 +8103,33 @@ ipcMain.handle('set-transcription-engine', async (event, engine) => {
   } catch (e) { return { success: false, error: e.message }; }
 });
 
+ipcMain.handle('apple-speech-status', async (_event, language = 'auto') => {
+  try {
+    const requested = typeof language === 'string' ? language : 'auto';
+    const result = await runPythonScript(
+      'simple_recorder.py',
+      ['apple-speech-status', requested],
+      true,
+    );
+    return JSON.parse(result.trim());
+  } catch (e) {
+    return parsePythonFailureJson(e);
+  }
+});
+
+ipcMain.handle('prepare-apple-speech', async (_event, language = 'auto') => {
+  try {
+    const requested = typeof language === 'string' ? language : 'auto';
+    const result = await runPythonScript(
+      'simple_recorder.py',
+      ['prepare-apple-speech', requested],
+    );
+    return JSON.parse(result.trim());
+  } catch (e) {
+    return parsePythonFailureJson(e);
+  }
+});
+
 ipcMain.handle('list-parakeet-models', async () => {
   try {
     const result = await runPythonScript('simple_recorder.py', ['list-parakeet-models'], true);
@@ -8287,7 +8377,12 @@ ipcMain.handle('pull-parakeet-model', async (event, modelId) => {
 // behavior are identical to the inline handlers this replaces. Settings-shaped
 // handlers coupled to another domain (telemetry, models, mic-monitor, calendar,
 // tray) deliberately stay in main.js until that domain's own extraction.
-registerSettingsIpc({ ipcMain, runPythonScript, sendDebugLog });
+registerSettingsIpc({
+  ipcMain,
+  runPythonScript,
+  sendDebugLog,
+  onLanguageChanged: restartActiveAppleLiveTranscribeAfterLanguageChange,
+});
 registerPersonSampleIpc({ ipcMain, runPythonScript });
 registerSpeakerIpc({ ipcMain, runPythonScript, parsePythonFailureJson });
 
@@ -9557,7 +9652,7 @@ ipcMain.handle('process-system-audio-recording', async (event, audioFilePath, se
     const engine = loadTranscriptionEngine();
     const jobSummaryFile = appendTo
       ? appendTo
-      : engine === 'parakeet'
+      : isLiveTranscriptionEngine(engine)
         ? summaryFileForAudio(audioFilePath)
         : undefined;
 
