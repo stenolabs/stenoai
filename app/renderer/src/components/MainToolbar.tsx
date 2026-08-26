@@ -19,7 +19,7 @@ import type { RecordingStatus } from '@/hooks/useRecording';
 import { useImportAudio } from '@/hooks/useImportAudio';
 import { useRoute, navigate } from '@/lib/router';
 import { cn, isMac } from '@/lib/utils';
-
+import { useTranslation } from '@/i18n';
 interface MainToolbarProps {
   recordingStatus: RecordingStatus;
   elapsedSeconds?: number;
@@ -42,6 +42,7 @@ export function MainToolbar({
   onToggleSidebar,
   settingsMode = false,
 }: MainToolbarProps) {
+  const { t } = useTranslation();
   const isRecording =
     recordingStatus === 'recording' || recordingStatus === 'paused';
   const isPaused = recordingStatus === 'paused';
@@ -84,7 +85,7 @@ export function MainToolbar({
               <button
                 type="button"
                 onClick={onToggleSidebar}
-                aria-label={sidebarCollapsed ? 'Show sidebar' : 'Hide sidebar'}
+                aria-label={sidebarCollapsed ? t('nav.showSidebar') : t('nav.hideSidebar')}
                 style={{
                   position: 'fixed',
                   top: 14,
@@ -102,7 +103,7 @@ export function MainToolbar({
               </button>
             </TooltipTrigger>
             <TooltipContent side="bottom">
-              {sidebarCollapsed ? 'Show sidebar' : 'Hide sidebar'}
+              {sidebarCollapsed ? t('nav.showSidebar') : t('nav.hideSidebar')}
             </TooltipContent>
           </Tooltip>
         )}
@@ -121,17 +122,17 @@ export function MainToolbar({
             className={cn('record-btn', isRecording && 'is-recording')}
             aria-label={
               isRecording
-                ? 'Open recording in progress'
+                ? t('recording.recordingInProgress')
                 : showChatPrimary
-                  ? 'New chat'
-                  : 'New note'
+                  ? t('nav.newChat')
+                  : t('nav.newNote')
             }
             title={
               isRecording
-                ? 'Open recording in progress'
+                ? t('recording.recordingInProgress')
                 : showChatPrimary
-                  ? 'New chat'
-                  : 'New note'
+                  ? t('nav.newChat')
+                  : t('nav.newNote')
             }
           >
             {isRecording ? (
@@ -140,8 +141,8 @@ export function MainToolbar({
                   <AudioWave
                     active={!isPaused}
                     paused={isPaused}
-                    bars={5}
-                    height={12}
+                    bars={4}
+                    height={13}
                     barWidth={2}
                     gap={2}
                   />
@@ -152,17 +153,17 @@ export function MainToolbar({
                 >
                   {formatElapsed(elapsedSeconds)}
                 </span>
-                <span>{isPaused ? 'Paused' : 'Recording'}</span>
+                <span>{isPaused ? t('common.paused') : t('common.recording')}</span>
               </>
             ) : showChatPrimary ? (
               <>
                 <MessageSquare className="size-[13px]" />
-                New chat
+                {t('nav.newChat')}
               </>
             ) : (
               <>
                 <Plus className="size-[13px]" />
-                New note
+                {t('nav.newNote')}
               </>
             )}
           </button>
@@ -179,6 +180,7 @@ function RecordingOptionsPopover({
   importAudio: UseMutationResult<boolean, Error, void>;
   disabled: boolean;
 }) {
+  const { t } = useTranslation();
   const systemAudio = useSystemAudioSetting();
   const setSystemAudio = useSetSystemAudio();
   const systemAudioSupport = useSystemAudioSupport();
@@ -203,20 +205,20 @@ function RecordingOptionsPopover({
               variant="ghost"
               size="icon"
               className="size-8"
-              aria-label="Recording options"
+              aria-label={t('nav.recordingOptions')}
             >
               <MoreHorizontal className="size-4" />
             </Button>
           </PopoverTrigger>
         </TooltipTrigger>
-        <TooltipContent side="bottom">Recording options</TooltipContent>
+        <TooltipContent side="bottom">{t('nav.recordingOptions')}</TooltipContent>
       </Tooltip>
       <PopoverContent align="end" className="w-72" data-recording-options>
         <div className="space-y-3">
           <div className="space-y-0.5">
-            <p className="text-sm font-medium">Recording options</p>
+            <p className="text-sm font-medium">{t('nav.recordingOptions')}</p>
             <p className="text-xs text-muted-foreground">
-              Deep links and the tray menu also start and stop recording.
+              {t('recording.deepLinksAndTrayHint')}
             </p>
           </div>
 
@@ -232,7 +234,7 @@ function RecordingOptionsPopover({
                     htmlFor="maintoolbar-system-audio"
                     className="text-sm font-medium"
                   >
-                    Record system audio
+                    {t('recording.recordSystemAudio')}
                   </label>
                   <Switch
                     id="maintoolbar-system-audio"
@@ -242,7 +244,7 @@ function RecordingOptionsPopover({
                   />
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  Capture both sides of calls. Turn off to record your mic only.
+                  {t('recording.recordSystemAudioDesc')}
                 </p>
               </div>
             </div>
@@ -260,11 +262,11 @@ function RecordingOptionsPopover({
           >
             <FileAudio className="mt-0.5 size-4 flex-shrink-0 text-muted-foreground" />
             <div className="flex-1 space-y-0.5">
-              <p className="text-sm font-medium">Import audio file…</p>
+              <p className="text-sm font-medium">{t('recording.importAudioFile')}</p>
               <p className="text-xs text-muted-foreground">
                 {disabled
-                  ? 'Stop the current recording to import a file.'
-                  : 'Transcribe and summarise an existing recording. It will appear in the list while it processes.'}
+                  ? t('recording.importAudioDisabledDesc')
+                  : t('recording.importAudioFileDesc')}
               </p>
             </div>
           </button>

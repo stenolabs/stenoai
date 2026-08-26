@@ -10,13 +10,14 @@ import {
   useSetObsidianVaultPath,
 } from '@/hooks/useSettings';
 import { COMPACT_BTN } from './primitives';
-
+import { useTranslation } from '@/i18n';
 /**
  * Integrations settings (#413). Currently: Obsidian vault sync — a one-way
  * mirror of notes into a chosen vault folder. More integrations (e.g. Zapier,
  * #414) will join this tab.
  */
 export function IntegrationsTab() {
+  const { t } = useTranslation();
   const enabled = useObsidianSyncSetting();
   const setEnabled = useSetObsidianSync();
   const vaultPath = useObsidianVaultPath();
@@ -48,21 +49,18 @@ export function IntegrationsTab() {
             className="flex items-center gap-1.5 text-[14px] font-normal"
             style={{ color: 'var(--fg-1)' }}
           >
-            Sync to Obsidian
-            {/* Obsidian's crystal motif, inline after the name — the app's icon
-                system is lucide, so use its Gem rather than a one-off brand SVG. */}
+            {t('settings.integrations.obsidian')}
             <Gem size={14} style={{ color: '#7c6cf5' }} aria-hidden />
           </div>
           <div className="mt-[2px] text-[13px]" style={{ color: 'var(--fg-2)' }}>
-            Mirror your notes into an Obsidian vault folder as Markdown. One-way
-            (Steno → vault); edits made in Obsidian are never overwritten.
+            {t('settings.integrations.obsidianDesc')}
           </div>
         </div>
         <Switch
           checked={enabled.data ?? false}
           onCheckedChange={(v) => setEnabled.mutate(v)}
           disabled={enabled.data === undefined}
-          aria-label="Sync to Obsidian"
+          aria-label={t('settings.integrations.obsidian')}
           className="mt-1 shrink-0"
         />
       </div>

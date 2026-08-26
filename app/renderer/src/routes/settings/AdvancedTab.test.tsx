@@ -2,7 +2,7 @@ import { describe, test, expect, beforeEach, vi } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AdvancedTab } from './AdvancedTab';
-
+import { setLocale } from '@/i18n';
 // Reset button on the storage-location row must clear the custom override by
 // sending '' to the backend (set-storage-path treats '' as "use default"),
 // NOT the default path itself — which the backend records as a fresh custom
@@ -49,6 +49,7 @@ function renderTab() {
 
 describe('AdvancedTab storage reset', () => {
   beforeEach(() => {
+    setLocale('en');
     setStoragePath.mockClear();
   });
 

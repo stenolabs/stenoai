@@ -1,3 +1,5 @@
+import { t } from '@/i18n';
+
 // Templated preset prompts surfaced two ways:
 //   1. Chip row at the bottom of the /chat entry page (always visible).
 //   2. Popover triggered by typing '/' as the first character in either
@@ -9,26 +11,51 @@ export interface ChatPreset {
   description: string;
 }
 
+export function getPresets(): ChatPreset[] {
+  return [
+    {
+      label: t('chat.presetListTodos'),
+      prompt: t('chat.presetListTodosPrompt'),
+      description: t('chat.presetListTodosDesc'),
+    },
+    {
+      label: t('chat.presetCoachMe'),
+      prompt: t('chat.presetCoachMePrompt'),
+      description: t('chat.presetCoachMeDesc'),
+    },
+    {
+      label: t('chat.presetWeeklyRecap'),
+      prompt: t('chat.presetWeeklyRecapPrompt'),
+      description: t('chat.presetWeeklyRecapDesc'),
+    },
+    {
+      label: t('chat.presetBlindSpots'),
+      prompt: t('chat.presetBlindSpotsPrompt'),
+      description: t('chat.presetBlindSpotsDesc'),
+    },
+  ];
+}
+
 export const PRESETS: ChatPreset[] = [
   {
-    label: 'List recent todos',
-    prompt: 'List my action items from the last week.',
-    description: 'Pulls outstanding to-dos from recent meeting notes',
+    get label() { return t('chat.presetListTodos'); },
+    get prompt() { return t('chat.presetListTodosPrompt'); },
+    get description() { return t('chat.presetListTodosDesc'); },
   },
   {
-    label: 'Coach me',
-    prompt: 'Coach me on my recent meetings — patterns, blind spots, things to work on.',
-    description: 'Looks for patterns and suggests areas to improve',
+    get label() { return t('chat.presetCoachMe'); },
+    get prompt() { return t('chat.presetCoachMePrompt'); },
+    get description() { return t('chat.presetCoachMeDesc'); },
   },
   {
-    label: 'Write weekly recap',
-    prompt: 'Write a recap of this week based on my notes.',
-    description: 'Summary of the week across every meeting',
+    get label() { return t('chat.presetWeeklyRecap'); },
+    get prompt() { return t('chat.presetWeeklyRecapPrompt'); },
+    get description() { return t('chat.presetWeeklyRecapDesc'); },
   },
   {
-    label: 'Blind spots',
-    prompt: 'What blind spots have come up across my recent meetings?',
-    description: 'Surfaces themes you may have missed',
+    get label() { return t('chat.presetBlindSpots'); },
+    get prompt() { return t('chat.presetBlindSpotsPrompt'); },
+    get description() { return t('chat.presetBlindSpotsDesc'); },
   },
 ];
 

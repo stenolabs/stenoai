@@ -15,7 +15,7 @@ import { useUpdateMeeting } from '@/hooks/useMeetings';
 import { getLiveDraft, useLiveDraftStore } from '@/hooks/liveDraftStore';
 import { ipc } from '@/lib/ipc';
 import { stripReasoning } from '@/lib/markdown';
-
+import { useTranslation, t } from '@/i18n';
 type ProcessingStage = 'transcribing' | 'diarizing' | 'summarizing' | 'finalizing' | 'error';
 
 // Shared flag so the sibling ProcessingDock (the bottom "Processing" chip,
@@ -31,13 +31,15 @@ const useProcessingWatchdogStore = create<{
   setGaveUp: (gaveUp) => set({ gaveUp }),
 }));
 
-const STAGE_LABEL: Record<ProcessingStage, string> = {
-  transcribing: 'Analyzing transcript',
-  diarizing: 'Identifying speakers',
-  summarizing: 'Generating notes',
-  finalizing: 'Almost done…',
-  error: 'Couldn’t process this recording.',
-};
+function getStageLabel(stage: ProcessingStage): string {
+  switch (stage) {
+    case 'transcribing': return t('processing.analyzingTranscript');
+    case 'diarizing': return t('processing.identifyingSpeakers');
+    case 'summarizing': return t('processing.generatingNotes');
+    case 'finalizing': return t('processing.almostDone');
+    case 'error': return t('processing.couldNotProcess');
+  }
+}
 
 // PROGRESS: lines carry raw counts whose units vary by stage (ASR sample
 // position, embedding chunk index, summary chunk index) and can run into
@@ -78,6 +80,7 @@ const WATCHDOG_TICK_MS = 1500;
 const WATCHDOG_IDLE_TICKS = 8;
 
 export function Processing() {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const recording = useRecording();
   const updateMeeting = useUpdateMeeting();
@@ -440,10 +443,10 @@ export function Processing() {
             onClick={() => navigate('/')}
             className="mb-6 inline-flex cursor-pointer items-center gap-1 rounded-md border-0 bg-transparent px-2 py-1 text-[13px] transition-colors hover:bg-[color:var(--surface-hover)] hover:text-[color:var(--fg-1)]"
             style={{ color: 'var(--fg-2)' }}
-            aria-label="Back to home"
+            aria-label={t('recording.backToHome')}
           >
             <ChevronLeft size={15} />
-            Home
+            {t('nav.home')}
           </button>
 
           <h1
@@ -494,7 +497,7 @@ export function Processing() {
               style={{ color: 'var(--fg-2)' }}
             >
               <PencilLine size={13} />
-              My notes
+              {t('recording.myNotes')}
             </div>
             <div
               className="whitespace-pre-wrap text-[15px]"
@@ -613,7 +616,7 @@ function StageCard({
           className="text-[13px] transition-colors"
           style={{ color: 'var(--fg-1)', fontFamily: 'var(--font-sans)' }}
         >
-          {chunkProgress && stage !== 'finalizing' && stage !== 'error' ? chunkProgress : STAGE_LABEL[stage]}
+          {chunkProgress && stage !== 'finalizing' && stage !== 'error' ? chunkProgress : getStageLabel(stage)}
         </span>
       </div>
     </div>
@@ -621,6 +624,8 @@ function StageCard({
 }
 
 function ErrorPanel({
+  // error panel
+
   onRetry,
   canRetry,
   retrying,
@@ -633,9 +638,10 @@ function ErrorPanel({
   error: string | null;
   nothingRecorded: boolean;
 }) {
+  const { t } = useTranslation();
   // The watchdog case is not a failure — nothing was lost because nothing was
   // captured — so it gets a calmer heading and copy than the hard-crash path.
-  const heading = nothingRecorded ? 'Nothing to process' : STAGE_LABEL.error;
+  const heading = nothingRecorded ? t('processing.nothingToProcess') : getStageLabel('error');
   const detail = nothingRecorded
     ? 'This recording didn’t capture any audio, so there’s nothing to process. Nothing was lost. Head back to Home to start a new note.'
     : canRetry
@@ -675,7 +681,7 @@ function ErrorPanel({
         }}
       >
         {retrying && <Loader2 className="animate-spin" size={14} />}
-        {retrying ? 'Retrying…' : 'Try again'}
+        {retrying ? `${t('common.retry')}…` : t('common.retry')}
       </button>
     </div>
   );
@@ -726,6 +732,7 @@ function Chip({
 // ---------------------------------------------------------------------------
 
 export function ProcessingDock() {
+  const { t } = useTranslation();
   const recording = useRecording();
   const sessionName = recording.sessionName;
   const draft = useLiveDraftStore((s) =>
@@ -757,7 +764,7 @@ export function ProcessingDock() {
             size={14}
             style={{ color: 'var(--fg-2)' }}
           />
-          <span style={{ color: 'var(--fg-2)' }}>Processing</span>
+          <span style={{ color: 'var(--fg-2)' }}>{t('common.processing')}</span>
           <span
             className="tabular-nums"
             style={{

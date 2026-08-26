@@ -13,7 +13,7 @@ import {
   useTelemetrySetting,
 } from '@/hooks/useSettings';
 import { COMPACT_BTN, SettingRow } from './primitives';
-
+import { useTranslation } from '@/i18n';
 /** A read-only value with a click-to-copy button. Used for paths and IDs that
  *  users frequently need to paste into bug reports or terminal sessions. */
 function CopyableValue({ value, mono = false }: { value: string; mono?: boolean }) {
@@ -57,6 +57,7 @@ function CopyableValue({ value, mono = false }: { value: string; mono?: boolean 
 }
 
 export function AdvancedTab() {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const storage = useStoragePath();
   const setStorage = useSetStoragePath();
@@ -96,13 +97,13 @@ export function AdvancedTab() {
             className="text-[14px] font-normal"
             style={{ color: 'var(--fg-1)', marginBottom: 2 }}
           >
-            Storage location
+            {t('settings.advanced.storageLocation')}
           </div>
           <div
             className="mb-2 text-[13px]"
             style={{ color: 'var(--fg-2)' }}
           >
-            Where your notes and recordings are saved
+            {t('settings.advanced.storageLocationDesc')}
           </div>
           {path && <CopyableValue value={path} mono />}
         </div>
@@ -113,7 +114,7 @@ export function AdvancedTab() {
             className={COMPACT_BTN}
             onClick={chooseFolder}
           >
-            Choose…
+            {t('common.choose')}
           </Button>
           {custom && (
             <Button
@@ -122,15 +123,15 @@ export function AdvancedTab() {
               className={COMPACT_BTN}
               onClick={resetFolder}
             >
-              Reset
+              {t('common.reset')}
             </Button>
           )}
         </div>
       </div>
 
       <SettingRow
-        label="Setup wizard"
-        description="Reinstall dependencies or fix configuration"
+        label={t('settings.advanced.setupWizard')}
+        description={t('settings.advanced.setupWizardDesc')}
       >
         <Button
           variant="outline"
@@ -138,13 +139,13 @@ export function AdvancedTab() {
           className={COMPACT_BTN}
           onClick={() => navigate('/setup')}
         >
-          Run
+          {t('settings.advanced.rerunSetup')}
         </Button>
       </SettingRow>
 
       <SettingRow
-        label="Clear recording state"
-        description="Fix stuck recordings or processing"
+        label={t('settings.advanced.clearRecordingState')}
+        description={t('settings.advanced.clearRecordingStateDesc')}
       >
         <Button
           variant="outline"
@@ -154,13 +155,13 @@ export function AdvancedTab() {
           disabled={clearState.isPending}
           style={{ color: 'var(--danger)' }}
         >
-          {clearState.isPending ? 'Clearing…' : 'Clear'}
+          {clearState.isPending ? t('common.loading') : t('settings.advanced.clearStateButton')}
         </Button>
       </SettingRow>
 
       <SettingRow
-        label="Anonymous usage analytics"
-        description="Help improve Steno — no meeting content is ever sent"
+        label={t('settings.advanced.analyticsTitle')}
+        description={t('settings.advanced.analyticsDesc')}
         noBorder={!telemetry.data?.anonymous_id}
       >
         <Switch

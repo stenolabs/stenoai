@@ -1804,10 +1804,11 @@ TITLE:"""
             query_lang_instruction = ""
         return f"""Answer the following question based on the meeting content below (summary, key topics, and transcript).
 Be concise and direct. If the answer requires inference from what was discussed, that's fine.
-Only say you don't know if the topic truly wasn't discussed at all.{query_lang_instruction}
+If the transcript below contains no speech, reply that there is no meeting content yet.{query_lang_instruction}
 
 QUESTION: {question}
 
+TRANSCRIPT:
 {transcript}
 
 ANSWER:"""

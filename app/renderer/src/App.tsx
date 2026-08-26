@@ -1,3 +1,4 @@
+import { useTranslation } from '@/i18n';
 import * as React from 'react';
 
 import { useTheme } from '@/hooks/useTheme';
@@ -37,6 +38,7 @@ import { ipc } from '@/lib/ipc';
 import { primeDebugLogs } from '@/lib/debugLogs';
 
 export function App() {
+  useTranslation();
   useTheme();
   const route = useRoute();
 

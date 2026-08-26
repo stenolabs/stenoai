@@ -20,7 +20,7 @@ import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip
 import { useUpdateFolderIcon } from '@/hooks/useFolders';
 import { useOrgLogout, useOrgSession, useSharedNotesGate } from '@/hooks/useOrg';
 import { useCommandPalette } from '@/components/CommandPalette';
-
+import { useTranslation } from '@/i18n';
 export interface SidebarMeeting {
   summaryFile: string;
   title: string;
@@ -161,6 +161,7 @@ export function Sidebar({
   onContextAction,
   currentRoute,
 }: SidebarProps) {
+  const { t } = useTranslation();
   const palette = useCommandPalette();
   const [foldersOpen, setFoldersOpen] = React.useState(true);
   const [dragOverFolder, setDragOverFolder] = React.useState<string | null>(null);
@@ -322,9 +323,9 @@ export function Sidebar({
               onClick={() => palette.open()}
               className="flex h-[30px] w-full items-center rounded-md border-0 px-[10px] pl-[30px] text-left text-[13px] outline-none transition-colors hover:shadow-[inset_0_0_0_1px_hsl(var(--border))] focus-visible:shadow-[inset_0_0_0_1px_hsl(var(--border))]"
               style={{ background: 'rgba(27,27,25,0.04)', color: 'var(--fg-muted)', fontFamily: 'var(--font-sans)' }}
-              aria-label="Search notes"
+              aria-label={t('nav.searchNotes')}
             >
-              Search
+              {t('common.search')}
             </button>
             <span
               className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 rounded px-1.5 py-px text-[11px] tabular-nums tracking-[0.02em]"
@@ -334,7 +335,6 @@ export function Sidebar({
             </span>
           </div>
         </div>
-
         <div className="mx-3 h-px" style={{ background: 'var(--border-subtle)' }} />
 
         {/* Nav */}
@@ -345,9 +345,8 @@ export function Sidebar({
             onClick={() => navigate('/')}
           >
             <HomeIcon className="size-[14px]" />
-            <span className="flex-1 truncate">Home</span>
+            <span className="flex-1 truncate">{t('nav.home')}</span>
           </button>
-
           <div
             className={cn(dragOverAllMeetings && 'rounded bg-[color:var(--surface-hover)]')}
             onDragOver={(e) => {
@@ -369,7 +368,7 @@ export function Sidebar({
               onClick={() => navigate('/meetings')}
             >
               <Inbox className="size-[14px]" />
-              <span className="flex-1 truncate">All notes</span>
+              <span className="flex-1 truncate">{t('nav.allNotes')}</span>
               {totalMeetings > 0 && (
                 <span className="text-xs tabular-nums" style={{ color: 'var(--fg-muted)' }}>
                   {totalMeetings}
@@ -384,21 +383,19 @@ export function Sidebar({
             onClick={() => navigate('/chat')}
           >
             <MessageSquare className="size-[14px]" />
-            <span className="flex-1 truncate">Chat</span>
+            <span className="flex-1 truncate">{t('nav.chat')}</span>
           </button>
-
           {sharedNotes.enabled && (
             <button
               type="button"
               className={cn('sb-row', isOrgSharedActive && 'active')}
               onClick={() => navigate('/org/shared')}
-              title={`Shared across ${orgSession.data?.orgId ?? 'your org'}`}
+              title={t('nav.sharedAcrossOrg', { orgId: orgSession.data?.orgId ?? '' })}
             >
               <Globe className="size-[14px]" />
-              <span className="flex-1 truncate">Shared notes</span>
+              <span className="flex-1 truncate">{t('nav.sharedNotes')}</span>
             </button>
           )}
-
           {/* Folders group */}
           <div className="mt-3.5">
             <div
@@ -408,7 +405,7 @@ export function Sidebar({
             >
               <span className="flex items-center gap-1.5">
                 <ChevronDown className={cn('size-3 transition-transform', !foldersOpen && '-rotate-90')} />
-                <span>Folders</span>
+                <span>{t('nav.folders')}</span>
               </span>
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -416,16 +413,15 @@ export function Sidebar({
                     type="button"
                     className="inline-flex size-5 items-center justify-center rounded opacity-0 transition-opacity hover:bg-[color:var(--surface-active)] [.sb-group-head:hover_&]:opacity-100"
                     onClick={(e) => { e.stopPropagation(); onNewFolder(); }}
-                    aria-label="New folder"
+                    aria-label={t('nav.newFolder')}
                     style={{ color: 'var(--fg-2)' }}
                   >
                     <Plus className="size-3" />
                   </button>
                 </TooltipTrigger>
-                <TooltipContent side="top">Create folder</TooltipContent>
+                <TooltipContent side="top">{t('nav.createFolder')}</TooltipContent>
               </Tooltip>
             </div>
-
             {foldersOpen &&
               folders.map((folder) => {
                 const isOver = dragOverFolder === folder.id;
@@ -509,10 +505,10 @@ export function Sidebar({
               }}
               className="inline-flex h-[26px] min-w-0 items-center gap-1.5 rounded-md px-2 text-[12px] transition-colors hover:bg-[color:var(--surface-active)]"
               style={{ color: 'var(--fg-1)' }}
-              title="Sign in to share notes with your organisation"
+              title={t('nav.signInToOrgTitle')}
             >
               <LogIn className="size-[13px]" style={{ color: 'var(--fg-2)' }} />
-              <span className="truncate">Sign in to org</span>
+              <span className="truncate">{t('nav.signInToOrg')}</span>
             </button>
           ) : (
             <span />
@@ -527,23 +523,21 @@ export function Sidebar({
               <button
                 type="button"
                 onClick={() => void ipc().shell.openExternal('https://docs.stenoai.co')}
-                aria-label="Help"
+                aria-label={t('common.help')}
                 className="inline-flex h-[26px] w-7 items-center justify-center rounded-md transition-colors hover:bg-[color:var(--surface-active)] hover:text-[color:var(--fg-1)]"
                 style={{ color: 'var(--fg-2)' }}
               >
                 <HelpCircle className="size-[15px]" />
               </button>
             </TooltipTrigger>
-            <TooltipContent side="top">Documentation</TooltipContent>
+            <TooltipContent side="top">{t('common.documentation')}</TooltipContent>
           </Tooltip>
           <Tooltip>
             <TooltipTrigger asChild>
               <button
                 type="button"
                 onClick={() => toggleSettings(currentRoute)}
-                aria-label="Settings"
-                // startsWith so the cog still reads "active" on deep-link routes
-                // like /settings?tab=organisation, not just bare /settings.
+                aria-label={t('common.settings')}
                 aria-pressed={currentRoute.startsWith('/settings')}
                 className={cn(
                   'inline-flex h-[26px] w-7 items-center justify-center rounded-md transition-colors hover:bg-[color:var(--surface-active)] hover:text-[color:var(--fg-1)]',
@@ -555,7 +549,7 @@ export function Sidebar({
                 <SettingsIcon className="size-[15px]" />
               </button>
             </TooltipTrigger>
-            <TooltipContent side="top">Settings</TooltipContent>
+            <TooltipContent side="top">{t('common.settings')}</TooltipContent>
           </Tooltip>
           </div>
         </div>
@@ -608,6 +602,7 @@ interface ProfileChipProps {
 }
 
 function ProfileChip({ email, name, orgId, onSignOut }: ProfileChipProps) {
+  const { t } = useTranslation();
   const [open, setOpen] = React.useState(false);
   const ref = React.useRef<HTMLDivElement>(null);
 
@@ -678,7 +673,7 @@ function ProfileChip({ email, name, orgId, onSignOut }: ProfileChipProps) {
                 onSignOut();
               }}
             >
-              <LogOut className="size-[12px]" /> Sign out
+              <LogOut className="size-[12px]" /> {t('common.signOut')}
             </button>
           </div>
         </div>

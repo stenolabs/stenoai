@@ -8,7 +8,7 @@ import {
   useSpeakerNamingStatus,
   meetingStemFromSummaryFile,
 } from '@/hooks/useSpeakerSuggestions';
-
+import { useTranslation } from '@/i18n';
 /**
  * Bottom-right "Note deleted — Undo?" toast stack (#234). Deletion is a
  * soft-delete: main hides only the note's summary (an atomic rename) and pushes
@@ -42,6 +42,7 @@ function UndoDeleteToastItem({
   onUndo: () => void;
   onExpire: () => void;
 }) {
+  const { t } = useTranslation();
   // Keep the expire callback in a ref so the auto-dismiss timer runs exactly once
   // and isn't reset by re-renders (it must expire relative to main's deadline,
   // not the last render).
@@ -122,7 +123,7 @@ function UndoDeleteToastItem({
       <div className="flex items-center gap-2.5 px-3 py-2.5">
         <Trash2 size={14} style={{ color: 'var(--fg-2)', flexShrink: 0 }} />
         <div className="min-w-0 flex-1">
-          <div className="text-[13px] font-medium">Note deleted</div>
+          <div className="text-[13px] font-medium">{t('toasts.noteDeleted')}</div>
           {name && (
             <div className="truncate text-[12px]" style={{ color: 'var(--fg-2)' }}>
               {name}
@@ -135,12 +136,12 @@ function UndoDeleteToastItem({
           className="cursor-pointer rounded-full border-0 px-2.5 py-1 text-[12px] font-medium"
           style={{ background: 'var(--fg-1)', color: 'var(--fg-inverse)' }}
         >
-          Undo
+          {t('toasts.undo')}
         </button>
         <button
           type="button"
           onClick={onExpire}
-          aria-label="Dismiss and delete permanently"
+          aria-label={t('toasts.dismiss')}
           className="inline-flex cursor-pointer items-center justify-center rounded-full border-0 bg-transparent p-1"
           style={{ color: 'var(--fg-2)' }}
         >
@@ -153,8 +154,7 @@ function UndoDeleteToastItem({
           style={{ color: 'var(--fg-2)' }}
           data-testid="undo-delete-unnamed-speakers"
         >
-          {`${unnamed} ${unnamed === 1 ? 'speaker was' : 'speakers were'} never named. `}
-          {'Undo to name them — it needs the recording, which goes with this note.'}
+          {t('toasts.unnamedSpeakersHint', { count: unnamed, plural: unnamed === 1 ? 'speaker was' : 'speakers were' })}
         </div>
       )}
       {/* Countdown bar depleting over the undo window. */}

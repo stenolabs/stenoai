@@ -21,12 +21,13 @@ import { pickInProgressEvent } from '@/lib/calendar';
 import { heroHeadline, heroSubtitle } from '@/lib/hero';
 import { searchNotes } from '@/lib/noteSearch';
 import { navigate } from '@/lib/router';
-
+import { useTranslation } from '@/i18n';
 interface HomeProps {
   mode: 'home' | 'meetings';
 }
 
 export function Home({ mode }: HomeProps) {
+  const { t } = useTranslation();
   const meetings = useMeetings();
   const folders = useFolders();
   const calendar = useCalendarEvents();
@@ -515,7 +516,7 @@ export function Home({ mode }: HomeProps) {
               className="gap-2"
             >
               {isRecording ? <Square className="size-4" /> : <Plus className="size-4" />}
-              {isRecording ? 'Stop recording' : 'New note'}
+              {isRecording ? t('recording.stopRecordingTooltip') : t('nav.newNote')}
             </Button>
             {hotkeyEnabled && (
               <p
@@ -705,7 +706,7 @@ export function Home({ mode }: HomeProps) {
 
           <section>
             <SectionHead
-              title={mode === 'meetings' ? 'All notes' : 'Previous'}
+              title={mode === 'meetings' ? t('nav.allNotes') : t('home.previousSectionTitle')}
               count={mode === 'meetings' ? filtered.length : previous.length}
               action={
                 mode === 'meetings' ? (
@@ -719,8 +720,8 @@ export function Home({ mode }: HomeProps) {
                       type="text"
                       value={search}
                       onChange={(e) => setSearch(e.target.value)}
-                      placeholder="Search notes"
-                      aria-label="Search notes"
+                      placeholder={t('nav.searchNotes')}
+                      aria-label={t('nav.searchNotes')}
                       className="h-[26px] w-[180px] rounded-md border-0 pl-7 pr-7 text-[12.5px] outline-none transition-colors focus:shadow-[inset_0_0_0_1px_hsl(var(--border))]"
                       style={{
                         background: 'rgba(27,27,25,0.04)',

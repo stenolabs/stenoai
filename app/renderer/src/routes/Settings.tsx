@@ -6,7 +6,7 @@ import { ipc } from '@/lib/ipc';
 import { useNavigate, getLastNonSettingsRoute, useRoute, getRouteParam } from '@/lib/router';
 import { useAppVersion } from '@/hooks/useSettings';
 import { useRecording } from '@/hooks/useRecording';
-import { SettingsNav, SETTINGS_TAB_LABELS, type SettingsTabId } from './settings/SettingsNav';
+import { SettingsNav, getTabLabel, type SettingsTabId } from './settings/SettingsNav';
 import { GeneralTab } from './settings/GeneralTab';
 import { AiTab } from './settings/AiTab';
 import { TemplatesTab } from './settings/TemplatesTab';
@@ -193,7 +193,7 @@ export function Settings() {
                   color: 'var(--fg-1)',
                 }}
               >
-                {SETTINGS_TAB_LABELS[tab]}
+                {getTabLabel(tab)}
               </h1>
               {SETTINGS_TAB_DESCRIPTIONS[tab] && (
                 <p

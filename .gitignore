@@ -204,3 +204,6 @@ ollama.pid
 # (fetched FluidAudio checkout + compiled binaries) — scripts/build-diarize-sidecar.sh
 # regenerates this; only diarize-sidecar/{Package.swift,Package.resolved,Sources/} are tracked.
 diarize-sidecar/.build/
+.electron-cache/
+.electron-builder-cache/
+.pyinstaller/

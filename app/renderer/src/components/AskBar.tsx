@@ -24,12 +24,13 @@ import {
 import { useMeeting } from '@/hooks/useMeetings';
 import { useRecording } from '@/hooks/useRecording';
 import { buildTranscriptBundle } from '@/lib/transcriptBundle';
-
+import { useTranslation } from '@/i18n';
 // ---------------------------------------------------------------------------
 // Transcript bar — rendered separately above the chat bar
 // ---------------------------------------------------------------------------
 
 export function TranscriptBar() {
+  const { t } = useTranslation();
   const { activeSummaryFile, activeMeetingName, activeOrgMeeting, transcriptOpen, setTranscriptOpen } =
     useAskBar();
   const meeting = useMeeting(activeSummaryFile ?? undefined);
@@ -95,13 +96,13 @@ export function TranscriptBar() {
         <span className="mv-transcript-wave mv-transcript-wave-static" aria-hidden="true">
           <span /><span /><span /><span /><span /><span /><span />
         </span>
-        <span className="mv-transcript-label">Transcript</span>
+        <span className="mv-transcript-label">{t('common.transcript')}</span>
         <button
           type="button"
           className="mv-chat-tool"
           onClick={() => void copyTranscript()}
-          aria-label="Copy transcript"
-          title="Copy transcript"
+          aria-label={t('meeting.copyTranscript')}
+          title={t('meeting.copyTranscript')}
         >
           {copied ? <Check size={13} /> : <Copy size={13} />}
         </button>
@@ -109,8 +110,8 @@ export function TranscriptBar() {
           type="button"
           className="mv-chat-tool"
           onClick={() => setTranscriptOpen(false)}
-          aria-label="Hide transcript"
-          title="Hide transcript"
+          aria-label={t('recording.hideTranscriptTooltip')}
+          title={t('recording.hideTranscriptTooltip')}
         >
           <ChevronUp size={13} style={{ color: 'var(--fg-2)', flexShrink: 0 }} />
         </button>
@@ -132,12 +133,12 @@ export function TranscriptBar() {
             type="button"
             onClick={onResume}
             data-testid="resume-recording-button"
-            aria-label="Resume recording on this note"
-            title="Resume recording — the new audio is appended to this note"
+            aria-label={t('recording.resumeRecordingTooltip')}
+            title={t('recording.resumeRecordingTooltip')}
             className="inline-flex h-8 cursor-pointer items-center rounded-full border-0 px-3.5 text-[13px] font-medium transition-colors hover:bg-[color:var(--surface-hover)]"
             style={{ background: 'var(--surface-sunken)', color: 'var(--fg-1)' }}
           >
-            Resume
+            {t('common.resume')}
           </button>
         </div>
       )}
@@ -151,6 +152,7 @@ export function TranscriptBar() {
  * Shown only for a meeting that actually has a transcript.
  */
 export function TranscriptToggle() {
+  const { t } = useTranslation();
   const { activeSummaryFile, activeOrgMeeting, transcriptOpen, setTranscriptOpen } = useAskBar();
   const [hover, setHover] = React.useState(false);
   const hasTranscript =
@@ -164,9 +166,9 @@ export function TranscriptToggle() {
       onClick={() => setTranscriptOpen(!transcriptOpen)}
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
-      aria-label={transcriptOpen ? 'Hide transcript' : 'Show transcript'}
+      aria-label={transcriptOpen ? t('recording.hideTranscriptTooltip') : t('recording.showTranscriptTooltip')}
       aria-pressed={transcriptOpen}
-      title="Transcript"
+      title={transcriptOpen ? t('recording.hideTranscriptTooltip') : t('recording.showTranscriptTooltip')}
       // mb-[3px] optically centers the 44px toggle against the 50px composer
       // row it sits beside (PrimaryDock aligns the row items-end; see there).
       className="pointer-events-auto mb-[3px] inline-flex h-11 shrink-0 cursor-pointer items-center justify-center gap-0.5 rounded-full border-0 px-3 transition-colors"
@@ -210,6 +212,7 @@ export function TranscriptToggle() {
  * pill always has the bar beside it.
  */
 export function AskBar({ disabled = false }: { disabled?: boolean }) {
+  const { t } = useTranslation();
   const {
     activeSummaryFile,
     activeMeetingName,
@@ -482,12 +485,12 @@ export function AskBar({ disabled = false }: { disabled?: boolean }) {
           }}
           placeholder={
             disabled
-              ? 'Chat available after recording'
+              ? t('chat.placeholderDisabled')
               : hasMessages
-                ? 'Continue chat…'
-                : 'Ask anything about this meeting…'
+                ? t('chat.placeholderContinue')
+                : t('chat.placeholderEmpty')
           }
-          aria-label="Ask about this meeting"
+          aria-label={t('chat.placeholderEmpty')}
         />
 
         {/* Send / stop */}
@@ -496,7 +499,7 @@ export function AskBar({ disabled = false }: { disabled?: boolean }) {
             type="button"
             className="mv-chat-send active"
             onClick={stop}
-            aria-label="Stop"
+            aria-label={t('common.stop')}
           >
             <Square size={12} />
           </button>
@@ -505,7 +508,7 @@ export function AskBar({ disabled = false }: { disabled?: boolean }) {
             type="submit"
             className={cn('mv-chat-send', canSend && 'active')}
             disabled={!canSend}
-            aria-label="Send"
+            aria-label={t('common.send')}
           >
             <ArrowUp size={14} />
           </button>

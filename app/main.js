@@ -68,6 +68,8 @@ const { isMeetingApp, allowsDeviceLevelFallback, isMacos14Plus } = require('./me
 const { sweepOrphanedLiveSnapshots } = require('./live-snapshot-sweep');
 const { userNotesFilePath } = require('./notes-file');
 const { buildNoteReadyNotificationOptions, buildTranscriptReadyBody } = require('./notification-copy');
+const { menuLabels } = require('./menu-labels');
+const { trayLabels } = require('./tray-labels');
 const { makeLineReader } = require('./backend-stream');
 // Pure deep-link (stenoai://) parsing/sanitizing lives in ./shortcut-url
 // (unit-tested). The stateful side — window creation, IPC dispatch,
@@ -1748,13 +1750,14 @@ function updateTrayMenu() {
 
   const appVersion = require('./package.json').version;
 
+  const labels = trayLabels(app.getLocale());
   const contextMenu = Menu.buildFromTemplate([
     {
-      label: 'Open Steno',
+      label: labels.open,
       click: showAndFocusWindow
     },
     {
-      label: isRecording ? 'Stop Recording' : 'Start Recording',
+      label: isRecording ? labels.stop : labels.start,
       click: () => {
         if (mainWindow) {
           mainWindow.webContents.send(isRecording ? 'tray-stop-recording' : 'tray-start-recording');
@@ -1762,7 +1765,7 @@ function updateTrayMenu() {
       }
     },
     {
-      label: 'Settings',
+      label: labels.settings,
       click: () => {
         showAndFocusWindow();
         if (mainWindow) {
@@ -1771,7 +1774,7 @@ function updateTrayMenu() {
       }
     },
     {
-      label: 'Hide Steno',
+      label: labels.hide,
       click: () => {
         if (mainWindow) mainWindow.hide();
       }
@@ -1782,14 +1785,14 @@ function updateTrayMenu() {
       enabled: false
     },
     {
-      label: 'Report a Bug',
+      label: labels.reportBug,
       click: () => {
         shell.openExternal('https://discord.gg/DZ6vcQnxxu');
       }
     },
     { type: 'separator' },
     {
-      label: 'Quit Steno',
+      label: labels.quit,
       click: () => {
         app.quit();
       }
@@ -1997,8 +2000,9 @@ if (!gotSingleInstanceLock) {
     // menu — kept (editing accelerators, Settings, Help) but hidden by default
     // via autoHideMenuBar so it doesn't clash with the app's custom toolbar;
     // Alt reveals it (standard Windows behaviour).
+    const labels = menuLabels(app.getLocale());
     const settingsItem = {
-      label: 'Settings…',
+      label: labels.settings,
       accelerator: 'CmdOrCtrl+,',
       click: () => {
         showAndFocusWindow();
@@ -2010,8 +2014,8 @@ if (!gotSingleInstanceLock) {
     const helpSubmenu = {
       role: 'help',
       submenu: [
-        { label: 'Learn More', click: () => shell.openExternal('https://github.com/stenolabs/stenoai') },
-        { label: 'Report a Bug', click: () => shell.openExternal('https://discord.gg/DZ6vcQnxxu') }
+        { label: labels.learnMore, click: () => shell.openExternal('https://github.com/stenolabs/stenoai') },
+        { label: labels.reportBug, click: () => shell.openExternal('https://discord.gg/DZ6vcQnxxu') }
       ]
     };
     const appMenu = Menu.buildFromTemplate(
@@ -2042,7 +2046,7 @@ if (!gotSingleInstanceLock) {
             helpSubmenu
           ]
         : [
-            { label: '&File', submenu: [settingsItem, { type: 'separator' }, { role: 'quit' }] },
+            { label: `&${labels.file}`, submenu: [settingsItem, { type: 'separator' }, { role: 'quit' }] },
             { role: 'editMenu' },
             { role: 'viewMenu' },
             { role: 'windowMenu' },

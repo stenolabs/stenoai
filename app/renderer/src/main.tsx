@@ -6,7 +6,7 @@ import { App } from './App';
 import { isMac } from './lib/utils';
 import { queryClient } from './lib/queryClient';
 import { TooltipProvider } from './components/ui/tooltip';
-
+import { I18nProvider } from './i18n';
 // Platform hook for CSS. macOS gets the 82px traffic-light inset on the sidebar
 // top band; Windows/Linux have no traffic lights, so they align to the edge.
 document.documentElement.classList.toggle('is-mac', isMac);
@@ -50,9 +50,11 @@ if (isNotification) {
     <React.StrictMode>
       <ErrorBoundary>
         <QueryClientProvider client={queryClient}>
-          <TooltipProvider delayDuration={50}>
-            <App />
-          </TooltipProvider>
+          <I18nProvider>
+            <TooltipProvider delayDuration={50}>
+              <App />
+            </TooltipProvider>
+          </I18nProvider>
         </QueryClientProvider>
       </ErrorBoundary>
     </React.StrictMode>

@@ -81,6 +81,7 @@ import { cn } from '@/lib/utils';
 import { navigate } from '@/lib/router';
 import { stripReasoning } from '@/lib/markdown';
 import { pendingTitleRegens, streamCache, type StreamPhase } from '@/lib/meetingDetailState';
+import { useTranslation, t } from '@/i18n';
 import { useReprocessBridge } from '@/hooks/reprocessBridgeStore';
 import { useRecording } from '@/hooks/useRecording';
 import { useAutoSummarizeSetting } from '@/hooks/useSettings';
@@ -100,6 +101,7 @@ interface MeetingDetailProps {
 }
 
 export function MeetingDetail({ summaryFile }: MeetingDetailProps) {
+  const { t } = useTranslation();
   const meeting = useMeeting(summaryFile);
   useActiveMeeting(summaryFile, meeting.data?.session_info.name ?? null);
 
@@ -117,22 +119,22 @@ export function MeetingDetail({ summaryFile }: MeetingDetailProps) {
         </div>
       ) : meeting.isError ? (
         <div className="space-y-4 text-center">
-          <h1 className="mv-title">Couldn't load note.</h1>
+          <h1 className="mv-title">{t('meeting.errorLoadingNote')}</h1>
           <p className="text-[17px] leading-[1.55]" style={{ color: 'var(--fg-2)' }}>
-            {(meeting.error as Error)?.message ?? 'An error occurred loading this note.'}
+            {(meeting.error as Error)?.message ?? t('meeting.errorLoadingNote')}
           </p>
           <button type="button" className="mv-chip" onClick={() => navigate('/meetings')}>
-            Back to meetings
+            {t('meeting.backToMeetings')}
           </button>
         </div>
       ) : !meeting.data ? (
         <div className="space-y-4 text-center">
-          <h1 className="mv-title">Note not found.</h1>
+          <h1 className="mv-title">{t('meeting.noteNotFound')}</h1>
           <p className="text-[17px] leading-[1.55]" style={{ color: 'var(--fg-2)' }}>
-            This recording may have been deleted. Pick another from the sidebar.
+            {t('meeting.noteNotFoundDesc')}
           </p>
           <button type="button" className="mv-chip" onClick={() => navigate('/meetings')}>
-            Back to meetings
+            {t('meeting.backToMeetings')}
           </button>
         </div>
       ) : (
@@ -750,12 +752,12 @@ function DetailContent({
           <button
             type="button"
             onClick={() => navigate('/')}
-            aria-label="Back to home"
+            aria-label={t('recording.backToHome')}
             className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[12.5px] transition-colors hover:bg-[color:var(--surface-hover)] hover:text-[color:var(--fg-1)]"
             style={{ color: 'var(--fg-2)' }}
           >
             <ChevronLeft className="size-[15px]" />
-            Home
+            {t('nav.home')}
           </button>
           <div className="flex items-center gap-1">
             <Tooltip>
@@ -764,19 +766,19 @@ function DetailContent({
                     clipboard would otherwise get the old note while the body
                     shows the in-flux streamed text. */}
                 <ActionIconButton
-                  label={copied ? 'Copied' : 'Copy notes'}
+                  label={copied ? t('common.copied') : t('meeting.copyNotes')}
                   onClick={copyNotes}
                   disabled={streamPhase !== 'idle'}
                 >
                   {copied ? <Check className="size-[13px]" /> : <Copy className="size-[13px]" />}
                 </ActionIconButton>
               </TooltipTrigger>
-              <TooltipContent side="bottom">{copied ? 'Copied!' : 'Copy notes'}</TooltipContent>
+              <TooltipContent side="bottom">{copied ? `${t('common.copied')}!` : t('meeting.copyNotes')}</TooltipContent>
             </Tooltip>
             <Tooltip>
               <TooltipTrigger asChild>
                 <ActionIconButton
-                  label={copiedTranscript ? 'Copied' : 'Copy transcript'}
+                  label={copiedTranscript ? t('common.copied') : t('meeting.copyTranscript')}
                   onClick={() => void copyTranscriptForAi()}
                   disabled={!transcriptBundle}
                 >
@@ -788,7 +790,7 @@ function DetailContent({
                 </ActionIconButton>
               </TooltipTrigger>
               <TooltipContent side="bottom">
-                {copiedTranscript ? 'Copied!' : 'Copy transcript'}
+                {copiedTranscript ? `${t('common.copied')}!` : t('meeting.copyTranscript')}
               </TooltipContent>
             </Tooltip>
             {/* Re-runs summarisation on the existing transcript. A
@@ -799,7 +801,7 @@ function DetailContent({
               <Tooltip>
                 <TooltipTrigger asChild>
                   <ActionIconButton
-                    label="Generate notes"
+                    label={t('meeting.generateNotes')}
                     onClick={startReprocess}
                     // Disable while a recording is live on THIS note — same
                     // reason the floating CTA hides: don't summarise a
@@ -817,15 +819,15 @@ function DetailContent({
                     />
                   </ActionIconButton>
                 </TooltipTrigger>
-                <TooltipContent side="bottom">Generate notes</TooltipContent>
+                <TooltipContent side="bottom">{t('meeting.generateNotes')}</TooltipContent>
               </Tooltip>
             )}
             <Popover>
               <PopoverTrigger asChild>
                 <button
                   type="button"
-                  aria-label="More options"
-                  title="More options"
+                  aria-label={t('meeting.moreOptions')}
+                  title={t('meeting.moreOptions')}
                   className="inline-flex size-7 items-center justify-center rounded-md transition-colors hover:bg-[color:var(--surface-hover)] hover:text-[color:var(--fg-1)]"
                   style={{ color: 'var(--fg-2)' }}
                 >
@@ -843,7 +845,7 @@ function DetailContent({
                   }}
                 >
                   <FolderIcon className="size-[13px] shrink-0" style={{ color: 'var(--fg-2)' }} />
-                  View containing folder
+                  {t('meeting.viewContainingFolder')}
                 </button>
                 <button
                   type="button"
@@ -853,7 +855,7 @@ function DetailContent({
                   disabled={!transcriptBundle}
                 >
                   <Download className="size-[13px] shrink-0" style={{ color: 'var(--fg-2)' }} />
-                  Save transcript as .md…
+                  {t('meeting.saveTranscriptMd')}
                 </button>
                 <button
                   type="button"
@@ -863,7 +865,7 @@ function DetailContent({
                   disabled={!canExportNotesPdf}
                 >
                   <FileDown className="size-[13px] shrink-0" style={{ color: 'var(--fg-2)' }} />
-                  Save notes as PDF…
+                  {t('meeting.saveNotesPdf')}
                 </button>
                 {/* Re-transcribe (#266): only when the source recording still
                     exists (keep-recordings was on). Disabled while a stream is on
@@ -883,7 +885,7 @@ function DetailContent({
                     }
                   >
                     <Mic className="size-[13px] shrink-0" style={{ color: 'var(--fg-2)' }} />
-                    Re-transcribe recording
+                    {t('meeting.retranscribeRecording')}
                   </button>
                 )}
                 {orgSession.data?.signedIn &&
@@ -943,7 +945,7 @@ function DetailContent({
                   }}
                 >
                   <Trash2 className="size-[13px] shrink-0" />
-                  Delete note
+                  {t('meeting.deleteNote')}
                 </button>
               </PopoverContent>
             </Popover>
@@ -993,8 +995,8 @@ function DetailContent({
             disabled={
               titleRegening || reprocess.isPending || streamPhase !== 'idle' || isEditingTitle
             }
-            aria-label="Regenerate title"
-            title="Regenerate title"
+            aria-label={t('meeting.regenerateTitle')}
+            title={t('meeting.regenerateTitle')}
             className={cn(
               'inline-flex items-center justify-center opacity-0 transition-opacity group-hover:opacity-100 disabled:pointer-events-none',
               titleRegening && 'opacity-100'
@@ -1338,9 +1340,9 @@ function DetailContent({
       <ConfirmDialog
         open={retranscribeOpen}
         onOpenChange={setRetranscribeOpen}
-        title="Re-transcribe this recording?"
-        description="This re-runs transcription with your current transcription settings, replacing the transcript and regenerating the summary."
-        confirmLabel="Re-transcribe"
+        title={t('meeting.retranscribeDialogTitle')}
+        description={t('meeting.retranscribeDialogDesc')}
+        confirmLabel={t('meeting.retranscribeDialogConfirm')}
         isPending={retranscribe.isPending}
         onConfirm={() => {
           setRetranscribeOpen(false);
@@ -1432,7 +1434,7 @@ function NoteViewToggle({
           }}
         >
           <PencilLine className="size-[13px]" />
-          My notes
+          {t('meeting.tabNotes')}
           {hasNotes && !notesActive && (
             <span
               aria-hidden="true"
@@ -1467,7 +1469,7 @@ function NoteViewToggle({
               <PopoverTrigger asChild>
                 <button
                   type="button"
-                  aria-label="Choose view or template"
+                  aria-label={t('meeting.chooseViewOrTemplate')}
                   data-testid="note-view-menu-trigger"
                   className="inline-flex items-center py-1 pl-0.5 pr-2.5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring hover:text-[color:var(--fg-1)]"
                   style={{ color: 'var(--fg-2)' }}
@@ -1482,7 +1484,7 @@ function NoteViewToggle({
               selected={summaryActive && activeReportId === null}
               onClick={() => selectView(null)}
             >
-              Summary
+              {t('meeting.tabSummary')}
             </ViewMenuItem>
             {reports.map((r) => {
               const meta = [r.model, formatReportDate(r.created_at)].filter(Boolean).join(' · ');
@@ -1527,7 +1529,7 @@ function NoteViewToggle({
                   className="px-3 pb-1 pt-1.5 text-[11px] font-medium"
                   style={{ color: 'var(--fg-muted)' }}
                 >
-                  Generate from template
+                  {t('meeting.generateFromTemplate')}
                 </div>
                 {templates.map((t) => (
                   <button
@@ -1552,9 +1554,9 @@ function NoteViewToggle({
       <ConfirmDialog
         open={!!deleteTarget}
         onOpenChange={(o) => !o && setDeleteTarget(null)}
-        title={deleteTarget ? `Delete report "${deleteTarget.template_name}"?` : ''}
-        description="This permanently deletes this generated report. The transcript and other reports are not affected."
-        confirmLabel="Delete"
+        title={deleteTarget ? t('meeting.deleteReportDialogTitle', { name: deleteTarget.template_name }) : ''}
+        description={t('meeting.deleteReportDialogDesc')}
+        confirmLabel={t('common.delete')}
         destructive
         onConfirm={() => {
           if (!deleteTarget) return;
@@ -1602,6 +1604,7 @@ function MyNotesEditor({
   summaryFile: string;
   initialNotes: string;
 }) {
+  const { t } = useTranslation();
   const [value, setValue] = React.useState(initialNotes);
   const save = useUpdateUserNotes();
   const timerRef = React.useRef<number | null>(null);
@@ -1634,7 +1637,7 @@ function MyNotesEditor({
         value={value}
         onChange={(e) => onChange(e.target.value)}
         onBlur={flush}
-        placeholder="Write notes…"
+        placeholder={t('meeting.writeNotesPlaceholder')}
         spellCheck
         data-testid="my-notes-input"
         className="block w-full resize-none border-0 bg-transparent text-[15.5px] outline-none"

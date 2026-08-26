@@ -1,6 +1,7 @@
 import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest';
 import { render, fireEvent, waitFor, act } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { setLocale } from '@/i18n/index';
 import type { Meeting } from '@/lib/ipc';
 import { UndoDeleteToast } from '@/components/UndoDeleteToast';
 import { useUndoDeleteStore } from '@/hooks/undoDeleteStore';
@@ -70,6 +71,7 @@ const mkEntry = (id: string, summaryFile: string, name: string) => ({
 
 describe('UndoDeleteToast — tombstone Undo flow', () => {
   beforeEach(() => {
+    setLocale('en');
     undoMock.mockReset();
     commitMock.mockClear();
     listPendingMock.mockClear();
@@ -116,7 +118,7 @@ describe('UndoDeleteToast — tombstone Undo flow', () => {
 
     const { getByRole } = renderToast();
     await act(async () => {
-      fireEvent.click(getByRole('button', { name: /dismiss and delete permanently/i }));
+      fireEvent.click(getByRole('button', { name: /dismiss/i }));
     });
 
     await waitFor(() => expect(commitMock).toHaveBeenCalled());

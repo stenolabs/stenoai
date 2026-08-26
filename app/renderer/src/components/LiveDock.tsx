@@ -6,7 +6,7 @@ import { useRecording } from '@/hooks/useRecording';
 import { useLiveTranscriptStatus } from '@/hooks/useLiveTranscript';
 import { useLiveTranscriptOpen } from '@/hooks/liveTranscriptOpenStore';
 import { useLiveTranscriptAvailable } from '@/hooks/useModels';
-
+import { useTranslation } from '@/i18n';
 /**
  * Compact (Granola-style) transcription pill shown whenever a recording is
  * active — recording coexists with whatever the user is viewing; PrimaryDock
@@ -21,6 +21,7 @@ import { useLiveTranscriptAvailable } from '@/hooks/useModels';
  * drop) — without it an auto-paused recording would be stranded.
  */
 export function LiveDock() {
+  const { t } = useTranslation();
   const recording = useRecording();
   const liveAvailable = useLiveTranscriptAvailable();
   const transcriptOpen = useLiveTranscriptOpen((s) => s.open);
@@ -57,10 +58,9 @@ export function LiveDock() {
   }, [loadingModel]);
   const prepareLabel = showPreparing
     ? live.slow
-      ? 'Still preparing…'
-      : 'Preparing…'
+      ? t('recording.stillPreparingLiveModel')
+      : t('recording.preparingLiveModel')
     : null;
-
   const onResume = () => {
     if (paused) void recording.resumeRecording();
   };
@@ -81,7 +81,7 @@ export function LiveDock() {
     >
       <span
         style={{ color: 'var(--recording)' }}
-        title={paused ? 'Paused' : 'Recording'}
+        title={paused ? t('common.paused') : t('common.recording')}
         aria-hidden="true"
       >
         <AudioWave
@@ -112,14 +112,14 @@ export function LiveDock() {
             <button
               type="button"
               onClick={onResume}
-              aria-label="Resume recording"
+              aria-label={t('recording.resumeRecordingTooltip')}
               className="inline-flex size-7 cursor-pointer items-center justify-center rounded-full border-0 transition-colors hover:bg-[color:var(--surface-hover)]"
               style={{ background: 'transparent', color: 'var(--fg-1)' }}
             >
               <Play size={13} />
             </button>
           </TooltipTrigger>
-          <TooltipContent side="top">Resume recording</TooltipContent>
+          <TooltipContent side="top">{t('recording.resumeRecordingTooltip')}</TooltipContent>
         </Tooltip>
       )}
       {/* Expand — Parakeet only. Whisper recordings have no live drawer
@@ -133,7 +133,7 @@ export function LiveDock() {
               type="button"
               onClick={toggleTranscript}
               disabled={stopped}
-              aria-label={transcriptOpen ? 'Hide transcript' : 'Show transcript'}
+              aria-label={transcriptOpen ? t('recording.hideTranscriptTooltip') : t('recording.showTranscriptTooltip')}
               aria-pressed={transcriptOpen}
               className="inline-flex size-7 cursor-pointer items-center justify-center rounded-full border-0 transition-colors hover:bg-[color:var(--surface-hover)] disabled:cursor-not-allowed disabled:opacity-50"
               style={{ background: 'transparent', color: 'var(--fg-1)' }}
@@ -141,7 +141,7 @@ export function LiveDock() {
               <ChevronUp size={14} />
             </button>
           </TooltipTrigger>
-          <TooltipContent side="top">{transcriptOpen ? 'Hide transcript' : 'Show transcript'}</TooltipContent>
+          <TooltipContent side="top">{transcriptOpen ? t('recording.hideTranscriptTooltip') : t('recording.showTranscriptTooltip')}</TooltipContent>
         </Tooltip>
       )}
       <Tooltip>
@@ -150,14 +150,14 @@ export function LiveDock() {
             type="button"
             onClick={onStop}
             disabled={stopped}
-            aria-label="Stop recording"
+            aria-label={t('recording.stopRecordingTooltip')}
             className="inline-flex size-7 cursor-pointer items-center justify-center rounded-full border-0 transition-colors hover:bg-[color:var(--surface-hover)] disabled:cursor-not-allowed disabled:opacity-50"
             style={{ background: 'transparent', color: 'var(--recording)' }}
           >
             <Square size={12} fill="currentColor" stroke="currentColor" />
           </button>
         </TooltipTrigger>
-        <TooltipContent side="top">Stop recording</TooltipContent>
+        <TooltipContent side="top">{t('recording.stopRecordingTooltip')}</TooltipContent>
       </Tooltip>
     </div>
   );

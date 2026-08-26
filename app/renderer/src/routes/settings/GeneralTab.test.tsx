@@ -129,6 +129,7 @@ vi.mock('@/hooks/useAudioInputDevices', () => ({
 
 // Import after the mocks are registered.
 import { GeneralTab } from './GeneralTab';
+import { setLocale } from '@/i18n';
 
 function resetAuth(auth: typeof h.google) {
   auth.status.data = { connected: false };
@@ -142,6 +143,7 @@ function resetAuth(auth: typeof h.google) {
 }
 
 beforeEach(() => {
+  setLocale('en');
   resetAuth(h.google);
   resetAuth(h.outlook);
   h.userName = { data: undefined, isPending: true, isPlaceholderData: false };

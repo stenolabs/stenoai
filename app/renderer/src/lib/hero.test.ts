@@ -1,6 +1,7 @@
-import { describe, test, expect } from 'vitest';
+import { describe, test, expect, beforeEach } from 'vitest';
 import type { CalendarEvent } from '@/lib/ipc';
 import { heroHeadline, heroSubtitle, type HeroState } from '@/lib/hero';
+import { setLocale } from '@/i18n';
 
 // Pure-function coverage for the Home hero copy (#147). Asserts the full
 // state matrix: recording state wins over calendar state, the present-tense
@@ -40,6 +41,10 @@ function state(overrides: Partial<HeroState> = {}): HeroState {
 }
 
 describe('heroHeadline', () => {
+  beforeEach(() => {
+    setLocale('en');
+  });
+
   test('recording / paused / processing status wins over everything', () => {
     // Even with a meeting in progress, status copy takes precedence.
     const inMeeting = ev(-5 * MIN, 25 * MIN);
@@ -76,12 +81,15 @@ describe('heroHeadline', () => {
 });
 
 describe('heroSubtitle', () => {
+  beforeEach(() => {
+    setLocale('en');
+  });
+
   test('recording subtitle prefers the active session name', () => {
     const sub = heroSubtitle(state({ status: 'recording', sessionName: 'Q3 Roadmap', inProgressEvent: ev(-5 * MIN, 25 * MIN, { title: 'Other Meeting' }) }));
     expect(sub).toContain('Q3 Roadmap');
     expect(sub).toContain('to stop');
   });
-
   test('recording subtitle falls back to event title then a generic label', () => {
     expect(heroSubtitle(state({ status: 'recording', inProgressEvent: ev(-5 * MIN, 25 * MIN, { title: 'Standup' }) }))).toContain('Standup');
     expect(heroSubtitle(state({ status: 'recording' }))).toContain('In progress');
@@ -131,5 +139,22 @@ describe('heroSubtitle', () => {
     const soon = heroSubtitle(state({ ...off, nextSoonEvent: ev(20 * MIN, 50 * MIN, { title: 'Design Review' }) }));
     expect(soon).toContain('Design Review');
     expect(soon).not.toContain("when you're ready");
+  });
+});
+
+describe('heroHeadline and heroSubtitle (zh-TW)', () => {
+  beforeEach(() => {
+    setLocale('zh-TW');
+  });
+
+  test('recording / paused / processing status in zh-TW', () => {
+    expect(heroHeadline(state({ status: 'recording' }))).toBe('錄音中');
+    expect(heroHeadline(state({ status: 'paused' }))).toBe('錄音已暫停');
+    expect(heroHeadline(state({ status: 'processing' }))).toBe('正在處理您的筆記');
+  });
+
+  test('heroSubtitle in zh-TW', () => {
+    expect(heroSubtitle(state({ status: 'paused' }))).toBe('錄音已暫停。請點擊下方控制列的繼續按鈕以繼續。');
+    expect(heroSubtitle(state({ status: 'processing' }))).toBe('您的筆記即將完成。');
   });
 });

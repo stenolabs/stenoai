@@ -56,10 +56,12 @@ import {
   useOutlookCalendarAuth,
 } from '@/hooks/useCalendarEvents';
 import { COMPACT_BTN, COMPACT_TRIGGER, SectionHeading, SettingRow } from './primitives';
+import { useI18n, SUPPORTED_LOCALES, type Locale, t } from '@/i18n';
 
 const DEFAULT_MIC_VALUE = 'default';
 
 export function GeneralTab() {
+  const { locale, setLocale } = useI18n();
   const { theme, setTheme } = useTheme();
   const notifications = useNotificationsSetting();
   const setNotifications = useSetNotifications();
@@ -243,9 +245,35 @@ export function GeneralTab() {
 
   return (
     <section data-settings-tab="general">
+      <SectionHeading>{t('settings.general.sectionLanguage')}</SectionHeading>
       <SettingRow
-        label="Your name"
-        description="First name only — used for in-app greetings. Stored locally."
+        label={t('settings.general.uiLanguage')}
+        description={t('settings.general.uiLanguageDesc')}
+      >
+        <Select
+          value={locale}
+          onValueChange={(v) => setLocale(v as Locale)}
+        >
+          <SelectTrigger
+            className={COMPACT_TRIGGER}
+            data-testid="ui-language-select"
+          >
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {SUPPORTED_LOCALES.map((l) => (
+              <SelectItem key={l.code} value={l.code}>
+                {l.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </SettingRow>
+
+      <SectionHeading>{t('settings.general.sectionPreferences')}</SectionHeading>
+      <SettingRow
+        label={t('settings.general.userName')}
+        description={t('settings.general.userNameDesc')}
       >
         <Input
           value={nameDraft}
@@ -262,7 +290,7 @@ export function GeneralTab() {
               (e.target as HTMLInputElement).blur();
             }
           }}
-          placeholder="Your name"
+          placeholder={t('settings.general.userName')}
           autoComplete="given-name"
           className="h-[30px] w-[180px] rounded-[6px] bg-[color:var(--surface-raised)] text-[13px]"
           data-testid="user-name-input"
@@ -270,8 +298,8 @@ export function GeneralTab() {
       </SettingRow>
 
       <SettingRow
-        label="Appearance"
-        description="Choose light, dark, or match your system"
+        label={t('settings.general.theme')}
+        description={t('settings.general.themeDesc')}
         noBorder
       >
         <Select
@@ -285,9 +313,9 @@ export function GeneralTab() {
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="system">System</SelectItem>
-            <SelectItem value="light">Light</SelectItem>
-            <SelectItem value="dark">Dark</SelectItem>
+            <SelectItem value="system">{t('settings.general.themeSystem')}</SelectItem>
+            <SelectItem value="light">{t('settings.general.themeLight')}</SelectItem>
+            <SelectItem value="dark">{t('settings.general.themeDark')}</SelectItem>
           </SelectContent>
         </Select>
       </SettingRow>
@@ -353,8 +381,8 @@ export function GeneralTab() {
       <SectionHeading>Meeting notifications</SectionHeading>
 
       <SettingRow
-        label="Scheduled meetings"
-        description="Show a notification before meetings start, based on your calendar."
+        label={t('settings.general.premeetingNotifications')}
+        description={t('settings.general.premeetingNotificationsDesc')}
       >
         <Switch
           checked={premeetingNotifications.data ?? true}
@@ -364,7 +392,7 @@ export function GeneralTab() {
       </SettingRow>
 
       <SettingRow
-        label="Auto-detected meetings"
+        label={t('settings.general.autoDetectMeetings')}
         description={
           autoDetectSupported
             ? 'Watch for other apps using your microphone and notify you when a call starts, with a one-click button to record.'
@@ -381,8 +409,8 @@ export function GeneralTab() {
       </SettingRow>
 
       <SettingRow
-        label="Post meeting notifications"
-        description="Notify when your notes are ready or a recording auto-stops from silence."
+        label={t('settings.general.postMeetingNotifications')}
+        description={t('settings.general.postMeetingNotificationsDesc')}
         noBorder
       >
         <Switch
@@ -395,8 +423,8 @@ export function GeneralTab() {
       <SectionHeading>Recording</SectionHeading>
 
       <SettingRow
-        label="Microphone"
-        description="Which input device Steno records from. Pins your choice so the OS switching its default (e.g. AirPods connecting) doesn't silently change what gets recorded. Applies the next time you start a recording."
+        label={t('settings.general.microphoneDevice')}
+        description={t('settings.general.microphoneDeviceDesc')}
       >
         <Select
           value={microphone.data?.device_id ?? DEFAULT_MIC_VALUE}
@@ -421,7 +449,7 @@ export function GeneralTab() {
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value={DEFAULT_MIC_VALUE}>System Default</SelectItem>
+            <SelectItem value={DEFAULT_MIC_VALUE}>{t('common.systemDefault')}</SelectItem>
             {audioInputDevices.map((d, i) => (
               <SelectItem key={d.deviceId} value={d.deviceId}>
                 {d.label || `Microphone ${i + 1}`}
@@ -443,7 +471,7 @@ export function GeneralTab() {
       {/* macOS only: chooses mic-only vs mic+system. Windows always records
           mic+system (toggle hidden), so this control isn't shown there. */}
       {isMac && (
-        <SettingRow label="Record system audio" description={systemAudioDescription}>
+        <SettingRow label={t('settings.general.systemAudio')} description={systemAudioDescription}>
           <Switch
             checked={(systemAudio.data ?? true) && (systemAudioSupport.data?.supported ?? true)}
             onCheckedChange={(v) => setSystemAudio.mutate(v)}
@@ -453,8 +481,8 @@ export function GeneralTab() {
       )}
 
       <SettingRow
-        label="Auto-stop on silence"
-        description="End the recording and start processing it once both the mic and system audio have been silent for the chosen duration. Useful when you forget to stop after a meeting ends."
+        label={t('settings.general.silenceAutoStop')}
+        description={t('settings.general.silenceAutoStopDesc')}
         noBorder
       >
         <div className="flex items-center gap-3">
@@ -487,8 +515,8 @@ export function GeneralTab() {
       <SectionHeading>System</SectionHeading>
 
       <SettingRow
-        label="Launch on login"
-        description="Start Steno automatically when you log in, hidden in the menu bar. Turn off to launch it manually."
+        label={t('settings.general.launchOnLogin')}
+        description={t('settings.general.launchOnLoginDesc')}
       >
         <Switch
           checked={launchOnLogin.data ?? true}
@@ -509,7 +537,7 @@ export function GeneralTab() {
       </SettingRow>
 
       <SettingRow
-        label={isMac ? 'Show in menu bar' : 'Show in system tray'}
+        label={isMac ? t('settings.general.menuBarIcon') : t('settings.general.menuBarIconWin')}
         description={
           bothIconsHidden
             ? 'Both your dock icon and menu bar icon will be hidden. Reopen Steno from Applications or Spotlight to bring the window back.'
@@ -532,7 +560,7 @@ export function GeneralTab() {
           macOS menu bar and the Windows system tray alike.) */}
       {isMac && (
         <SettingRow
-          label="Hide dock icon"
+          label={t('settings.general.dockIcon')}
           description={
             bothIconsHidden
               ? 'Both your dock icon and menu bar icon will be hidden. Reopen Steno from Applications or Spotlight to bring the window back.'
@@ -551,7 +579,7 @@ export function GeneralTab() {
       <SectionHeading>Keyboard shortcut</SectionHeading>
 
       <SettingRow
-        label="Global record shortcut"
+        label={t('settings.general.recordHotkey')}
         description={
           <>
             Start or stop recording from anywhere with {recordAccel}. Turn off if it
