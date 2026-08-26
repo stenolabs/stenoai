@@ -311,3 +311,72 @@ test('the mock sample clip is long enough for a playing state to be observable',
     `the fixture clip is ${match[1]}s; under ~2s the "toggling to stop" assertion races the ended event`,
   );
 });
+
+test('live transcript reads and queries are limited to the trusted app renderer', () => {
+  const getStateIndex = MAIN.indexOf("ipcMain.handle('get-live-transcript-state',");
+  assert.ok(getStateIndex >= 0, 'expected get-live-transcript-state handler in main.js');
+  const getStateBlock = MAIN.slice(getStateIndex, getStateIndex + 500);
+  assert.match(
+    getStateBlock,
+    /event\.sender\s*!==\s*mainWindow\.webContents/,
+    'get-live-transcript-state must verify event.sender === mainWindow.webContents',
+  );
+
+  const queryLiveIndex = MAIN.indexOf("ipcMain.on('query-live-transcript-stream',");
+  assert.ok(queryLiveIndex >= 0, 'expected query-live-transcript-stream handler in main.js');
+  const queryLiveBlock = MAIN.slice(queryLiveIndex, queryLiveIndex + 500);
+  assert.match(
+    queryLiveBlock,
+    /sender\s*!==\s*mainWindow\.webContents/,
+    'query-live-transcript-stream must verify event.sender === mainWindow.webContents',
+  );
+});
+
+test('live queries use the configured provider without putting content or overrides in argv', () => {
+  const queryLiveIndex = MAIN.indexOf("ipcMain.on('query-live-transcript-stream',");
+  const queryLiveBlock = MAIN.slice(queryLiveIndex, queryLiveIndex + 2200);
+  assert.match(
+    queryLiveBlock,
+    /\['query-live-streaming'\]/,
+    'query-live-streaming must use a content-free command argv',
+  );
+  assert.match(
+    queryLiveBlock,
+    /env:\s*\{\s*\.\.\.process\.env,\s*\.\.\.getAiEnv\(\)\s*\}/,
+    'query-live-streaming must inherit the configured provider environment',
+  );
+  assert.doesNotMatch(
+    queryLiveBlock,
+    /--host|--model|-q/,
+    'live query argv must not override provider/model or contain the user question',
+  );
+});
+
+test('live query failures and diagnostics never forward backend or prompt text', () => {
+  const protocolIndex = MAIN.indexOf('function handleLiveQueryProtocolLine(');
+  const cancelIndex = MAIN.indexOf('const pendingQueryCancels = new Map();');
+  assert.ok(protocolIndex >= 0 && cancelIndex > protocolIndex);
+  const liveQueryBlock = MAIN.slice(protocolIndex, cancelIndex);
+  assert.match(liveQueryBlock, /FIXED_LIVE_QUERY_ERRORS\.FAILED/);
+  assert.doesNotMatch(
+    liveQueryBlock,
+    /error:\s*err\.message|error:\s*line\.slice|Process exited with code/,
+    'live query errors must be fixed strings, never raw child-process text',
+  );
+  assert.doesNotMatch(
+    liveQueryBlock,
+    /sendDebugLog|console\.(?:log|warn|error)/,
+    'live query handling must not log transcript, question, or provider output',
+  );
+});
+
+test('live query cancellation is bound to the renderer that started it', () => {
+  const cancelIndex = MAIN.indexOf("ipcMain.on('query-cancel',");
+  assert.ok(cancelIndex >= 0, 'expected query-cancel handler in main.js');
+  const cancelBlock = MAIN.slice(cancelIndex, cancelIndex + 1000);
+  assert.match(
+    cancelBlock,
+    /activeLiveQuery\.sender\s*===\s*sender/,
+    'query-cancel must verify activeLiveQuery.sender === sender',
+  );
+});

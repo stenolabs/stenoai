@@ -1804,16 +1804,87 @@ TITLE:"""
             query_lang_instruction = ""
         return f"""Answer the following question based on the meeting content below (summary, key topics, and transcript).
 Be concise and direct. If the answer requires inference from what was discussed, that's fine.
-Only say you don't know if the topic truly wasn't discussed at all.{query_lang_instruction}
+If the transcript below contains no speech, reply that there is no meeting content yet.{query_lang_instruction}
 
 QUESTION: {question}
 
+TRANSCRIPT:
 {transcript}
 
 ANSWER:"""
 
-    def query_transcript_streaming(self, transcript: str, question: str, language: str = "en"):
-        """Generator that yields text chunks from the LLM for a transcript query."""
+    def query_transcript_streaming_strict(
+        self,
+        transcript: str,
+        question: str,
+        language: str = "en",
+    ):
+        """Yield query chunks while propagating provider and protocol errors."""
+        if not transcript or transcript.strip() == "":
+            raise ValueError("No transcript available to query.")
+        if not question or question.strip() == "":
+            raise ValueError("Please provide a question.")
+
+        prompt = self._build_query_prompt(transcript, question, language)
+
+        if self.ai_provider == "adapter":
+            # Interactive query — user is waiting at the AskBar. Fail fast on
+            # a stalled connection rather than using the summary-grade ceiling.
+            yield from self._adapter_stream(prompt, timeout_seconds=300)
+            return
+
+        if self.ai_provider == "cloud":
+            if self.cloud_provider == "anthropic":
+                with self.anthropic_client.messages.stream(
+                    model=self.model_name,
+                    max_tokens=2048,
+                    messages=[{"role": "user", "content": prompt}],
+                ) as stream:
+                    yield from stream.text_stream
+            elif self.cloud_provider == "bedrock":
+                # Bedrock streaming needs an eventstream parser; match the
+                # existing query path by yielding one bounded-time response.
+                text = self._bedrock_chat(prompt, timeout_seconds=300)
+                if text:
+                    yield text
+            else:
+                response = self.cloud_client.chat.completions.create(
+                    model=self.model_name,
+                    messages=[{"role": "user", "content": prompt}],
+                    stream=True,
+                )
+                for chunk in response:
+                    # Some providers emit usage-only chunks with no choices.
+                    if not chunk.choices:
+                        continue
+                    content = chunk.choices[0].delta.content
+                    if content:
+                        yield content
+            return
+
+        if self.ai_provider == "remote":
+            self.client = ollama.Client(host=self.remote_url)
+        else:
+            self._ensure_ollama_ready()
+            self.client = ollama.Client()
+        stream = self.client.chat(
+            model=self.model_name,
+            messages=[{"role": "user", "content": prompt}],
+            stream=True,
+            options=self._ollama_options(),
+        )
+        for chunk in stream:
+            content = chunk["message"]["content"]
+            if content:
+                yield content
+
+    def query_transcript_streaming(
+        self,
+        transcript: str,
+        question: str,
+        language: str = "en",
+    ):
+        """Yield query chunks and preserve the legacy inline error response."""
         if not transcript or transcript.strip() == "":
             yield "No transcript available to query."
             return
@@ -1821,62 +1892,12 @@ ANSWER:"""
             yield "Please provide a question."
             return
 
-        prompt = self._build_query_prompt(transcript, question, language)
-
         try:
-            if self.ai_provider == "adapter":
-                # Interactive query — user is waiting at the AskBar. Fail
-                # fast on a stalled connection rather than letting it hang
-                # for the summarisation-grade ceiling.
-                yield from self._adapter_stream(prompt, timeout_seconds=300)
-                return
-            if self.ai_provider == "cloud":
-                if self.cloud_provider == "anthropic":
-                    with self.anthropic_client.messages.stream(
-                        model=self.model_name,
-                        max_tokens=2048,
-                        messages=[{"role": "user", "content": prompt}],
-                    ) as stream:
-                        for text in stream.text_stream:
-                            yield text
-                elif self.cloud_provider == "bedrock":
-                    # Same eventstream parsing tradeoff as summarize_streaming
-                    # — fall back to non-streaming Converse and emit the full
-                    # answer in one yield. Interactive query so we keep the
-                    # 300 s ceiling that the OpenAI/Anthropic paths use.
-                    text = self._bedrock_chat(prompt, timeout_seconds=300)
-                    if text:
-                        yield text
-                else:
-                    response = self.cloud_client.chat.completions.create(
-                        model=self.model_name,
-                        messages=[{"role": "user", "content": prompt}],
-                        stream=True,
-                    )
-                    for chunk in response:
-                        # Some providers emit chunk variants with empty choices
-                        # (e.g. usage-only chunks); skip those instead of crashing.
-                        if not chunk.choices:
-                            continue
-                        content = chunk.choices[0].delta.content
-                        if content:
-                            yield content
-            else:
-                if self.ai_provider == "remote":
-                    self.client = ollama.Client(host=self.remote_url)
-                else:
-                    self._ensure_ollama_ready()
-                    self.client = ollama.Client()
-                stream = self.client.chat(
-                    model=self.model_name,
-                    messages=[{"role": "user", "content": prompt}],
-                    stream=True,
-                    options=self._ollama_options(),
-                )
-                for chunk in stream:
-                    content = chunk['message']['content']
-                    if content:
-                        yield content
+            yield from self.query_transcript_streaming_strict(
+                transcript,
+                question,
+                language=language,
+            )
         except Exception as e:
             logger.error(f"Streaming query failed: {e}")
             yield f"\n[Error: {e}]"

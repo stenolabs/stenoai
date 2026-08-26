@@ -69,6 +69,14 @@ const { sweepOrphanedLiveSnapshots } = require('./live-snapshot-sweep');
 const { userNotesFilePath } = require('./notes-file');
 const { buildNoteReadyNotificationOptions, buildTranscriptReadyBody } = require('./notification-copy');
 const { makeLineReader } = require('./backend-stream');
+const {
+  MAX_PROTOCOL_LINE_BYTES,
+  MAX_DECODED_ANSWER_BYTES,
+  LIVE_QUERY_TIMEOUT_MS,
+  FIXED_LIVE_QUERY_ERRORS,
+  validateLiveQueryInputs,
+  buildLiveTranscriptQuerySnapshot,
+} = require('./live-query-helpers');
 // Pure deep-link (stenoai://) parsing/sanitizing lives in ./shortcut-url
 // (unit-tested). The stateful side — window creation, IPC dispatch,
 // notifications — stays here and calls parseShortcutUrl().
@@ -3447,7 +3455,275 @@ ipcMain.handle('query-transcript', async (event, summaryFile, question) => {
   }
 });
 
+
 const activeQueryProcs = new Map();
+let activeLiveQuery = null;
+
+function safeSendQueryPayload(sender, channel, payload) {
+  try {
+    if (sender && !sender.isDestroyed()) sender.send(channel, payload);
+  } catch (_) { /* renderer gone — nothing to notify */ }
+}
+
+function handleLiveQueryProtocolLine(line, queryId, sender, proc, state, cleanup) {
+  if (state.done) return;
+
+  if (line.startsWith('CHAT_CHUNK:')) {
+    try {
+      const chunk = Buffer.from(line.slice('CHAT_CHUNK:'.length), 'base64').toString('utf-8');
+      state.totalDecodedBytes += Buffer.byteLength(chunk, 'utf-8');
+      if (state.totalDecodedBytes > MAX_DECODED_ANSWER_BYTES) {
+        state.done = true;
+        try { proc.kill(); } catch (_) {}
+        safeSendQueryPayload(sender, 'query-done', {
+          queryId,
+          success: false,
+          error: FIXED_LIVE_QUERY_ERRORS.RESPONSE_LIMIT_EXCEEDED,
+        });
+        cleanup();
+        return;
+      }
+      safeSendQueryPayload(sender, 'query-chunk', { queryId, chunk });
+      if (sender.isDestroyed()) {
+        state.done = true;
+        try { proc.kill(); } catch (_) {}
+        cleanup();
+      }
+    } catch (_) { /* ignore malformed chunks */ }
+    return;
+  }
+  if (line === 'CHAT_STREAM_COMPLETE') {
+    if (!state.done) {
+      state.done = true;
+      safeSendQueryPayload(sender, 'query-done', { queryId, success: true });
+      cleanup();
+    }
+    return;
+  }
+  if (line.startsWith('CHAT_STREAM_ERROR:')) {
+    if (!state.done) {
+      state.done = true;
+      safeSendQueryPayload(sender, 'query-done', {
+        queryId,
+        success: false,
+        error: FIXED_LIVE_QUERY_ERRORS.FAILED,
+      });
+      cleanup();
+    }
+  }
+}
+
+ipcMain.on('query-live-transcript-stream', (event, queryId, sessionName, question) => {
+  const sender = event?.sender;
+  const responseQueryId =
+    typeof queryId === 'string' && queryId.length <= 256 ? queryId : '';
+  const done = (payload) =>
+    safeSendQueryPayload(sender, 'query-done', { queryId: responseQueryId, ...payload });
+
+  // Gate to trusted mainWindow.webContents
+  if (!mainWindow || mainWindow.isDestroyed() || !sender || sender !== mainWindow.webContents) {
+    done({ success: false, error: FIXED_LIVE_QUERY_ERRORS.UNAUTHORIZED });
+    return;
+  }
+
+  // Validate inputs
+  const validation = validateLiveQueryInputs({ queryId, sessionName, question });
+  if (!validation.valid) {
+    done({ success: false, error: validation.error });
+    return;
+  }
+
+  // Enforce one active live query per trusted sender / global live path
+  if (activeLiveQuery !== null) {
+    done({ success: false, error: FIXED_LIVE_QUERY_ERRORS.QUERY_ALREADY_ACTIVE });
+    return;
+  }
+
+  const snapshot = buildLiveTranscriptQuerySnapshot({
+    sessionName,
+    activeSessionName: currentRecordingSessionName,
+    systemAudioRecordingActive,
+    liveTranscriptState,
+  });
+  if (snapshot.error) {
+    done({ success: false, error: snapshot.error });
+    return;
+  }
+  if (sender.isDestroyed()) return;
+
+  let proc;
+  try {
+    proc = require('child_process').spawn(
+      getBackendPath(),
+      ['query-live-streaming'],
+      {
+        env: { ...process.env, ...getAiEnv() },
+        cwd: getBackendCwd(),
+        windowsHide: true,
+        stdio: ['pipe', 'pipe', 'pipe'],
+      },
+    );
+  } catch {
+    done({ success: false, error: FIXED_LIVE_QUERY_ERRORS.FAILED });
+    return;
+  }
+
+  const state = { done: false, totalDecodedBytes: 0 };
+  let killTimer = null;
+
+  const cleanup = () => {
+    if (killTimer) {
+      clearTimeout(killTimer);
+      killTimer = null;
+    }
+    try {
+      if (!sender.isDestroyed()) sender.removeListener('destroyed', onSenderDestroyed);
+    } catch (_) {}
+    if (activeLiveQuery && activeLiveQuery.queryId === queryId) {
+      activeLiveQuery = null;
+    }
+  };
+
+  const onSenderDestroyed = () => {
+    if (activeLiveQuery && activeLiveQuery.queryId === queryId) {
+      state.done = true;
+      try { proc.kill(); } catch (_) {}
+      cleanup();
+    }
+  };
+  sender.once('destroyed', onSenderDestroyed);
+
+  if (sender.isDestroyed()) {
+    state.done = true;
+    try { proc.kill(); } catch (_) {}
+    cleanup();
+    return;
+  }
+
+  killTimer = setTimeout(() => {
+    if (!state.done) {
+      state.done = true;
+      try { proc.kill('SIGKILL'); } catch (_) {}
+      safeSendQueryPayload(sender, 'query-done', {
+        queryId,
+        success: false,
+        error: FIXED_LIVE_QUERY_ERRORS.TIMEOUT,
+      });
+      cleanup();
+    }
+  }, LIVE_QUERY_TIMEOUT_MS);
+
+  activeLiveQuery = {
+    queryId,
+    sender,
+    proc,
+    state,
+    killTimer,
+    cleanup,
+  };
+
+  let buf = '';
+
+  proc.stdout.on('data', (data) => {
+    if (state.done) return;
+    buf += data.toString();
+    if (Buffer.byteLength(buf, 'utf-8') > MAX_PROTOCOL_LINE_BYTES && !buf.includes('\n')) {
+      state.done = true;
+      try { proc.kill(); } catch (_) {}
+      safeSendQueryPayload(sender, 'query-done', {
+        queryId,
+        success: false,
+        error: FIXED_LIVE_QUERY_ERRORS.LINE_LIMIT_EXCEEDED,
+      });
+      cleanup();
+      return;
+    }
+
+    const lines = buf.split(/\r?\n/);
+    buf = lines.pop();
+    for (const line of lines) {
+      if (state.done) break;
+      if (Buffer.byteLength(line, 'utf-8') > MAX_PROTOCOL_LINE_BYTES) {
+        state.done = true;
+        try { proc.kill(); } catch (_) {}
+        safeSendQueryPayload(sender, 'query-done', {
+          queryId,
+          success: false,
+          error: FIXED_LIVE_QUERY_ERRORS.LINE_LIMIT_EXCEEDED,
+        });
+        cleanup();
+        return;
+      }
+      handleLiveQueryProtocolLine(line, queryId, sender, proc, state, cleanup);
+    }
+  });
+
+  proc.stderr.on('data', () => {
+    // Backend stderr can contain prompt/transcript context; never log it.
+  });
+
+  proc.stdin.on('error', (err) => {
+    if (err && err.code === 'EPIPE') return;
+    if (!state.done) {
+      state.done = true;
+      try { proc.kill(); } catch (_) {}
+      safeSendQueryPayload(sender, 'query-done', {
+        queryId,
+        success: false,
+        error: FIXED_LIVE_QUERY_ERRORS.FAILED,
+      });
+      cleanup();
+    }
+  });
+
+  try {
+    const payload = JSON.stringify({
+      transcript: snapshot.transcript,
+      question,
+    });
+    proc.stdin.end(payload, 'utf-8');
+  } catch {
+    if (!state.done) {
+      state.done = true;
+      try { proc.kill(); } catch (_) {}
+      safeSendQueryPayload(sender, 'query-done', {
+        queryId,
+        success: false,
+        error: FIXED_LIVE_QUERY_ERRORS.FAILED,
+      });
+      cleanup();
+    }
+  }
+
+  proc.on('close', (code) => {
+    if (!state.done) {
+      const remainder = buf.trim();
+      if (remainder) {
+        handleLiveQueryProtocolLine(remainder, queryId, sender, proc, state, cleanup);
+      }
+    }
+    if (!state.done) {
+      state.done = true;
+      const error = code === 0
+        ? FIXED_LIVE_QUERY_ERRORS.STREAM_CLOSED
+        : FIXED_LIVE_QUERY_ERRORS.FAILED;
+      safeSendQueryPayload(sender, 'query-done', { queryId, success: false, error });
+    }
+    cleanup();
+  });
+
+  proc.on('error', () => {
+    if (!state.done) {
+      state.done = true;
+      safeSendQueryPayload(sender, 'query-done', {
+        queryId,
+        success: false,
+        error: FIXED_LIVE_QUERY_ERRORS.FAILED,
+      });
+    }
+    cleanup();
+  });
+});
 
 // Cancellation intent for streaming queries that are still in their pre-spawn
 // async window. query-transcript-stream now `await`s validateMeetingFilePath
@@ -3459,7 +3735,24 @@ const activeQueryProcs = new Map();
 // that flag on every exit path so it never spawns-then-orphans a proc.
 const pendingQueryCancels = new Map();
 
-ipcMain.on('query-cancel', (_event, queryId) => {
+ipcMain.on('query-cancel', (event, queryId) => {
+  const sender = event?.sender;
+
+  // Live query path: owner-bound cancellation
+  if (activeLiveQuery && activeLiveQuery.queryId === queryId) {
+    if (activeLiveQuery.sender === sender) {
+      console.log(`[LIVE-QUERY] Cancelling queryId=${queryId}`);
+      activeLiveQuery.state.done = true;
+      if (activeLiveQuery.killTimer) clearTimeout(activeLiveQuery.killTimer);
+      try { activeLiveQuery.proc.kill(); } catch (_) {}
+      activeLiveQuery.cleanup();
+      activeLiveQuery = null;
+    } else {
+      console.warn(`[LIVE-QUERY] Rejected cancel for queryId=${queryId} from unauthorized sender`);
+    }
+    return;
+  }
+
   const proc = activeQueryProcs.get(queryId);
   if (proc) {
     console.log(`[QUERY] Cancelling queryId=${queryId}`);
@@ -3486,7 +3779,7 @@ ipcMain.on('query-cancel', (_event, queryId) => {
 });
 
 ipcMain.on('query-transcript-stream', async (event, queryId, summaryFile, question) => {
-  console.log(`[QUERY] IPC received: question="${question.substring(0, 50)}" file="${summaryFile}"`);
+  console.log(`[QUERY] IPC received: questionLen=${String(question || '').length} file="${summaryFile}"`);
   sendDebugLog(`🤖 Streaming query (${String(question || '').length} chars)`);
   const env = { ...process.env, ...getAiEnv() };
 
@@ -3640,9 +3933,8 @@ ipcMain.on('query-transcript-stream', async (event, queryId, summaryFile, questi
     }
   });
 
-  proc.stderr.on('data', (data) => {
-    const msg = data.toString().trim();
-    if (msg) console.log(`[QUERY stderr] ${msg.substring(0, 200)}`);
+  proc.stderr.on('data', () => {
+    // Backend stderr can include prompt/transcript context; never log it.
   });
 
   proc.on('close', (code) => {
@@ -3650,7 +3942,7 @@ ipcMain.on('query-transcript-stream', async (event, queryId, summaryFile, questi
     if (!event.sender.isDestroyed()) {
       event.sender.removeListener('destroyed', onSenderDestroyed);
     }
-    console.log(`[QUERY] Process closed, code=${code}, chunks=${chunkCount}, bufRemainder=${buf.length > 0 ? JSON.stringify(buf.substring(0, 100)) : 'empty'}`);
+    console.log(`[QUERY] Process closed, code=${code}, chunks=${chunkCount}, bufRemainderBytes=${Buffer.byteLength(buf)}`);
     if (buf.trim() === 'CHAT_STREAM_COMPLETE' || buf.trim() === 'STREAM_COMPLETE') {
       console.log(`[QUERY] STREAM_COMPLETE was in buf remainder — sending done now`);
       if (!event.sender.isDestroyed()) event.sender.send('query-done', { queryId, success: true });
@@ -4760,7 +5052,13 @@ ipcMain.on('live-transcribe-stop', () => {
 // and back during recording) to backfill segments before subscribing to
 // `live-transcript-chunk` for the tail. Returns an empty array when no
 // recording is active.
-ipcMain.handle('get-live-transcript-state', async () => {
+ipcMain.handle('get-live-transcript-state', async (event) => {
+  if (!mainWindow || mainWindow.isDestroyed() || !event || event.sender !== mainWindow.webContents) {
+    return {
+      success: false,
+      error: FIXED_LIVE_QUERY_ERRORS.UNAUTHORIZED,
+    };
+  }
   return {
     success: true,
     sessionName: liveTranscriptState.sessionName,

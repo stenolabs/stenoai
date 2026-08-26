@@ -6,8 +6,8 @@ import type { Page } from '@playwright/test';
  * BACKGROUND start (hotkey/tray/auto) does not navigate — it docks the compact
  * Granola-style pill (components/LiveDock.tsx: wave + elapsed +
  * expand chevron + stop glyph) docks LEFT of the Ask bar in the primary
- * bottom-dock row (components/PrimaryDock.tsx), the Ask bar renders
- * visible-but-disabled, and (Parakeet) the pill expands into the
+ * bottom-dock row (components/PrimaryDock.tsx), the Ask bar stays enabled for
+ * live-transcript questions, and (Parakeet) the pill expands into the
  * LiveTranscriptBar panel.
  *
  * There is NO manual pause anywhere — stop ends the segment ("stop is the
@@ -37,7 +37,7 @@ async function startInBackground(page: Page) {
   return pill;
 }
 
-test('recording coexists: pill docks next to a disabled Ask bar, expands, stops to processing', async ({
+test('recording coexists: pill docks next to an enabled live Ask bar, expands, stops to processing', async ({
   launchApp,
 }) => {
   const { page } = await launchApp({ mockIpc: true, env: PILL_ENV });
@@ -50,11 +50,11 @@ test('recording coexists: pill docks next to a disabled Ask bar, expands, stops 
   expect(hash).not.toContain('/meetings/processing');
 
   // Adjacent row: pill + Ask bar share the primary dock row, and the Ask bar
-  // is visible but disabled with the recording hint.
+  // is visible and enabled with the live transcript placeholder.
   await expect(page.getByTestId('primary-dock-row')).toBeVisible();
-  const askInput = page.getByPlaceholder('Chat available after recording');
+  const askInput = page.getByPlaceholder('Ask about the live transcript…');
   await expect(askInput).toBeVisible();
-  await expect(askInput).toBeDisabled();
+  await expect(askInput).toBeEnabled();
 
   // Compact pill = wave + elapsed + expand + stop glyph. NO pause control —
   // stop is the new pause.
@@ -67,13 +67,13 @@ test('recording coexists: pill docks next to a disabled Ask bar, expands, stops 
   await expect(page.getByTestId('generate-notes-dock-button')).toHaveCount(0);
   await expect(page.locator('[data-transcript-bar]')).toHaveCount(0);
 
-  // Chrome routes (settings): the pill docks ALONE — no disabled composer
+  // Chrome routes (settings): the pill docks ALONE — no live composer
   // floating over the Settings page.
   await page.evaluate(() => {
     window.location.hash = '#/settings';
   });
   await expect(page.getByTestId('transcription-pill')).toBeVisible();
-  await expect(page.getByPlaceholder('Chat available after recording')).toHaveCount(0);
+  await expect(page.getByPlaceholder('Ask about the live transcript…')).toHaveCount(0);
 
   // Processing route: recording wins the slot (back-to-back notes) — the
   // pill + Stop stay reachable instead of being displaced by ProcessingDock.
@@ -205,11 +205,11 @@ test('continue-recording: the transcript panel footer offers Resume (Granola-sty
   await expect(resume).toBeVisible();
 
   // Resume starts a recording that appends to this note: the pill takes over
-  // and the Ask bar goes inert.
+  // and the Ask bar switches to the live transcript.
   await resume.click();
   await expect(page.getByTestId('transcription-pill')).toBeVisible();
   await expect(page.getByTestId('resume-recording-button')).toHaveCount(0);
-  await expect(page.getByPlaceholder('Chat available after recording')).toBeDisabled();
+  await expect(page.getByPlaceholder('Ask about the live transcript…')).toBeEnabled();
 });
 
 test('stale note (continued): floating CTA reads Generate notes', async ({ launchApp }) => {

@@ -4028,6 +4028,128 @@ def query_streaming(transcript_file, question):
     except Exception as e:
         print(f"CHAT_STREAM_ERROR:{e}", flush=True)
 
+MAX_LIVE_QUERY_STDIN_BYTES = 1024 * 1024  # 1 MiB
+MAX_LIVE_QUERY_TRANSCRIPT_CHARS = 100_000
+MAX_LIVE_QUERY_QUESTION_CHARS = 2_000
+MAX_LIVE_QUERY_ANSWER_BYTES = 1024 * 1024  # 1 MiB
+
+
+@cli.command(name='query-live-streaming')
+@click.pass_context
+def query_live_streaming(ctx):
+    """Answer a question from the finalized live transcript.
+
+    Reads bounded JSON ``{"transcript": "...", "question": "..."}`` from
+    stdin and uses the same persisted provider and model as meeting summaries.
+    Streams ``CHAT_CHUNK:<base64>`` lines, then ``CHAT_STREAM_COMPLETE`` (or a
+    fixed ``CHAT_STREAM_ERROR`` on failure). Transcript and question content
+    never enters argv, logs, or error text.
+    """
+    import sys
+    import json
+    import base64
+    # This subprocess emits a machine protocol only. Provider/config diagnostics
+    # stay suppressed so no transcript or question content can reach stderr.
+    previous_logging_disable = logging.root.manager.disable
+    logging.disable(logging.CRITICAL)
+    ctx.call_on_close(lambda: logging.disable(previous_logging_disable))
+
+    try:
+        input_stream = getattr(sys.stdin, "buffer", sys.stdin)
+        raw_payload = input_stream.read(MAX_LIVE_QUERY_STDIN_BYTES + 1)
+        if isinstance(raw_payload, str):
+            raw_payload = raw_payload.encode("utf-8")
+    except Exception:
+        raw_payload = b""
+
+    if not raw_payload or not raw_payload.strip():
+        print(
+            "CHAT_STREAM_ERROR:Empty live transcript (nothing to query)",
+            flush=True,
+        )
+        sys.exit(1)
+
+    if len(raw_payload) > MAX_LIVE_QUERY_STDIN_BYTES:
+        print(
+            "CHAT_STREAM_ERROR:Live query payload exceeds maximum length",
+            flush=True,
+        )
+        sys.exit(1)
+
+    try:
+        data = json.loads(raw_payload)
+    except Exception:
+        print(
+            "CHAT_STREAM_ERROR:Invalid live query payload",
+            flush=True,
+        )
+        sys.exit(1)
+
+    if not isinstance(data, dict):
+        print(
+            "CHAT_STREAM_ERROR:Invalid live query payload",
+            flush=True,
+        )
+        sys.exit(1)
+
+    transcript = data.get("transcript")
+    question = data.get("question")
+
+    if not isinstance(transcript, str) or not transcript.strip():
+        print(
+            "CHAT_STREAM_ERROR:Empty live transcript (nothing to query)",
+            flush=True,
+        )
+        sys.exit(1)
+
+    if not isinstance(question, str) or not question.strip():
+        print(
+            "CHAT_STREAM_ERROR:Empty live query question",
+            flush=True,
+        )
+        sys.exit(1)
+
+    if len(transcript) > MAX_LIVE_QUERY_TRANSCRIPT_CHARS:
+        print(
+            "CHAT_STREAM_ERROR:Live transcript exceeds maximum length",
+            flush=True,
+        )
+        sys.exit(1)
+
+    if len(question) > MAX_LIVE_QUERY_QUESTION_CHARS:
+        print(
+            "CHAT_STREAM_ERROR:Live query question exceeds maximum length",
+            flush=True,
+        )
+        sys.exit(1)
+
+    from src.config import get_config
+
+    # Reuse the same language resolution the query prompt uses so the live
+    # answer respects the user's language pin / detection like every other path.
+    language = resolve_output_language(
+        get_config().get_language(), None, transcript.strip()
+    )
+
+    try:
+        summarizer = OllamaSummarizer()
+        total_answer_bytes = 0
+        for chunk in summarizer.query_transcript_streaming_strict(
+            transcript.strip(), question.strip(), language=language
+        ):
+            if not isinstance(chunk, str):
+                raise TypeError("Live query provider returned a non-text chunk")
+            chunk_bytes = chunk.encode('utf-8')
+            total_answer_bytes += len(chunk_bytes)
+            if total_answer_bytes > MAX_LIVE_QUERY_ANSWER_BYTES:
+                raise ValueError("Live query answer exceeded size limit")
+            encoded = base64.b64encode(chunk_bytes).decode('ascii')
+            sys.stdout.write(f"CHAT_CHUNK:{encoded}\n")
+            sys.stdout.flush()
+        print("CHAT_STREAM_COMPLETE", flush=True)
+    except Exception:
+        print("CHAT_STREAM_ERROR:Live query failed", flush=True)
+        sys.exit(1)
 
 def _chat_corpus_char_budget(ai_provider: str, model: str) -> int:
     """Char budget for the cross-note chat corpus, sized to the active model.

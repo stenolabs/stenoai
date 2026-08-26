@@ -1495,6 +1495,64 @@ function install({ ipcMain }) {
     }
     return originalHandle(channel, fn);
   };
+
+  const originalOn = ipcMain.on.bind(ipcMain);
+  const activeLiveStreams = new Map();
+  ipcMain.on = (channel, listener) => {
+    if (channel === 'query-live-transcript-stream') {
+      return originalOn(channel, (event, queryId, sessionName, question) => {
+        if (process.env.STENOAI_E2E_MOCK_LIVE_STREAM === '1') {
+          const sender = event.sender;
+          if (!queryId || typeof queryId !== 'string') return;
+          if (sender.isDestroyed()) return;
+
+          if (activeLiveStreams.has(queryId)) {
+            for (const t of activeLiveStreams.get(queryId)) clearTimeout(t);
+            activeLiveStreams.delete(queryId);
+          }
+
+          const timers = [];
+          timers.push(
+            setTimeout(() => {
+              if (!sender.isDestroyed()) {
+                sender.send('query-chunk', { queryId, chunk: 'The team agreed to ' });
+              }
+            }, 50),
+          );
+          timers.push(
+            setTimeout(() => {
+              if (!sender.isDestroyed()) {
+                sender.send('query-chunk', { queryId, chunk: 'ship on Friday.' });
+              }
+            }, 150),
+          );
+          timers.push(
+            setTimeout(() => {
+              if (!sender.isDestroyed()) {
+                sender.send('query-done', { queryId, success: true });
+              }
+              activeLiveStreams.delete(queryId);
+            }, 250),
+          );
+          activeLiveStreams.set(queryId, timers);
+          return;
+        }
+        return listener(event, queryId, sessionName, question);
+      });
+    }
+
+    if (channel === 'query-cancel') {
+      return originalOn(channel, (event, queryId) => {
+        if (activeLiveStreams.has(queryId)) {
+          for (const t of activeLiveStreams.get(queryId)) clearTimeout(t);
+          activeLiveStreams.delete(queryId);
+        }
+        return listener(event, queryId);
+      });
+    }
+
+    return originalOn(channel, listener);
+  };
 }
 
 module.exports = { install };
