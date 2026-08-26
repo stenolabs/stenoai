@@ -16,6 +16,7 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const { execFileSync, spawn } = require('child_process');
+const { measurePeakRms } = require('../../scripts/measure-pcm');
 
 const APP_DIR = path.resolve(__dirname, '..');
 
@@ -103,21 +104,8 @@ async function main() {
     execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-i', webmPath, '-af', 'pan=mono|c0=c0', '-f', 's16le', lPath]);
     execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-i', webmPath, '-af', 'pan=mono|c0=c1', '-f', 's16le', rPath]);
 
-    const measure = (p) => {
-      const buf = fs.readFileSync(p);
-      const n = buf.length / 2;
-      let peak = 0;
-      let sumSq = 0;
-      for (let i = 0; i < n; i++) {
-        const s = buf.readInt16LE(i * 2);
-        peak = Math.max(peak, Math.abs(s));
-        sumSq += s * s;
-      }
-      return { peak, rms: Math.sqrt(sumSq / n), samples: n };
-    };
-
-    const left = measure(lPath);
-    const right = measure(rPath);
+    const left = measurePeakRms(fs.readFileSync(lPath));
+    const right = measurePeakRms(fs.readFileSync(rPath));
     console.log('L (mic, faked device):', left);
     console.log('R (system loopback, real pw-record):', right);
 

@@ -5,7 +5,8 @@
 
 const fs = require('fs');
 const path = require('path');
-const { isLinuxLoopbackSupported, getDefaultSinkName, startLoopbackCapture } = require('../app/linux-loopback');
+const { isLinuxLoopbackSupported, startLoopbackCapture } = require('../app/linux-loopback');
+const { measurePeakRms } = require('./measure-pcm');
 
 const DURATION_MS = 2500;
 const OUT_PATH = process.argv[2] || path.join(require('os').tmpdir(), 'steno-linux-loopback-poc.pcm');
@@ -18,14 +19,11 @@ async function main() {
     process.exit(1);
   }
 
-  const sinkName = getDefaultSinkName();
-  console.log('default sink:', sinkName);
-
   const out = fs.createWriteStream(OUT_PATH);
   const capture = startLoopbackCapture({
-    sinkName,
     onError: (err) => console.error('capture error:', err),
   });
+  console.log('default sink:', capture.target);
   capture.stdout.pipe(out);
 
   console.log(`capturing for ${DURATION_MS}ms -> ${OUT_PATH}`);
@@ -38,18 +36,9 @@ async function main() {
   const expectedBytes = capture.sampleRate * bytesPerSample * (DURATION_MS / 1000);
   console.log(`captured ${size} bytes (expected ~${Math.round(expectedBytes)} for ${DURATION_MS}ms @ ${capture.sampleRate}Hz/${capture.channels}ch)`);
 
-  // Peak/RMS over the raw s16le samples, proving this isn't just a zeroed
-  // buffer — same check used to validate the manual pw-record test.
-  const buf = fs.readFileSync(OUT_PATH);
-  let peak = 0;
-  let sumSq = 0;
-  const n = buf.length / 2;
-  for (let i = 0; i < n; i++) {
-    const s = buf.readInt16LE(i * 2);
-    peak = Math.max(peak, Math.abs(s));
-    sumSq += s * s;
-  }
-  const rms = Math.sqrt(sumSq / n);
+  // Proves this isn't just a zeroed buffer — same check used to validate
+  // the manual pw-record test.
+  const { peak, rms } = measurePeakRms(fs.readFileSync(OUT_PATH));
   console.log(`peak amplitude: ${peak}/32768  rms: ${rms.toFixed(1)}`);
   console.log('PASS: captured non-empty PCM from the default sink monitor with no portal/consent dialog.');
 }

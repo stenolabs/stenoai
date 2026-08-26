@@ -1,4 +1,4 @@
-// Linux system-audio loopback — feasibility spike (see PR description / #TODO).
+// Linux system-audio loopback.
 //
 // macOS captures system audio via a CoreAudio Process Tap and Windows via
 // Chromium's WASAPI loopback, both reached through the renderer's
@@ -14,25 +14,11 @@
 // capture path entirely: PipeWire exposes every sink's "monitor" ports to any
 // client with normal desktop-session access (the same mechanism PulseAudio's
 // ".monitor" sources used), so a plain audio-only capture needs no portal
-// and shows no picker. Confirmed working via manual `pw-record` invocation on
-// Ubuntu 26.04 LTS (GNOME/Wayland, PipeWire 1.6.2) before writing this.
-//
-// Scope of this spike: prove device resolution + capture + clean
-// start/stop from Node, matching the shape main.js would need. Deliberately
-// NOT wired into isSystemAudioSupported() / useSystemAudioCapture.ts yet —
-// this module isn't used anywhere in the app. Real integration needs:
-//   1. main.js: call isLinuxLoopbackSupported() from isSystemAudioSupported()
-//      instead of `return false`.
-//   2. main.js: IPC handlers (start/stop) around startLoopbackCapture(),
-//      pushing PCM chunks to the renderer over the existing IPC bridge.
-//   3. useSystemAudioCapture.ts: on Linux, skip getDisplayMedia entirely and
-//      instead feed incoming IPC chunks into a MediaStreamTrackGenerator,
-//      wrapped in a MediaStream so it drops into the SAME
-//      createMediaStreamSource(sysStream) call already used for mic/mac/
-//      Windows — the merge/mix/record graph below that point is
-//      platform-agnostic and needs no changes.
-// That renderer-side bridging (step 3) is real, non-trivial work — a
-// reasonable next slice, not part of this feasibility spike.
+// and shows no picker. main.js wires this into isSystemAudioSupported() and
+// IPC handlers (start-linux-loopback/stop-linux-loopback); the renderer side
+// (useSystemAudioCapture.ts + lib/linuxLoopbackStream.ts) wraps the incoming
+// PCM in a MediaStreamTrackGenerator so it drops into the SAME
+// createMediaStreamSource(sysStream) call already used for mic/mac/Windows.
 
 const { spawn, spawnSync } = require('child_process');
 

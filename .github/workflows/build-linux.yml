@@ -5,11 +5,6 @@ name: Build Linux installer
 # build-windows.yml's shape and trigger. Linux is not an officially shipped
 # platform yet (no release-attach step here, unlike Windows) — this job exists
 # to catch backend/packaging breakage on Linux before that decision is made.
-#
-# Known gap carried over from build-windows.yml's own comments: Ollama's
-# Linux tarball ships CUDA/ROCm runner libs that stenoai.spec only prunes on
-# Windows (_OLLAMA_GPU_MARKERS gated to _IS_WINDOWS) — this build is therefore
-# several GB larger than it needs to be until that gate is extended to Linux.
 
 on:
   workflow_dispatch:
