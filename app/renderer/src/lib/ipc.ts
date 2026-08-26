@@ -1070,6 +1070,11 @@ export interface StenoaiBridge {
     openSystemAudioFile: RequestFn<[name: string], Result<{ filePath: string }>>;
     appendSystemAudioChunk: RequestFn<[bytes: Uint8Array], Result<Record<string, never>>>;
     closeSystemAudioFile: RequestFn<[], Result<{ filePath: string }>>;
+    /** Linux-only: starts a pw-record subprocess in main capturing the default
+     *  sink's monitor (see app/linux-loopback.js). PCM arrives via
+     *  on.linuxLoopbackChunk, not through getDisplayMedia. */
+    startLinuxLoopback: RequestFn<[], Result<{ sampleRate: number; channels: number }>>;
+    stopLinuxLoopback: RequestFn<[], Result<Record<string, never>>>;
     /** Report a renderer-side capture failure so main can surface a native
      *  notification (a failed start would otherwise be silent). Fire-and-forget. */
     reportCaptureError: SendFn<[message: string]>;
@@ -1379,6 +1384,10 @@ export interface StenoaiBridge {
     liveTranscriptReady: Subscribe<LiveTranscriptReadyEvent>;
     liveTranscriptChunk: Subscribe<LiveTranscriptChunkEvent>;
     liveTranscriptError: Subscribe<LiveTranscriptErrorEvent>;
+    /** Raw interleaved s16 PCM from the Linux loopback capture — see
+     *  recording.startLinuxLoopback. Electron serialises the main-side Buffer
+     *  as a Uint8Array on this side of the bridge. */
+    linuxLoopbackChunk: Subscribe<Uint8Array>;
     updateAvailable: Subscribe<UpdateAvailableEvent>;
     updateDownloadProgress: Subscribe<UpdateProgressEvent>;
     updateDownloaded: Subscribe<UpdateDownloadedEvent>;

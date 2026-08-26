@@ -65,6 +65,7 @@ const { describeUpdateError, updateErrorPhase } = require('./update-error-copy')
 const { isOSUpdateEligible, MIN_MACOS_FOR_AUTOUPDATE } = require('./update-os-gate');
 const processingLog = require('./processing-log');
 const { isMeetingApp, allowsDeviceLevelFallback, isMacos14Plus } = require('./meeting-detect');
+const { isLinuxLoopbackSupported, startLoopbackCapture } = require('./linux-loopback');
 const { sweepOrphanedLiveSnapshots } = require('./live-snapshot-sweep');
 const { userNotesFilePath } = require('./notes-file');
 const { buildNoteReadyNotificationOptions, buildTranscriptReadyBody } = require('./notification-copy');
@@ -261,7 +262,11 @@ function isAutoDetectSupported() {
 // Whether system-audio (loopback) capture is available on this OS at all.
 // macOS: CoreAudio Process Tap (14.4+). Windows: electron-audio-loopback uses
 // Chromium's WASAPI loopback on Windows 10+ (both Win10 and Win11 report major
-// version 10). Linux: not wired. Drives the Settings/MainToolbar toggle.
+// version 10). Linux: a PipeWire monitor-port capture (see ./linux-loopback.js)
+// bypassing Chromium's getDisplayMedia path entirely — that path would route
+// through xdg-desktop-portal's ScreenCast picker on Wayland just to get a
+// throwaway video track, a real UX regression versus mac/Windows showing no
+// dialog at all. Drives the Settings/MainToolbar toggle.
 function isSystemAudioSupported() {
   if (process.platform === 'darwin') return isCoreAudioTapSupported();
   if (process.platform === 'win32') {
@@ -272,6 +277,7 @@ function isSystemAudioSupported() {
       return true; // assume a modern Windows if the version probe fails
     }
   }
+  if (process.platform === 'linux') return isLinuxLoopbackSupported();
   return false;
 }
 
@@ -9467,6 +9473,54 @@ ipcMain.handle('close-system-audio-file', async () => {
     sendDebugLog(`Error closing system audio file: ${error.message}`);
     return { success: false, error: error.message };
   }
+});
+
+// Linux system-audio loopback. Unlike mac/Windows (Chromium's getDisplayMedia,
+// intercepted below via setDisplayMediaRequestHandler), Linux never goes
+// through Chromium's capture path at all — see ./linux-loopback.js for why.
+// Instead this spawns `pw-record` directly and pushes raw PCM to the renderer,
+// which reconstructs a MediaStream via MediaStreamTrackGenerator (see
+// useSystemAudioCapture.ts) and feeds it into the SAME mix graph mac/Windows
+// use past this point. Module-level like activeSysAudioWriteStream above:
+// there is only ever one recording at a time.
+let activeLinuxLoopback = null;
+
+ipcMain.handle('start-linux-loopback', async () => {
+  try {
+    const capture = startLoopbackCapture({
+      onError: (err) => sendDebugLog(`[linux-loopback] capture error: ${err.message}`),
+    });
+    // Forwarded as-is: AudioData on the renderer side (linuxLoopbackStream.ts)
+    // computes numberOfFrames per chunk, so there's no fixed-size framing to
+    // maintain here.
+    capture.stdout.on('data', (chunk) => {
+      mainWindow?.webContents.send('linux-loopback-chunk', chunk);
+    });
+    capture.proc.on('exit', (code, signal) => {
+      // A stop() call sets activeLinuxLoopback = null itself before killing the
+      // process, so only log an unexpected exit (pw-record crashed, PipeWire
+      // restarted underneath it) — not the normal stop path.
+      if (activeLinuxLoopback?.proc === capture.proc) {
+        sendDebugLog(`[linux-loopback] pw-record exited unexpectedly (code=${code}, signal=${signal})`);
+        activeLinuxLoopback = null;
+      }
+    });
+    activeLinuxLoopback = capture;
+    sendDebugLog(`[linux-loopback] capturing from ${capture.target}`);
+    return { success: true, sampleRate: capture.sampleRate, channels: capture.channels };
+  } catch (error) {
+    sendDebugLog(`[linux-loopback] start failed: ${error.message}`);
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('stop-linux-loopback', async () => {
+  const capture = activeLinuxLoopback;
+  activeLinuxLoopback = null;
+  if (!capture) return { success: true };
+  await capture.stop();
+  sendDebugLog('[linux-loopback] stopped');
+  return { success: true };
 });
 
 // A failed renderer-side capture (mic permission denied, no audio device)

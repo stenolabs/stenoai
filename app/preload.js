@@ -121,6 +121,11 @@ const stenoai = {
     openSystemAudioFile: (name) => invoke('open-system-audio-file', name),
     appendSystemAudioChunk: (bytes) => invoke('append-system-audio-chunk', bytes),
     closeSystemAudioFile: () => invoke('close-system-audio-file'),
+    // Linux-only loopback path (see app/linux-loopback.js) — starts a
+    // pw-record subprocess in main and streams PCM back via
+    // on.linuxLoopbackChunk instead of going through getDisplayMedia.
+    startLinuxLoopback: () => invoke('start-linux-loopback'),
+    stopLinuxLoopback: () => invoke('stop-linux-loopback'),
     reportCaptureError: (message) => send('recording-capture-error', message),
     processSystemAudio: (filePath, name) => invoke('process-system-audio-recording', filePath, name),
     processFile: (filePath, name) => invoke('process-recording', filePath, name),
@@ -416,6 +421,7 @@ const stenoai = {
     liveTranscriptReady: (cb) => subscribe('live-transcript-ready', cb),
     liveTranscriptChunk: (cb) => subscribe('live-transcript-chunk', cb),
     liveTranscriptError: (cb) => subscribe('live-transcript-error', cb),
+    linuxLoopbackChunk: (cb) => subscribe('linux-loopback-chunk', cb),
     updateAvailable: (cb) => subscribe('update-available', cb),
     updateDownloadProgress: (cb) => subscribe('update-download-progress', cb),
     updateDownloaded: (cb) => subscribe('update-downloaded', cb),

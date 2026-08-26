@@ -1,0 +1,125 @@
+name: Build Linux installer
+
+# End-to-end Linux build: PyInstaller backend (onnx-asr Parakeet + whisper.cpp,
+# same CPU backend as Windows) + Electron .deb/AppImage. Mirrors
+# build-windows.yml's shape and trigger. Linux is not an officially shipped
+# platform yet (no release-attach step here, unlike Windows) — this job exists
+# to catch backend/packaging breakage on Linux before that decision is made.
+#
+# Known gap carried over from build-windows.yml's own comments: Ollama's
+# Linux tarball ships CUDA/ROCm runner libs that stenoai.spec only prunes on
+# Windows (_OLLAMA_GPU_MARKERS gated to _IS_WINDOWS) — this build is therefore
+# several GB larger than it needs to be until that gate is extended to Linux.
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - 'website/**'
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: read
+
+jobs:
+  build-linux:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: app/package-lock.json
+
+      - name: Get version from package.json
+        id: package_version
+        working-directory: app
+        run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          # requirements.txt uses sys_platform markers — parakeet-mlx is darwin-only,
+          # onnx-asr installs here, same as Windows. pip resolves the right set.
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Download bundled binaries (Ollama Linux + ffmpeg)
+        run: |
+          chmod +x scripts/download-ollama.sh
+          ./scripts/download-ollama.sh
+
+      - name: List bin/ contents
+        run: find bin -maxdepth 3 -type f -exec ls -lh {} \;
+
+      - name: Build Python backend with PyInstaller
+        run: |
+          pyinstaller stenoai.spec --noconfirm
+          ls -lh dist/stenoai
+
+      - name: Smoke-test bundled CLI
+        run: |
+          ./dist/stenoai/stenoai --help
+          # setup-check exits non-zero when no model is pre-downloaded, expected
+          # on a fresh runner — this just confirms the bundle loads and runs to
+          # completion without an import/native-lib crash.
+          ./dist/stenoai/stenoai setup-check || echo "setup-check exited non-zero (expected when models not downloaded yet)"
+
+      - name: Verify Parakeet ONNX backend wires up
+        run: |
+          # On Linux (same as Windows) the dispatcher must resolve to the ONNX
+          # model id (istupakov/parakeet-tdt-0.6b-v3-onnx), not the mac-only MLX
+          # one. Doesn't download weights — is_installed() only checks the HF cache.
+          out=$(./dist/stenoai/stenoai parakeet-status)
+          echo "parakeet-status: $out"
+          echo "$out" | grep -q onnx || { echo "Expected ONNX-backed Parakeet model id, got: $out"; exit 1; }
+
+      - name: Verify ONNX Runtime native libs load + run
+        run: |
+          # parakeet-status only checks a model-id string and never builds an
+          # InferenceSession, so it can't catch a missing/broken onnxruntime
+          # native lib. onnx-selftest loads the bundled Silero VAD model and runs
+          # one real inference, proving the native session libs (shared with the
+          # onnx-asr Parakeet path) actually load and execute in the frozen
+          # bundle. No network / weight download required.
+          out=$(./dist/stenoai/stenoai onnx-selftest)
+          echo "onnx-selftest: $out"
+          echo "$out" | grep -q ONNX_SELFTEST_OK || { echo "ONNX Runtime self-test failed: $out"; exit 1; }
+
+      - name: Install Electron dependencies
+        working-directory: app
+        run: npm ci
+
+      - name: Build Electron installer (unsigned)
+        working-directory: app
+        run: |
+          npm run build:renderer
+          npx electron-builder --linux --publish=never
+
+      - name: Show built artifacts
+        if: always()
+        run: ls -lh app/dist
+
+      - name: Upload Linux artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stenoai-linux-${{ steps.package_version.outputs.version }}
+          path: |
+            app/dist/*.deb
+            app/dist/*.AppImage
+          retention-days: 14
+          if-no-files-found: warn

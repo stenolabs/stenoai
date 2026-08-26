@@ -122,7 +122,9 @@ case "$(uname -s)" in
         OLLAMA_FILE="ollama-darwin.tgz"
         ;;
     Linux)
-        OLLAMA_FILE="ollama-linux-amd64.tgz"
+        # Ollama dropped the .tgz asset; releases now ship .tar.zst (and a
+        # separate -rocm variant we don't want).
+        OLLAMA_FILE="ollama-linux-amd64.tar.zst"
         ;;
     MINGW*|MSYS*|CYGWIN*)
         OLLAMA_FILE="ollama-windows-amd64.zip"
@@ -155,6 +157,8 @@ find . -maxdepth 3 -type f \( -name ollama -o -name ollama.exe \) -exec mv {} {}
 # Extract based on file type
 if [[ "$OLLAMA_FILE" == *.zip ]]; then
     unzip -o "$OLLAMA_FILE"
+elif [[ "$OLLAMA_FILE" == *.zst ]]; then
+    tar --zstd -xf "$OLLAMA_FILE"
 else
     tar -xzf "$OLLAMA_FILE"
 fi

@@ -195,6 +195,15 @@
       "artifactName": "stenoAI-windows-${version}-${arch}.${ext}",
       "compression": "store"
     },
+    "linux": {
+      "category": "AudioVideo",
+      "maintainer": "Steno Team <replace-me@stenolabs.example>",
+      "target": [
+        { "target": "deb", "arch": ["x64"] },
+        { "target": "AppImage", "arch": ["x64"] }
+      ],
+      "artifactName": "stenoAI-linux-${version}-${arch}.${ext}"
+    },
     "nsis": {
       "oneClick": false,
       "perMachine": false,
