@@ -180,9 +180,6 @@ Have questions or suggestions? [Join our Discord](https://discord.gg/DZ6vcQnxxu)
 ## Future Roadmap
 
 ### Enhanced Features
-- Live transcription during recording
-- NVIDIA Parakeet as a transcription engine option
-- Editing notes after processing
 - Windows: GA hardening (alpha already ships on Windows 10/11 x64)
 
 ## Installation

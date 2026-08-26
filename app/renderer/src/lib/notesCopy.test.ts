@@ -17,8 +17,8 @@ const sections: NotesCopySections = {
     { title: 'Hiring' },
   ],
   keyPoints: ['Ship v2 in July'],
-  actionItems: ['Ben: draft the announcement'],
-  participants: ['Ben', 'Ruzin'],
+  actionItems: ['Casey Example: draft the announcement'],
+  participants: ['Casey Example', 'Morgan Example'],
 };
 
 describe('buildNotesCopyText', () => {
@@ -40,10 +40,10 @@ describe('buildNotesCopyText', () => {
         '- Ship v2 in July',
         '',
         'ACTION ITEMS',
-        '- Ben: draft the announcement',
+        '- Casey Example: draft the announcement',
         '',
         'PARTICIPANTS',
-        'Ben, Ruzin',
+        'Casey Example, Morgan Example',
       ].join('\n'),
     );
   });

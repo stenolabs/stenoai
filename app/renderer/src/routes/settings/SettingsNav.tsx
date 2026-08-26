@@ -7,6 +7,7 @@ import {
   Plug,
   Settings2,
   Sparkles,
+  Users,
   Wrench,
   type LucideIcon,
 } from 'lucide-react';
@@ -15,11 +16,12 @@ import { cn } from '@/lib/utils';
 // The full set of nav rail destinations. Distinct from Settings.tsx's
 // deep-linkable TabId, which additionally accepts the legacy 'transcription'
 // id as an alias that resolves onto 'ai' — the nav rail itself only ever
-// renders/highlights these seven.
+// renders/highlights the ids listed here.
 export type SettingsTabId =
   | 'general'
   | 'ai'
   | 'templates'
+  | 'people'
   | 'organisation'
   | 'integrations'
   | 'advanced'
@@ -43,6 +45,7 @@ const NAV_GROUPS: NavGroup[] = [
       { id: 'general', label: 'Preferences', icon: Settings2 },
       { id: 'ai', label: 'AI', icon: Sparkles },
       { id: 'templates', label: 'Templates', icon: LayoutTemplate },
+      { id: 'people', label: 'People', icon: Users },
     ],
   },
   {

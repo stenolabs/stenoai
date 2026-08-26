@@ -26,6 +26,7 @@ export const settingsKeys = {
   // factory like every other setting rather than two hand-written arrays.
   keepRecordings: () => [...settingsKeys.all, 'keepRecordings'] as const,
   autoSummarize: () => [...settingsKeys.all, 'autoSummarize'] as const,
+  identityMatching: () => [...settingsKeys.all, 'identityMatchingEnabled'] as const,
   obsidianSync: () => [...settingsKeys.all, 'obsidianSync'] as const,
   obsidianVaultPath: () => [...settingsKeys.all, 'obsidianVaultPath'] as const,
   obsidianConflicts: () => [...settingsKeys.all, 'obsidianConflicts'] as const,
@@ -403,6 +404,20 @@ export function useSetAutoInstallWhenIdle() {
     onSuccess: () =>
       qc.invalidateQueries({ queryKey: [...settingsKeys.all, 'autoInstallWhenIdle'] }),
   });
+}
+
+export function useIdentityMatchingEnabledSetting() {
+  return useQuery({
+    queryKey: settingsKeys.identityMatching(),
+    queryFn: async () =>
+      unwrap(await ipc().settings.getIdentityMatchingEnabled()).identity_matching_enabled,
+  });
+}
+
+export function useSetIdentityMatchingEnabled() {
+  return useToggleSetting(settingsKeys.identityMatching(), async (v) =>
+    unwrap(await ipc().settings.setIdentityMatchingEnabled(v)),
+  );
 }
 
 export function useAutoSummarizeSetting() {

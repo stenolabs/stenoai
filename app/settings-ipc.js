@@ -71,6 +71,22 @@ function registerSettingsIpc({ ipcMain, runPythonScript, sendDebugLog }) {
     } catch (e) { return { success: false, error: e.message }; }
   });
 
+  ipcMain.handle('get-identity-matching-enabled', async () => {
+    try {
+      const result = await runPythonScript('simple_recorder.py', ['get-identity-matching-enabled'], true);
+      const jsonData = JSON.parse(result.trim());
+      return { success: true, ...jsonData };
+    } catch (e) { return { success: false, error: e.message }; }
+  });
+
+  ipcMain.handle('set-identity-matching-enabled', async (event, enabled) => {
+    try {
+      const result = await runPythonScript('simple_recorder.py', ['set-identity-matching-enabled', enabled.toString()]);
+      const jsonData = JSON.parse(result.trim());
+      return { success: true, ...jsonData };
+    } catch (e) { return { success: false, error: e.message }; }
+  });
+
   ipcMain.handle('get-silence-auto-stop', async () => {
     try {
       const result = await runPythonScript('simple_recorder.py', ['get-silence-auto-stop'], true);

@@ -39,6 +39,20 @@ SUPPORTED_PARAKEET_MODELS: dict[str, dict] = {
     },
 }
 
+_REQUIRED_SNAPSHOT_FILES: dict[str, tuple[str, ...]] = {
+    "mlx-community/parakeet-tdt-0.6b-v3": (
+        "config.json",
+        "model.safetensors",
+    ),
+    "istupakov/parakeet-tdt-0.6b-v3-onnx": (
+        "config.json",
+        "encoder-model.int8.onnx",
+        "decoder_joint-model.int8.onnx",
+        "vocab.txt",
+    ),
+}
+
+
 
 def _hf_cache_dir_for(model_id: str) -> Path:
     """HuggingFace hub cache directory for a given repo id.
@@ -70,24 +84,40 @@ def _hf_cache_dir_for(model_id: str) -> Path:
 
 
 def is_installed(model_id: str = DEFAULT_MODEL_ID) -> bool:
-    """Return True iff the model has at least one downloaded snapshot on disk.
+    """Return True iff a complete runtime snapshot is present on disk.
 
-    Checks the HuggingFace cache directly so we don't import parakeet-mlx
-    (and trigger model loading) just to answer the question — Settings polls
-    this on tab load and the import cost would visibly stall the UI.
+    HuggingFace creates the snapshot directory and config symlink before a
+    large weight download finishes. Treating any non-empty snapshot as
+    installed makes the next backend process force ``HF_HUB_OFFLINE=1``, so it
+    can neither resume the partial download nor load the missing weights.
+    Require every file the selected runtime opens instead.
 
-    MUST stay free of any ``huggingface_hub`` import: ``maybe_enable_offline``
-    sets ``HF_HUB_OFFLINE`` and relies on the hub being import-deferred until
-    ``_load_model`` runs. Importing the hub here would snapshot the env too
-    early and silently defeat offline mode.
+    This stays free of ``huggingface_hub`` imports because
+    ``maybe_enable_offline`` must set its environment before the hub is first
+    imported.
     """
-    cache_dir = _hf_cache_dir_for(model_id)
-    snapshots = cache_dir / "snapshots"
+    required_files = _REQUIRED_SNAPSHOT_FILES.get(model_id)
+    if required_files is None:
+        return False
+
+    snapshots = _hf_cache_dir_for(model_id) / "snapshots"
     if not snapshots.is_dir():
         return False
-    for snap in snapshots.iterdir():
-        if snap.is_dir() and any(snap.iterdir()):
-            return True
+    try:
+        for snapshot in snapshots.iterdir():
+            if not snapshot.is_dir():
+                continue
+            try:
+                if all(
+                    (snapshot / name).is_file()
+                    and (snapshot / name).stat().st_size > 0
+                    for name in required_files
+                ):
+                    return True
+            except OSError:
+                continue
+    except OSError:
+        return False
     return False
 
 
@@ -101,13 +131,9 @@ def maybe_enable_offline(model_id: str = DEFAULT_MODEL_ID) -> bool:
     of ``_load_model``, immediately before importing parakeet-mlx / onnx-asr,
     which is the latest-safe and only symmetric point.
 
-    Gated on ``is_installed`` so a first-ever run (model absent) is left
-    online and ``download`` proceeds normally — offline-loading a
-    just-downloaded model is correct. Edge case: ``is_installed`` only checks
-    that a snapshot dir is non-empty, so a corrupt/partial snapshot would read
-    as installed and offline mode would then block a repair re-fetch. Low
-    probability and accepted — the existing code already trusts
-    ``is_installed``.
+    Gated on ``is_installed`` so a first-ever or interrupted download is left
+    online and can finish. Once every runtime-required file is present, loading
+    switches to fully offline resolution.
 
     ``setdefault`` so an operator who explicitly exported ``HF_HUB_OFFLINE=0``
     for debugging isn't overridden.

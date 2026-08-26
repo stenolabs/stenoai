@@ -76,9 +76,20 @@ const ARGS_ECHO_REDACTORS = {
   'test-remote-ollama': redactRest,
   'set-cloud-api-url': redactRest,
   'set-openai-asr-config': redactRest,
-  // device_id + a user-assigned device label (e.g. "Valentin's AirPods") —
+  // device_id + a user-assigned device label (e.g. "Conference AirPods") -
   // same PII class as set-user-name.
   'set-microphone': redactRest,
+  'confirm-speaker': redactRest,
+  'create-person-profile': redactRest,
+  'rename-person-profile': redactRest,
+  'delete-person-profile': redactRest,
+  'get-speaker-sample-audio': redactRest,
+  'mark-speaker-cluster': redactRest,
+  'set-cluster-review-state': redactRest,
+  'speaker-naming-status': redactRest,
+  'suggest-speakers': redactRest,
+  'speaker-timestamps': redactRest,
+  'get-person-sample-audio': redactRest,
 };
 
 // Return the argv rewritten for the `$ stenoai <...>` debug echo. Non-

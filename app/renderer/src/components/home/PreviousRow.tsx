@@ -1,4 +1,4 @@
-import { Folder as FolderIcon, Loader2 } from 'lucide-react';
+import { AudioLines, Folder as FolderIcon, Loader2 } from 'lucide-react';
 import type { Meeting } from '@/lib/ipc';
 import { navigate } from '@/lib/router';
 import { useMeetingsList } from '@/lib/meetingsListContext';
@@ -116,7 +116,28 @@ export function PreviousRow({ meeting, folderName }: PreviousRowProps) {
         style={{ color: 'var(--fg-2)' }}
       >
         <span>{isSynthetic ? 'Now' : (when ?? '')}</span>
-        {duration && <span className="text-[11.5px] opacity-70">{duration}</span>}
+        {/* Original audio still on disk. Shown only when present, never as a
+            crossed-out "missing" marker: keep_recordings defaults off, so
+            absence is the normal case and flagging it on most rows would be
+            noise. What the icon buys is knowing, without opening the note,
+            which recordings can still be re-transcribed or listened to for
+            speaker review — the actions that silently disappear once the
+            audio is gone. Sits beside the duration because both describe
+            the recording rather than the note. */}
+        {(duration || (!isSynthetic && meeting.has_audio)) && (
+          <span className="flex items-center gap-1 text-[11.5px] opacity-70">
+            {!isSynthetic && meeting.has_audio && (
+              <AudioLines
+                className="size-3"
+                aria-label="Original audio still available"
+                data-testid="previous-row-has-audio"
+              >
+                <title>Original audio still available</title>
+              </AudioLines>
+            )}
+            {duration}
+          </span>
+        )}
       </div>
     </div>
   );

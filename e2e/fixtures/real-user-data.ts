@@ -1,4 +1,5 @@
-import { existsSync, statSync } from 'fs';
+import { createHash } from 'crypto';
+import { existsSync, lstatSync, readdirSync } from 'fs';
 import { homedir } from 'os';
 import path from 'path';
 
@@ -21,9 +22,33 @@ export function realUserDataDir(): string {
   return path.join(base, 'stenoai');
 }
 
-/** Stat signature (exists + mtime + size) so a test can prove a path was untouched. */
+/** Recursive metadata fingerprint so nested writes cannot hide behind an
+ * unchanged root-directory stat. Paths are hashed and never printed. */
 export function fileSig(p: string): string {
   if (!existsSync(p)) return 'absent';
-  const s = statSync(p);
-  return `${s.mtimeMs}:${s.size}`;
+  const hash = createHash('sha256');
+  const visit = (current: string, relative: string) => {
+    let stat;
+    try {
+      stat = lstatSync(current);
+    } catch {
+      hash.update(`${relative}:disappeared\n`);
+      return;
+    }
+    const kind = stat.isDirectory() ? 'd' : stat.isSymbolicLink() ? 'l' : 'f';
+    hash.update(`${relative}:${kind}:${stat.mtimeMs}:${stat.size}\n`);
+    if (!stat.isDirectory()) return;
+    let children: string[];
+    try {
+      children = readdirSync(current).sort();
+    } catch {
+      hash.update(`${relative}:unreadable\n`);
+      return;
+    }
+    for (const child of children) {
+      visit(path.join(current, child), path.join(relative, child));
+    }
+  };
+  visit(p, '.');
+  return hash.digest('hex');
 }

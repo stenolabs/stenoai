@@ -568,18 +568,43 @@ class LiveTranscriptFallbackTests(unittest.TestCase):
     def test_short_real_transcript_does_not_trigger_fallback(self):
         """Fix 4: a correct-but-short batch transcript (under the 100-char
         live-fallback floor) is a real result and must NOT be replaced. The
-        trigger is batch_failed OR the exact silence sentinel — never length."""
+        trigger is batch_failed OR the exact silence sentinel — never length.
+
+        Calls the production predicate itself. It used to be restated here,
+        which meant this test could stay green while process_streaming
+        changed underneath it."""
         import simple_recorder
         sentinel = simple_recorder._SILENCE_SENTINEL
         short_real = "Quick sync done."  # < 100 chars but genuine speech
+        reason = simple_recorder._unusable_batch_reason
 
-        def should_fall_back(batch_text, batch_failed):
-            # Mirrors the production predicate in process_streaming.
-            return batch_failed or (batch_text.strip() == sentinel)
+        self.assertIsNone(reason(short_real, False, None))
+        self.assertIsNotNone(reason(sentinel, False, None))
+        self.assertIsNotNone(reason("", True, None))  # crash
 
-        self.assertFalse(should_fall_back(short_real, False))
-        self.assertTrue(should_fall_back(sentinel, False))
-        self.assertTrue(should_fall_back("", True))  # crash
+    def test_a_batch_missing_most_of_the_file_loses_to_the_live_transcript(self):
+        """A batch that skipped most of its transcription windows is neither
+        a crash nor silence, so it used to pass the gate and replace a
+        complete live transcript with a full-of-holes one."""
+        import simple_recorder
+        reason = simple_recorder._unusable_batch_reason
+        self.assertIsNotNone(reason("Some words.", False, 0.2))
+        self.assertIn("20%", reason("Some words.", False, 0.2))
+
+    def test_a_batch_missing_only_a_window_or_two_still_wins(self):
+        """The live transcript is complete but lower quality. A meeting that
+        lost a window is still the better transcript, so the swap must not
+        fire on every gap — only when most of the file is gone."""
+        import simple_recorder
+        reason = simple_recorder._unusable_batch_reason
+        self.assertIsNone(reason("Some words.", False, 0.95))
+        self.assertIsNone(reason("Some words.", False, simple_recorder._MIN_BATCH_WINDOW_COVERAGE))
+
+    def test_a_backend_that_cannot_report_coverage_is_not_punished(self):
+        """whisper.cpp and parakeet-mlx do no windowing of their own. Unknown
+        must never be read as bad, or every macOS meeting would be replaced."""
+        import simple_recorder
+        self.assertIsNone(simple_recorder._unusable_batch_reason("Real words.", False, None))
 
     def test_fallback_overwrites_transcript_file(self):
         """Fix 6: when the live fallback fires, the _transcript.txt the batch

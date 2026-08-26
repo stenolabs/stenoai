@@ -10,6 +10,11 @@
 const { contextBridge, ipcRenderer, webUtils } = require('electron');
 
 const VERSION = 1;
+const rendererPlatformOverride =
+  process.env.STENOAI_E2E === '1'
+  && ['darwin', 'linux', 'win32'].includes(process.env.STENOAI_E2E_RENDERER_PLATFORM)
+    ? process.env.STENOAI_E2E_RENDERER_PLATFORM
+    : null;
 
 const invoke = (channel, ...args) => ipcRenderer.invoke(channel, ...args);
 const send = (channel, ...args) => ipcRenderer.send(channel, ...args);
@@ -57,6 +62,7 @@ const stenoai = {
   version: VERSION,
 
   app: {
+    platform: rendererPlatformOverride || process.platform,
     getVersion: () => invoke('get-app-version'),
   },
 
@@ -86,6 +92,8 @@ const stenoai = {
     check: () => invoke('startup-setup-check'),
     ollamaAndModel: () => invoke('setup-ollama-and-model'),
     parakeet: () => invoke('setup-parakeet'),
+    speakerModelsStatus: () => invoke('speaker-model-status'),
+    speakerModels: () => invoke('setup-speaker-models'),
     test: () => invoke('setup-test'),
     triggerWizard: () => invoke('trigger-setup-wizard'),
   },
@@ -199,6 +207,28 @@ const stenoai = {
     reset: (id) => invoke('reset-template', id),
   },
 
+  speakers: {
+    listProfiles: () => invoke('list-person-profiles'),
+    suggestForMeeting: (meetingStem) => invoke('suggest-speakers', meetingStem),
+    confirm: (params) => invoke('confirm-speaker', params),
+    createProfile: (displayName) => invoke('create-person-profile', displayName),
+    renameProfile: (id, displayName) => invoke('rename-person-profile', id, displayName),
+    deleteProfile: (id) => invoke('delete-person-profile', id),
+    getSampleAudio: (meetingStem, channel, diarizationSpeakerId, expectedRunId, segmentIndex) =>
+      invoke(
+        'get-speaker-sample-audio',
+        meetingStem,
+        channel,
+        diarizationSpeakerId,
+        expectedRunId,
+        segmentIndex,
+      ),
+    getPersonSampleAudio: (id) => invoke('get-person-sample-audio', id),
+    markCluster: (params) => invoke('mark-speaker-cluster', params),
+    setClusterReviewState: (params) => invoke('set-cluster-review-state', params),
+    namingStatus: (meetingStem) => invoke('speaker-naming-status', meetingStem),
+  },
+
   models: {
     checkOllama: () => invoke('check-ollama-installed'),
     list: () => invoke('list-models'),
@@ -263,6 +293,8 @@ const stenoai = {
     setAutoSummarize: (v) => invoke('set-auto-summarize', v),
     getAutoInstallWhenIdle: () => invoke('get-auto-install-when-idle'),
     setAutoInstallWhenIdle: (v) => invoke('set-auto-install-when-idle', v),
+    getIdentityMatchingEnabled: () => invoke('get-identity-matching-enabled'),
+    setIdentityMatchingEnabled: (v) => invoke('set-identity-matching-enabled', v),
     getSilenceAutoStop: () => invoke('get-silence-auto-stop'),
     setSilenceAutoStopEnabled: (v) => invoke('set-silence-auto-stop-enabled', v),
     setSilenceAutoStopMinutes: (v) => invoke('set-silence-auto-stop-minutes', v),

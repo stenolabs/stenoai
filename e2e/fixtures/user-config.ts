@@ -35,6 +35,14 @@ export function writeUserConfig(
   writeFileSync(cfgPath, JSON.stringify({ ...cfg, ...partial }, null, 2));
 }
 
+/** Explicitly opt a test user into local biometric speaker identification. */
+export function enableSpeakerIdentification(userDataDir: string): void {
+  writeUserConfig(userDataDir, {
+    identity_matching_enabled: true,
+    identity_matching_privacy_default_version: 1,
+  });
+}
+
 /**
  * Configure the app for the renderer-driven capture path (system audio ON) with
  * the Whisper engine, so no Parakeet live-transcribe sidecar spawns. The
@@ -173,4 +181,75 @@ export function writeMeetingMarkdown(
 
   writeFileSync(summaryFile, lines.join('\n'));
   return summaryFile;
+}
+
+export interface FixtureSpeakerCluster {
+  embedding: number[];
+  speech_duration_seconds: number;
+  segment_count: number;
+  segments: Array<{ start: number; end: number }>;
+}
+
+/**
+ * Write a deterministic `<stem>_speakers.json` sidecar into
+ * <userDataDir>/output, mirroring src.speaker_suggestions.write_speakers_sidecar's
+ * JSON shape exactly: `{meeting_id, created_at, diarization_run, channels: {mic|system: {recording_type,
+ * clusters: {sid: {embedding, speech_duration_seconds, segment_count, segments}}}}}`.
+ * Model-free -- no real diarizer/embedding extraction involved, just a
+ * known-good sidecar so suggest-speakers/confirm-speaker have real data to
+ * read. Returns the absolute path of the written sidecar.
+ */
+export interface FixtureTurnManifestEntry {
+  start: number;
+  channel: string;
+  diarization_speaker_id: string;
+}
+
+export function fixtureDiarizationRunId(stem: string): string {
+  return `${stem}-fixture-run`;
+}
+
+export function writeSpeakersSidecar(
+  userDataDir: string,
+  stem: string,
+  channels: Record<string, { recording_type: string; clusters: Record<string, FixtureSpeakerCluster> }>,
+  turnManifest?: FixtureTurnManifestEntry[],
+): string {
+  const outputDir = path.join(userDataDir, 'output');
+  mkdirSync(outputDir, { recursive: true });
+  const sidecarFile = path.join(outputDir, `${stem}_speakers.json`);
+  const data: Record<string, unknown> = {
+    meeting_id: stem,
+    created_at: Date.now() / 1000,
+    diarization_run: {
+      run_id: fixtureDiarizationRunId(stem),
+      created_at: Date.now() / 1000,
+    },
+    channels,
+  };
+  // Omitted (not written empty) when absent, exactly like the real writer --
+  // and the distinction MATTERS: without a manifest the backend attributes
+  // no excerpt text at all, because a backfilled sidecar's segments come
+  // from a different diarization run than the transcript's timestamps.
+  if (turnManifest && turnManifest.length > 0) data.transcript_lines = turnManifest;
+  writeFileSync(sidecarFile, JSON.stringify(data, null, 2));
+  return sidecarFile;
+}
+
+/**
+ * Write a deterministic `<stem>_transcript.txt` into <userDataDir>/transcripts,
+ * mirroring simple_recorder.py's `_write_transcript_file` body shape closely
+ * enough for relabel_transcript_speaker's `[MM:SS] [Label] text` line parser
+ * (the header lines above the "====" separator are never parsed, only
+ * skipped). `body` should already contain the diarised `[MM:SS] [Label] text`
+ * lines, blank-line-separated, matching `_tag_channel_segments`'s output.
+ * Returns the absolute path of the written transcript file.
+ */
+export function writeTranscriptFile(userDataDir: string, stem: string, body: string): string {
+  const transcriptsDir = path.join(userDataDir, 'transcripts');
+  mkdirSync(transcriptsDir, { recursive: true });
+  const transcriptFile = path.join(transcriptsDir, `${stem}_transcript.txt`);
+  const content = `Session: ${stem}\nFile: ${stem}.webm\nDate: 2026-01-01 00:00:00\n\n${'='.repeat(60)}\n\n${body}\n`;
+  writeFileSync(transcriptFile, content);
+  return transcriptFile;
 }

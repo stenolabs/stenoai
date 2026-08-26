@@ -57,6 +57,8 @@ const { createDebugLog } = require('./debug-log');
 const { createTeardownRegistry } = require('./teardown');
 const { registerFoldersIpc } = require('./folders-ipc');
 const { registerSettingsIpc } = require('./settings-ipc');
+const { registerPersonSampleIpc } = require('./person-sample-ipc');
+const { registerSpeakerIpc } = require('./speaker-ipc');
 const { registerObsidianSync } = require('./obsidian-sync');
 const { registerObsidianIpc } = require('./obsidian-ipc');
 const { isSafeToAutoInstall } = require('./update-idle-gate');
@@ -78,6 +80,7 @@ const {
   parseShortcutUrl,
 } = require('./shortcut-url');
 const { parseSetupCheckOutput } = require('./setup-check-parse');
+const { parseSpeakerModelStatusOutput } = require('./speaker-model-status');
 const { isDiagnosticStdoutLine, sanitizeArgsForLog } = require('./diagnostics-filter');
 // Pure analytics bucketing/classification/sanitization lives in
 // ./analytics-helpers (unit-tested). trackEvent() itself and every IPC
@@ -105,6 +108,7 @@ const os = require('os');
 const { URL, URLSearchParams } = require('url');
 const crypto = require('crypto');
 const { EXPORT_CANCELED } = require('./ipc-sentinels');
+const { mayExposeMainWindow } = require('./e2e-window-visibility');
 const { PostHog } = require('posthog-node');
 const { initMain } = require('electron-audio-loopback');
 const { autoUpdater } = require('electron-updater');
@@ -113,11 +117,13 @@ const { autoUpdater } = require('electron-updater');
 //   STENOAI_USER_DATA_DIR — per-test temp userData dir (must be set before app.whenReady)
 //   STENOAI_E2E=1         — skip tray, auto-updater, PostHog telemetry
 //   STENOAI_E2E_MOCK_IPC=1 — install deterministic mock IPC handlers
+//   STENOAI_E2E_HEADLESS=1 - keep the main window rendered but never visible/focused
 if (process.env.STENOAI_USER_DATA_DIR) {
   app.setPath('userData', process.env.STENOAI_USER_DATA_DIR);
 }
 const IS_E2E = process.env.STENOAI_E2E === '1';
 const IS_E2E_MOCK_IPC = process.env.STENOAI_E2E_MOCK_IPC === '1';
+const IS_E2E_HEADLESS = IS_E2E && process.env.STENOAI_E2E_HEADLESS === '1';
 
 // Global (system-wide) accelerator to toggle recording. CommandOrControl
 // resolves to Cmd on macOS and Ctrl on Windows/Linux, so no manual
@@ -479,6 +485,20 @@ let launchedByShortcut = false;
 // suppress the first window show so Steno starts hidden in the tray/menu bar,
 // and we tag telemetry so background opens don't inflate DAU/funnels.
 let launchedHidden = false;
+
+/**
+ * The only route through which the main window may be exposed.
+ * Playwright can fully drive a hidden BrowserWindow, so E2E runs use the same
+ * renderer without repeatedly stealing focus from the host desktop.
+ */
+function exposeMainWindow({ focus = true } = {}) {
+  if (!mayExposeMainWindow({ isE2EHeadless: IS_E2E_HEADLESS })) return false;
+  if (!mainWindow || mainWindow.isDestroyed()) return false;
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  if (!mainWindow.isVisible()) mainWindow.show();
+  if (focus) mainWindow.focus();
+  return true;
+}
 
 // SHORTCUT_PROTOCOL and the pure deep-link parsing/sanitizing helpers
 // (extractShortcutUrlFromArgv, sanitizeShortcutUrlForLogs, parseShortcutUrl,
@@ -1646,9 +1666,7 @@ function createWindow(options = {}) {
     if (launchedHidden) {
       return;
     }
-    if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.isVisible()) {
-      mainWindow.show();
-    }
+    exposeMainWindow({ focus: false });
   };
 
   mainWindow.once('ready-to-show', () => {
@@ -1722,10 +1740,7 @@ function updateTrayIcon(recording) {
 }
 
 function showAndFocusWindow() {
-  if (mainWindow) {
-    mainWindow.show();
-    mainWindow.focus();
-  }
+  exposeMainWindow();
 }
 
 function updateTrayMenu() {
@@ -1848,11 +1863,7 @@ if (!gotSingleInstanceLock) {
       }
     }
 
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      if (mainWindow.isMinimized()) mainWindow.restore();
-      mainWindow.show();
-      mainWindow.focus();
-    }
+    exposeMainWindow();
   });
 
   // Sends the custom in-app quit dialog to the renderer and waits for a response.
@@ -1861,8 +1872,7 @@ if (!gotSingleInstanceLock) {
   // preserve any active recording rather than killing it silently.
   async function showCustomQuitDialog(type, jobCount) {
     if (!mainWindow || mainWindow.isDestroyed()) return true;
-    mainWindow.show();
-    mainWindow.focus();
+    exposeMainWindow();
     mainWindow.webContents.send('show-quit-dialog', { type, jobCount });
     return new Promise((resolve) => {
       const handler = (_event, data) => {
@@ -2359,8 +2369,7 @@ if (!gotSingleInstanceLock) {
       // Only show if the window has finished its initial load.
       // On first launch, windowReadyToShow is false until React mounts.
       if (windowReadyToShow) {
-        mainWindow.show();
-        mainWindow.focus();
+        exposeMainWindow();
       }
       launchedByShortcut = false;
     } else {
@@ -2400,11 +2409,7 @@ if (!gotSingleInstanceLock) {
 
 // Focus window handler (used by notification click to bring app to foreground)
 ipcMain.on('focus-window', () => {
-    if (mainWindow) {
-        if (mainWindow.isMinimized()) mainWindow.restore();
-        mainWindow.show();
-        mainWindow.focus();
-    }
+    exposeMainWindow();
 });
 
 ipcMain.on('shortcut-renderer-ready', () => {
@@ -2477,6 +2482,22 @@ ipcMain.handle('get-system-audio-support', async () => {
 // Backend communication - always uses bundled stenoai executable
 // runPythonScript is provided by createBackendCli(...) wired near the top of
 // this file (verbatim body moved to ./backend-cli).
+
+// Recovers a graceful {"success": false, "error": ...} a CLI command printed
+// to stdout right before exiting non-zero (see runPythonScript's err.stdout
+// above) -- without this, a real "already exists"/"not found" message gets
+// discarded in favor of a generic "Python script failed with code 1: <stderr>"
+// wrapper that's useless to a human. Falls back to that generic message when
+// stdout wasn't valid JSON (an actual crash, not a graceful failure).
+function parsePythonFailureJson(error) {
+  try {
+    const parsed = JSON.parse(error.stdout || '');
+    if (parsed && typeof parsed === 'object' && parsed.success === false) return parsed;
+  } catch (_) {
+    // stdout wasn't JSON -- fall through to the generic error below.
+  }
+  return { success: false, error: error.message };
+}
 
 async function getBackendStatusInternal(silent = true) {
   const result = await runPythonScript('simple_recorder.py', ['status'], silent);
@@ -2879,6 +2900,22 @@ ipcMain.handle('get-meeting', async (_event, summaryFile) => {
     }
     const { realPath: realResolved, allowedOutputDirs } = validated;
     const content = await fs.promises.readFile(realResolved, 'utf-8');
+    const summaryBase = path.basename(realResolved);
+    const summarySuffix = summaryBase.endsWith('_summary.md')
+      ? '_summary.md'
+      : summaryBase.endsWith('_summary.json')
+        ? '_summary.json'
+        : null;
+    let hasSpeakerSidecar = false;
+    if (summarySuffix) {
+      const meetingStem = summaryBase.slice(0, -summarySuffix.length);
+      const speakerSidecarPath = path.join(path.dirname(realResolved), `${meetingStem}_speakers.json`);
+      try {
+        hasSpeakerSidecar = (await fs.promises.lstat(speakerSidecarPath)).isFile();
+      } catch {
+        hasSpeakerSidecar = false;
+      }
+    }
     if (summaryFile.endsWith('.md')) {
       // Legacy .md meetings are still listed by list-meetings, so their detail
       // pages route through here. Unlike the list payload, the detail page
@@ -2886,11 +2923,11 @@ ipcMain.handle('get-meeting', async (_event, summaryFile) => {
       // TranscriptPanel), so we return everything parseMeetingMarkdown yields.
       const mdMeeting = parseMeetingMarkdown(content, realResolved);
       const mdSidecar = await readReportsSidecar(realResolved, allowedOutputDirs);
-      return { success: true, meeting: { ...mdMeeting, reports: mdSidecar.reports, active_report: mdSidecar.active_report } };
+      return { success: true, meeting: { ...mdMeeting, has_speaker_sidecar: hasSpeakerSidecar, reports: mdSidecar.reports, active_report: mdSidecar.active_report } };
     }
     const jsonMeeting = JSON.parse(content);
     const jsonSidecar = await readReportsSidecar(realResolved, allowedOutputDirs);
-    return { success: true, meeting: { ...jsonMeeting, reports: jsonSidecar.reports, active_report: jsonSidecar.active_report } };
+    return { success: true, meeting: { ...jsonMeeting, has_speaker_sidecar: hasSpeakerSidecar, reports: jsonSidecar.reports, active_report: jsonSidecar.active_report } };
   } catch (error) {
     return { success: false, error: error.message };
   }
@@ -4335,6 +4372,23 @@ ipcMain.handle('delete-meeting', async (event, meetingData) => {
         sidecarBase = summaryBase.slice(0, summaryBase.length - ext.length) + '_reports.json';
       }
       ancillaryCandidates.push(path.join(outputDir, sidecarBase));
+    }
+    // Speakers sidecar: <stem>_speakers.json. Same class of miss as the
+    // reports sidecar was -- a per-meeting file added later that the delete
+    // enumeration never learned about. Reproduced end to end: the note,
+    // transcript and audio went, and an 84 KB file of VOICE EMBEDDINGS
+    // stayed behind, which is the worst thing in the set to leave on disk
+    // after someone deletes a meeting. It is stem-bound like the others, so
+    // it inherits the same containment checks and the same undo window.
+    //
+    // Note this removes only the meeting's per-cluster embeddings. A person
+    // CONFIRMED from this meeting keeps their voice profile in config.json,
+    // deliberately: those are bound to the person, not the meeting, and are
+    // what makes recognition work across recordings (verified against a real
+    // library, where working prototypes came from meetings deleted long ago).
+    // Deleting a person is its own explicit action in the Speakers panel.
+    if (stem) {
+      ancillaryCandidates.push(path.join(outputDir, `${stem}_speakers.json`));
     }
     // Derive the transcript + recording from the summary stem (FACT A). A normal
     // .md note carries ONLY summary_file, so without this the transcript and the
@@ -6361,6 +6415,49 @@ ipcMain.handle('startup-setup-check', async () => {
   }
 });
 
+async function runSpeakerModelCommand(command) {
+  if (process.platform !== 'darwin') {
+    return {
+      success: false,
+      ready: false,
+      error: 'Speaker diarization is unavailable on this system',
+    };
+  }
+  const output = await runPythonScript('simple_recorder.py', [command]);
+  return parseSpeakerModelStatusOutput(output);
+}
+
+ipcMain.handle('speaker-model-status', async () => {
+  try {
+    return await runSpeakerModelCommand('speaker-model-status');
+  } catch (error) {
+    sendDebugLog('Speaker diarization model status check failed');
+    return {
+      success: false,
+      ready: false,
+      error: 'Could not check the speaker diarization models',
+    };
+  }
+});
+
+ipcMain.handle('setup-speaker-models', async () => {
+  try {
+    sendDebugLog('Preparing local speaker diarization models...');
+    const result = await runSpeakerModelCommand('prepare-speaker-models');
+    if (result.success && result.ready) {
+      sendDebugLog('Speaker diarization models ready');
+    }
+    return result;
+  } catch (error) {
+    sendDebugLog('Speaker diarization model setup failed');
+    return {
+      success: false,
+      ready: false,
+      error: 'Speaker diarization model setup failed',
+    };
+  }
+});
+
 // ── Auto-updater ──
 // Mirrors the autoUpdater event sequence (available -> progress* ->
 // downloaded) so AboutTab can recover its state on every mount instead of
@@ -7003,8 +7100,7 @@ function requestAutoRecord(appName, originatingEvt, calEvent) {
   // explicit tap does.) The renderer's auto-record handler then starts the
   // recording and opens the live-note editor.
   if (mainWindow && !mainWindow.isDestroyed()) {
-    if (!mainWindow.isVisible()) mainWindow.show();
-    mainWindow.focus();
+    exposeMainWindow();
     mainWindow.webContents.send('auto-record-requested', { sessionName, appName });
   }
 }
@@ -7150,6 +7246,7 @@ function attachProcessingStderr(proc, label) {
 // pipelines (e.g. a queued process-streaming run during a live record) don't
 // mask each other's heartbeats. Records are logged under the source label.
 const lastHeartbeatLoggedAt = new Map();
+const lastProgressLoggedAt = new Map();
 function logPipelineStdoutLine(line, source) {
   const l = line.trim();
   if (!l) return;
@@ -7157,6 +7254,22 @@ function logPipelineStdoutLine(line, source) {
     const now = Date.now();
     if (now - (lastHeartbeatLoggedAt.get(source) || 0) < 10_000) return;
     lastHeartbeatLoggedAt.set(source, now);
+    processingLog.logLine(source, l);
+    return;
+  }
+  if (l.startsWith('PROGRESS:')) {
+    // Stage-transition markers (diarize start/done, summarize
+    // step/reducing) are rare and always worth a line. Per-chunk
+    // sub-progress (transcribe chunks, diarize embedding chunks) can tick
+    // roughly once a second for many minutes on a long recording --
+    // throttle those the same way HEARTBEAT already is, or they'd flood
+    // the on-disk log.
+    const isHighFrequency = l.startsWith('PROGRESS:transcribe:') || l.includes(':embedding:');
+    if (isHighFrequency) {
+      const now = Date.now();
+      if (now - (lastProgressLoggedAt.get(source) || 0) < 10_000) return;
+      lastProgressLoggedAt.set(source, now);
+    }
     processingLog.logLine(source, l);
     return;
   }
@@ -8211,6 +8324,8 @@ ipcMain.handle('pull-parakeet-model', async (event, modelId) => {
 // handlers coupled to another domain (telemetry, models, mic-monitor, calendar,
 // tray) deliberately stay in main.js until that domain's own extraction.
 registerSettingsIpc({ ipcMain, runPythonScript, sendDebugLog });
+registerPersonSampleIpc({ ipcMain, runPythonScript });
+registerSpeakerIpc({ ipcMain, runPythonScript, parsePythonFailureJson });
 
 // Fired by the renderer's silence detector. The renderer has already
 // asked main to stop the recording via pause/stop; this just surfaces
@@ -8240,8 +8355,7 @@ ipcMain.handle('show-silence-auto-stop-notification', async (_event, payload) =>
     });
     notif.on('click', () => {
       if (mainWindow && !mainWindow.isDestroyed()) {
-        if (!mainWindow.isVisible()) mainWindow.show();
-        mainWindow.focus();
+        exposeMainWindow();
       }
     });
     trackNotificationLifecycle(notif, 'silence_auto_stop');
@@ -8268,8 +8382,7 @@ ipcMain.handle('show-system-audio-mic-only-notification', async () => {
     });
     notif.on('click', () => {
       if (mainWindow && !mainWindow.isDestroyed()) {
-        if (!mainWindow.isVisible()) mainWindow.show();
-        mainWindow.focus();
+        exposeMainWindow();
         mainWindow.webContents.send('tray-open-settings');
       }
     });
@@ -8298,8 +8411,7 @@ async function showNoteReadyNotification(payload) {
   const notif = new Notification({ title, body, iconType });
   notif.on('click', () => {
     if (mainWindow && !mainWindow.isDestroyed()) {
-      if (!mainWindow.isVisible()) mainWindow.show();
-      mainWindow.focus();
+      exposeMainWindow();
       if (summaryFile) mainWindow.webContents.send('navigate-to-meeting', { summaryFile });
     }
   });
@@ -8344,8 +8456,7 @@ async function showTranscriptReadyNotification(payload) {
   // kick off generation.
   const startSummarise = () => {
     if (mainWindow && !mainWindow.isDestroyed() && summaryFile) {
-      if (!mainWindow.isVisible()) mainWindow.show();
-      mainWindow.focus();
+      exposeMainWindow();
       mainWindow.webContents.send('navigate-to-meeting', { summaryFile });
       mainWindow.webContents.send('generate-notes-requested', { summaryFile, name });
     }
@@ -10283,8 +10394,7 @@ function startGoogleAuth() {
         // Notify renderer and bring app to foreground
         if (mainWindow && !mainWindow.isDestroyed()) {
           mainWindow.webContents.send('google-auth-changed');
-          mainWindow.show();
-          mainWindow.focus();
+          exposeMainWindow();
         }
 
         resolve({ success: true });
@@ -10698,8 +10808,7 @@ function startOutlookAuth() {
 
         if (mainWindow && !mainWindow.isDestroyed()) {
           mainWindow.webContents.send('outlook-auth-changed');
-          mainWindow.show();
-          mainWindow.focus();
+          exposeMainWindow();
         }
 
         resolve({ success: true });

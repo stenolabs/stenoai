@@ -27,7 +27,13 @@ import { Popover, PopoverAnchor, PopoverContent, PopoverTrigger } from '@/compon
 import { useQueryClient } from '@tanstack/react-query';
 import * as SelectPrimitive from '@radix-ui/react-select';
 import { MeetingsShell } from '@/components/MeetingsShell';
-import { Select, SelectContent, SelectItem, SelectSeparator } from '@/components/ui/select';
+import { SpeakerReviewPanel } from '@/components/SpeakerReviewPanel';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectSeparator,
+} from '@/components/ui/select';
 import {
   useMeeting,
   useReprocessMeeting,
@@ -1283,6 +1289,12 @@ function DetailContent({
                   </div>
                 </section>
               )}
+
+              <SpeakerReviewPanel
+                summaryFile={summaryFile}
+                isDiarised={Boolean(meeting.is_diarised)}
+                hasSpeakerSidecar={Boolean(meeting.has_speaker_sidecar)}
+              />
             </div>
           )}
         </>

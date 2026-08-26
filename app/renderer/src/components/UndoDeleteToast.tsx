@@ -4,6 +4,10 @@ import { Trash2, X } from 'lucide-react';
 import { ipc } from '@/lib/ipc';
 import { useUndoDeleteStore, type UndoDeleteEntry } from '@/hooks/undoDeleteStore';
 import { useUndoDeleteMeeting, useCommitDeleteMeeting } from '@/hooks/useMeetings';
+import {
+  useSpeakerNamingStatus,
+  meetingStemFromSummaryFile,
+} from '@/hooks/useSpeakerSuggestions';
 
 /**
  * Bottom-right "Note deleted — Undo?" toast stack (#234). Deletion is a
@@ -76,6 +80,32 @@ function UndoDeleteToastItem({
 
   const name = entry.meeting?.session_info?.name?.trim();
 
+  // What this delete costs that the note itself doesn't say.
+  //
+  // A person already CONFIRMED survives being deleted: their voiceprint
+  // lives in config.json bound to the person, not to any meeting (checked
+  // against a real library, where working prototypes came from meetings
+  // deleted long ago). An UNNAMED cluster does not survive, and unlike
+  // almost everything else here it cannot be reconstructed afterwards by
+  // any means: putting a name to a voice means listening to it, listening
+  // means the source audio, and committing this delete takes the audio.
+  //
+  // Shown HERE rather than in a confirmation dialog because there is no
+  // confirmation dialog -- deleting a note is deliberately immediate, with
+  // this undo window as the safety net ("asking first *and* offering undo
+  // made the flow feel heavy", see MeetingDetail/MeetingsShell). Adding a
+  // modal would undo that decision to say something a line in the toast
+  // says while the delete is still reversible. The sidecar this reads is
+  // unlinked at COMMIT, not at delete, so it is still on disk for exactly
+  // as long as the window it is describing.
+  //
+  // Purely informational: no button, no blocked delete. Someone who knows
+  // the meeting is worthless does not need to hear about its speakers.
+  const namingStatus = useSpeakerNamingStatus(
+    meetingStemFromSummaryFile(entry.summaryFile), true,
+  );
+  const unnamed = namingStatus.data?.unnamed_clusters ?? 0;
+
   return (
     <div
       className="pointer-events-auto relative flex w-[280px] flex-col overflow-hidden rounded-xl"
@@ -117,6 +147,16 @@ function UndoDeleteToastItem({
           <X size={12} />
         </button>
       </div>
+      {unnamed > 0 && (
+        <div
+          className="px-3 pb-2.5 text-[11.5px]"
+          style={{ color: 'var(--fg-2)' }}
+          data-testid="undo-delete-unnamed-speakers"
+        >
+          {`${unnamed} ${unnamed === 1 ? 'speaker was' : 'speakers were'} never named. `}
+          {'Undo to name them — it needs the recording, which goes with this note.'}
+        </div>
+      )}
       {/* Countdown bar depleting over the undo window. */}
       <div
         aria-hidden

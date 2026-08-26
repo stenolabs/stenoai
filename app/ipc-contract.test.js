@@ -287,3 +287,27 @@ test('every extracted seam module is required AND invoked in main.js (reachabili
     `extracted module(s) not wired into main.js (dead registration?): ${unwired.join('; ')}`,
   );
 });
+
+// The T1 speaker spec asserts the play button toggles to "Stop sample" while
+// a clip is playing. PlaySampleButton flips that label back on the media
+// element's `ended` event, so the assertion is only stable while the fixture
+// clip is still running. The original fixture was a 44-byte header with zero
+// sample data: measured in the real renderer, it reported duration 0 and
+// fired `ended` ~300ms after play(). That is why the spec was green on a Mac
+// and red on CI - the runner's first assertion poll landed after the clip had
+// already finished.
+//
+// Pinned here rather than left to the spec, because shrinking the fixture
+// again would not fail loudly: it would just make that one test flaky, on
+// someone else's machine, weeks later.
+test('the mock sample clip is long enough for a playing state to be observable', () => {
+  const mock = require('./e2e-mock-ipc.js');
+  void mock; // required only so a syntax error in the fixture fails here too
+
+  const match = MOCK.match(/const SILENT_WAV_SECONDS = (\d+)/);
+  assert.ok(match, 'e2e-mock-ipc.js no longer declares SILENT_WAV_SECONDS');
+  assert.ok(
+    Number(match[1]) >= 2,
+    `the fixture clip is ${match[1]}s; under ~2s the "toggling to stop" assertion races the ended event`,
+  );
+});

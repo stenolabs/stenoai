@@ -199,3 +199,8 @@ ollama.pid
 
 # Local design reference library (cloned, not vendored)
 .reference/
+
+# Swift Package Manager build artifacts for the diarize-sidecar helper
+# (fetched FluidAudio checkout + compiled binaries) — scripts/build-diarize-sidecar.sh
+# regenerates this; only diarize-sidecar/{Package.swift,Package.resolved,Sources/} are tracked.
+diarize-sidecar/.build/

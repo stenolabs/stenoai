@@ -308,8 +308,8 @@ describe('GeneralTab name-field seed race (#307)', () => {
     const { rerender } = render(<GeneralTab />);
 
     const input = screen.getByTestId('user-name-input') as HTMLInputElement;
-    fireEvent.change(input, { target: { value: 'Ruzin' } });
-    expect(input.value).toBe('Ruzin');
+    fireEvent.change(input, { target: { value: 'Casey Example' } });
+    expect(input.value).toBe('Casey Example');
 
     // The canonical value now arrives from disk.
     h.userName = { data: 'Old Name', isPending: false, isPlaceholderData: false };
@@ -318,7 +318,7 @@ describe('GeneralTab name-field seed race (#307)', () => {
     });
 
     // The user's in-progress edit must survive the late seed.
-    expect((screen.getByTestId('user-name-input') as HTMLInputElement).value).toBe('Ruzin');
+    expect((screen.getByTestId('user-name-input') as HTMLInputElement).value).toBe('Casey Example');
   });
 
   test('the field re-syncs from userName.data after the edit is committed on blur', async () => {
@@ -336,12 +336,12 @@ describe('GeneralTab name-field seed race (#307)', () => {
 
     // The canonical value now arrives from disk. Since the edit was committed
     // (and saved nothing), the field must re-sync to it rather than stay blank.
-    h.userName = { data: 'Ruzin', isPending: false, isPlaceholderData: false };
+    h.userName = { data: 'Casey Example', isPending: false, isPlaceholderData: false };
     await act(async () => {
       rerender(<GeneralTab />);
     });
 
-    expect((screen.getByTestId('user-name-input') as HTMLInputElement).value).toBe('Ruzin');
+    expect((screen.getByTestId('user-name-input') as HTMLInputElement).value).toBe('Casey Example');
   });
 });
 

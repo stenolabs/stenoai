@@ -1,30 +1,85 @@
 ---
 title: "Speaker labels"
-description: "Steno labels transcript lines as [You] or [Others] when system audio is enabled, making it easy to follow who said what in virtual meetings."
+description: "Learn how Steno labels audio channels, separates individual speakers, and optionally suggests named people across meetings."
 ---
 
-When Steno captures both microphone and system audio, transcripts include speaker labels: `[You]` for lines from your microphone and `[Others]` for audio from your speakers (the other participants).
+Steno can show two kinds of speaker information in a transcript: audio-channel labels such as `[You]` and `[Others]`, and individual speaker groups such as `Speaker 2` and `Speaker 3`.
+Named people are optional and separate from anonymous speaker separation.
 
-## How it works
+## Channel labels
 
-Steno records the microphone and system audio as two separate channels, then transcribes each channel and labels its lines -- the microphone channel `[You]`, the system audio channel `[Others]`. This stereo-channel diarization works the same way regardless of which transcription engine (Parakeet or Whisper) is active.
+When Steno captures both microphone and system audio, it records them as separate channels.
+The microphone channel starts with the label `[You]`, while system audio starts with `[Others]`.
+This makes the two sides of a virtual meeting easy to distinguish before Steno separates individual voices within either channel.
 
-## Requirements
+If system audio is not enabled, the recording has one audio channel instead.
+On macOS, Steno can still separate multiple people who share that microphone, including participants in an in-person meeting.
+The same individual separation also applies to imported mono recordings.
 
-Speaker labels require **system audio capture** to be enabled -- microphone-only recordings produce a single-channel transcript without speaker differentiation.
+See [Recording → System audio](/features/recording) for capture setup instructions.
 
-See [Recording → System audio](/features/recording) for setup instructions.
+## Individual speakers
+
+On macOS, Steno can distinguish up to four voices within each audio channel.
+The main voice on the microphone keeps `[You]`, and additional voices receive labels such as `Speaker 2` and `Speaker 3`.
+The main voice on system audio keeps `[Others]`, with additional voices numbered across the meeting.
+
+Individual speaker separation is available without creating named people or storing cross-meeting voice profiles.
+Windows currently keeps `[You]` and `[Others]` channel labels but does not separate individual voices within a channel.
+
+## Review speakers
+
+Enable **Settings → AI → Speaker identification** before processing a meeting to make the **Speakers** review section available for that meeting.
+Anonymous labels in the transcript remain available while this setting is off, but Steno does not retain the speaker data needed for review actions.
+Open a processed note and review the **Speakers** section before relying on its labels.
+For each speaker group, you can:
+
+- approve or change a suggested person;
+- create a new named person;
+- keep the generic speaker label;
+- mark a group as containing more than one person; or
+- play available excerpts and compare them by ear.
+
+Separation and name suggestions can be wrong, especially with short speech, background noise, overlapping voices, or audio leaking between channels.
+Human review remains the final decision.
+
+## Named people and voice profiles
+
+Cross-meeting speaker identification is optional and off by default.
+Existing installations are switched off once on upgrade, including installations where speaker identification was previously enabled.
+You can enable it under **Settings → AI → Speaker identification**.
+Anonymous `Speaker 2` and `Speaker 3` separation continues to work while this setting is off.
+
+When you create a named person from a confirmed excerpt, Steno creates a numerical biometric voice profile on your device.
+Steno uses that profile to suggest the same person in later meetings, but it never assigns the name without review.
+Voice profiles and the audio used to create them are not sent to Steno or included in analytics.
+
+Enable speaker identification only after informing affected people and confirming that you are authorised to create and use their voice profiles.
+The Settings switch is the opt-in; Steno does not collect consent from the recorded person or record a separate authorization for each profile.
+This opt-in does not by itself establish legal compliance for your recording or use case.
+
+Open **Settings → People** to review known people, play a representative voice sample when its source recording and matching speaker data are still retained, or delete a profile.
+Deleting a profile removes future matching for that person but does not delete recordings or transcripts, which have separate retention controls.
 
 ## Limitations
 
-- Labels are binary: `[You]` and `[Others]`. Individual speakers among "Others" are not distinguished.
-- Label accuracy depends on audio separation. If microphone audio bleeds into system audio or vice versa, some lines may be mislabeled.
-- In-person meetings (microphone only) do not support speaker labels.
-
-Multi-speaker diarisation (identifying individual speakers by voice) is on the roadmap.
+- Steno separates at most four voices per audio channel. If more people speak on one channel, additional voices can be merged into the four available speaker groups.
+- A speaker can be split into multiple groups, or several people can appear in one group. Use the review actions to correct or mark these cases.
+- Cross-talk, overlapping speech, background noise, and short excerpts can reduce separation and suggestion quality.
+- Representative sample playback depends on a suitable source recording and matching speaker data still being available.
+- Individual speaker separation and named voice profiles are currently macOS-only. Windows retains `[You]` and `[Others]` channel labels.
 
 ---
 
 <Accordion title="Can Steno identify individual speakers by name?">
-Not currently. Speaker labels distinguish only between your audio (`[You]`) and all other audio (`[Others]`). Individual speaker identification is planned for a future release.
+  Yes, optionally on macOS.
+
+Enable speaker identification in **Settings → AI**.
+
+Create or confirm a named person while reviewing a meeting.
+
+The numerical biometric voice profile stays local.
+
+Steno only suggests names for you to review.
+
 </Accordion>

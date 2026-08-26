@@ -74,6 +74,25 @@ For any regulated or confidential context:
 4. Review your organization's recording consent policies -- Steno does not manage consent
 5. Steno saves raw audio in `~/Library/Application Support/stenoai/recordings/` -- delete files you no longer need
 
+## Optional speaker identification
+
+Anonymous separation into Speaker 1, Speaker 2, and similar labels does not require a named voice profile.
+Cross-meeting speaker identification is off by default.
+
+When you enable it and create a named person, Steno stores a numerical biometric voice profile locally so it can suggest that person in later meetings.
+Suggestions can be wrong and require human review.
+The profile can be deleted in **Settings > People**, but recordings and transcripts have separate retention and deletion controls.
+
+Enable named voice profiles only after informing the affected person and confirming that your organisation or use case has an appropriate legal basis.
+The Settings opt-in is not a consent workflow for the recorded person and does not by itself establish legal compliance.
+
+Example participant notice:
+
+> This meeting is being recorded and transcribed locally with Steno.
+> If speaker identification is enabled, Steno may store a numerical voice profile on this device to suggest your name in future meetings.
+> The profile is not sent to Steno and can be deleted separately from recordings and transcripts.
+> Please raise any questions or objections before recording starts.
+
 ---
 
 <Accordion title="Does Steno help with meeting consent requirements?">

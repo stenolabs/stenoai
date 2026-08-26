@@ -1,8 +1,83 @@
 import os
+from pathlib import Path
+from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import patch
 
 from src import parakeet_models
+
+
+class IsInstalledTests(unittest.TestCase):
+    def setUp(self):
+        self._cache = TemporaryDirectory()
+        self._saved_hf_hub_cache = os.environ.get("HF_HUB_CACHE")
+        os.environ["HF_HUB_CACHE"] = self._cache.name
+
+    def tearDown(self):
+        if self._saved_hf_hub_cache is None:
+            os.environ.pop("HF_HUB_CACHE", None)
+        else:
+            os.environ["HF_HUB_CACHE"] = self._saved_hf_hub_cache
+        self._cache.cleanup()
+
+    def _snapshot(self, model_id: str) -> Path:
+        snapshot = (
+            parakeet_models._hf_cache_dir_for(model_id)
+            / "snapshots"
+            / "test-revision"
+        )
+        snapshot.mkdir(parents=True)
+        return snapshot
+
+    @staticmethod
+    def _write(snapshot: Path, *names: str) -> None:
+        for name in names:
+            (snapshot / name).write_bytes(b"present")
+
+    def test_mlx_snapshot_requires_nonempty_weights(self):
+        model_id = "mlx-community/parakeet-tdt-0.6b-v3"
+        snapshot = self._snapshot(model_id)
+        self._write(snapshot, "config.json")
+
+        self.assertFalse(parakeet_models.is_installed(model_id))
+        (snapshot / "model.safetensors").write_bytes(b"")
+        self.assertFalse(parakeet_models.is_installed(model_id))
+        self._write(snapshot, "model.safetensors")
+        self.assertTrue(parakeet_models.is_installed(model_id))
+
+    def test_onnx_snapshot_requires_every_runtime_file(self):
+        model_id = "istupakov/parakeet-tdt-0.6b-v3-onnx"
+        snapshot = self._snapshot(model_id)
+        self._write(
+            snapshot,
+            "config.json",
+            "encoder-model.int8.onnx",
+            "decoder_joint-model.int8.onnx",
+        )
+
+        self.assertFalse(parakeet_models.is_installed(model_id))
+        self._write(snapshot, "vocab.txt")
+        self.assertTrue(parakeet_models.is_installed(model_id))
+
+    def test_unknown_model_never_forces_offline_mode(self):
+        model_id = "example/future-model"
+        snapshot = self._snapshot(model_id)
+        self._write(snapshot, "config.json", "weights.bin")
+
+        with patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("HF_HUB_OFFLINE", None)
+            os.environ.pop("TRANSFORMERS_OFFLINE", None)
+            self.assertFalse(parakeet_models.is_installed(model_id))
+            self.assertFalse(parakeet_models.maybe_enable_offline(model_id))
+            self.assertNotIn("HF_HUB_OFFLINE", os.environ)
+            self.assertNotIn("TRANSFORMERS_OFFLINE", os.environ)
+
+    def test_unreadable_snapshots_directory_is_not_installed(self):
+        model_id = "mlx-community/parakeet-tdt-0.6b-v3"
+        self._snapshot(model_id)
+
+        with patch.object(Path, "iterdir", side_effect=PermissionError):
+            self.assertFalse(parakeet_models.is_installed(model_id))
 
 
 class MaybeEnableOfflineTests(unittest.TestCase):

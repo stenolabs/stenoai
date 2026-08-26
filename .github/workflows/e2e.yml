@@ -1,10 +1,9 @@
 name: e2e
 
 # Tiered Playwright e2e. Drives the REAL Electron app.
-# Intentionally NON-BLOCKING: this workflow is not a required status check yet —
-# it is promoted to required once it has a green streak across the matrix below
-# (a branch-protection change, tracked as a follow-up). Keeping it advisory now
-# means a flaky launch can't block unrelated merges while the suite earns trust.
+# Branch protection requires T1 plus the macOS T2 and pipeline jobs for main.
+# The Windows T2 jobs remain advisory while their headless-runner behavior is
+# still being hardened.
 #
 #   t1-renderer (Ubuntu) — renderer-only with mock IPC, no Python bundle. Fast.
 #   build-backend-macos   -> t2-macos / t2-pipeline-macos   (whisper, CPU)
@@ -66,6 +65,11 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      # T1 is already required by branch protection. Keep this scan here as
+      # well as in the standalone workflow that covers website-only changes.
+      - name: Scan tracked repository content for private fixtures
+        run: python dev/scripts/repository_privacy_guard.py
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -133,9 +137,8 @@ jobs:
   # Deterministic backend/renderer gates (issue #376). These close the CI
   # enforcement gap: the backend unittest suite and the renderer tsc typecheck
   # previously ran only on the maintainer's machine, so a green PR page didn't
-  # mean the backend was green. Added NON-REQUIRED (advisory) — like the e2e
-  # tiers, they earn a green streak before any branch-protection promotion
-  # (a maintainer-only admin action, tracked separately). No behaviour change.
+  # mean the backend was green. They run on every PR but remain advisory; main
+  # branch protection currently requires T1 plus the macOS T2 and pipeline jobs.
   # A ruff gate is deferred on purpose: bare `ruff check .` has pre-existing
   # violations on main (mostly in simple_recorder.py), so wiring it now would
   # be red on day one. It needs a cleanup PR first — tracked as a follow-up.
@@ -227,8 +230,16 @@ jobs:
           chmod +x scripts/download-ollama.sh
           ./scripts/download-ollama.sh
 
+      - name: Build speaker-diarization sidecar (Swift/Core ML)
+        run: |
+          chmod +x scripts/build-diarize-sidecar.sh
+          ./scripts/build-diarize-sidecar.sh "$(uname -m)"
+          test -x bin/steno-diarize
+
       - name: Build backend with PyInstaller
-        run: pyinstaller stenoai.spec --noconfirm
+        run: |
+          pyinstaller stenoai.spec --noconfirm
+          test -x dist/stenoai/_internal/steno-diarize
 
       # Guards the Ollama/pip-mlx libmlx.dylib ABI collision (see
       # scripts/verify_mlx_bundle.py). dlopen probes run here too - GitHub's
@@ -271,9 +282,10 @@ jobs:
       # to PyInstaller's internal layout (e.g. the _internal/ contents dir).
       - name: Restore exec bits on bundled binaries
         run: |
-          find dist/stenoai -type f \( -name stenoai -o -name ffmpeg -o -name ollama \) \
+          find dist/stenoai -type f \( -name stenoai -o -name ffmpeg -o -name ollama -o -name steno-diarize \) \
             -exec chmod +x {} +
           test -x dist/stenoai/stenoai  # fail loud if the launcher didn't get +x
+          test -x dist/stenoai/_internal/steno-diarize
 
       # The app probes 11434 and skips its own `ollama serve` on a 200, so a real
       # Ollama on the runner would answer instead of a test stub. Kill it first
@@ -336,9 +348,10 @@ jobs:
 
       - name: Restore exec bits on bundled binaries
         run: |
-          find dist/stenoai -type f \( -name stenoai -o -name ffmpeg -o -name ollama \) \
+          find dist/stenoai -type f \( -name stenoai -o -name ffmpeg -o -name ollama -o -name steno-diarize \) \
             -exec chmod +x {} +
           test -x dist/stenoai/stenoai
+          test -x dist/stenoai/_internal/steno-diarize
 
       - name: Ensure no stray Ollama
         run: pkill -f ollama || true

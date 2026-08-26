@@ -62,6 +62,10 @@ export const test = base.extend<Fixtures>({
       const env: Record<string, string> = {
         ...(process.env as Record<string, string>),
         STENOAI_E2E: '1',
+        // A hidden BrowserWindow still renders and remains fully controllable
+        // through Playwright, without repeatedly taking over the host desktop.
+        // A specific focus/visibility test can override this with "0".
+        STENOAI_E2E_HEADLESS: '1',
         STENOAI_USER_DATA_DIR: userDataDir,
         ...(opts.mockIpc ? { STENOAI_E2E_MOCK_IPC: '1' } : {}),
         ...(opts.env ?? {}),

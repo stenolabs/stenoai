@@ -25,8 +25,18 @@ Usage:
 The bundled executable will be in dist/stenoai/
 """
 
+import os
 import sys
+from pathlib import Path
 from PyInstaller.utils.hooks import collect_data_files, collect_submodules, collect_dynamic_libs, copy_metadata
+
+# PyInstaller does not consistently put the spec directory on sys.path when
+# evaluating a spec on Windows runners. Make the local build guard importable
+# explicitly on every platform.
+if SPECPATH not in sys.path:
+    sys.path.insert(0, SPECPATH)
+
+from scripts.diarize_bundle_guard import require_diarize_sidecar
 
 # Apple Silicon uses parakeet-mlx for ASR; Windows / Linux use onnx-asr via
 # ONNX Runtime. The two backends live in src/_parakeet_{mlx,onnx}.py and
@@ -206,8 +216,6 @@ for pkg in _DYLIB_PKGS:
 # Bundle Ollama binary and libraries.
 # Walk bin/ recursively — Ollama for Windows ships its runner libs under
 # lib/ollama/ that must be preserved relative to ollama.exe.
-import os
-
 # Ollama's Windows bundle ships GPU runner libs under lib/ollama/. As of
 # v0.30.8 that's lib/ollama/{cuda_v12,cuda_v13,vulkan} (rocm is no longer
 # shipped). They're NVIDIA-/discrete-GPU-only and add multiple GB
@@ -244,6 +252,10 @@ _OLLAMA_GPU_MARKERS = ('lib/ollama/cuda', 'lib/ollama/rocm', 'lib/ollama/vulkan'
 #   - the GPU runner libs are pruned above and there's no pip-mlx build).
 ollama_datas: list[tuple[str, str, str]] = []
 ollama_bin_dir = os.path.join(SPECPATH, 'bin')
+required_diarize_sidecar = require_diarize_sidecar(
+    Path(ollama_bin_dir) / 'steno-diarize',
+    platform=sys.platform,
+)
 if os.path.exists(ollama_bin_dir):
     for root, _dirs, files in os.walk(ollama_bin_dir):
         for filename in files:
@@ -256,6 +268,17 @@ if os.path.exists(ollama_bin_dir):
             base = os.path.basename(filename).lower()
             if base in ('ffmpeg', 'ffmpeg.exe'):
                 # Put ffmpeg at the root of the bundle for easy PATH access
+                binaries.append((filepath, '.'))
+            elif (
+                base == 'steno-diarize'
+                and _IS_DARWIN
+                and required_diarize_sidecar is not None
+            ):
+                # macOS-only Swift/CoreML diarization sidecar (built by
+                # scripts/build-diarize-sidecar.sh). It follows ffmpeg into
+                # PyInstaller's _internal directory, which the runtime
+                # resolver probes. The guard above intentionally fails a
+                # macOS build when this required release artifact is absent.
                 binaries.append((filepath, '.'))
             elif _IS_DARWIN:
                 # COLLECT DATA TOC 3-tuple: (dest_path_including_filename,

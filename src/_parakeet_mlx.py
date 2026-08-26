@@ -294,6 +294,22 @@ def _result_to_dict(result, language: Optional[str]) -> dict:
             "text": (getattr(s, "text", "") or "").strip(),
             "start": float(getattr(s, "start", 0.0) or 0.0),
             "end": float(getattr(s, "end", 0.0) or 0.0),
+            # Word-level timing, kept alongside the sentence text so the
+            # diarised path can split an abnormally long run-on sentence
+            # (Parakeet sometimes fails to break long unpunctuated speech
+            # into multiple sentences) across several diarizer turns
+            # instead of forcing the whole thing onto one speaker. Token
+            # text already carries its own leading-space markers —
+            # "".join(t["text"] for t in tokens) reconstructs the sentence
+            # exactly, no separator needed.
+            "tokens": [
+                {
+                    "text": getattr(t, "text", "") or "",
+                    "start": float(getattr(t, "start", 0.0) or 0.0),
+                    "end": float(getattr(t, "end", 0.0) or 0.0),
+                }
+                for t in (getattr(s, "tokens", None) or [])
+            ],
         }
         for s in sentences
         if (getattr(s, "text", "") or "").strip()

@@ -17,6 +17,7 @@ export const COMPACT_INPUT =
 interface SettingRowProps {
   label: string;
   description?: React.ReactNode;
+  descriptionId?: string;
   children: React.ReactNode;
   align?: 'center' | 'start';
   noBorder?: boolean;
@@ -26,6 +27,7 @@ interface SettingRowProps {
 export function SettingRow({
   label,
   description,
+  descriptionId,
   children,
   align = 'center',
   // A hairline divider sits between rows within a group (like Claude's own
@@ -54,6 +56,7 @@ export function SettingRow({
         </div>
         {description && (
           <div
+            id={descriptionId}
             className="text-[13px] leading-[1.5]"
             style={{ color: 'var(--fg-2)' }}
           >

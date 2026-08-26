@@ -152,7 +152,8 @@ class TranscribeAudioPreprocessIntegrationTests(unittest.TestCase):
             temp = Path(tmp_dir) / "stenoai_prep_meeting.wav"
             temp.write_bytes(b"\x00" * 2048)
             with patch.object(transcriber, "_preprocess_audio", return_value=(temp, True)), \
-                 patch.object(transcriber, "_run_backend", side_effect=RuntimeError("boom")):
+                 patch.object(transcriber, "_run_backend", side_effect=RuntimeError("boom")), \
+                 patch.object(transcriber, "_build_whisper_fallback", return_value=False):
                 out = transcriber.transcribe_audio(audio, language="en")
             self.assertTrue(out.get("transcription_failed"))
             self.assertFalse(temp.exists())

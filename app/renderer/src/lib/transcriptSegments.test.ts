@@ -40,6 +40,18 @@ describe('parseTranscript — diarised', () => {
     expect(segs[0].text).toContain('line two');
     expect(segs[1].timestamp).toBe('00:05');
   });
+
+  test('parses acoustically-diarized "Speaker N" labels alongside You/Others', () => {
+    const segs = parseTranscript(
+      '[00:00] [You] Hello\n\n[00:05] [Speaker 2] Hi there\n\n[00:10] [Others] Welcome',
+      true,
+    );
+    expect(segs).toEqual([
+      { speaker: 'You', text: 'Hello', timestamp: '00:00' },
+      { speaker: 'Speaker 2', text: 'Hi there', timestamp: '00:05' },
+      { speaker: 'Others', text: 'Welcome', timestamp: '00:10' },
+    ]);
+  });
 });
 
 describe('parseTranscript — non-diarised', () => {

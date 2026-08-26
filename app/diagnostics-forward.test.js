@@ -86,9 +86,28 @@ test('name / path / folder / URL setters redact their value arg(s)', () => {
 
 test('set-microphone redacts the device id + user-assigned label', () => {
   assert.strictEqual(
-    sanitizeArgsForLog(['set-microphone', 'abc123deviceid', "Valentin's AirPods"]),
+    sanitizeArgsForLog(['set-microphone', 'abc123deviceid', 'Conference AirPods']),
     'set-microphone <redacted>',
   );
+});
+
+test('speaker commands redact meeting identifiers and person names', () => {
+  const cases = [
+    ['confirm-speaker', 'private-meeting', 'mic', 'SPEAKER_0', '--new-person', 'Alice'],
+    ['create-person-profile', 'Alice'],
+    ['rename-person-profile', 'person-id', 'Alice'],
+    ['delete-person-profile', 'person-id'],
+    ['get-speaker-sample-audio', 'private-meeting', 'mic', 'SPEAKER_0'],
+    ['mark-speaker-cluster', 'private-meeting', 'mic', 'SPEAKER_0', '--multiple'],
+    ['set-cluster-review-state', 'private-meeting', 'mic', 'SPEAKER_0', '--generic'],
+    ['speaker-naming-status', 'private-meeting'],
+    ['suggest-speakers', 'private-meeting'],
+    ['speaker-timestamps', 'private-meeting', 'mic', 'SPEAKER_0'],
+    ['get-person-sample-audio', 'person-id'],
+  ];
+  for (const args of cases) {
+    assert.strictEqual(sanitizeArgsForLog(args), `${args[0]} <redacted>`);
+  }
 });
 
 test('set-storage-path with no value (reset) echoes just the command', () => {

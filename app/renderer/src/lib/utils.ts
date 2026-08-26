@@ -5,9 +5,13 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
-export const isMac =
-  typeof navigator !== 'undefined' &&
-  /mac|iphone|ipad|ipod/i.test(navigator.platform || navigator.userAgent);
+const bridgePlatform =
+  typeof window !== 'undefined' ? window.stenoai?.app?.platform : undefined;
+
+export const isMac = bridgePlatform
+  ? bridgePlatform === 'darwin'
+  : typeof navigator !== 'undefined'
+    && /mac|iphone|ipad|ipod/i.test(navigator.platform || navigator.userAgent);
 
 /**
  * Render a keyboard shortcut for the current platform. Pass mac glyphs and a

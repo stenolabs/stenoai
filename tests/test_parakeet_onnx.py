@@ -234,6 +234,52 @@ class TranscribeWindowsMergeTests(unittest.TestCase):
         merged = onnx_backend._transcribe_windows(model, self._eighty_seconds())
         self.assertEqual(merged.tokens, ["Hello", " world."])
 
+    def test_a_skipped_window_is_reported_not_just_swallowed(self):
+        # Skipping the window keeps the meeting alive, but the transcript now
+        # covers less audio than the recording holds. Downstream has to be
+        # able to see that -- silently handing back a short transcript is how
+        # a half-read file used to beat a complete live transcript.
+        model = _FakeTsModel([
+            (["Hello", " world."], [(0.0, 0.5), (1.0, 1.5)]),
+            RuntimeError("onnx blew up on this window"),
+        ])
+        merged = onnx_backend._transcribe_windows(model, self._eighty_seconds())
+        self.assertEqual(merged.windows_attempted, 2)
+        self.assertEqual(merged.windows_recognized, 1)
+        self.assertEqual(onnx_backend._result_to_dict(merged, language=None)["window_coverage"], 0.5)
+
+    def test_misaligned_tokens_and_timestamps_do_not_count_as_recognized(self):
+        model = _FakeTsModel([
+            (["broken", " window"], [(0.0, 0.5)]),
+            (["Valid."], [(20.0, 20.5)]),
+        ])
+
+        merged = onnx_backend._transcribe_windows(model, self._eighty_seconds())
+
+        self.assertEqual(merged.tokens, ["Valid."])
+        self.assertEqual(merged.windows_attempted, 2)
+        self.assertEqual(merged.windows_recognized, 1)
+        self.assertEqual(onnx_backend._result_to_dict(merged, language=None)["window_coverage"], 0.5)
+
+    def test_a_clean_run_reports_full_coverage(self):
+        model = _FakeTsModel([
+            (["Hello", " world."], [(0.0, 0.5), (1.0, 1.5)]),
+            ([" Bar."], [(20.0, 20.5)]),
+        ])
+        merged = onnx_backend._transcribe_windows(model, self._eighty_seconds())
+        self.assertEqual(merged.windows_attempted, merged.windows_recognized)
+        self.assertEqual(onnx_backend._result_to_dict(merged, language=None)["window_coverage"], 1.0)
+
+    def test_a_result_that_never_windowed_reports_unknown_not_complete(self):
+        # onnx-asr's own TimestampedResult carries no counters. That must read
+        # as "no figure available", never as a clean bill of health.
+        class _Plain:
+            text = "Hello world."
+            tokens = ["Hello", " world."]
+            timestamps = [(0.0, 0.5), (1.0, 1.5)]
+
+        self.assertIsNone(onnx_backend._result_to_dict(_Plain(), language=None)["window_coverage"])
+
     def test_all_windows_failing_raises_not_empty(self):
         # A broken model/session where EVERY window raises is a real failure,
         # not silence — _transcribe_windows must raise so the caller marks it
@@ -290,6 +336,14 @@ class TranscribeWindowsHeartbeatTests(unittest.TestCase):
         ])
         onnx_backend._transcribe_windows(model, self._eighty_seconds())
         self.assertEqual(self.beats, [(2, 2)])
+
+    def test_malformed_result_still_emits_liveness_heartbeat(self):
+        model = _FakeTsModel([
+            (["broken", "window"], [(0.0, 0.5)]),
+            (["Valid."], [(20.0, 20.5)]),
+        ])
+        onnx_backend._transcribe_windows(model, self._eighty_seconds())
+        self.assertEqual(self.beats, [(1, 2), (2, 2)])
 
 
 class LoadWav16kMonoTests(unittest.TestCase):

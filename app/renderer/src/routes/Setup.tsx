@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { Check, Cloud, HardDrive, Mic, MessageSquare, Zap, X } from 'lucide-react';
+import { AudioLines, Check, Cloud, HardDrive, Mic, MessageSquare, Zap, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
@@ -37,7 +37,7 @@ import { cn, isMac } from '@/lib/utils';
 type StepStatus = 'waiting' | 'running' | 'done' | 'failed';
 
 interface Step {
-  id: 'microphone' | 'transcription' | 'ollama';
+  id: 'microphone' | 'transcription' | 'speakers' | 'ollama';
   title: string;
   description: string;
   icon: React.ComponentType<{ className?: string }>;
@@ -81,9 +81,13 @@ function OllamaProgressBar({ status, pct }: { status: string; pct: number }) {
 /** Indeterminate bar for the transcription-model download. Parakeet only
  *  exposes coarse stages (no byte counts), so we signal activity without
  *  fabricating a percentage. */
-function IndeterminateBar({ label }: { label: string }) {
+function IndeterminateBar({ label, kind = 'transcription' }: { label: string; kind?: 'transcription' | 'speakers' }) {
   return (
-    <div className="mt-2" data-setup-transcription-progress>
+    <div
+      className="mt-2"
+      data-setup-transcription-progress={kind === 'transcription' ? '' : undefined}
+      data-setup-speaker-progress={kind === 'speakers' ? '' : undefined}
+    >
       <div className="mb-1 text-[11px] text-muted-foreground">{label}</div>
       <div
         className="setup-indeterminate-bar relative h-1.5 overflow-hidden rounded-full"
@@ -147,11 +151,13 @@ export function Setup() {
   const [statuses, setStatuses] = React.useState<Record<Step['id'], StepStatus>>({
     microphone: 'waiting',
     transcription: 'waiting',
+    speakers: 'waiting',
     ollama: 'waiting',
   });
   const [details, setDetails] = React.useState<Record<Step['id'], string | undefined>>({
     microphone: undefined,
     transcription: undefined,
+    speakers: undefined,
     ollama: undefined,
   });
   const [running, setRunning] = React.useState(false);
@@ -207,6 +213,7 @@ export function Setup() {
   // runSetup() once we see their model is already on disk; see the
   // parakeet-status + list-whisper-models precheck below.
   const parakeetStep = useSetupStep('parakeet');
+  const speakerModelsStep = useSetupStep('speakerModels');
   const ollamaStep = useSetupStep('ollamaAndModel');
 
   // Telemetry choice surfaced here so users opt in/out during onboarding
@@ -361,6 +368,23 @@ export function Setup() {
         }
       }
 
+      if (isMac && snapshot.speakers !== 'done') {
+        setStatus('speakers', 'running', 'Checking speaker diarization models...');
+        try {
+          const status = await ipc().setup.speakerModelsStatus();
+          if (!status.success) throw new Error(status.error);
+          if (status.ready) {
+            setStatus('speakers', 'done', 'Speaker diarization models ready');
+          } else {
+            setStatus('speakers', 'running', 'Downloading speaker diarization models...');
+            await speakerModelsStep.mutateAsync();
+            setStatus('speakers', 'done', 'Speaker diarization models ready');
+          }
+        } catch {
+          setStatus('speakers', 'failed', 'Optional setup failed. You can retry later.');
+        }
+      }
+
       // Always re-run the summarization step on retry (the choice or key may
       // have changed). Reset its status from 'failed' so the chooser hides
       // while we run.
@@ -469,6 +493,21 @@ export function Setup() {
         ) : undefined,
     },
   ];
+
+  if (isMac) {
+    steps.splice(2, 0, {
+      id: 'speakers',
+      title: 'Speaker Diarization',
+      description: 'Separates individual speakers locally',
+      icon: AudioLines,
+      status: statuses.speakers,
+      detail: details.speakers,
+      progressNode:
+        statuses.speakers === 'running' && details.speakers?.startsWith('Downloading') ? (
+          <IndeterminateBar label="Downloading and preparing models..." kind="speakers" />
+        ) : undefined,
+    });
+  }
 
   // Show the Local/Cloud chooser before the third step has run AND after a
   // failure, so the user can correct a bad API key (or pick the other path
@@ -778,4 +817,3 @@ export function Setup() {
     </div>
   );
 }
-

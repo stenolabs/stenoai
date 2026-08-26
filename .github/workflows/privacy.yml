@@ -1,0 +1,35 @@
+name: privacy
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+  pull_request:
+
+concurrency:
+  group: privacy-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  repository-privacy:
+    name: Repository privacy guard
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Test privacy guard
+        run: python -m unittest tests.test_repository_privacy_guard
+
+      - name: Scan tracked repository content
+        run: python dev/scripts/repository_privacy_guard.py

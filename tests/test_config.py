@@ -571,6 +571,80 @@ class ConfigAutoInstallWhenIdleTests(unittest.TestCase):
             self.assertTrue(reloaded.get_auto_install_when_idle())
 
 
+class ConfigIdentityMatchingEnabledTests(unittest.TestCase):
+    def test_default_identity_matching_enabled_is_false(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            config = Config(config_path=Path(tmp_dir) / "config.json")
+            self.assertFalse(config.get_identity_matching_enabled())
+
+    def test_string_false_does_not_enable_identity_matching(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            path = Path(tmp_dir) / "config.json"
+            path.write_text(json.dumps({
+                "identity_matching_enabled": "false",
+                "identity_matching_privacy_default_version": 1,
+            }))
+            self.assertFalse(Config(config_path=path).get_identity_matching_enabled())
+
+    def test_existing_implicit_default_is_migrated_to_false_once(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            path = Path(tmp_dir) / "config.json"
+            path.write_text(json.dumps({"identity_matching_enabled": True}))
+
+            config = Config(config_path=path)
+
+            self.assertFalse(config.get_identity_matching_enabled())
+            on_disk = json.loads(path.read_text())
+            self.assertFalse(on_disk["identity_matching_enabled"])
+            self.assertEqual(on_disk["identity_matching_privacy_default_version"], 1)
+
+    def test_malformed_migration_marker_falls_back_to_privacy_safe_default(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            path = Path(tmp_dir) / "config.json"
+            path.write_text(
+                json.dumps(
+                    {
+                        "identity_matching_enabled": True,
+                        "identity_matching_privacy_default_version": "invalid",
+                    }
+                )
+            )
+
+            config = Config(config_path=path)
+
+            self.assertFalse(config.get_identity_matching_enabled())
+            on_disk = json.loads(path.read_text())
+            self.assertFalse(on_disk["identity_matching_enabled"])
+            self.assertEqual(on_disk["identity_matching_privacy_default_version"], 1)
+
+    def test_explicit_opt_in_survives_reload_after_privacy_migration(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            path = Path(tmp_dir) / "config.json"
+            path.write_text(json.dumps({"identity_matching_enabled": True}))
+
+            migrated = Config(config_path=path)
+            self.assertFalse(migrated.get_identity_matching_enabled())
+            self.assertTrue(migrated.set_identity_matching_enabled(True))
+
+            reloaded = Config(config_path=path)
+            self.assertTrue(reloaded.get_identity_matching_enabled())
+            self.assertEqual(
+                json.loads(path.read_text())["identity_matching_privacy_default_version"],
+                1,
+            )
+
+    def test_identity_matching_enabled_round_trip(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            path = Path(tmp_dir) / "config.json"
+            config = Config(config_path=path)
+            self.assertTrue(config.set_identity_matching_enabled(False))
+            self.assertFalse(config.get_identity_matching_enabled())
+            reloaded = Config(config_path=path)
+            self.assertFalse(reloaded.get_identity_matching_enabled())
+            self.assertTrue(reloaded.set_identity_matching_enabled(True))
+            self.assertTrue(reloaded.get_identity_matching_enabled())
+
+
 class ConfigBedrockSettingsTests(unittest.TestCase):
     def test_default_bedrock_region_is_us_east_1(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -742,6 +816,647 @@ class MlxTagResolutionTests(unittest.TestCase):
         for gguf_id, mlx_tag in Config._MLX_EQUIVALENTS.items():
             self.assertEqual(Config._MLX_TO_GGUF[mlx_tag], gguf_id)
         self.assertEqual(len(Config._MLX_TO_GGUF), len(Config._MLX_EQUIVALENTS))
+
+
+class ConfigPersonProfileTests(unittest.TestCase):
+    """PersonProfile/SpeakerPrototype: the named (non-self) speaker-identity
+    store. See src.speaker_suggestions for how these get consumed — this
+    file only covers the Config-level CRUD."""
+
+    def test_create_person_profile_starts_empty(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            config = Config(config_path=Path(tmp_dir) / "config.json")
+            profile = config.create_person_profile("Person Gamma")
+            self.assertEqual(profile["display_name"], "Person Gamma")
+            self.assertEqual(profile["prototypes"], [])
+            self.assertEqual(profile["hard_negatives"], [])
+            self.assertIn("person_id", profile)
+
+    def test_create_person_profile_reports_a_write_failure(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            config = Config(config_path=Path(tmp_dir) / "config.json")
+            with patch.object(config, "commit_transaction", return_value=False):
+                with self.assertRaises(OSError):
+                    config.create_person_profile("Person Gamma")
+            self.assertEqual(config.get_person_profiles(), [])
+
+    def test_save_voiceprint_rolls_back_a_write_failure(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            config = Config(config_path=Path(tmp_dir) / "config.json")
+            with patch.object(config, "_save", return_value=False):
+                self.assertIsNone(config.save_voiceprint("Person Gamma", [1.0, 0.0]))
+            self.assertEqual(config.get_voiceprints(), [])
+
+    def test_pruning_tolerates_malformed_persisted_rank_fields(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            config_path = Path(tmp_dir) / "config.json"
+            config = Config(config_path=config_path)
+            person = config.create_person_profile("Person Gamma")
+            malformed = {
+                "prototype_id": "damaged",
+                "person_id": person["person_id"],
+                "embedding_mean": [1.0, 0.0],
+                "recording_type": "in_person",
+                "channel": "mic",
+                "meeting_id": "old-meeting",
+                "quality_score": "not-a-number",
+                "created_at": [],
+            }
+            malformed_ids = [
+                f"damaged-{index}"
+                for index in range(Config.MAX_PROTOTYPES_PER_CONTEXT + 6)
+            ]
+            document = json.loads(config_path.read_text())
+            document["person_profiles"][0]["prototypes"] = [
+                {**malformed, "prototype_id": prototype_id}
+                for prototype_id in malformed_ids
+            ]
+            config_path.write_text(json.dumps(document))
+            persisted_before = json.loads(config_path.read_text())
+            self.assertGreater(
+                len(persisted_before["person_profiles"][0]["prototypes"]),
+                Config.MAX_PROTOTYPES_PER_CONTEXT,
+            )
+
+            result = config.add_speaker_prototype(
+                person["person_id"], [1.0, 0.0], recording_type="in_person",
+                meeting_id="new-meeting", diarization_speaker_id="SPEAKER_0",
+                speech_duration_seconds=30.0, segment_count=4,
+                created_from="user_confirmed", channel="mic",
+            )
+
+            self.assertIsNotNone(result)
+            persisted_after = json.loads(config_path.read_text())
+            retained = persisted_after["person_profiles"][0]["prototypes"]
+            retained_ids = {entry["prototype_id"] for entry in retained}
+            self.assertEqual(len(retained), Config.MAX_PROTOTYPES_PER_CONTEXT)
+            self.assertIn(result["prototype_id"], retained_ids)
+            self.assertEqual(
+                retained_ids - {result["prototype_id"]},
+                set(
+                    sorted(malformed_ids, reverse=True)[
+                        :Config.MAX_PROTOTYPES_PER_CONTEXT - 1
+                    ]
+                ),
+            )
+
+    def test_get_person_profiles_persists_across_reload(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            config_path = Path(tmp_dir) / "config.json"
+            config = Config(config_path=config_path)
+            config.create_person_profile("Person Gamma")
+            reloaded = Config(config_path=config_path)
+            names = [p["display_name"] for p in reloaded.get_person_profiles()]
+            self.assertEqual(names, ["Person Gamma"])
+
+    def test_get_person_profile_by_id(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            config = Config(config_path=Path(tmp_dir) / "config.json")
+            created = config.create_person_profile("Person Gamma")
+            fetched = config.get_person_profile(created["person_id"])
+            self.assertEqual(fetched["display_name"], "Person Gamma")
+            self.assertIsNone(config.get_person_profile("nonexistent"))
+
+    def test_create_person_profile_rejects_exact_duplicate_name(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            config = Config(config_path=Path(tmp_dir) / "config.json")
+            config.create_person_profile("Person Gamma")
+            with self.assertRaises(ValueError):
+                config.create_person_profile("Person Gamma")
+            self.assertEqual(len(config.get_person_profiles()), 1)
+
+    def test_create_person_profile_rejects_case_and_whitespace_variant(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            config = Config(config_path=Path(tmp_dir) / "config.json")
+            config.create_person_profile("Person Gamma")
+            with self.assertRaises(ValueError):
+                config.create_person_profile("  person gamma  ")
+            self.assertEqual(len(config.get_person_profiles()), 1)
+
+    def test_create_person_profile_rejects_unicode_compatibility_variant(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            config = Config(config_path=Path(tmp_dir) / "config.json")
+            config.create_person_profile("Person")
+            with self.assertRaises(ValueError):
+                config.create_person_profile("Ｐｅｒｓｏｎ")
+            self.assertEqual(len(config.get_person_profiles()), 1)
+
+    def test_create_person_profile_allows_distinct_names(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            config = Config(config_path=Path(tmp_dir) / "config.json")
+            config.create_person_profile("Person Gamma")
+            config.create_person_profile("Maxine")
+            self.assertEqual(len(config.get_person_profiles()), 2)
+
+    def test_rename_person_profile(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            config = Config(config_path=Path(tmp_dir) / "config.json")
+            created = config.create_person_profile("Person Gamma")
+            self.assertTrue(config.rename_person_profile(created["person_id"], "Maximilian"))
+            self.assertEqual(
+                config.get_person_profile(created["person_id"])["display_name"],
+                "Maximilian",
+            )
+
+    def test_rename_person_profile_returns_false_for_missing_person(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            config = Config(config_path=Path(tmp_dir) / "config.json")
+            self.assertFalse(config.rename_person_profile("nonexistent", "X"))
+
+    def test_rename_person_profile_rejects_collision_with_another_person(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            config = Config(config_path=Path(tmp_dir) / "config.json")
+            config.create_person_profile("Person Gamma")
+            person_alpha = config.create_person_profile("Person Alpha")
+            with self.assertRaises(ValueError):
+                config.rename_person_profile(person_alpha["person_id"], "person gamma")
+            self.assertEqual(config.get_person_profile(person_alpha["person_id"])["display_name"], "Person Alpha")
+
+    def test_rename_person_profile_to_its_own_current_name_is_a_noop_allowed(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            config = Config(config_path=Path(tmp_dir) / "config.json")
+            created = config.create_person_profile("Person Gamma")
+            self.assertTrue(config.rename_person_profile(created["person_id"], "Person Gamma"))
+
+    def test_delete_person_profile(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            config = Config(config_path=Path(tmp_dir) / "config.json")
+            created = config.create_person_profile("Person Gamma")
+            self.assertTrue(config.delete_person_profile(created["person_id"]))
+            self.assertEqual(config.get_person_profiles(), [])
+
+    def test_delete_person_profile_returns_false_for_missing_person(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            config = Config(config_path=Path(tmp_dir) / "config.json")
+            self.assertFalse(config.delete_person_profile("nonexistent"))
+
+    def test_delete_person_profile_strips_hard_negatives_derived_from_them_in_other_profiles(self):
+        # Mirrors confirm-speaker's mutual-hard-negative shape: confirming
+        # Person Gamma next to Person Alpha in the same meeting+channel writes a
+        # hard-negative into Person Alpha's profile whose embedding is literally
+        # Person Gamma's own voice sample, tagged with the meeting/channel/sid Person Gamma
+        # was confirmed under. Deleting Person Gamma must not leave that sample
+        # sitting in Person Alpha's profile forever.
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            config = Config(config_path=Path(tmp_dir) / "config.json")
+            person_gamma = config.create_person_profile("Person Gamma")
+            person_alpha = config.create_person_profile("Person Alpha")
+
+            # Person Gamma's own positive evidence -- what delete_person_profile reads
+            # to know which cross-referenced hard negatives to strip.
+            config.add_speaker_prototype(
+                person_gamma["person_id"], [0.1, 0.2, 0.3],
+                recording_type="in_person", meeting_id="mtg1",
+                diarization_speaker_id="SPEAKER_0", channel="mic",
+                speech_duration_seconds=30.0, segment_count=5,
+                created_from="user_confirmed",
+            )
+            # Person Alpha's hard negative derived from Person Gamma's confirmation above.
+            config.add_speaker_prototype(
+                person_alpha["person_id"], [0.1, 0.2, 0.3],
+                recording_type="in_person", meeting_id="mtg1",
+                diarization_speaker_id="SPEAKER_0", channel="mic",
+                speech_duration_seconds=30.0, segment_count=5,
+                created_from="user_confirmed", negative=True,
+            )
+            # An UNRELATED hard negative on Person Alpha (different meeting) must survive.
+            config.add_speaker_prototype(
+                person_alpha["person_id"], [0.9, 0.9, 0.9],
+                recording_type="in_person", meeting_id="mtg2",
+                diarization_speaker_id="SPEAKER_1", channel="mic",
+                speech_duration_seconds=30.0, segment_count=5,
+                created_from="user_confirmed", negative=True,
+            )
+
+            self.assertTrue(config.delete_person_profile(person_gamma["person_id"]))
+
+            alpha_after = config.get_person_profile(person_alpha["person_id"])
+            remaining_meetings = {h["meeting_id"] for h in alpha_after["hard_negatives"]}
+            self.assertNotIn("mtg1", remaining_meetings)
+            self.assertIn("mtg2", remaining_meetings)
+
+    def test_add_speaker_prototype_appends_positive_evidence(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            config = Config(config_path=Path(tmp_dir) / "config.json")
+            person = config.create_person_profile("Person Gamma")
+            prototype = config.add_speaker_prototype(
+                person["person_id"], [0.1, 0.2, 0.3],
+                recording_type="in_person", meeting_id="mtg001",
+                diarization_speaker_id="SPEAKER_02",
+                speech_duration_seconds=25.0, segment_count=4,
+                created_from="user_confirmed",
+            )
+            self.assertEqual(prototype["embedding_mean"], [0.1, 0.2, 0.3])
+            self.assertEqual(prototype["recording_type"], "in_person")
+            profile = config.get_person_profile(person["person_id"])
+            self.assertEqual(len(profile["prototypes"]), 1)
+            self.assertEqual(profile["hard_negatives"], [])
+
+    def test_add_speaker_prototype_negative_goes_to_hard_negatives(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            config = Config(config_path=Path(tmp_dir) / "config.json")
+            person = config.create_person_profile("Person Gamma")
+            config.add_speaker_prototype(
+                person["person_id"], [0.1, 0.2, 0.3],
+                recording_type="in_person", meeting_id="mtg001",
+                diarization_speaker_id="SPEAKER_00",
+                speech_duration_seconds=25.0, segment_count=4,
+                created_from="user_confirmed", negative=True,
+            )
+            profile = config.get_person_profile(person["person_id"])
+            self.assertEqual(profile["prototypes"], [])
+            self.assertEqual(len(profile["hard_negatives"]), 1)
+
+    def test_add_speaker_prototype_returns_none_for_missing_person(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            config = Config(config_path=Path(tmp_dir) / "config.json")
+            result = config.add_speaker_prototype(
+                "nonexistent", [0.1, 0.2],
+                recording_type="in_person", meeting_id="mtg001",
+                diarization_speaker_id="SPEAKER_00",
+                speech_duration_seconds=25.0, segment_count=4,
+                created_from="user_confirmed",
+            )
+            self.assertIsNone(result)
+
+    def test_add_speaker_prototype_rejects_invalid_recording_type(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            config = Config(config_path=Path(tmp_dir) / "config.json")
+            person = config.create_person_profile("Person Gamma")
+            with self.assertRaises(ValueError):
+                config.add_speaker_prototype(
+                    person["person_id"], [0.1, 0.2],
+                    recording_type="on_the_moon", meeting_id="mtg001",
+                    diarization_speaker_id="SPEAKER_00",
+                    speech_duration_seconds=25.0, segment_count=4,
+                    created_from="user_confirmed",
+                )
+
+    def test_add_speaker_prototype_rejects_invalid_created_from(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            config = Config(config_path=Path(tmp_dir) / "config.json")
+            person = config.create_person_profile("Person Gamma")
+            with self.assertRaises(ValueError):
+                config.add_speaker_prototype(
+                    person["person_id"], [0.1, 0.2],
+                    recording_type="in_person", meeting_id="mtg001",
+                    diarization_speaker_id="SPEAKER_00",
+                    speech_duration_seconds=25.0, segment_count=4,
+                    created_from="telepathy",
+                )
+
+    def test_add_speaker_prototype_stores_channel_when_given(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            config = Config(config_path=Path(tmp_dir) / "config.json")
+            person = config.create_person_profile("Person Gamma")
+            prototype = config.add_speaker_prototype(
+                person["person_id"], [0.1, 0.2],
+                recording_type="in_person", meeting_id="mtg001",
+                diarization_speaker_id="SPEAKER_00",
+                speech_duration_seconds=25.0, segment_count=4,
+                created_from="user_confirmed", channel="mic",
+            )
+            self.assertEqual(prototype["channel"], "mic")
+
+    def test_add_speaker_prototype_omits_channel_when_none(self):
+        # Legacy/enrollment shape: no channel key at all, so matchers'
+        # recording_type fallback path stays distinguishable from an
+        # explicitly recorded channel.
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            config = Config(config_path=Path(tmp_dir) / "config.json")
+            person = config.create_person_profile("Person Gamma")
+            prototype = config.add_speaker_prototype(
+                person["person_id"], [0.1, 0.2],
+                recording_type="in_person", meeting_id="mtg001",
+                diarization_speaker_id="SPEAKER_00",
+                speech_duration_seconds=25.0, segment_count=4,
+                created_from="user_confirmed",
+            )
+            self.assertNotIn("channel", prototype)
+
+    def test_add_speaker_prototype_stores_diarization_run_id_when_given(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            config = Config(config_path=Path(tmp_dir) / "config.json")
+            person = config.create_person_profile("Max")
+            prototype = config.add_speaker_prototype(
+                person["person_id"], [0.1, 0.2],
+                recording_type="in_person", meeting_id="mtg001",
+                diarization_speaker_id="SPEAKER_00",
+                speech_duration_seconds=25.0, segment_count=4,
+                created_from="user_confirmed", diarization_run_id="r1",
+            )
+            self.assertEqual(prototype["diarization_run_id"], "r1")
+
+    def test_add_speaker_prototype_omits_diarization_run_id_when_none(self):
+        # Same absent-means-legacy convention as `channel`: a prototype
+        # written before this field existed, or from a caller that has no
+        # run to report, must read exactly like one written today with no
+        # run id -- not like one that carries an explicit `None`.
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            config = Config(config_path=Path(tmp_dir) / "config.json")
+            person = config.create_person_profile("Max")
+            prototype = config.add_speaker_prototype(
+                person["person_id"], [0.1, 0.2],
+                recording_type="in_person", meeting_id="mtg001",
+                diarization_speaker_id="SPEAKER_00",
+                speech_duration_seconds=25.0, segment_count=4,
+                created_from="user_confirmed",
+            )
+            self.assertNotIn("diarization_run_id", prototype)
+
+    def test_add_speaker_prototype_rejects_invalid_channel(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            config = Config(config_path=Path(tmp_dir) / "config.json")
+            person = config.create_person_profile("Person Gamma")
+            with self.assertRaises(ValueError):
+                config.add_speaker_prototype(
+                    person["person_id"], [0.1, 0.2],
+                    recording_type="in_person", meeting_id="mtg001",
+                    diarization_speaker_id="SPEAKER_00",
+                    speech_duration_seconds=25.0, segment_count=4,
+                    created_from="user_confirmed", channel="microphone",
+                )
+
+    def _add(self, config, person_id, meeting_id, sid, channel=None,
+             recording_type="in_person", negative=False, diarization_run_id=None):
+        return config.add_speaker_prototype(
+            person_id, [0.1, 0.2],
+            recording_type=recording_type, meeting_id=meeting_id,
+            diarization_speaker_id=sid,
+            speech_duration_seconds=25.0, segment_count=4,
+            created_from="user_confirmed", channel=channel, negative=negative,
+            diarization_run_id=diarization_run_id,
+        )
+
+    def test_remove_speaker_evidence_scopes_to_meeting_and_channel(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            config = Config(config_path=Path(tmp_dir) / "config.json")
+            person = config.create_person_profile("Person Gamma")
+            pid = person["person_id"]
+            self._add(config, pid, "mtg001", "SPEAKER_00", channel="mic")
+            self._add(config, pid, "mtg001", "SPEAKER_00", channel="system", recording_type="remote")
+            self._add(config, pid, "mtg002", "SPEAKER_00", channel="mic")
+            removed = config.remove_speaker_evidence(
+                pid, meeting_id="mtg001", channel="mic",
+                channel_recording_type="in_person",
+            )
+            self.assertEqual(removed, 1)
+            remaining = config.get_person_profile(pid)["prototypes"]
+            self.assertEqual(
+                {(p["meeting_id"], p["channel"]) for p in remaining},
+                {("mtg001", "system"), ("mtg002", "mic")},
+            )
+
+    def test_remove_speaker_evidence_sid_restriction_and_negatives(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            config = Config(config_path=Path(tmp_dir) / "config.json")
+            person = config.create_person_profile("Person Gamma")
+            pid = person["person_id"]
+            self._add(config, pid, "mtg001", "SPEAKER_00", channel="mic", negative=True)
+            self._add(config, pid, "mtg001", "SPEAKER_01", channel="mic", negative=True)
+            removed = config.remove_speaker_evidence(
+                pid, meeting_id="mtg001", channel="mic",
+                channel_recording_type="in_person",
+                sids={"SPEAKER_00"}, negative=True,
+            )
+            self.assertEqual(removed, 1)
+            profile = config.get_person_profile(pid)
+            self.assertEqual(len(profile["hard_negatives"]), 1)
+            self.assertEqual(profile["hard_negatives"][0]["diarization_speaker_id"], "SPEAKER_01")
+            # Positives untouched by a negative=True removal.
+            self.assertEqual(profile["prototypes"], [])
+
+    def test_remove_speaker_evidence_matches_legacy_entries_via_recording_type(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            config = Config(config_path=Path(tmp_dir) / "config.json")
+            person = config.create_person_profile("Person Gamma")
+            pid = person["person_id"]
+            self._add(config, pid, "mtg001", "SPEAKER_00")  # legacy: no channel
+            removed = config.remove_speaker_evidence(
+                pid, meeting_id="mtg001", channel="mic",
+                channel_recording_type="in_person",
+            )
+            self.assertEqual(removed, 1)
+
+    def test_remove_speaker_evidence_without_a_run_scope_ignores_run_ids(self):
+        # The sentinel default is what every pre-existing caller relies on:
+        # omitting the parameter must not start filtering, or the repair and
+        # correction paths that never learned about runs would quietly stop
+        # removing anything.
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            config = Config(config_path=Path(tmp_dir) / "config.json")
+            pid = config.create_person_profile("Max")["person_id"]
+            self._add(config, pid, "mtg001", "SPEAKER_00", channel="mic", diarization_run_id="r1")
+            self._add(config, pid, "mtg001", "SPEAKER_01", channel="mic", diarization_run_id="r2")
+            self._add(config, pid, "mtg001", "SPEAKER_02", channel="mic")
+            removed = config.remove_speaker_evidence(
+                pid, meeting_id="mtg001", channel="mic",
+                channel_recording_type="in_person",
+            )
+            self.assertEqual(removed, 3)
+            self.assertEqual(config.get_person_profile(pid)["prototypes"], [])
+
+    def test_remove_speaker_evidence_scoped_to_a_run_spares_other_runs(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            config = Config(config_path=Path(tmp_dir) / "config.json")
+            pid = config.create_person_profile("Max")["person_id"]
+            self._add(config, pid, "mtg001", "SPEAKER_00", channel="mic", diarization_run_id="r1")
+            self._add(config, pid, "mtg001", "SPEAKER_00", channel="mic", diarization_run_id="r2")
+            self._add(config, pid, "mtg001", "SPEAKER_00", channel="mic")
+            removed = config.remove_speaker_evidence(
+                pid, meeting_id="mtg001", channel="mic",
+                channel_recording_type="in_person",
+                sids={"SPEAKER_00"}, diarization_run_id="r2",
+            )
+            self.assertEqual(removed, 1)
+            remaining = config.get_person_profile(pid)["prototypes"]
+            self.assertEqual(
+                [p.get("diarization_run_id") for p in remaining], ["r1", None],
+            )
+
+    def test_remove_speaker_evidence_scoped_to_none_only_removes_run_less_entries(self):
+        # An explicit None is a real scope ("the sidecar reports no run"), not
+        # the absence of one. Collapsing the two would make a caller working
+        # against a legacy sidecar delete run-stamped evidence it cannot have
+        # produced.
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            config = Config(config_path=Path(tmp_dir) / "config.json")
+            pid = config.create_person_profile("Max")["person_id"]
+            self._add(config, pid, "mtg001", "SPEAKER_00", channel="mic", diarization_run_id="r1")
+            self._add(config, pid, "mtg001", "SPEAKER_00", channel="mic")
+            removed = config.remove_speaker_evidence(
+                pid, meeting_id="mtg001", channel="mic",
+                channel_recording_type="in_person",
+                sids={"SPEAKER_00"}, diarization_run_id=None,
+            )
+            self.assertEqual(removed, 1)
+            remaining = config.get_person_profile(pid)["prototypes"]
+            self.assertEqual([p.get("diarization_run_id") for p in remaining], ["r1"])
+
+    def test_delete_person_profile_scopes_negative_cleanup_to_each_prototypes_run(self):
+        # The negatives a confirm creates carry that confirm's run id, so the
+        # cleanup that follows the deleted person's prototypes must not reach
+        # past them into a later run's evidence about a still-existing person.
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            config = Config(config_path=Path(tmp_dir) / "config.json")
+            max_id = config.create_person_profile("Max")["person_id"]
+            sarah_id = config.create_person_profile("Sarah")["person_id"]
+            self._add(config, max_id, "mtg001", "SPEAKER_00", channel="mic", diarization_run_id="r1")
+            # Sarah's negative derived from Max's r1 confirm, plus one from a
+            # later re-diarization that has nothing to do with him.
+            self._add(config, sarah_id, "mtg001", "SPEAKER_00", channel="mic",
+                      negative=True, diarization_run_id="r1")
+            self._add(config, sarah_id, "mtg001", "SPEAKER_00", channel="mic",
+                      negative=True, diarization_run_id="r2")
+            self.assertTrue(config.delete_person_profile(max_id))
+            remaining = config.get_person_profile(sarah_id)["hard_negatives"]
+            self.assertEqual([n["diarization_run_id"] for n in remaining], ["r2"])
+
+    def test_remove_speaker_evidence_missing_person_returns_zero(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            config = Config(config_path=Path(tmp_dir) / "config.json")
+            removed = config.remove_speaker_evidence(
+                "nonexistent", meeting_id="mtg001", channel="mic",
+                channel_recording_type="in_person",
+            )
+            self.assertEqual(removed, 0)
+
+    def test_remove_speaker_evidence_by_ids(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            config = Config(config_path=Path(tmp_dir) / "config.json")
+            person = config.create_person_profile("Person Gamma")
+            pid = person["person_id"]
+            keep = self._add(config, pid, "mtg001", "SPEAKER_00", channel="mic")
+            drop = self._add(config, pid, "mtg002", "SPEAKER_00", channel="mic")
+            removed = config.remove_speaker_evidence_by_ids(pid, {drop["prototype_id"]})
+            self.assertEqual(removed, 1)
+            remaining = config.get_person_profile(pid)["prototypes"]
+            self.assertEqual([p["prototype_id"] for p in remaining], [keep["prototype_id"]])
+
+    def test_set_speaker_evidence_channels_backfills_and_validates(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            config = Config(config_path=Path(tmp_dir) / "config.json")
+            person = config.create_person_profile("Person Gamma")
+            pid = person["person_id"]
+            legacy = self._add(config, pid, "mtg001", "SPEAKER_00")
+            updated = config.set_speaker_evidence_channels(pid, {legacy["prototype_id"]: "mic"})
+            self.assertEqual(updated, 1)
+            profile = config.get_person_profile(pid)
+            self.assertEqual(profile["prototypes"][0]["channel"], "mic")
+            # Idempotent: setting the same channel again updates nothing.
+            self.assertEqual(
+                config.set_speaker_evidence_channels(pid, {legacy["prototype_id"]: "mic"}), 0,
+            )
+            with self.assertRaises(ValueError):
+                config.set_speaker_evidence_channels(pid, {legacy["prototype_id"]: "microphone"})
+
+    def test_quality_score_rewards_clearing_stability_bar(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            config = Config(config_path=Path(tmp_dir) / "config.json")
+            person = config.create_person_profile("Person Gamma")
+            strong = config.add_speaker_prototype(
+                person["person_id"], [0.1, 0.2],
+                recording_type="in_person", meeting_id="mtg001",
+                diarization_speaker_id="SPEAKER_00",
+                speech_duration_seconds=30.0, segment_count=5,
+                created_from="user_confirmed",
+            )
+            weak = config.add_speaker_prototype(
+                person["person_id"], [0.1, 0.2],
+                recording_type="in_person", meeting_id="mtg002",
+                diarization_speaker_id="SPEAKER_00",
+                speech_duration_seconds=2.0, segment_count=1,
+                created_from="user_confirmed",
+            )
+            self.assertEqual(strong["quality_score"], 1.0)
+            self.assertLess(weak["quality_score"], strong["quality_score"])
+
+    def test_normalize_person_profiles_drops_malformed_entries(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            config_path = Path(tmp_dir) / "config.json"
+            config_path.write_text(json.dumps({
+                "person_profiles": [
+                    {"person_id": "p1", "display_name": "Person Gamma"},
+                    {"display_name": "missing id"},
+                    "not even a dict",
+                    None,
+                ],
+            }))
+            config = Config(config_path=config_path)
+            profiles = config.get_person_profiles()
+            self.assertEqual(len(profiles), 1)
+            self.assertEqual(profiles[0]["display_name"], "Person Gamma")
+
+    def test_normalize_person_profiles_handles_non_list(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            config_path = Path(tmp_dir) / "config.json"
+            config_path.write_text(json.dumps({"person_profiles": "not a list"}))
+            config = Config(config_path=config_path)
+            self.assertEqual(config.get_person_profiles(), [])
+
+    def test_malformed_evidence_is_quarantined_without_being_deleted(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            path = Path(tmp_dir) / "config.json"
+            config = Config(config_path=path)
+            person = config.create_person_profile("Person Gamma")
+            document = json.loads(path.read_text())
+            malformed = {"prototype_id": "recoverable", "embedding_mean": ["bad"]}
+            document["person_profiles"][0]["prototypes"] = [malformed]
+            path.write_text(json.dumps(document))
+
+            reloaded = Config(config_path=path)
+            self.assertEqual(reloaded.get_person_profiles()[0]["prototypes"], [])
+            self.assertTrue(reloaded.rename_person_profile(person["person_id"], "Person Delta"))
+            persisted = json.loads(path.read_text())
+            self.assertEqual(persisted["person_profiles"][0]["prototypes"], [malformed])
+
+    def test_prototype_retention_is_bounded_per_context(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            config = Config(config_path=Path(tmp_dir) / "config.json")
+            person = config.create_person_profile("Person Gamma")
+            for index in range(Config.MAX_PROTOTYPES_PER_CONTEXT + 5):
+                config.add_speaker_prototype(
+                    person["person_id"],
+                    [1.0, float(index + 1)],
+                    recording_type="remote",
+                    meeting_id=f"meeting-{index}",
+                    diarization_speaker_id="SPEAKER_0",
+                    speech_duration_seconds=30.0,
+                    segment_count=5,
+                    created_from="user_confirmed",
+                    channel="system",
+                )
+            profile = config.get_person_profile(person["person_id"])
+            self.assertEqual(
+                len(profile["prototypes"]),
+                Config.MAX_PROTOTYPES_PER_CONTEXT,
+            )
+
+    def test_newly_confirmed_prototype_survives_context_pruning(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            config = Config(config_path=Path(tmp_dir) / "config.json")
+            person = config.create_person_profile("Person Gamma")
+            for index in range(Config.MAX_PROTOTYPES_PER_CONTEXT):
+                config.add_speaker_prototype(
+                    person["person_id"], [1.0, float(index + 1)],
+                    recording_type="remote", meeting_id=f"strong-{index}",
+                    diarization_speaker_id="SPEAKER_0",
+                    speech_duration_seconds=30.0, segment_count=5,
+                    created_from="user_confirmed", channel="system",
+                )
+
+            newest = config.add_speaker_prototype(
+                person["person_id"], [1.0, 999.0],
+                recording_type="remote", meeting_id="new-weak-confirmation",
+                diarization_speaker_id="SPEAKER_0",
+                speech_duration_seconds=1.0, segment_count=1,
+                created_from="user_confirmed", channel="system",
+            )
+
+            retained = config.get_person_profile(person["person_id"])["prototypes"]
+            self.assertIsNotNone(newest)
+            self.assertEqual(len(retained), Config.MAX_PROTOTYPES_PER_CONTEXT)
+            self.assertIn(newest["prototype_id"], {item["prototype_id"] for item in retained})
 
 
 if __name__ == "__main__":

@@ -46,8 +46,19 @@ export function ConfirmDialog({
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent data-confirm-dialog className="max-w-md">
+    <Dialog
+      open={open}
+      onOpenChange={(nextOpen) => {
+        if (!nextOpen && pending) return;
+        onOpenChange(nextOpen);
+      }}
+    >
+      <DialogContent
+        data-confirm-dialog
+        data-pending={pending || undefined}
+        closeDisabled={pending}
+        className="max-w-md"
+      >
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
           {description && <DialogDescription>{description}</DialogDescription>}

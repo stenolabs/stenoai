@@ -128,12 +128,22 @@ jobs:
         # ship users a Rosetta'd helper.
         file bin/mic-monitor | grep -q "arm64"
 
+    - name: Build speaker-diarization sidecar (Swift/Core ML)
+      run: |
+        chmod +x scripts/build-diarize-sidecar.sh
+        ./scripts/build-diarize-sidecar.sh arm64
+        test -x bin/steno-diarize
+        file bin/steno-diarize
+        file bin/steno-diarize | grep -q "arm64"
+
     - name: Build Python backend with PyInstaller
       run: |
         pyinstaller stenoai.spec --noconfirm
         # Verify build and architecture
         ls -la dist/stenoai/
         file dist/stenoai/stenoai
+        test -x dist/stenoai/_internal/steno-diarize
+        file dist/stenoai/_internal/steno-diarize | grep -q "arm64"
         echo "Expected arch: ${{ matrix.arch }}"
         echo "Backend built successfully"
 
