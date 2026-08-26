@@ -20,7 +20,9 @@ import {
   Mic,
   PencilLine,
   RefreshCw,
+  Search,
   Trash2,
+  UserRoundCheck,
   Users,
 } from 'lucide-react';
 import { Popover, PopoverAnchor, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -71,7 +73,12 @@ import {
   useRemoveMeetingFromFolder,
   useCreateFolder,
 } from '@/hooks/useFolders';
-import { useActiveMeeting } from '@/lib/askBarContext';
+import { useActiveMeeting, useAskBar } from '@/lib/askBarContext';
+import {
+  findCitationsBatch,
+  preprocessTranscript,
+  type CitationMatch,
+} from '@/lib/transcriptCitations';
 import { ipc, type Meeting, type Report, type Template } from '@/lib/ipc';
 import { buildTranscriptBundle, defaultExportFilename } from '@/lib/transcriptBundle';
 import { buildNotesCopyText, type StructuredNoteSections } from '@/lib/notesCopy';
@@ -642,6 +649,7 @@ function DetailContent({
 
   const summary = meeting.summary?.trim();
   const participants = asStringArray(meeting.participants);
+  const attendees = asStringArray(meeting.attendees);
   const keyPoints = meeting.key_points ?? [];
   const actionItems = asStringArray(meeting.action_items);
   const discussionAreas = asDiscussionAreas(meeting.discussion_areas);
@@ -739,6 +747,77 @@ function DetailContent({
   // state resets per meeting because DetailContent is keyed by summaryFile.
   const [tab, setTab] = React.useState<'summary' | 'notes'>('summary');
   const hasUserNotes = Boolean((meeting.user_notes ?? '').trim());
+  const { setTranscriptOpen } = useAskBar();
+
+  const rawTranscript =
+    (meeting.is_diarised && meeting.diarised_text ? meeting.diarised_text : meeting.transcript) ??
+    '';
+
+  const processedTranscript = React.useMemo(() => {
+    if (!rawTranscript.trim()) return null;
+    return preprocessTranscript(rawTranscript);
+  }, [rawTranscript]);
+
+  const summaryParagraphs = React.useMemo(() => {
+    if (!summary) return [];
+    return stripReasoning(summary)
+      .split(/\n{2,}/)
+      .map((p) => p.trim())
+      .filter(Boolean);
+  }, [summary]);
+
+  const summaryCitations = React.useMemo(() => {
+    if (!processedTranscript || summaryParagraphs.length === 0) return [];
+    return findCitationsBatch(summaryParagraphs, processedTranscript);
+  }, [summaryParagraphs, processedTranscript]);
+
+  const keyPointsCitations = React.useMemo(() => {
+    if (!processedTranscript || keyPoints.length === 0) return [];
+    return findCitationsBatch(keyPoints, processedTranscript);
+  }, [keyPoints, processedTranscript]);
+
+  const actionItemsCitations = React.useMemo(() => {
+    if (!processedTranscript || actionItems.length === 0) return [];
+    return findCitationsBatch(actionItems, processedTranscript);
+  }, [actionItems, processedTranscript]);
+
+  const jumpToCitation = React.useCallback(
+    (match: CitationMatch) => {
+      setTranscriptOpen(true);
+      const targetIndex = match.lineIndex;
+
+      const highlightAndScroll = (attemptsLeft: number) => {
+        const transcriptBar = document.querySelector('[data-transcript-bar]');
+        if (!transcriptBar) {
+          if (attemptsLeft > 0) {
+            requestAnimationFrame(() => highlightAndScroll(attemptsLeft - 1));
+          }
+          return;
+        }
+
+        const scrollContainer = transcriptBar.querySelector('.overflow-auto') as HTMLElement | null;
+        const rowEl = transcriptBar.querySelector(
+          `[data-index="${targetIndex}"]`,
+        ) as HTMLElement | null;
+
+        if (rowEl) {
+          rowEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          applyCitationHighlight(rowEl);
+        } else if (scrollContainer) {
+          scrollContainer.scrollTo({
+            top: Math.max(0, targetIndex * 80 - 100),
+            behavior: 'smooth',
+          });
+          if (attemptsLeft > 0) {
+            setTimeout(() => highlightAndScroll(attemptsLeft - 1), 60);
+          }
+        }
+      };
+
+      requestAnimationFrame(() => highlightAndScroll(10));
+    },
+    [setTranscriptOpen],
+  );
 
   return (
     <article data-testid="meeting-detail" className="space-y-9">
@@ -1051,9 +1130,14 @@ function DetailContent({
             summaryFile={summaryFile}
             assignedFolderIds={meeting.folders ?? meeting.session_info.folders ?? []}
           />
+          {attendees.length > 0 && <AttendeesChip attendees={attendees} />}
           {participants.length > 0 && (
+            // "speaker", not "person": this count comes from the audio, and on a
+            // note that also has calendar attendees the two chips otherwise read
+            // as one fact with two different numbers. The Participants section
+            // below names these same rows Speaker 1..N.
             <ChipV2 icon={<Users className="size-[11px]" />}>
-              {participants.length} {participants.length === 1 ? 'person' : 'people'}
+              {participants.length} {participants.length === 1 ? 'speaker' : 'speakers'}
             </ChipV2>
           )}
           {/* Quiet, non-alarming backup status for org users — a calm
@@ -1203,17 +1287,24 @@ function DetailContent({
                 <section className="flex flex-col gap-3">
                   <SectionTitle>Summary</SectionTitle>
                   <div data-testid="tab-summary-content">
-                    {stripReasoning(summary)
-                      .split(/\n{2,}/)
-                      .map((para, i) => (
+                    {summaryParagraphs.map((para, i) => {
+                      const citation = summaryCitations[i];
+                      return (
                         <p
                           key={i}
                           className="text-[15.5px] leading-[1.65]"
                           style={{ color: 'var(--fg-1)', maxWidth: '64ch' }}
                         >
-                          {para}
+                          <span>{para}</span>
+                          {citation && (
+                            <CitationButton
+                              testId={`citation-summary-${i}`}
+                              onJump={() => jumpToCitation(citation)}
+                            />
+                          )}
                         </p>
-                      ))}
+                      );
+                    })}
                   </div>
                 </section>
               ) : notesNotGenerated && meeting.transcript ? (
@@ -1261,9 +1352,20 @@ function DetailContent({
                 <section className="flex flex-col gap-3">
                   <SectionTitle>Key points</SectionTitle>
                   <ul className="mv-bullets">
-                    {keyPoints.map((p, i) => (
-                      <li key={i}>{p}</li>
-                    ))}
+                    {keyPoints.map((p, i) => {
+                      const citation = keyPointsCitations[i];
+                      return (
+                        <li key={i}>
+                          <span>{p}</span>
+                          {citation && (
+                            <CitationButton
+                              testId={`citation-key-points-${i}`}
+                              onJump={() => jumpToCitation(citation)}
+                            />
+                          )}
+                        </li>
+                      );
+                    })}
                   </ul>
                 </section>
               )}
@@ -1272,9 +1374,20 @@ function DetailContent({
                 <section className="flex flex-col gap-3">
                   <SectionTitle>Action items</SectionTitle>
                   <ul className="mv-bullets">
-                    {actionItems.map((a, i) => (
-                      <li key={i}>{a}</li>
-                    ))}
+                    {actionItems.map((a, i) => {
+                      const citation = actionItemsCitations[i];
+                      return (
+                        <li key={i}>
+                          <span>{a}</span>
+                          {citation && (
+                            <CitationButton
+                              testId={`citation-action-items-${i}`}
+                              onJump={() => jumpToCitation(citation)}
+                            />
+                          )}
+                        </li>
+                      );
+                    })}
                   </ul>
                 </section>
               )}
@@ -1684,6 +1797,63 @@ function ChipV2({ icon, children, onClick, title }: ChipV2Props) {
       {icon}
       <span>{children}</span>
     </button>
+  );
+}
+
+interface AttendeesChipProps {
+  attendees: string[];
+}
+
+function AttendeesChip({ attendees }: AttendeesChipProps) {
+  if (!attendees || attendees.length === 0) return null;
+
+  const count = attendees.length;
+  // "invited", not a bare count: the speaker-count chip sitting beside this one
+  // also counts people, and two adjacent people-shaped counts with different
+  // numbers (3 invited from the calendar, 1 speaker detected in the audio) read
+  // as a contradiction rather than as two different facts.
+  const label =
+    count === 1
+      ? attendees[0]
+      : count === 2 && `${attendees[0]}, ${attendees[1]}`.length <= 32
+        ? `${attendees[0]}, ${attendees[1]}`
+        : `${count} invited`;
+
+  const allNames = attendees.join(', ');
+
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          className="mv-chip"
+          data-testid="attendees-chip"
+          title={allNames}
+          aria-label={`Attendees: ${allNames}`}
+        >
+          <UserRoundCheck className="size-[11px]" />
+          <span className="max-w-[200px] truncate">{label}</span>
+        </button>
+      </PopoverTrigger>
+      <PopoverContent align="start" className="w-64 p-2.5" data-testid="attendees-popover">
+        <div
+          className="pb-1.5 mb-1.5 text-[11.5px] font-medium tracking-[0.02em]"
+          style={{
+            color: 'var(--fg-muted)',
+            borderBottom: '1px solid var(--border-subtle)',
+          }}
+        >
+          Attendees ({count})
+        </div>
+        <ul className="max-h-56 overflow-y-auto space-y-1 text-[13px]" style={{ color: 'var(--fg-1)' }}>
+          {attendees.map((name, i) => (
+            <li key={i} className="truncate py-0.5" data-testid="attendee-item">
+              {name}
+            </li>
+          ))}
+        </ul>
+      </PopoverContent>
+    </Popover>
   );
 }
 
@@ -2208,4 +2378,53 @@ export function composeShareBody(meeting: Meeting): string {
   // already show in the body — summary, not transcript). If every structured
   // field is empty, return empty rather than secretly upload the transcript.
   return sections.join('\n\n');
+}
+
+function applyCitationHighlight(el: HTMLElement) {
+  el.setAttribute('data-citation-highlight', 'true');
+  const bubble = (el.querySelector('.rounded-2xl') as HTMLElement) || el;
+  const prevOutline = bubble.style.outline;
+  const prevBg = bubble.style.backgroundColor;
+  const prevTransition = bubble.style.transition;
+
+  bubble.style.transition = 'all 0.2s ease';
+  bubble.style.outline = '2px solid var(--fg-1, #1B1B19)';
+  bubble.style.backgroundColor = 'var(--surface-active, #EFEBE1)';
+
+  setTimeout(() => {
+    bubble.style.transition = 'all 0.8s ease';
+    bubble.style.outline = prevOutline;
+    bubble.style.backgroundColor = prevBg;
+    el.removeAttribute('data-citation-highlight');
+    setTimeout(() => {
+      bubble.style.transition = prevTransition;
+    }, 800);
+  }, 2000);
+}
+
+function CitationButton({
+  testId,
+  onJump,
+}: {
+  testId: string;
+  onJump: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      data-testid={testId}
+      onClick={(e) => {
+        e.stopPropagation();
+        onJump();
+      }}
+      // Not "Show transcript…": that is the accessible name of the Ask-bar and
+      // pill transcript toggles, and an unscoped by-role lookup would match
+      // both this and them.
+      aria-label="Jump to transcript evidence"
+      title="Jump to transcript evidence"
+      className="inline-flex items-center justify-center size-5 ml-1.5 align-middle rounded text-[color:var(--fg-muted)] hover:text-[color:var(--fg-1)] hover:bg-[color:var(--surface-hover)] focus-visible:ring-1 focus-visible:ring-[color:var(--focus-ring)] transition-colors cursor-pointer"
+    >
+      <Search className="size-3" aria-hidden="true" />
+    </button>
+  );
 }

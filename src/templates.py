@@ -104,6 +104,20 @@ BUILTIN_TEMPLATES = {
         "language": "auto",
         "format": "markdown",
     },
+    "follow_up_email": {
+        "id": "follow_up_email",
+        "name": "Follow-up Email",
+        "icon": "mail",
+        "prompt": (
+            "Draft a ready-to-send follow-up email based on this meeting. "
+            "Include: a polite greeting, a concise summary of what was "
+            "discussed and agreed, clear action items with owners and "
+            "timelines if mentioned, the agreed next step, and a professional "
+            "sign-off. Write in the language of the meeting."
+        ),
+        "language": "auto",
+        "format": "markdown",
+    },
 }
 
 # Pre-seeded once into the user's custom templates (editable + deletable).
@@ -174,6 +188,41 @@ def validate_template(t: dict, valid_languages: set) -> tuple:
             return False, "Invalid template icon"
         if len(icon) > MAX_ICON_LEN:
             return False, "Template icon is too long"
+
+    return True, ""
+
+
+# Label and prompt length caps for chat recipes (issue #297 parity).
+MAX_RECIPE_LABEL_LEN = 200
+MAX_RECIPE_PROMPT_LEN = 8000
+
+
+def validate_recipe(r: dict) -> tuple:
+    """Return (ok, error_message) for a chat recipe dict.
+
+    Defensive at the Python trust boundary: `r` arrives from the renderer as
+    decoded JSON and may be malformed. This never raises — it always returns
+    (False, "<message>") on bad input.
+    """
+    if not isinstance(r, dict):
+        return False, "Invalid recipe payload"
+
+    label = r.get("label")
+    if not isinstance(label, str):
+        return False, "Recipe label is required"
+    label = label.strip()
+    if not label:
+        return False, "Recipe label is required"
+    if len(label) > MAX_RECIPE_LABEL_LEN:
+        return False, f"Recipe label is too long (max {MAX_RECIPE_LABEL_LEN} characters)"
+
+    prompt = r.get("prompt")
+    if not isinstance(prompt, str):
+        return False, "Recipe prompt is required"
+    if not prompt.strip():
+        return False, "Recipe prompt is required"
+    if len(prompt) > MAX_RECIPE_PROMPT_LEN:
+        return False, f"Recipe prompt is too long (max {MAX_RECIPE_PROMPT_LEN} characters)"
 
     return True, ""
 

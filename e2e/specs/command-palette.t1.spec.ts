@@ -78,3 +78,21 @@ test('sidebar search box opens the palette', async ({ launchApp }) => {
   await page.keyboard.press('Escape');
   await expect(page.locator(palette)).toBeHidden();
 });
+
+test('finds transcript-only match and labels it as a Transcript hit', async ({ launchApp }) => {
+  const { page } = await launchApp({
+    mockIpc: true,
+    env: { STENOAI_E2E_SEED_MEETING: '1' },
+  });
+
+  await page.keyboard.press('ControlOrMeta+k');
+  await expect(page.locator(palette)).toBeVisible();
+
+  // "prep the release notes" only appears in SEED_MEETING's transcript
+  // (title is "Epsilon Planning", no summary).
+  await page.locator(input).fill('prep the release notes');
+  await expect(page.locator(result)).toHaveCount(1);
+  await expect(page.locator(result).nth(0)).toContainText('Epsilon Planning');
+  await expect(page.locator(result).nth(0)).toContainText('Transcript');
+  await expect(page.locator(result).nth(0)).toContainText('prep the release notes');
+});

@@ -11,6 +11,7 @@ import {
   Plus,
   Search,
   Settings as SettingsIcon,
+  Users,
 } from 'lucide-react';
 import { navigate, rememberNonSettingsRoute, toggleSettings } from '@/lib/router';
 import { cn, shortcut } from '@/lib/utils';
@@ -174,6 +175,7 @@ export function Sidebar({
   // Match /chat as well as any /chat/<id> conversation route — the same Chat
   // tab item should stay highlighted when drilling into a session.
   const isChatActive = currentRoute === '/chat' || currentRoute.startsWith('/chat/');
+  const isPeopleActive = currentRoute === '/people' || currentRoute.startsWith('/people/');
   const isOrgSharedActive = currentRoute.startsWith('/org/');
 
   const orgSession = useOrgSession();
@@ -385,6 +387,17 @@ export function Sidebar({
           >
             <MessageSquare className="size-[14px]" />
             <span className="flex-1 truncate">Chat</span>
+          </button>
+
+          <button
+            type="button"
+            className={cn('sb-row', isPeopleActive && 'active')}
+            onClick={() => navigate('/people')}
+            data-testid="sidebar-nav-people"
+            aria-label="People directory"
+          >
+            <Users className="size-[14px]" />
+            <span className="flex-1 truncate">People directory</span>
           </button>
 
           {sharedNotes.enabled && (

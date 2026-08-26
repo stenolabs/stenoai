@@ -84,8 +84,9 @@ test('generate-report on a .md meeting writes the sidecar and get-meeting merges
 
   const ollama = await startMockOllama({ chatReply: REPORT_REPLY });
   try {
-    const { page } = await launchApp();
-
+    const { page } = await launchApp({
+      env: { OLLAMA_HOST: `http://127.0.0.1:${ollama.port}` },
+    });
     // Create a template so we have a valid templateId.
     const saveRes = await page.evaluate(
       () =>
@@ -226,8 +227,9 @@ test('reprocessing a .md meeting backs up the prior Standard note into the sidec
 
   const ollama = await startMockOllama({ chatReply: MD_REPROCESS_REPLY });
   try {
-    const { page } = await launchApp();
-
+    const { page } = await launchApp({
+      env: { OLLAMA_HOST: `http://127.0.0.1:${ollama.port}` },
+    });
     const completed: boolean = await page.evaluate(
       ([f, name]) =>
         new Promise<boolean>((resolve) => {

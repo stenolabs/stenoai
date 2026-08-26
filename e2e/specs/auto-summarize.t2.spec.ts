@@ -50,10 +50,19 @@ const FIXED_REPLY = [
 
 type SpawnResult = { code: number | null; stdout: string; stderr: string };
 
-function runBackend(args: string[], userDataDir: string): Promise<SpawnResult> {
+function runBackend(args: string[], userDataDir: string, extraEnv?: Record<string, string>): Promise<SpawnResult> {
   return new Promise((resolve, reject) => {
     const proc = spawn(BACKEND, args, {
-      env: { ...process.env, STENOAI_USER_DATA_DIR: userDataDir },
+      // Model-free T2 asserts against the deterministic Ollama fixture. The
+      // electron fixture disables Apple LM for the app; a directly spawned
+      // backend needs the same pin, or a host with a built steno-apple-lm
+      // sidecar summarises on-device and never calls the mock.
+      env: {
+        ...process.env,
+        STENOAI_USER_DATA_DIR: userDataDir,
+        STENOAI_DISABLE_APPLE_LM: '1',
+        ...(extraEnv ?? {}),
+      },
     });
     let stdout = '';
     let stderr = '';
@@ -101,6 +110,7 @@ test('auto-summarize off writes a transcript-only note with no LLM call; the Gen
     const res = await runBackend(
       ['process-streaming', wavPath, '--name', 'Notes Off Meeting', '--live-transcript', liveFile],
       userDataDir,
+      { OLLAMA_HOST: `http://127.0.0.1:${ollama.port}` },
     );
     expect(res.code, `backend stderr:\n${res.stderr}`).toBe(0);
     expect(res.stdout).toContain('SUMMARY_SKIPPED');
@@ -116,7 +126,9 @@ test('auto-summarize off writes a transcript-only note with no LLM call; the Gen
     expect(ollama.chatCalls()).toBe(0);
 
     // Phase 2 — real app: open the note, click "Generate notes", reprocess it.
-    const { page } = await launchApp();
+    const { page } = await launchApp({
+      env: { OLLAMA_HOST: `http://127.0.0.1:${ollama.port}` },
+    });
     const meetingHash = `/meetings/${encodeURIComponent(summaryPath)}`;
 
     // Navigate straight to the note detail. Re-set the hash each poll so a
@@ -204,6 +216,7 @@ test('auto-summarize off also skips title generation and the default-template re
     const res = await runBackend(
       ['process-streaming', wavPath, '--name', 'Meeting', '--live-transcript', liveFile],
       userDataDir,
+      { OLLAMA_HOST: `http://127.0.0.1:${ollama.port}` },
     );
     expect(res.code, `backend stderr:\n${res.stderr}`).toBe(0);
     expect(res.stdout).toContain('SUMMARY_SKIPPED');

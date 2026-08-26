@@ -76,8 +76,9 @@ test('generate-report appends to reports[] and sets active_report in the sidecar
 
   const ollama = await startMockOllama({ chatReply: REPORT_REPLY });
   try {
-    const { page } = await launchApp();
-
+    const { page } = await launchApp({
+      env: { OLLAMA_HOST: `http://127.0.0.1:${ollama.port}` },
+    });
     // Create a custom template via the bridge and read back its generated id.
     const saveRes = await page.evaluate(
       () =>
@@ -149,8 +150,9 @@ test('generate-report with an unknown template surfaces failure and persists no 
   // guard fails before any model call.
   const ollama = await startMockOllama({ chatReply: REPORT_REPLY });
   try {
-    const { page } = await launchApp();
-
+    const { page } = await launchApp({
+      env: { OLLAMA_HOST: `http://127.0.0.1:${ollama.port}` },
+    });
     // Drive generate-report with a template id that does not exist and wait for
     // the completion event. It must arrive with success:false (mirroring the
     // first spec's summaryComplete listener), not silently succeed.

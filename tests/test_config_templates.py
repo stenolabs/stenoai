@@ -182,5 +182,90 @@ class AlreadySeededMalformedConfigTests(unittest.TestCase):
             self.assertIn(STANDARD_TEMPLATE_ID, ids)
 
 
+
+class ConfigRecipeTests(unittest.TestCase):
+    def test_get_chat_recipes_empty_by_default(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            c = _cfg(tmp)
+            self.assertEqual(c.get_chat_recipes(), [])
+
+    def test_save_chat_recipe_assigns_id_and_persists(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            c = _cfg(tmp)
+            ok, err, saved = c.save_chat_recipe({"label": "Action Items", "prompt": "List all action items"})
+            self.assertTrue(ok)
+            self.assertEqual(err, "")
+            self.assertEqual(saved["id"], "action-items")
+            self.assertEqual(saved["label"], "Action Items")
+            self.assertEqual(saved["prompt"], "List all action items")
+
+            # Reload from disk
+            c2 = _cfg(tmp)
+            recipes = c2.get_chat_recipes()
+            self.assertEqual(len(recipes), 1)
+            self.assertEqual(recipes[0]["id"], "action-items")
+            self.assertEqual(recipes[0]["label"], "Action Items")
+
+    def test_save_chat_recipe_dedupes_ids(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            c = _cfg(tmp)
+            ok1, _, r1 = c.save_chat_recipe({"label": "Summary", "prompt": "p1"})
+            ok2, _, r2 = c.save_chat_recipe({"label": "Summary", "prompt": "p2"})
+            self.assertTrue(ok1)
+            self.assertTrue(ok2)
+            self.assertEqual(r1["id"], "summary")
+            self.assertEqual(r2["id"], "summary-2")
+
+    def test_save_chat_recipe_updates_existing_in_place(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            c = _cfg(tmp)
+            _, _, r1 = c.save_chat_recipe({"label": "Brief", "prompt": "p1"})
+            ok, err, r2 = c.save_chat_recipe({"id": r1["id"], "label": "Brief Renamed", "prompt": "p2"})
+            self.assertTrue(ok)
+            self.assertEqual(r2["id"], r1["id"])
+            self.assertEqual(r2["label"], "Brief Renamed")
+            self.assertEqual(r2["prompt"], "p2")
+            self.assertEqual(len(c.get_chat_recipes()), 1)
+
+    def test_delete_chat_recipe(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            c = _cfg(tmp)
+            _, _, r1 = c.save_chat_recipe({"label": "R1", "prompt": "p1"})
+            _, _, r2 = c.save_chat_recipe({"label": "R2", "prompt": "p2"})
+            self.assertEqual(len(c.get_chat_recipes()), 2)
+
+            self.assertTrue(c.delete_chat_recipe(r1["id"]))
+            self.assertFalse(c.delete_chat_recipe("non-existent-id"))
+
+            # Reload and check
+            c2 = _cfg(tmp)
+            recipes = c2.get_chat_recipes()
+            self.assertEqual(len(recipes), 1)
+            self.assertEqual(recipes[0]["id"], r2["id"])
+
+    def test_save_chat_recipe_validates_payload(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            c = _cfg(tmp)
+            ok, err, _ = c.save_chat_recipe(None)
+            self.assertFalse(ok)
+            self.assertIn("Invalid recipe payload", err)
+
+            ok, err, _ = c.save_chat_recipe({"label": "", "prompt": "valid"})
+            self.assertFalse(ok)
+            self.assertIn("label is required", err.lower())
+
+            ok, err, _ = c.save_chat_recipe({"label": "valid", "prompt": ""})
+            self.assertFalse(ok)
+            self.assertIn("prompt is required", err.lower())
+
+    def test_normalize_recipes_handles_corrupt_entries(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "config.json"
+            path.write_text(json.dumps({"chat_recipes": ["corrupt", {"id": "ok", "label": "L", "prompt": "P"}]}))
+            c = Config(config_path=path)
+            recipes = c.get_chat_recipes()
+            self.assertEqual(len(recipes), 1)
+            self.assertEqual(recipes[0]["id"], "ok")
+
 if __name__ == "__main__":
     unittest.main()

@@ -88,7 +88,10 @@ test('@pipeline synthesized two-speaker mic channel becomes You + Speaker 2', as
     chmodSync(scriptPath, 0o755);
 
     const { page } = await launchApp({
-      env: { STENOAI_DIARIZE_SIDECAR_PATH: scriptPath },
+      env: {
+        STENOAI_DIARIZE_SIDECAR_PATH: scriptPath,
+        OLLAMA_HOST: `http://127.0.0.1:${ollama.port}`,
+      },
     });
     await selectEngine(page);
 

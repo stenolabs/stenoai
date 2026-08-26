@@ -6,6 +6,7 @@ import { Settings } from '@/routes/Settings';
 import { Setup } from '@/routes/Setup';
 import { Chat } from '@/routes/Chat';
 import { ChatConversation } from '@/routes/ChatConversation';
+import { People } from '@/routes/People';
 import { StreamingProvider } from '@/hooks/useStreamingQuery';
 import { Home } from '@/routes/Home';
 import { MeetingDetail } from '@/routes/MeetingDetail';
@@ -307,6 +308,7 @@ function RouteView({ route }: { route: string }) {
     const sessionId = safeDecode(route.slice('/chat/'.length));
     return <ChatConversation sessionId={sessionId} />;
   }
+  if (route === '/people' || route.startsWith('/people/')) return <People />;
   if (route === '/meetings/processing') return <Processing />;
   if (route.startsWith('/meetings/')) {
     const summaryFile = safeDecode(route.slice('/meetings/'.length));

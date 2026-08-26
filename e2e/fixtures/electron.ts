@@ -67,6 +67,9 @@ export const test = base.extend<Fixtures>({
         // A specific focus/visibility test can override this with "0".
         STENOAI_E2E_HEADLESS: '1',
         STENOAI_USER_DATA_DIR: userDataDir,
+        // Model-free E2E defaults to deterministic Ollama fixtures unless a spec
+        // explicitly tests Apple LM integration via opts.env.
+        STENOAI_DISABLE_APPLE_LM: '1',
         ...(opts.mockIpc ? { STENOAI_E2E_MOCK_IPC: '1' } : {}),
         ...(opts.env ?? {}),
       };
@@ -81,6 +84,7 @@ export const test = base.extend<Fixtures>({
           app = await electron.launch({
             args: [
               '.',
+              ...(process.env.ELECTRON_EXTRA_LAUNCH_ARGS ? process.env.ELECTRON_EXTRA_LAUNCH_ARGS.split(' ') : []),
               ...(opts.fakeAudio
                 ? ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream']
                 : []),

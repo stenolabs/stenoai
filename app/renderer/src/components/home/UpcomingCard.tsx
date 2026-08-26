@@ -1,15 +1,29 @@
 import * as React from 'react';
-import { Video } from 'lucide-react';
+import { Sparkles, Video } from 'lucide-react';
 import type { CalendarEvent } from '@/lib/ipc';
 import { ipc } from '@/lib/ipc';
 import { cn } from '@/lib/utils';
 import { useRecording } from '@/hooks/useRecording';
 
-interface UpcomingCardProps {
-  event: CalendarEvent;
+export interface BriefStreamState {
+  text: string;
+  status: 'idle' | 'streaming' | 'done' | 'error';
+  error: string | null;
 }
 
-export function UpcomingCard({ event }: UpcomingCardProps) {
+export interface UpcomingCardProps {
+  event: CalendarEvent;
+  isBriefActive?: boolean;
+  briefState?: BriefStreamState;
+  onToggleBrief?: (event: CalendarEvent) => void;
+}
+
+export function UpcomingCard({
+  event,
+  isBriefActive = false,
+  briefState,
+  onToggleBrief,
+}: UpcomingCardProps) {
   const isAllDay = event.is_all_day === true;
   const relative = isAllDay
     ? ({ prefix: null, value: 'All day', urgent: false, state: 'later' } as const)
@@ -23,14 +37,22 @@ export function UpcomingCard({ event }: UpcomingCardProps) {
   const urgent = relative.urgent || isLive;
 
   const onStart = () => {
+    // Never start a second recording over a live one — the dock/pill owns that
+    // state and a double start strands the first note.
     if (recording.status === 'recording' || recording.status === 'paused') return;
-    void recording.startRecording(event.title);
+    // Start recording against this event's title — clicking an upcoming card is
+    // the primary way users record scheduled meetings. 'manual' because that is
+    // what this is: a user click. main.js whitelists the trigger values
+    // (RECORDING_TRIGGERS) and drops anything else, so inventing a new one here
+    // would silently lose the analytics counter it was meant to add.
+    void recording.startRecording(event.title || 'Meeting', 'manual');
   };
 
   const onJoin = (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (!meetingUrl) return;
-    void ipc().shell.openExternal(meetingUrl);
+    if (meetingUrl) {
+      void ipc().shell.openExternal(meetingUrl);
+    }
   };
 
   const onStartAndJoin = (e: React.MouseEvent) => {
@@ -45,9 +67,10 @@ export function UpcomingCard({ event }: UpcomingCardProps) {
   return (
     <div
       className={cn(
-        'group relative flex min-h-[44px] cursor-pointer items-center justify-between py-2 transition-colors hover:bg-[color:var(--surface-hover)] -mx-3 px-3 rounded-lg',
+        'group relative flex min-h-[44px] flex-col justify-center py-2 transition-colors hover:bg-[color:var(--surface-hover)] -mx-3 px-3 rounded-lg',
         urgent && 'opacity-100',
-        !urgent && 'opacity-90 hover:opacity-100'
+        !urgent && 'opacity-90 hover:opacity-100',
+        isBriefActive && 'bg-[color:var(--surface-hover)] opacity-100'
       )}
       role="button"
       tabIndex={0}
@@ -61,73 +84,177 @@ export function UpcomingCard({ event }: UpcomingCardProps) {
       }}
     >
       {/* Left indicator bar */}
-      <div 
-        className="absolute left-0 top-2 bottom-2 w-0.5 rounded-full" 
-        style={{ backgroundColor: color }} 
+      <div
+        className="absolute left-0 top-2 bottom-2 w-0.5 rounded-full"
+        style={{ backgroundColor: color }}
       />
 
-      {/* Main content */}
-      <div className="flex min-w-0 flex-1 flex-col pl-3">
-        <div className="flex items-center gap-2">
-          <div
-            className="truncate text-[13.5px] font-medium tracking-[-0.005em]"
-            style={{ color: 'var(--fg-1)' }}
-          >
-            {event.title || 'Untitled meeting'}
+      <div className="flex w-full items-center justify-between">
+        {/* Main content */}
+        <div className="flex min-w-0 flex-1 flex-col pl-3">
+          <div className="flex items-center gap-2">
+            <div
+              className="truncate text-[13.5px] font-medium tracking-[-0.005em]"
+              style={{ color: 'var(--fg-1)' }}
+            >
+              {event.title || 'Untitled meeting'}
+            </div>
+            {isLive && !!meetingUrl && (
+              <span
+                className="inline-block size-1.5 rounded-full"
+                style={{
+                  background: 'var(--recording)',
+                  animation: 'record-pulse 1.6s ease-out infinite',
+                }}
+              />
+            )}
           </div>
-          {(isLive && !!meetingUrl) && (
-            <span 
-              className="inline-block size-1.5 rounded-full" 
-              style={{ background: 'var(--recording)', animation: 'record-pulse 1.6s ease-out infinite' }} 
-            />
-          )}
+          <div
+            className="flex items-center gap-1.5 text-[11.5px] font-medium"
+            style={{ color: 'var(--fg-muted)' }}
+          >
+            {meta.timeRange || meta.primary}
+            {relative.urgent && (
+              <>
+                <span className="opacity-40">·</span>
+                <span style={{ color: 'var(--recording)' }}>{relative.value}</span>
+              </>
+            )}
+          </div>
         </div>
-        <div
-          className="flex items-center gap-1.5 text-[11.5px] font-medium"
-          style={{ color: 'var(--fg-muted)' }}
-        >
-          {meta.timeRange || meta.primary}
-          {relative.urgent && (
-             <>
-               <span className="opacity-40">·</span>
-               <span style={{ color: 'var(--recording)' }}>{relative.value}</span>
-             </>
+
+        {/* CTA */}
+        <div className="flex flex-shrink-0 items-center gap-1.5 pl-4 opacity-0 transition-opacity pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto group-focus-within:opacity-100 group-focus-within:pointer-events-auto focus-within:opacity-100 focus-within:pointer-events-auto">
+          {onToggleBrief && (
+            <button
+              type="button"
+              data-testid="upcoming-card-brief-btn"
+              onClick={(e) => {
+                e.stopPropagation();
+                onToggleBrief(event);
+              }}
+              aria-label="Pre-meeting brief"
+              title="Pre-meeting brief"
+              className={cn(
+                'inline-flex h-6 items-center gap-1 rounded-full px-2 text-[11px] font-medium transition-colors cursor-pointer border-0',
+                isBriefActive
+                  ? 'bg-[color:var(--surface-active)] text-[color:var(--fg-1)]'
+                  : 'bg-[color:var(--surface-hover)] text-[color:var(--fg-2)] hover:text-[color:var(--fg-1)] hover:bg-[color:var(--surface-active)]'
+              )}
+              style={{
+                border: '1px solid var(--border-subtle)',
+              }}
+            >
+              <Sparkles className="size-3 shrink-0" />
+              <span>Brief</span>
+            </button>
           )}
+
+          {meetingUrl ? (
+            urgent ? (
+              <button
+                type="button"
+                onClick={onStartAndJoin}
+                className="inline-flex h-6 items-center rounded-full px-2.5 text-[11px] font-medium transition-transform hover:scale-105 active:scale-95"
+                style={{
+                  background: 'var(--fg-1)',
+                  color: 'var(--primary-fg)',
+                }}
+              >
+                Start now
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={onJoin}
+                className="inline-flex h-6 items-center gap-1.5 rounded-full px-2.5 text-[11px] font-medium transition-colors hover:scale-105 active:scale-95"
+                style={{
+                  background: 'var(--surface-hover)',
+                  border: '1px solid var(--border-subtle)',
+                  color: 'var(--fg-1)',
+                }}
+              >
+                <Video className="size-3" />
+                Join
+              </button>
+            )
+          ) : null}
         </div>
       </div>
 
-      {/* CTA */}
-      <div className="flex flex-shrink-0 items-center gap-2 pl-4 opacity-0 transition-opacity pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto group-focus-within:opacity-100 group-focus-within:pointer-events-auto focus-within:opacity-100 focus-within:pointer-events-auto">
-        {meetingUrl ? (
-          urgent ? (
+      {/* Pre-meeting Brief Panel */}
+      {isBriefActive && (
+        <div
+          data-testid="upcoming-card-brief-container"
+          className="mt-2 ml-3 rounded-lg p-2.5 text-xs transition-all"
+          style={{
+            background: 'var(--surface-raised)',
+            border: '1px solid var(--border-subtle)',
+          }}
+          onClick={(e) => e.stopPropagation()}
+          onKeyDown={(e) => e.stopPropagation()}
+        >
+          <div className="flex items-center justify-between gap-2 mb-1.5 pb-1 border-b border-[color:var(--border-subtle)]">
+            <div className="flex items-center gap-1.5 font-medium text-[11px] text-[color:var(--fg-muted)]">
+              <Sparkles className="size-3 text-[color:var(--fg-muted)]" />
+              <span>Pre-meeting brief</span>
+              {briefState?.status === 'streaming' && (
+                <span
+                  className="inline-block size-1.5 rounded-full"
+                  style={{
+                    background: 'var(--fg-muted)',
+                    animation: 'record-pulse 1.2s ease-out infinite',
+                  }}
+                />
+              )}
+            </div>
             <button
               type="button"
-              onClick={onStartAndJoin}
-              className="inline-flex h-6 items-center rounded-full px-2.5 text-[11px] font-medium transition-transform hover:scale-105 active:scale-95"
-              style={{
-                background: 'var(--fg-1)',
-                color: 'var(--primary-fg)',
-              }}
+              onClick={() => onToggleBrief?.(event)}
+              className="rounded px-1.5 py-0.5 text-[10px] text-[color:var(--fg-muted)] hover:bg-[color:var(--surface-hover)] hover:text-[color:var(--fg-1)] transition-colors cursor-pointer border-0"
+              aria-label="Close brief"
             >
-              Start now
+              Close
             </button>
-          ) : (
-            <button
-              type="button"
-              onClick={onJoin}
-              className="inline-flex h-6 items-center gap-1.5 rounded-full px-2.5 text-[11px] font-medium transition-colors hover:scale-105 active:scale-95"
-              style={{
-                background: 'var(--surface-hover)',
-                border: '1px solid var(--border-subtle)',
-                color: 'var(--fg-1)',
-              }}
+          </div>
+
+          {briefState?.status === 'streaming' && !briefState.text && (
+            <div className="py-1 text-[12px] text-[color:var(--fg-muted)] animate-pulse">
+              Reviewing prior notes…
+            </div>
+          )}
+
+          {briefState?.text ? (
+            <div
+              data-testid="upcoming-card-brief-content"
+              className="whitespace-pre-wrap text-[12px] leading-relaxed text-[color:var(--fg-1)] select-text"
             >
-              <Video className="size-3" />
-              Join
-            </button>
-          )
-        ) : null}
-      </div>
+              {briefState.text}
+            </div>
+          ) : null}
+
+          {briefState?.status === 'error' && (
+            <div
+              data-testid="upcoming-card-brief-empty"
+              className="py-1 text-[12px] text-[color:var(--fg-muted)]"
+            >
+              {briefState.error?.includes('No related notes') ||
+              briefState.error?.includes('No related notes yet')
+                ? 'No related notes yet for this meeting.'
+                : briefState.error || 'No related notes yet for this meeting.'}
+            </div>
+          )}
+
+          {briefState?.status === 'done' && !briefState.text && (
+            <div
+              data-testid="upcoming-card-brief-empty"
+              className="py-1 text-[12px] text-[color:var(--fg-muted)]"
+            >
+              No related notes yet for this meeting.
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -140,34 +267,23 @@ function relativeLabel(startIso: string): {
   urgent: boolean;
   state: RelativeState;
 } {
-  const start = new Date(startIso);
-  if (Number.isNaN(start.getTime()))
-    return { prefix: null, value: '—', urgent: false, state: 'later' };
-  const diffMs = start.getTime() - Date.now();
-  const diffMins = Math.round(diffMs / 60000);
-  if (diffMins <= 0) return { prefix: null, value: 'Now', urgent: true, state: 'now' };
-  if (diffMins < 60)
-    return {
-      prefix: 'In',
-      value: `${diffMins} min${diffMins === 1 ? '' : 's'}`,
-      urgent: diffMins <= 15,
-      state: diffMins <= 15 ? 'soon' : 'later',
-    };
-  const hrs = Math.round(diffMins / 60);
-  if (hrs < 24)
-    return {
-      prefix: 'In',
-      value: `${hrs} hr${hrs === 1 ? '' : 's'}`,
-      urgent: false,
-      state: 'later',
-    };
-  const days = Math.round(hrs / 24);
-  return {
-    prefix: 'In',
-    value: `${days} day${days === 1 ? '' : 's'}`,
-    urgent: false,
-    state: 'later',
-  };
+  const start = new Date(startIso).getTime();
+  if (Number.isNaN(start)) {
+    return { prefix: null, value: 'Today', urgent: false, state: 'later' };
+  }
+  const now = Date.now();
+  const diffMinutes = Math.round((start - now) / (60 * 1000));
+
+  if (diffMinutes <= 0 && diffMinutes >= -60) {
+    return { prefix: null, value: 'Now', urgent: true, state: 'now' };
+  }
+  if (diffMinutes > 0 && diffMinutes <= 15) {
+    return { prefix: 'in', value: `${diffMinutes}m`, urgent: true, state: 'soon' };
+  }
+  if (diffMinutes > 15 && diffMinutes < 60) {
+    return { prefix: 'in', value: `${diffMinutes}m`, urgent: false, state: 'soon' };
+  }
+  return { prefix: null, value: 'Later today', urgent: false, state: 'later' };
 }
 
 // Locale-aware time formatter — inherits the user's system locale, so
@@ -180,55 +296,16 @@ const TIME_FMT = new Intl.DateTimeFormat(undefined, {
 function formatMeta(
   startIso: string,
   endIso: string,
-  state: RelativeState,
+  state: RelativeState
 ): { primary: string; timeRange: string } {
   const start = new Date(startIso);
-  const end = endIso ? new Date(endIso) : null;
-  const now = new Date();
-  const sameDay = (a: Date, b: Date) =>
-    a.getFullYear() === b.getFullYear() &&
-    a.getMonth() === b.getMonth() &&
-    a.getDate() === b.getDate();
-
-  const tomorrow = new Date(now);
-  tomorrow.setDate(now.getDate() + 1);
-
-  // For in-progress events, the absolute day ("Today" / "Fri 5 Jun") is
-  // noise — what the user actually wants to know is how this meeting maps
-  // to the present moment. Surface either the soft deadline ("Ends in 8
-  // min" prompts you to wrap up) or progress so far ("Started 30 min ago"
-  // for context on what they walked into).
-  let primary: string;
-  if (state === 'now' && end && !Number.isNaN(end.getTime())) {
-    const endsInMins = Math.round((end.getTime() - Date.now()) / 60000);
-    if (endsInMins > 0 && endsInMins <= 15) {
-      primary = `Ends in ${endsInMins} min${endsInMins === 1 ? '' : 's'}`;
-    } else {
-      const startedAgoMins = Math.max(
-        0,
-        Math.round((Date.now() - start.getTime()) / 60000),
-      );
-      primary =
-        startedAgoMins === 0
-          ? 'Just started'
-          : `Started ${startedAgoMins} min${startedAgoMins === 1 ? '' : 's'} ago`;
-    }
-  } else if (sameDay(start, now)) {
-    primary = 'Today';
-  } else if (sameDay(start, tomorrow)) {
-    primary = 'Tomorrow';
-  } else {
-    primary = start.toLocaleDateString(undefined, {
-      weekday: 'short',
-      day: 'numeric',
-      month: 'short',
-    });
+  const end = new Date(endIso);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+    return { primary: 'Today', timeRange: '' };
   }
-
-  const clock = Number.isNaN(start.getTime()) ? '' : TIME_FMT.format(start);
-  const endClock =
-    end && !Number.isNaN(end.getTime()) ? TIME_FMT.format(end) : '';
-  const timeRange = endClock ? `${clock} – ${endClock}` : clock;
-
-  return { primary, timeRange };
+  const timeRange = `${TIME_FMT.format(start)} – ${TIME_FMT.format(end)}`;
+  if (state === 'now') {
+    return { primary: 'Happening now', timeRange };
+  }
+  return { primary: timeRange, timeRange };
 }

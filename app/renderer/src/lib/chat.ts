@@ -59,6 +59,7 @@ export function formatActiveModel(p: ActiveModelFields | undefined): string {
       return 'Organisation';
     case 'local':
     default:
+      if (p.model === 'apple:system') return 'Apple Intelligence';
       return p.model ? `Ollama · ${p.model}` : 'Ollama';
   }
 }

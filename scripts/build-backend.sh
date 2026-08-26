@@ -64,6 +64,11 @@ if [ "$(uname -s)" = "Darwin" ]; then
         exit 1
     fi
     echo ""
+    echo "Building Apple LM sidecar (needs macOS 26+ SDK)..."
+    if ! "$SCRIPT_DIR/build-apple-lm-sidecar.sh" "$(uname -m)"; then
+        echo "Warning: Apple LM sidecar was not built at bin/steno-apple-lm." >&2
+        echo "Summaries will use Ollama until a host with the macOS 26+ SDK produces that binary." >&2
+    fi
 fi
 
 python3 -m PyInstaller stenoai.spec --noconfirm

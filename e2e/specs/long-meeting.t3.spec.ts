@@ -62,7 +62,9 @@ test('@long-meeting long WAV runs the chunking path to completion; real dir unto
   const realDirBefore = fileSig(realUserDataDir());
 
   try {
-    const { page } = await launchApp();
+    const { page } = await launchApp({
+      env: { OLLAMA_HOST: `http://127.0.0.1:${ollama.port}` },
+    });
     await selectEngine(page);
 
     const modelReady = await isEngineModelReady(page);

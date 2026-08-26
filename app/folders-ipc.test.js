@@ -8,7 +8,7 @@ const { registerFoldersIpc } = require('./folders-ipc');
 // each test drive one handler and assert its argv/seam usage. No electron.
 function harness(overrides = {}) {
   const handlers = {};
-  const calls = { py: [], setCache: [], dialog: [], validate: [] };
+  const calls = { py: [], setCache: [], dialog: [], validate: [], noteFoldersChanged: [] };
   const deps = {
     ipcMain: { handle: (ch, fn) => { handlers[ch] = fn; } },
     runPythonScript: async (script, args, silent) => {
@@ -32,6 +32,7 @@ function harness(overrides = {}) {
       return overrides.validate ?? { realPath: `/real/${p}` };
     },
     setCachedCustomStoragePath: (v) => { calls.setCache.push(v); },
+    onNoteFoldersChanged: (p) => { calls.noteFoldersChanged.push(p); },
   };
   registerFoldersIpc(deps);
   return { handlers, calls };
@@ -41,10 +42,10 @@ const CHANNELS = [
   'get-storage-path', 'set-storage-path', 'select-storage-folder',
   'list-folders', 'create-folder', 'rename-folder', 'update-folder-icon',
   'delete-folder', 'reorder-folders', 'add-meeting-to-folder',
-  'remove-meeting-from-folder',
+  'remove-meeting-from-folder', 'set-folder-template', 'set-folder-recurring',
 ];
 
-test('registers exactly the 11 folder + storage handlers', () => {
+test('registers exactly the 13 folder + storage handlers', () => {
   const { handlers } = harness();
   assert.deepStrictEqual(Object.keys(handlers).sort(), [...CHANNELS].sort());
 });
@@ -165,4 +166,87 @@ test('backend failures surface as { success:false, error } (not a throw)', async
   const { handlers } = harness({ pyThrows: 'backend exploded' });
   const res = await handlers['list-folders']();
   assert.deepStrictEqual(res, { success: false, error: 'backend exploded' });
+});
+
+test('set-folder-template passes template_id or none when cleared', async () => {
+  const withTpl = harness();
+  await withTpl.handlers['set-folder-template']({}, 'fid1', '1-on-1');
+  assert.deepStrictEqual(withTpl.calls.py[0].args, ['set-folder-template', 'fid1', '1-on-1']);
+
+  const withNone = harness();
+  await withNone.handlers['set-folder-template']({}, 'fid1', 'none');
+  assert.deepStrictEqual(withNone.calls.py[0].args, ['set-folder-template', 'fid1', 'none']);
+
+  const withNull = harness();
+  await withNull.handlers['set-folder-template']({}, 'fid1', null);
+  assert.deepStrictEqual(withNull.calls.py[0].args, ['set-folder-template', 'fid1', 'none']);
+
+  const withEmpty = harness();
+  await withEmpty.handlers['set-folder-template']({}, 'fid1', '');
+  assert.deepStrictEqual(withEmpty.calls.py[0].args, ['set-folder-template', 'fid1', 'none']);
+});
+
+test('set-folder-template validates folderId and templateId', async () => {
+  const badFolder = harness();
+  const resFolder = await badFolder.handlers['set-folder-template']({}, '', '1-on-1');
+  assert.deepStrictEqual(resFolder, { success: false, error: 'Invalid folder ID' });
+  assert.strictEqual(badFolder.calls.py.length, 0);
+
+  const badFolderType = harness();
+  const resFolderType = await badFolderType.handlers['set-folder-template']({}, null, '1-on-1');
+  assert.deepStrictEqual(resFolderType, { success: false, error: 'Invalid folder ID' });
+  assert.strictEqual(badFolderType.calls.py.length, 0);
+
+  const badTemplate = harness();
+  const resTemplate = await badTemplate.handlers['set-folder-template']({}, 'fid1', 123);
+  assert.deepStrictEqual(resTemplate, { success: false, error: 'Invalid template ID' });
+  assert.strictEqual(badTemplate.calls.py.length, 0);
+});
+
+test('set-folder-recurring passes repeated --title flags and supports --clear', async () => {
+  const withTitles = harness();
+  await withTitles.handlers['set-folder-recurring']({}, 'fid1', ['Weekly 1:1', 'Team Standup']);
+  assert.deepStrictEqual(withTitles.calls.py[0].args, [
+    'set-folder-recurring', 'fid1', '--title', 'Weekly 1:1', '--title', 'Team Standup',
+  ]);
+
+  const emptyTitles = harness();
+  await emptyTitles.handlers['set-folder-recurring']({}, 'fid1', []);
+  assert.deepStrictEqual(emptyTitles.calls.py[0].args, ['set-folder-recurring', 'fid1', '--clear']);
+
+  const whitespaceTitles = harness();
+  await whitespaceTitles.handlers['set-folder-recurring']({}, 'fid1', ['', '   ']);
+  assert.deepStrictEqual(whitespaceTitles.calls.py[0].args, ['set-folder-recurring', 'fid1', '--clear']);
+});
+
+test('set-folder-recurring validates folderId and titles array', async () => {
+  const badFolder = harness();
+  const resFolder = await badFolder.handlers['set-folder-recurring']({}, '', ['Sync']);
+  assert.deepStrictEqual(resFolder, { success: false, error: 'Invalid folder ID' });
+  assert.strictEqual(badFolder.calls.py.length, 0);
+
+  const badTitles = harness();
+  const resTitles = await badTitles.handlers['set-folder-recurring']({}, 'fid1', 'not an array');
+  assert.deepStrictEqual(resTitles, { success: false, error: 'Invalid titles: expected array' });
+  assert.strictEqual(badTitles.calls.py.length, 0);
+
+  const badTitleElem = harness();
+  const resElem = await badTitleElem.handlers['set-folder-recurring']({}, 'fid1', [123]);
+  assert.deepStrictEqual(resElem, { success: false, error: 'Invalid titles: expected array of strings' });
+  assert.strictEqual(badTitleElem.calls.py.length, 0);
+});
+
+test('onNoteFoldersChanged notification fires only when note membership changes', async () => {
+  const h = harness({ validate: { realPath: '/real/output/note.md' } });
+  await h.handlers['add-meeting-to-folder']({}, 'output/note.md', 'fid1');
+  assert.deepStrictEqual(h.calls.noteFoldersChanged, ['/real/output/note.md']);
+
+  await h.handlers['remove-meeting-from-folder']({}, 'output/note.md', 'fid1');
+  assert.deepStrictEqual(h.calls.noteFoldersChanged, ['/real/output/note.md', '/real/output/note.md']);
+
+  // Folder metadata / template / recurring updates do not fire onNoteFoldersChanged
+  await h.handlers['set-folder-template']({}, 'fid1', '1-on-1');
+  await h.handlers['set-folder-recurring']({}, 'fid1', ['Sync']);
+  await h.handlers['rename-folder']({}, 'fid1', 'Renamed');
+  assert.strictEqual(h.calls.noteFoldersChanged.length, 2);
 });

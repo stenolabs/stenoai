@@ -51,10 +51,18 @@ const FIXED_REPLY = [
 
 type SpawnResult = { code: number | null; stdout: string; stderr: string };
 
-function runBackend(args: string[], userDataDir: string): Promise<SpawnResult> {
+function runBackend(args: string[], userDataDir: string, extraEnv?: Record<string, string>): Promise<SpawnResult> {
   return new Promise((resolve, reject) => {
     const proc = spawn(BACKEND, args, {
-      env: { ...process.env, STENOAI_USER_DATA_DIR: userDataDir },
+      // Same Apple LM pin as the electron fixture: a directly spawned backend
+      // on a host with a built sidecar would summarise on-device and never
+      // reach the deterministic Ollama fixture this spec counts calls on.
+      env: {
+        ...process.env,
+        STENOAI_USER_DATA_DIR: userDataDir,
+        STENOAI_DISABLE_APPLE_LM: '1',
+        ...(extraEnv ?? {}),
+      },
     });
     let stdout = '';
     let stderr = '';
@@ -126,7 +134,9 @@ test('append folds a second segment into the note, marks it stale, and reprocess
   killOllama();
   const ollama = await startMockOllama({ chatReply: FIXED_REPLY });
   try {
-    const res3 = await runBackend(['reprocess', summaryPath], userDataDir);
+    const res3 = await runBackend(['reprocess', summaryPath], userDataDir, {
+      OLLAMA_HOST: `http://127.0.0.1:${ollama.port}`,
+    });
     expect(res3.code, `reprocess stderr:\n${res3.stderr}\n${res3.stdout}`).toBe(0);
     expect(res3.stdout).toContain('STREAM_COMPLETE');
     expect(ollama.chatCalls()).toBe(1);

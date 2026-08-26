@@ -110,7 +110,7 @@ class TemplateGalleryTests(unittest.TestCase):
     write their own prompt. Unlike Standard, these are editable + resettable
     built-ins (locked=False) — same UX as OpenOats-style built-in/custom."""
 
-    GALLERY_IDS = {"product-demo", "sales-call", "one-on-one", "standup"}
+    GALLERY_IDS = {"product-demo", "sales-call", "one-on-one", "standup", "follow_up_email"}
 
     def test_gallery_ids_are_registered_builtins(self):
         self.assertTrue(self.GALLERY_IDS.issubset(set(T.BUILTIN_TEMPLATES)))
@@ -152,6 +152,44 @@ class TemplateGalleryTests(unittest.TestCase):
             with self.subTest(template=tid):
                 self.assertFalse(T.BUILTIN_TEMPLATES[tid].get("locked"))
 
+
+
+class RecipeValidationTests(unittest.TestCase):
+    def test_validate_recipe_accepts_valid_payload(self):
+        ok, err = T.validate_recipe({"label": "Follow Up", "prompt": "Draft follow up email"})
+        self.assertTrue(ok)
+        self.assertEqual(err, "")
+
+    def test_validate_recipe_rejects_non_dict(self):
+        for bad in [None, "string", [1, 2], 123]:
+            with self.subTest(payload=bad):
+                ok, err = T.validate_recipe(bad)
+                self.assertFalse(ok)
+                self.assertIn("Invalid recipe payload", err)
+
+    def test_validate_recipe_rejects_missing_or_blank_label(self):
+        for bad in [{}, {"label": ""}, {"label": "   "}, {"label": 123}]:
+            with self.subTest(payload=bad):
+                ok, err = T.validate_recipe({**bad, "prompt": "valid prompt"})
+                self.assertFalse(ok)
+                self.assertIn("label is required", err.lower())
+
+    def test_validate_recipe_rejects_over_long_label(self):
+        ok, err = T.validate_recipe({"label": "x" * (T.MAX_RECIPE_LABEL_LEN + 1), "prompt": "valid"})
+        self.assertFalse(ok)
+        self.assertIn("too long", err.lower())
+
+    def test_validate_recipe_rejects_missing_or_blank_prompt(self):
+        for bad in [{}, {"prompt": ""}, {"prompt": "   "}, {"prompt": 123}]:
+            with self.subTest(payload=bad):
+                ok, err = T.validate_recipe({"label": "valid label", **bad})
+                self.assertFalse(ok)
+                self.assertIn("prompt is required", err.lower())
+
+    def test_validate_recipe_rejects_over_long_prompt(self):
+        ok, err = T.validate_recipe({"label": "valid", "prompt": "x" * (T.MAX_RECIPE_PROMPT_LEN + 1)})
+        self.assertFalse(ok)
+        self.assertIn("too long", err.lower())
 
 if __name__ == "__main__":
     unittest.main()

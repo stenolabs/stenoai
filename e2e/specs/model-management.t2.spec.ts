@@ -152,8 +152,9 @@ test('a model pulled straight to its NVFP4 tag (no GGUF ever downloaded) still r
   // e.g. because "Select" resolved straight to the faster build.
   const mockOllama = await startMockOllama({ installedModels: ['gemma4:e2b-nvfp4'] });
   try {
-    const { page } = await launchApp();
-
+    const { page } = await launchApp({
+      env: { OLLAMA_HOST: `http://127.0.0.1:${mockOllama.port}` },
+    });
     const listed = await page.evaluate(() => (window as StenoWindow).stenoai.models.list());
     expect(listed.success).toBe(true);
     const e2bEntry = listed.supported_models?.['gemma4:e2b-it-qat'];
@@ -173,8 +174,9 @@ test('switch-to-faster-build: pull, verify, and delete the old tag all round-tri
   killOllama();
   const mockOllama = await startMockOllama();
   try {
-    const { page } = await launchApp();
-
+    const { page } = await launchApp({
+      env: { OLLAMA_HOST: `http://127.0.0.1:${mockOllama.port}` },
+    });
     const pullResult = await page.evaluate(() =>
       (window as StenoWindow).stenoai.models.pull('gemma4:e2b-nvfp4'),
     );
@@ -205,8 +207,9 @@ test('delete-model: the general "free up disk space" action can remove a GGUF mo
   killOllama();
   const mockOllama = await startMockOllama();
   try {
-    const { page } = await launchApp();
-
+    const { page } = await launchApp({
+      env: { OLLAMA_HOST: `http://127.0.0.1:${mockOllama.port}` },
+    });
     // Unlike the switch-to-faster-build flow (which only ever deletes the
     // GGUF id), the general delete action can target either tag on its own.
     const ggufDelete = await page.evaluate(() =>
@@ -234,8 +237,9 @@ test('cancel-pull: stops an in-flight download and reports it as cancelled, not 
   // cancel before it would otherwise complete on its own.
   const mockOllama = await startMockOllama({ pullDelayMs: 3000 });
   try {
-    const { page } = await launchApp();
-
+    const { page } = await launchApp({
+      env: { OLLAMA_HOST: `http://127.0.0.1:${mockOllama.port}` },
+    });
     const pullPromise = page.evaluate(() =>
       (window as StenoWindow).stenoai.models.pull('gemma4:e2b-nvfp4'),
     );

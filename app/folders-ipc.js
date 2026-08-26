@@ -193,6 +193,54 @@ function registerFoldersIpc({
       return { success: false, error: error.message };
     }
   });
+
+  ipcMain.handle('set-folder-template', async (event, folderId, templateId) => {
+    try {
+      if (!folderId || typeof folderId !== 'string' || !folderId.trim()) {
+        return { success: false, error: 'Invalid folder ID' };
+      }
+      if (templateId !== null && templateId !== undefined && typeof templateId !== 'string') {
+        return { success: false, error: 'Invalid template ID' };
+      }
+      const trimmedTemplate = typeof templateId === 'string' ? templateId.trim() : '';
+      const templateArg = trimmedTemplate && trimmedTemplate !== 'none' ? trimmedTemplate : 'none';
+      const result = await runPythonScript('simple_recorder.py', ['set-folder-template', folderId.trim(), templateArg]);
+      const jsonMatch = result.match(/\{.*\}/s);
+      return jsonMatch ? JSON.parse(jsonMatch[0]) : { success: true };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('set-folder-recurring', async (event, folderId, titles) => {
+    try {
+      if (!folderId || typeof folderId !== 'string' || !folderId.trim()) {
+        return { success: false, error: 'Invalid folder ID' };
+      }
+      if (!Array.isArray(titles)) {
+        return { success: false, error: 'Invalid titles: expected array' };
+      }
+      for (const t of titles) {
+        if (typeof t !== 'string') {
+          return { success: false, error: 'Invalid titles: expected array of strings' };
+        }
+      }
+      const cleanTitles = titles.map((t) => t.trim()).filter(Boolean);
+      const args = ['set-folder-recurring', folderId.trim()];
+      if (cleanTitles.length === 0) {
+        args.push('--clear');
+      } else {
+        for (const title of cleanTitles) {
+          args.push('--title', title);
+        }
+      }
+      const result = await runPythonScript('simple_recorder.py', args);
+      const jsonMatch = result.match(/\{.*\}/s);
+      return jsonMatch ? JSON.parse(jsonMatch[0]) : { success: true };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
 }
 
 module.exports = { registerFoldersIpc };

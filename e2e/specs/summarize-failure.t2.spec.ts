@@ -59,8 +59,9 @@ test('reprocess surfaces a stream failure and leaves the existing summary untouc
     chatError: { status: 404, message: "model 'gemma4:e2b-it-qat' not found" },
   });
   try {
-    const { page } = await launchApp();
-
+    const { page } = await launchApp({
+      env: { OLLAMA_HOST: `http://127.0.0.1:${ollama.port}` },
+    });
     const res = await page.evaluate(
       (f) => (window as StenoWindow).stenoai.meetings.reprocess(f, false, 'Failure Meeting'),
       summaryFile,

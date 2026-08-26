@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { create } from 'zustand';
 import { useQueryClient } from '@tanstack/react-query';
 import { ipc } from '@/lib/ipc';
 import { appendDebugLog } from '@/lib/debugLogs';
@@ -16,6 +17,21 @@ import {
   useSilenceAutoStopSetting,
 } from './useSettings';
 
+interface RecordTemplateStore {
+  chosenTemplateId: string | null;
+  activeTemplateId: string | null;
+  setChosenTemplateId: (id: string | null) => void;
+  setActiveTemplateId: (id: string | null) => void;
+  resetChoice: () => void;
+}
+
+export const useRecordTemplateStore = create<RecordTemplateStore>((set) => ({
+  chosenTemplateId: null,
+  activeTemplateId: null,
+  setChosenTemplateId: (id) => set({ chosenTemplateId: id }),
+  setActiveTemplateId: (id) => set({ activeTemplateId: id }),
+  resetChoice: () => set({ chosenTemplateId: null, activeTemplateId: null }),
+}));
 /** Hardcoded RMS floor (0..1, computed on the time-domain samples from an
  *  AnalyserNode). Above this on either mic OR system audio counts as
  *  "active." Tuned empirically to ignore desk-fan / room-tone noise but
@@ -81,6 +97,7 @@ export function useSystemAudioCapture() {
   React.useEffect(() => {
     loopbackEnabledRef.current = loopbackEnabled;
   }, [loopbackEnabled]);
+
 
   // The pinned microphone device (Settings > Microphone). Kept mounted here
   // (App-level, per this hook's own docstring) purely to warm react-query's
@@ -798,6 +815,7 @@ export function useSystemAudioCapture() {
       (status === 'idle' || status === 'processing') &&
       activeRef.current
     ) {
+      useRecordTemplateStore.getState().setActiveTemplateId(null);
       void stopCapture();
     }
     // qc (useQueryClient()) is referentially stable for the app's lifetime

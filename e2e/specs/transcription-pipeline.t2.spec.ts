@@ -50,7 +50,9 @@ test('@pipeline synthetic WAV runs the full pipeline: HEARTBEAT + summary, real 
   const realDirBefore = fileSig(realUserDataDir());
 
   try {
-    const { page } = await launchApp();
+    const { page } = await launchApp({
+      env: { OLLAMA_HOST: `http://127.0.0.1:${ollama.port}` },
+    });
     await selectEngine(page);
 
     // Skip loudly if the active engine's model isn't installed (transcribe would

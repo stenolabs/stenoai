@@ -15,6 +15,37 @@ function emptyBlob(): ChatSessionsBlob {
 
 const CHAT_KEY = ['chat-sessions'] as const;
 
+// Keep exactly one subscription for the whole app, even if this module is used
+// by multiple mounted components (e.g., Ask bar, /chat, /chat/<id>).
+const chatSessionsMigrationBusRef: {
+  count: number;
+  off: (() => void) | null;
+} = {
+  count: 0,
+  off: null,
+};
+
+function useChatSessionsMigrationBus() {
+  const queryClient = useQueryClient();
+  React.useEffect(() => {
+    const isFirst = chatSessionsMigrationBusRef.count === 0;
+    chatSessionsMigrationBusRef.count += 1;
+
+    if (isFirst) {
+      chatSessionsMigrationBusRef.off = ipc().on.chatSessionsMigrated(() => {
+        void queryClient.invalidateQueries({ queryKey: CHAT_KEY });
+      });
+    }
+
+    return () => {
+      chatSessionsMigrationBusRef.count -= 1;
+      if (chatSessionsMigrationBusRef.count > 0) return;
+      chatSessionsMigrationBusRef.off?.();
+      chatSessionsMigrationBusRef.off = null;
+    };
+  }, [queryClient]);
+}
+
 // Legacy format written by the old renderer:
 // [[meetingName, OldSession[]], ...]
 type LegacyMessage = { role: 'user' | 'ai'; content: string };
@@ -41,13 +72,8 @@ function migrateLegacyBlob(legacy: LegacyBlob): ChatSessionsBlob {
   return { sessions };
 }
 
-/**
- * Returns the full chat blob (every session across every meeting). Used by
- * the Chat tab's Recents list and any future global chat-history view.
- * Shares the same query key as useChatSessions so a save in one place is
- * reflected everywhere.
- */
 export function useAllChatSessions() {
+  useChatSessionsMigrationBus();
   return useQuery<ChatSessionsBlob>({
     queryKey: CHAT_KEY,
     queryFn: async () => {
@@ -66,6 +92,7 @@ export function useAllChatSessions() {
 export function useChatSessions(summaryFile: string | null, meetingName?: string | null) {
   const queryClient = useQueryClient();
   const [activeId, setActiveId] = React.useState<string | null>(null);
+  useChatSessionsMigrationBus();
 
   const query = useQuery<ChatSessionsBlob>({
     queryKey: CHAT_KEY,
@@ -110,17 +137,18 @@ export function useChatSessions(summaryFile: string | null, meetingName?: string
   }, [queryClient]);
 
   // When the meeting changes, restore the most recently updated session for
-  // that meeting (so returning to a note shows your previous chat).
+  // that meeting. Also recover when a main-process migration refetches the
+  // live session under the saved note path: the summaryFile is already current,
+  // but activeId was null until the migrated row appeared in the shared cache.
   React.useEffect(() => {
     if (!summaryFile) {
       setActiveId(null);
       return;
     }
-    const sorted = readLatest()
-      .sessions.filter((s) => s.summaryFile === summaryFile)
-      .sort((a, b) => b.updatedAt - a.updatedAt);
+    if (activeId && meetingSessions.some((s) => s.id === activeId)) return;
+    const sorted = [...meetingSessions].sort((a, b) => b.updatedAt - a.updatedAt);
     setActiveId(sorted[0]?.id ?? null);
-  }, [summaryFile, readLatest]);
+  }, [summaryFile, activeId, meetingSessions]);
 
   const persist = React.useCallback(
     async (next: ChatSessionsBlob) => {

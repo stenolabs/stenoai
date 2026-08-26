@@ -96,6 +96,55 @@ class DefaultTemplateReportTests(unittest.TestCase):
             self.assertIsNone(out)
             self.assertFalse((Path(tmp) / "m_reports.json").exists())
 
+    def test_resolution_order_explicit_choice_overrides_folder_and_global(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            c = Config(config_path=Path(tmp) / "config.json")
+            ok1, _, tmpl1 = c.save_template({"name": "Global Tmpl", "prompt": "Global prompt", "language": "auto"})
+            ok2, _, tmpl2 = c.save_template({"name": "Folder Tmpl", "prompt": "Folder prompt", "language": "auto"})
+            ok3, _, tmpl3 = c.save_template({"name": "Explicit Tmpl", "prompt": "Explicit prompt", "language": "auto"})
+            self.assertTrue(ok1 and ok2 and ok3)
+            c.set_default_template(tmpl1["id"])
+
+            # Setup FoldersManager with a folder having template_id = tmpl2["id"]
+            from src.folders import FoldersManager
+            fm = FoldersManager(Path(tmp))
+            folder = fm.create_folder("Team", template_id=tmpl2["id"])
+
+            mp = Path(tmp) / "m_summary.md"
+            mp.write_text(f"---\nfolders: ['{folder['id']}']\n---\n\n## Summary\nx\n", encoding="utf-8")
+
+            with mock.patch("src.folders.get_folders_manager", return_value=fm):
+                # Pass explicit template_id tmpl3["id"]
+                out = simple_recorder.generate_default_template_report(
+                    mp, "T: hi", None, "en", 1, c, _FakeSummarizer(["## Explicit Report"]),
+                    template_id=tmpl3["id"], folder_ids=[folder["id"]],
+                )
+                self.assertIsNotNone(out)
+                self.assertEqual(out["template_id"], tmpl3["id"])
+
+    def test_resolution_order_folder_template_overrides_global_default(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            c = Config(config_path=Path(tmp) / "config.json")
+            ok1, _, tmpl1 = c.save_template({"name": "Global Tmpl", "prompt": "Global prompt", "language": "auto"})
+            ok2, _, tmpl2 = c.save_template({"name": "Folder Tmpl", "prompt": "Folder prompt", "language": "auto"})
+            self.assertTrue(ok1 and ok2)
+            c.set_default_template(tmpl1["id"])
+
+            from src.folders import FoldersManager
+            fm = FoldersManager(Path(tmp))
+            folder = fm.create_folder("Team", template_id=tmpl2["id"])
+
+            mp = Path(tmp) / "m_summary.md"
+            mp.write_text(f"---\nfolders: ['{folder['id']}']\n---\n\n## Summary\nx\n", encoding="utf-8")
+
+            with mock.patch("src.folders.get_folders_manager", return_value=fm):
+                # No explicit template passed -> should resolve to folder template tmpl2["id"]
+                out = simple_recorder.generate_default_template_report(
+                    mp, "T: hi", None, "en", 1, c, _FakeSummarizer(["## Folder Report"]),
+                    template_id=None, folder_ids=[folder["id"]],
+                )
+                self.assertIsNotNone(out)
+                self.assertEqual(out["template_id"], tmpl2["id"])
 
 if __name__ == "__main__":
     unittest.main()

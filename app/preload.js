@@ -109,10 +109,11 @@ const stenoai = {
   },
 
   recording: {
-    start: (name, trigger, appendTo) =>
-      invoke('start-recording-ui', name, trigger, appendTo),
+    start: (name, trigger, appendTo, templateId) =>
+      invoke('start-recording-ui', name, trigger, appendTo, templateId),
     stop: () => invoke('stop-recording-ui'),
     pause: () => invoke('pause-recording-ui'),
+    setTemplate: (templateId) => invoke('set-recording-template', templateId),
     resume: () => invoke('resume-recording-ui'),
     reportSystemAudioState: (active) => send('system-audio-recording-state', active),
     enableLoopbackAudio: () => invoke('enable-loopback-audio'),
@@ -174,12 +175,26 @@ const stenoai = {
       invoke('export-transcript', defaultFilename, content),
     exportNotePdf: (defaultFilename, html) =>
       invoke('export-note-pdf', defaultFilename, html),
+    exportAll: (format, targetPath) =>
+      invoke('export-all-notes', { format, targetPath }),
   },
 
   query: {
     ask: (file, q) => invoke('query-transcript', file, q),
     askStream: (id, file, q) => send('query-transcript-stream', id, file, q),
-    chatGlobalStream: (id, q, folderId) => send('chat-global-stream', id, q, folderId ?? null),
+    // History is forwarded verbatim. Bounding happens in the renderer hook
+    // (so a long conversation never grows the payload) and validation happens
+    // in the main process (so a malformed value returns a fixed error code
+    // instead of being silently dropped here).
+    askLiveStream: (id, sessionName, q, history) =>
+      history === undefined || history === null
+        ? send('query-live-transcript-stream', id, sessionName, q)
+        : send('query-live-transcript-stream', id, sessionName, q, history),
+    chatGlobalStream: (id, q, folderId, meetingFiles) =>
+      meetingFiles === undefined || meetingFiles === null
+        ? send('chat-global-stream', id, q, folderId ?? null)
+        : send('chat-global-stream', id, q, folderId ?? null, meetingFiles),
+    briefStream: (id, title, attendees) => send('pre-meeting-brief-stream', id, title, attendees),
     cancel: (id) => send('query-cancel', id),
   },
 
@@ -197,6 +212,8 @@ const stenoai = {
     reorder: (ids) => invoke('reorder-folders', ids),
     addMeeting: (summaryFile, folderId) => invoke('add-meeting-to-folder', summaryFile, folderId),
     removeMeeting: (summaryFile, folderId) => invoke('remove-meeting-from-folder', summaryFile, folderId),
+    setTemplate: (id, templateId) => invoke('set-folder-template', id, templateId),
+    setRecurring: (id, titles) => invoke('set-folder-recurring', id, titles),
   },
 
   templates: {
@@ -206,6 +223,12 @@ const stenoai = {
     setDefault: (id) => invoke('set-default-template', id),
     reset: (id) => invoke('reset-template', id),
   },
+  recipes: {
+    list: () => invoke('list-recipes'),
+    save: (recipe) => invoke('save-recipe', recipe),
+    delete: (id) => invoke('delete-recipe', id),
+  },
+
 
   speakers: {
     listProfiles: () => invoke('list-person-profiles'),
@@ -319,6 +342,15 @@ const stenoai = {
       invoke('save-diagnostics', defaultFilename, content),
   },
 
+  mcp: {
+    getStatus: () => invoke('mcp-get-status'),
+    getKey: () => invoke('mcp-get-key'),
+    setKey: (key) => invoke('mcp-set-key', key),
+    regenerateKey: () => invoke('mcp-regenerate-key'),
+    setEnabled: (enabled) => invoke('mcp-set-enabled', enabled),
+    setPort: (port) => invoke('mcp-set-port', port),
+  },
+
   ai: {
     getProvider: () => invoke('get-ai-provider'),
     setProvider: (p) => invoke('set-ai-provider', p),
@@ -416,6 +448,7 @@ const stenoai = {
     liveTranscriptReady: (cb) => subscribe('live-transcript-ready', cb),
     liveTranscriptChunk: (cb) => subscribe('live-transcript-chunk', cb),
     liveTranscriptError: (cb) => subscribe('live-transcript-error', cb),
+    chatSessionsMigrated: (cb) => subscribe('chat-sessions-migrated', cb),
     updateAvailable: (cb) => subscribe('update-available', cb),
     updateDownloadProgress: (cb) => subscribe('update-download-progress', cb),
     updateDownloaded: (cb) => subscribe('update-downloaded', cb),

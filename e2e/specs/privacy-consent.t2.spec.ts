@@ -20,9 +20,16 @@ const ACK = '[data-privacy-ack]';
 const TELEMETRY_SWITCH = '[data-privacy-telemetry]';
 const LAUNCH_SWITCH = '[data-privacy-launch]';
 
-/** Simulate an upgrader: a pre-existing config.json with no privacy marker. */
+/**
+ * Simulate an upgrader: a pre-existing config.json with no privacy marker.
+ *
+ * The marker must be genuinely ABSENT so the backend migration is the thing
+ * under test. `writeUserConfig` seeds it true by default (so specs that click
+ * the UI don't race this modal); an explicit `undefined` drops the key back
+ * out of the written JSON.
+ */
 function seedUpgraderConfig(userDataDir: string): void {
-  writeUserConfig(userDataDir, { user_name: 'Upgrader' });
+  writeUserConfig(userDataDir, { user_name: 'Upgrader', privacy_notice_seen: undefined });
 }
 
 /**

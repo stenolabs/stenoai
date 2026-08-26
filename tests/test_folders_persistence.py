@@ -164,6 +164,47 @@ class FoldersSaveTests(unittest.TestCase):
             on_disk = json.loads(path.read_text(encoding="utf-8"))
             self.assertEqual(on_disk["folders"][0]["name"], "Neuer Name")
 
+    def test_legacy_folders_json_without_template_id_loads_cleanly(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            path = _seed(tmp_dir)
+            mgr = FoldersManager(Path(tmp_dir))
+            folders = mgr.list_folders()
+            self.assertEqual(len(folders), 2)
+            self.assertIsNone(folders[0].get("template_id"))
+            self.assertIsNone(folders[0].get("recurring_titles"))
+
+    def test_set_folder_template_and_recurring_titles(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            path = _seed(tmp_dir)
+            mgr = FoldersManager(Path(tmp_dir))
+
+            # Set template_id
+            self.assertTrue(mgr.set_folder_template("aaa", "shareable-summary"))
+            folder = mgr.get_folder("aaa")
+            self.assertEqual(folder.get("template_id"), "shareable-summary")
+
+            # Clear template_id
+            self.assertTrue(mgr.set_folder_template("aaa", "none"))
+            folder = mgr.get_folder("aaa")
+            self.assertIsNone(folder.get("template_id"))
+
+            # Set recurring_titles
+            self.assertTrue(mgr.set_folder_recurring("aaa", ["Weekly Sync", "Sprint Planning"]))
+            folder = mgr.get_folder("aaa")
+            self.assertEqual(folder.get("recurring_titles"), ["Weekly Sync", "Sprint Planning"])
+
+            # Match recurring title (exact, case-insensitive, trimmed)
+            self.assertEqual(mgr.get_folder_for_recurring_title("weekly sync"), "aaa")
+            self.assertEqual(mgr.get_folder_for_recurring_title("  Sprint Planning  "), "aaa")
+            self.assertIsNone(mgr.get_folder_for_recurring_title("Unrelated Meeting"))
+            self.assertIsNone(mgr.get_folder_for_recurring_title(""))
+
+            # Clear recurring_titles
+            self.assertTrue(mgr.set_folder_recurring("aaa", []))
+            folder = mgr.get_folder("aaa")
+            self.assertIsNone(folder.get("recurring_titles"))
+            self.assertIsNone(mgr.get_folder_for_recurring_title("Weekly Sync"))
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -59,7 +59,8 @@ interface RunResult {
 function runTranscribeStream(stdinBuffer: Buffer, userDataDir: string): Promise<RunResult> {
   return new Promise((resolve, reject) => {
     const proc = spawn(BACKEND, ['transcribe-stream'], {
-      env: { ...process.env, STENOAI_USER_DATA_DIR: userDataDir },
+      // Same Apple LM pin as the electron fixture (see auto-summarize.t2).
+      env: { ...process.env, STENOAI_USER_DATA_DIR: userDataDir, STENOAI_DISABLE_APPLE_LM: '1' },
     });
     let buffered = '';
     let stderr = '';

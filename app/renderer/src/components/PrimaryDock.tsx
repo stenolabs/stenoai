@@ -1,10 +1,108 @@
+import * as React from 'react';
+import { Check, ChevronDown, FileText } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { AskBar, TranscriptToggle } from '@/components/AskBar';
 import { LiveDock } from '@/components/LiveDock';
 import { LiveTranscriptBar } from '@/components/LiveTranscriptBar';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { useLiveTranscriptOpen } from '@/hooks/liveTranscriptOpenStore';
 import { useRecording } from '@/hooks/useRecording';
 import { useLiveTranscriptAvailable } from '@/hooks/useModels';
+import { useTemplates } from '@/hooks/useTemplates';
+import { useRecordTemplateStore } from '@/hooks/useSystemAudioCapture';
+
+export function RecordTemplatePicker() {
+  const { templates, defaultId, isLoading } = useTemplates();
+  const chosenTemplateId = useRecordTemplateStore((s) => s.chosenTemplateId);
+  const setChosenTemplateId = useRecordTemplateStore((s) => s.setChosenTemplateId);
+  const [open, setOpen] = React.useState(false);
+
+  const selectedTemplate = React.useMemo(() => {
+    const targetId = chosenTemplateId || defaultId;
+    return templates.find((t) => t.id === targetId);
+  }, [templates, defaultId, chosenTemplateId]);
+
+  const templateName = selectedTemplate?.name || (isLoading ? 'Standard Summary' : 'Standard Summary');
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          data-testid="record-template-picker"
+          aria-label={`Template: ${templateName}`}
+          className="pointer-events-auto mb-[3px] inline-flex h-11 shrink-0 cursor-pointer items-center justify-center gap-1.5 rounded-full border-0 px-3.5 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--focus-ring)]"
+          style={{
+            background: open ? 'var(--surface-active)' : 'var(--surface-raised)',
+            border: '1px solid var(--border-subtle)',
+            boxShadow: 'var(--shadow-md)',
+            color: 'var(--fg-1)',
+          }}
+        >
+          <FileText className="size-3.5 shrink-0 text-[color:var(--fg-muted)]" />
+          <span className="max-w-[130px] truncate">{templateName}</span>
+          <ChevronDown className="size-3 shrink-0 text-[color:var(--fg-muted)]" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent
+        align="start"
+        side="top"
+        sideOffset={8}
+        className="z-50 w-60 rounded-xl border p-1.5 shadow-lg outline-none"
+        style={{
+          background: 'var(--surface-raised)',
+          borderColor: 'var(--border-subtle)',
+          boxShadow: 'var(--shadow-lg)',
+        }}
+        data-testid="record-template-menu"
+      >
+        <div className="px-2 py-1 text-[11px] font-semibold text-[color:var(--fg-muted)]">
+          Summary template
+        </div>
+        <div className="flex flex-col gap-0.5" role="listbox" aria-label="Summary templates">
+          {templates.map((tpl) => {
+            const isSelected = (chosenTemplateId || defaultId) === tpl.id;
+            const isDefault = defaultId === tpl.id;
+            return (
+              <button
+                key={tpl.id}
+                type="button"
+                role="option"
+                aria-selected={isSelected}
+                data-testid={`record-template-option-${tpl.id}`}
+                onClick={() => {
+                  setChosenTemplateId(tpl.id);
+                  setOpen(false);
+                }}
+                className={cn(
+                  'flex w-full cursor-pointer items-center justify-between rounded-lg px-2.5 py-1.5 text-left text-xs transition-colors',
+                  isSelected
+                    ? 'bg-[color:var(--surface-active)] font-medium text-[color:var(--fg-1)]'
+                    : 'text-[color:var(--fg-2)] hover:bg-[color:var(--surface-hover)] hover:text-[color:var(--fg-1)]'
+                )}
+              >
+                <div className="flex min-w-0 flex-1 items-center gap-1.5">
+                  <span className="truncate">{tpl.name}</span>
+                  {isDefault && (
+                    <span
+                      className="shrink-0 rounded px-1 text-[10px] text-[color:var(--fg-muted)]"
+                      style={{ background: 'var(--surface-hover)' }}
+                    >
+                      Default
+                    </span>
+                  )}
+                </div>
+                {isSelected && (
+                  <Check className="size-3.5 shrink-0 text-[color:var(--fg-1)]" />
+                )}
+              </button>
+            );
+          })}
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
 
 /**
  * The primary bottom-dock slot (bottomOffset 0). Recording coexists with the
@@ -69,8 +167,12 @@ export function PrimaryDock({ showAskBar }: { showAskBar: boolean }) {
         </div>
       ) : (
         // Idle: the standalone transcript toggle sits left of the Ask bar
-        // (Granola-style). While recording, the pill owns the left slot.
-        <TranscriptToggle />
+        // alongside the pre-recording template choice picker.
+        // While recording, the pill owns the left slot.
+        <div className={cn('flex items-center gap-2 shrink-0', showAskBar && 'mb-1')}>
+          <TranscriptToggle />
+          <RecordTemplatePicker />
+        </div>
       )}
       {showAskBar && (
         <div className="min-w-0 flex-1">

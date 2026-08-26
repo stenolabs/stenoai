@@ -9,16 +9,14 @@ After transcription, Steno passes the transcript to a language model to generate
 
 | Model | Size | Notes |
 |-------|------|-------|
-| `gemma4:e2b-it-qat` | ~4.3GB (~6.5GB on Apple Silicon) | Default. Fast, 128K context. |
+| `apple:system` (Apple Intelligence) | Built-in | Default on macOS when available. Uses SystemLanguageModel Advanced with automatic 3B Core fallback. |
+| `gemma4:e2b-it-qat` | ~4.3GB (~6.5GB on Apple Silicon) | Default Ollama fallback. Fast, 128K context. |
 | `gemma4:e4b-it-qat` | ~6.1GB (~8.8GB on Apple Silicon) | Higher quality, modest footprint. |
 | `qwen3.5:9b` | ~6.6GB | Strong at structured output and action items. |
 | `gemma4:12b-it-qat` | ~7.2GB (~7.7GB on Apple Silicon) | 256K context, best for long meetings. |
 | `gpt-oss:20b` | ~14GB | Highest quality, reasoning. |
 
-On Apple Silicon, the three Gemma 4 models are automatically pulled as MLX/NVFP4 builds instead of the base GGUF -- a meaningful speed win, at a larger download size (shown above).
-
-`gemma4:e2b-it-qat` (Gemma 4 E2B) is the default and handles most meetings well. `llama3.2:3b` is still available for existing users pinned to it, but is deprecated in favor of the Gemma 4 lineup and hidden from the default model picker. Larger models produce better-structured, more detailed notes; the trade-off is processing time and disk space.
-
+On Apple Silicon with Apple Intelligence available, Steno uses the built-in `SystemLanguageModel` (preferring Advanced and falling back to 3B Core). Otherwise, local summarization runs via Ollama with `gemma4:e2b-it-qat` as the default.
 ## How to change models
 
 1. Open **Settings → AI**

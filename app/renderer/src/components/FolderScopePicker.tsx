@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { ChevronDown, Folder as FolderIcon, Globe, Inbox } from 'lucide-react';
+import { Check, ChevronDown, FileText, Folder as FolderIcon, Globe, Inbox } from 'lucide-react';
 import {
   Popover,
   PopoverContent,
@@ -7,6 +7,7 @@ import {
 } from '@/components/ui/popover';
 import { useFolders } from '@/hooks/useFolders';
 import { useOrgSession } from '@/hooks/useOrg';
+import { useMeetings } from '@/hooks/useMeetings';
 import type { Folder } from '@/lib/ipc';
 
 /** Sentinel for "ask across the org-shared corpus instead of local notes".
@@ -18,19 +19,37 @@ interface FolderScopePickerProps {
   /** Selected folder ID, or ORG_SHARED_SCOPE for the org corpus. null = all local notes. */
   value: string | null;
   onChange: (folderId: string | null) => void;
+  /** Selected meeting summary file paths. */
+  selectedMeetings?: string[];
+  /** Callback when meeting selection changes. */
+  onSelectedMeetingsChange?: (meetingFiles: string[]) => void;
 }
-
 /**
  * Compact "scope" chip used inside chat composers. Lets the user limit a
  * cross-note query to a single folder instead of asking across everything.
  * Backend filter happens server-side; this just persists the choice and
  * passes it to startGlobalStream.
  */
-export function FolderScopePicker({ value, onChange }: FolderScopePickerProps) {
+export function FolderScopePicker({
+  value,
+  onChange,
+  selectedMeetings,
+  onSelectedMeetingsChange,
+}: FolderScopePickerProps) {
   const folders = useFolders();
   const orgSession = useOrgSession();
   const orgSignedIn = orgSession.data?.signedIn ?? false;
+  const meetingsQuery = useMeetings();
   const [open, setOpen] = React.useState(false);
+
+  const meetingsList = React.useMemo(() => {
+    const raw = meetingsQuery.data ?? [];
+    return raw.filter(
+      (m) =>
+        m.session_info?.summary_file &&
+        !m.session_info.summary_file.startsWith('__live_')
+    );
+  }, [meetingsQuery.data]);
 
   const folder = React.useMemo<Folder | null>(() => {
     if (!value || value === ORG_SHARED_SCOPE) return null;
@@ -56,20 +75,46 @@ export function FolderScopePicker({ value, onChange }: FolderScopePickerProps) {
     }
   }, [value, folders.data, folder, orgSessionSettled, orgSignedIn, onChange]);
 
-  const isOrg = value === ORG_SHARED_SCOPE;
-  const label = isOrg ? 'Shared notes' : folder ? folder.name : 'All notes';
+  // If scoped meetings were deleted, drop them from the selection.
+  React.useEffect(() => {
+    if (selectedMeetings && selectedMeetings.length > 0 && meetingsQuery.data) {
+      const validFiles = new Set(meetingsList.map((m) => m.session_info.summary_file));
+      const filtered = selectedMeetings.filter((f) => validFiles.has(f));
+      if (filtered.length !== selectedMeetings.length) {
+        onSelectedMeetingsChange?.(filtered);
+      }
+    }
+  }, [selectedMeetings, meetingsQuery.data, meetingsList, onSelectedMeetingsChange]);
+
+  const selectedCount = selectedMeetings?.length ?? 0;
+  const isSelectedMeetings = selectedCount > 0;
+  const isOrg = !isSelectedMeetings && value === ORG_SHARED_SCOPE;
+  // "notes", not "meetings": every other label in this picker (All notes,
+  // Shared notes, Specific notes) and the sidebar itself call them notes.
+  const label = isSelectedMeetings
+    ? selectedCount === 1
+      ? '1 note'
+      : `${selectedCount} notes`
+    : isOrg
+    ? 'Shared notes'
+    : folder
+    ? folder.name
+    : 'All notes';
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <button
           type="button"
+          data-testid="scope-picker-trigger"
           aria-label={`Scope: ${label}`}
           title={`Scope: ${label}`}
           className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[12px] transition-colors hover:bg-[color:var(--surface-hover)]"
           style={{ color: 'var(--fg-2)' }}
         >
-          {isOrg ? (
+          {isSelectedMeetings ? (
+            <FileText className="size-[12px]" />
+          ) : isOrg ? (
             <Globe className="size-[12px]" />
           ) : folder ? (
             <FolderIcon className="size-[12px]" />
@@ -80,20 +125,22 @@ export function FolderScopePicker({ value, onChange }: FolderScopePickerProps) {
           <ChevronDown className="size-[11px] opacity-60" />
         </button>
       </PopoverTrigger>
-      <PopoverContent align="start" className="w-[220px] p-1">
+      <PopoverContent align="start" className="w-[240px] p-1" data-testid="scope-picker-popover">
         <div className="px-2 pb-1 pt-0.5 text-[11px] font-medium" style={{ color: 'var(--fg-muted)' }}>
           Ask across…
         </div>
         <button
           type="button"
+          data-testid="scope-all-notes"
           onClick={() => {
             onChange(null);
+            onSelectedMeetingsChange?.([]);
             setOpen(false);
           }}
           className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] transition-colors hover:bg-[color:var(--surface-hover)]"
           style={{
             color: 'var(--fg-1)',
-            background: value === null ? 'var(--surface-active)' : undefined,
+            background: !isSelectedMeetings && value === null ? 'var(--surface-active)' : undefined,
           }}
         >
           <Inbox className="size-[13px]" style={{ color: 'var(--fg-2)' }} />
@@ -102,8 +149,10 @@ export function FolderScopePicker({ value, onChange }: FolderScopePickerProps) {
         {orgSignedIn && (
           <button
             type="button"
+            data-testid="scope-shared-notes"
             onClick={() => {
               onChange(ORG_SHARED_SCOPE);
+              onSelectedMeetingsChange?.([]);
               setOpen(false);
             }}
             className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] transition-colors hover:bg-[color:var(--surface-hover)]"
@@ -128,20 +177,93 @@ export function FolderScopePicker({ value, onChange }: FolderScopePickerProps) {
           <button
             key={f.id}
             type="button"
+            data-testid={`scope-folder-${f.id}`}
             onClick={() => {
               onChange(f.id);
+              onSelectedMeetingsChange?.([]);
               setOpen(false);
             }}
             className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] transition-colors hover:bg-[color:var(--surface-hover)]"
             style={{
               color: 'var(--fg-1)',
-              background: value === f.id ? 'var(--surface-active)' : undefined,
+              background: !isSelectedMeetings && value === f.id ? 'var(--surface-active)' : undefined,
             }}
           >
             <FolderIcon className="size-[13px]" style={{ color: 'var(--fg-2)' }} />
             <span className="truncate">{f.name}</span>
           </button>
         ))}
+
+        {meetingsList.length > 0 && onSelectedMeetingsChange && (
+          <>
+            <div
+              className="mx-2 my-1 h-px"
+              style={{ background: 'var(--border-subtle)' }}
+              aria-hidden
+            />
+            <div className="flex items-center justify-between px-2 pb-1 pt-0.5 text-[11px] font-medium" style={{ color: 'var(--fg-muted)' }}>
+              <span>Specific notes</span>
+              {selectedCount > 0 && (
+                <button
+                  type="button"
+                  data-testid="scope-clear-meetings"
+                  onClick={() => {
+                    onSelectedMeetingsChange([]);
+                  }}
+                  className="text-[11px] transition-colors hover:underline"
+                  style={{ color: 'var(--fg-muted)' }}
+                >
+                  Clear ({selectedCount})
+                </button>
+              )}
+            </div>
+            <div className="max-h-[160px] overflow-y-auto">
+              {meetingsList.map((m) => {
+                const summaryFile = m.session_info.summary_file;
+                const isChecked = selectedMeetings?.includes(summaryFile) ?? false;
+                return (
+                  <button
+                    key={summaryFile}
+                    type="button"
+                    data-testid="scope-meeting-item"
+                    data-meeting-file={summaryFile}
+                    aria-label={`Select ${m.session_info.name || 'Untitled note'}`}
+                    onClick={() => {
+                      const current = selectedMeetings ?? [];
+                      let next: string[];
+                      if (isChecked) {
+                        next = current.filter((f) => f !== summaryFile);
+                      } else {
+                        next = [...current, summaryFile];
+                        onChange(null);
+                      }
+                      onSelectedMeetingsChange(next);
+                    }}
+                    className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] transition-colors hover:bg-[color:var(--surface-hover)]"
+                    style={{
+                      color: 'var(--fg-1)',
+                      background: isChecked ? 'var(--surface-active)' : undefined,
+                    }}
+                  >
+                    <div
+                      className="flex size-[14px] items-center justify-center rounded border"
+                      style={{
+                        borderColor: isChecked ? 'var(--accent-primary)' : 'var(--border-subtle)',
+                        background: isChecked ? 'var(--surface-raised)' : 'transparent',
+                        color: 'var(--fg-1)',
+                      }}
+                    >
+                      {isChecked && <Check className="size-[10px]" />}
+                    </div>
+                    <span className="truncate flex-1">
+                      {m.session_info.name || 'Untitled note'}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </>
+        )}
       </PopoverContent>
     </Popover>
   );

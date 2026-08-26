@@ -69,6 +69,14 @@ const { sweepOrphanedLiveSnapshots } = require('./live-snapshot-sweep');
 const { userNotesFilePath } = require('./notes-file');
 const { buildNoteReadyNotificationOptions, buildTranscriptReadyBody } = require('./notification-copy');
 const { makeLineReader } = require('./backend-stream');
+const {
+  MAX_PROTOCOL_LINE_BYTES,
+  MAX_DECODED_ANSWER_BYTES,
+  LIVE_QUERY_TIMEOUT_MS,
+  FIXED_LIVE_QUERY_ERRORS,
+  validateLiveQueryInputs,
+  buildLiveTranscriptQuerySnapshot,
+} = require('./live-query-helpers');
 // Pure deep-link (stenoai://) parsing/sanitizing lives in ./shortcut-url
 // (unit-tested). The stateful side — window creation, IPC dispatch,
 // notifications — stays here and calls parseShortcutUrl().
@@ -107,6 +115,9 @@ const os = require('os');
 const { URL, URLSearchParams } = require('url');
 const crypto = require('crypto');
 const { EXPORT_CANCELED } = require('./ipc-sentinels');
+const { handleRpc, SUPPORTED_VERSIONS, MODERN_VERSION } = require('./mcp-protocol');
+const { createMcpServer } = require('./mcp-server');
+const { createMcpTools } = require('./mcp-tools');
 const { mayExposeMainWindow } = require('./e2e-window-visibility');
 const { PostHog } = require('posthog-node');
 const { initMain } = require('electron-audio-loopback');
@@ -518,11 +529,42 @@ const { getBackendPath, getBackendCwd, runPythonScript } = createBackendCli({
   attachProcessingStderr,
   forwardDiagnosticStdout,
 });
-// Quit teardown registry (RFC #327 ground rule 4). No consumers yet — domains
-// that own a child process/timer (Ollama, mic monitor, recording runtime, …)
-// register an idempotent dispose() as they move out of main.js. Drained in
-// will-quit below.
+// Quit teardown registry (RFC #327 ground rule 4). Domains that own a child
+// process, timer, or local server register an idempotent dispose() here instead
+// of each installing a bespoke quit hook. Drained in will-quit below.
 const teardown = createTeardownRegistry();
+const mcpTools = createMcpTools({
+  runPythonScript,
+  validateMeetingFilePath,
+  getOutputDir,
+  timeoutMs: LIVE_QUERY_TIMEOUT_MS,
+  spawnBackend: (args) => spawn(getBackendPath(), args, { cwd: getBackendCwd() }),
+  killBackendTree: (pid) => killProcessTree(pid),
+});
+let mcpApiKeyForServer = null;
+const mcpServer = createMcpServer({
+  handleRpc: ({ headers, body }) => handleRpc({
+    headers,
+    body,
+    tools: mcpTools.definitions,
+    callTool: (name, args) => mcpTools.call(name, args),
+    serverInfo: {
+      name: 'stenoai',
+      version: app.getVersion(),
+      protocolVersion: MODERN_VERSION,
+      supportedVersions: SUPPORTED_VERSIONS,
+    },
+  }),
+  getApiKey: () => mcpApiKeyForServer,
+  log: (entry) => {
+    if (entry && entry.event === 'handle_rpc_error') {
+      sendDebugLog('[mcp] request failed');
+    }
+  },
+});
+teardown.register(() => {
+  void stopMcpServer();
+});
 
 const gotSingleInstanceLock = app.requestSingleInstanceLock();
 
@@ -1887,7 +1929,10 @@ if (!gotSingleInstanceLock) {
   }
 
   app.on('before-quit', async (event) => {
-    if (isQuitting) return;
+    if (isQuitting) {
+      void stopMcpServer();
+      return;
+    }
 
     // Synchronous flag — systemAudioRecordingActive is updated via IPC on each
     // state change. Capture is renderer-driven on every platform now.
@@ -1907,6 +1952,7 @@ if (!gotSingleInstanceLock) {
         systemAudioRecordingActive = false;
         updateTrayIcon(false);
         isQuitting = true;
+        void stopMcpServer();
         app.quit();
       }
     } else if (isProcessing || processingQueue.length > 0) {
@@ -1915,10 +1961,12 @@ if (!gotSingleInstanceLock) {
       const confirmed = await showCustomQuitDialog('processing', jobCount);
       if (confirmed) {
         isQuitting = true;
+        void stopMcpServer();
         app.quit();
       }
     } else {
       isQuitting = true;
+      void stopMcpServer();
     }
   });
 
@@ -2256,6 +2304,22 @@ if (!gotSingleInstanceLock) {
       console.warn('pending-delete recovery on launch failed (non-fatal):', e?.message);
     }
 
+    // Local MCP server (off by default). Deliberately started HERE, and
+    // deliberately NOT awaited:
+    //  - AFTER recoverPendingDeletesOnLaunch, because starting it reads settings
+    //    through a Python spawn. Awaiting that ahead of recovery let
+    //    [data-app-ready] fire while a crash-orphaned note was still hidden —
+    //    an optional, off-by-default convenience must never delay restoring a
+    //    user's note (caught by meeting-undo-delete.t2 + audio-import-collision.t2).
+    //  - not awaited, so a slow spawn, a busy port, or an undecryptable key can
+    //    never hold up launch. enqueueMcpLifecycleOp serialises lifecycle ops, so
+    //    a later enable/disable cannot race this one.
+    if (!IS_E2E_MOCK_IPC) {
+      void enqueueMcpLifecycleOp(startMcpServerFromSettings).catch(() => {
+        sendDebugLog('[mcp] startup skipped');
+      });
+    }
+
     // Load the Obsidian sync config into the engine's cache (so per-note hooks
     // never shell Python) and reconcile any index drift from changes made while
     // the app was closed (#413). After the storage-path + pending-delete steps
@@ -2496,6 +2560,44 @@ function parsePythonFailureJson(error) {
     // stdout wasn't JSON -- fall through to the generic error below.
   }
   return { success: false, error: error.message };
+}
+
+function runBackendCommandQuiet(args, { stdin, env = {} } = {}) {
+  return new Promise((resolve, reject) => {
+    let proc;
+    try {
+      proc = spawn(getBackendPath(), args, {
+        cwd: getBackendCwd(),
+        env: Object.keys(env).length > 0 ? { ...process.env, ...env } : undefined,
+        stdio: [stdin === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe'],
+      });
+    } catch (error) {
+      reject(error);
+      return;
+    }
+
+    let stdout = '';
+    let stderr = '';
+    proc.stdout.on('data', (data) => { stdout += data.toString(); });
+    proc.stderr.on('data', (data) => { stderr += data.toString(); });
+    proc.on('close', (code) => {
+      if (code === 0) {
+        resolve(stdout);
+        return;
+      }
+      const error = new Error('Backend command failed');
+      error.stdout = stdout;
+      error.stderr = stderr;
+      reject(error);
+    });
+    proc.on('error', (error) => reject(error));
+    if (stdin !== undefined && proc.stdin) {
+      proc.stdin.on('error', (err) => {
+        if (!err || err.code !== 'EPIPE') reject(err);
+      });
+      proc.stdin.end(stdin, 'utf-8');
+    }
+  });
 }
 
 async function getBackendStatusInternal(silent = true) {
@@ -3447,7 +3549,436 @@ ipcMain.handle('query-transcript', async (event, summaryFile, question) => {
   }
 });
 
+
 const activeQueryProcs = new Map();
+let activeLiveQuery = null;
+
+function safeSendQueryPayload(sender, channel, payload) {
+  try {
+    if (sender && !sender.isDestroyed()) sender.send(channel, payload);
+  } catch (_) { /* renderer gone — nothing to notify */ }
+}
+
+function handleLiveQueryProtocolLine(line, queryId, sender, proc, state, cleanup, options = {}) {
+  if (state.done) return;
+
+  if (line.startsWith('CHAT_CHUNK:')) {
+    try {
+      const chunk = Buffer.from(line.slice('CHAT_CHUNK:'.length), 'base64').toString('utf-8');
+      state.totalDecodedBytes += Buffer.byteLength(chunk, 'utf-8');
+      if (state.totalDecodedBytes > MAX_DECODED_ANSWER_BYTES) {
+        state.done = true;
+        try { proc.kill(); } catch (_) {}
+        safeSendQueryPayload(sender, 'query-done', {
+          queryId,
+          success: false,
+          error: FIXED_LIVE_QUERY_ERRORS.RESPONSE_LIMIT_EXCEEDED,
+        });
+        cleanup();
+        return;
+      }
+      safeSendQueryPayload(sender, 'query-chunk', { queryId, chunk });
+      if (sender.isDestroyed()) {
+        state.done = true;
+        try { proc.kill(); } catch (_) {}
+        cleanup();
+      }
+    } catch (_) { /* ignore malformed chunks */ }
+    return;
+  }
+  if (line === 'CHAT_STREAM_COMPLETE') {
+    if (!state.done) {
+      state.done = true;
+      safeSendQueryPayload(sender, 'query-done', { queryId, success: true });
+      cleanup();
+    }
+    return;
+  }
+  if (line.startsWith('CHAT_STREAM_ERROR:')) {
+    if (!state.done) {
+      const mappedError = typeof options.mapStreamError === 'function'
+        ? options.mapStreamError(line)
+        : FIXED_LIVE_QUERY_ERRORS.FAILED;
+      state.done = true;
+      safeSendQueryPayload(sender, 'query-done', {
+        queryId,
+        success: false,
+        error: mappedError,
+      });
+      cleanup();
+    }
+  }
+}
+
+function handleQueryProtocolOutputChunk(data, queryId, sender, proc, state, cleanup, options = {}) {
+  if (state.done) return;
+  state.buf = (state.buf || '') + data.toString();
+  if (Buffer.byteLength(state.buf, 'utf-8') > MAX_PROTOCOL_LINE_BYTES && !state.buf.includes('\n')) {
+    state.done = true;
+    try { proc.kill(); } catch (_) {}
+    safeSendQueryPayload(sender, 'query-done', {
+      queryId,
+      success: false,
+      error: FIXED_LIVE_QUERY_ERRORS.LINE_LIMIT_EXCEEDED,
+    });
+    cleanup();
+    return;
+  }
+
+  const lines = state.buf.split(/\r?\n/);
+  state.buf = lines.pop();
+  for (const line of lines) {
+    if (state.done) break;
+    if (Buffer.byteLength(line, 'utf-8') > MAX_PROTOCOL_LINE_BYTES) {
+      state.done = true;
+      try { proc.kill(); } catch (_) {}
+      safeSendQueryPayload(sender, 'query-done', {
+        queryId,
+        success: false,
+        error: FIXED_LIVE_QUERY_ERRORS.LINE_LIMIT_EXCEEDED,
+      });
+      cleanup();
+      return;
+    }
+    handleLiveQueryProtocolLine(line, queryId, sender, proc, state, cleanup, options);
+  }
+}
+
+ipcMain.on('query-live-transcript-stream', (event, queryId, sessionName, question, history) => {
+  const sender = event?.sender;
+  const responseQueryId =
+    typeof queryId === 'string' && queryId.length <= 256 ? queryId : '';
+  const done = (payload) =>
+    safeSendQueryPayload(sender, 'query-done', { queryId: responseQueryId, ...payload });
+
+  // Gate to trusted mainWindow.webContents
+  if (!mainWindow || mainWindow.isDestroyed() || !sender || sender !== mainWindow.webContents) {
+    done({ success: false, error: FIXED_LIVE_QUERY_ERRORS.UNAUTHORIZED });
+    return;
+  }
+
+  // Validate inputs
+  const validation = validateLiveQueryInputs({ queryId, sessionName, question, history });
+  if (!validation.valid) {
+    done({ success: false, error: validation.error });
+    return;
+  }
+
+  // Enforce one active live query per trusted sender / global live path
+  if (activeLiveQuery !== null) {
+    done({ success: false, error: FIXED_LIVE_QUERY_ERRORS.QUERY_ALREADY_ACTIVE });
+    return;
+  }
+
+  const snapshot = buildLiveTranscriptQuerySnapshot({
+    sessionName,
+    activeSessionName: currentRecordingSessionName,
+    recordingActive: currentRecordingProcess !== null || systemAudioRecordingActive,
+    liveTranscriptState,
+  });
+  if (snapshot.error) {
+    done({ success: false, error: snapshot.error });
+    return;
+  }
+  if (sender.isDestroyed()) return;
+
+  let proc;
+  try {
+    proc = require('child_process').spawn(
+      getBackendPath(),
+      ['query-live-streaming'],
+      {
+        env: { ...process.env, ...getAiEnv() },
+        cwd: getBackendCwd(),
+        windowsHide: true,
+        stdio: ['pipe', 'pipe', 'pipe'],
+      },
+    );
+  } catch {
+    done({ success: false, error: FIXED_LIVE_QUERY_ERRORS.FAILED });
+    return;
+  }
+
+  const state = { done: false, totalDecodedBytes: 0, buf: '' };
+  let killTimer = null;
+
+  const cleanup = () => {
+    if (killTimer) {
+      clearTimeout(killTimer);
+      killTimer = null;
+    }
+    try {
+      if (!sender.isDestroyed()) sender.removeListener('destroyed', onSenderDestroyed);
+    } catch (_) {}
+    if (activeLiveQuery && activeLiveQuery.queryId === queryId) {
+      activeLiveQuery = null;
+    }
+  };
+
+  const onSenderDestroyed = () => {
+    if (activeLiveQuery && activeLiveQuery.queryId === queryId) {
+      state.done = true;
+      try { proc.kill(); } catch (_) {}
+      cleanup();
+    }
+  };
+  sender.once('destroyed', onSenderDestroyed);
+
+  if (sender.isDestroyed()) {
+    state.done = true;
+    try { proc.kill(); } catch (_) {}
+    cleanup();
+    return;
+  }
+
+  killTimer = setTimeout(() => {
+    if (!state.done) {
+      state.done = true;
+      try { proc.kill('SIGKILL'); } catch (_) {}
+      safeSendQueryPayload(sender, 'query-done', {
+        queryId,
+        success: false,
+        error: FIXED_LIVE_QUERY_ERRORS.TIMEOUT,
+      });
+      cleanup();
+    }
+  }, LIVE_QUERY_TIMEOUT_MS);
+
+  activeLiveQuery = {
+    queryId,
+    sender,
+    proc,
+    state,
+    killTimer,
+    cleanup,
+  };
+
+  proc.stdout.on('data', (data) => {
+    handleQueryProtocolOutputChunk(data, queryId, sender, proc, state, cleanup);
+  });
+
+  proc.stderr.on('data', () => {
+    // Backend stderr can contain prompt/transcript context; never log it.
+  });
+
+  proc.stdin.on('error', (err) => {
+    if (err && err.code === 'EPIPE') return;
+    if (!state.done) {
+      state.done = true;
+      try { proc.kill(); } catch (_) {}
+      safeSendQueryPayload(sender, 'query-done', {
+        queryId,
+        success: false,
+        error: FIXED_LIVE_QUERY_ERRORS.FAILED,
+      });
+      cleanup();
+    }
+  });
+
+  try {
+    const payloadObj = {
+      transcript: snapshot.transcript,
+      question,
+    };
+    if (validation.history && validation.history.length > 0) {
+      payloadObj.history = validation.history;
+    }
+    const payload = JSON.stringify(payloadObj);
+    proc.stdin.end(payload, 'utf-8');
+  } catch {
+    if (!state.done) {
+      state.done = true;
+      try { proc.kill(); } catch (_) {}
+      safeSendQueryPayload(sender, 'query-done', {
+        queryId,
+        success: false,
+        error: FIXED_LIVE_QUERY_ERRORS.FAILED,
+      });
+      cleanup();
+    }
+  }
+
+  proc.on('close', (code) => {
+    if (!state.done) {
+      const remainder = (state.buf || '').trim();
+      if (remainder) {
+        handleLiveQueryProtocolLine(remainder, queryId, sender, proc, state, cleanup);
+      }
+    }
+    if (!state.done) {
+      state.done = true;
+      const error = code === 0
+        ? FIXED_LIVE_QUERY_ERRORS.STREAM_CLOSED
+        : FIXED_LIVE_QUERY_ERRORS.FAILED;
+      safeSendQueryPayload(sender, 'query-done', { queryId, success: false, error });
+    }
+    cleanup();
+  });
+
+  proc.on('error', () => {
+    if (!state.done) {
+      state.done = true;
+      safeSendQueryPayload(sender, 'query-done', {
+        queryId,
+        success: false,
+        error: FIXED_LIVE_QUERY_ERRORS.FAILED,
+      });
+    }
+    cleanup();
+  });
+});
+
+// Pre-meeting brief input caps: title <= 200 chars, at most 25 attendees,
+// each attendee <= 120 chars. These keep untrusted renderer input bounded
+// before it reaches child-process argv while still fitting real calendar data.
+const PRE_MEETING_BRIEF_MAX_TITLE_CHARS = 200;
+const PRE_MEETING_BRIEF_MAX_ATTENDEES = 25;
+const PRE_MEETING_BRIEF_MAX_ATTENDEE_CHARS = 120;
+
+function validatePreMeetingBriefInputs(queryId, title, attendees) {
+  const responseQueryId = typeof queryId === 'string' && queryId.length <= 256 ? queryId : '';
+  if (!responseQueryId) {
+    return { valid: false, queryId: responseQueryId, error: 'Invalid request' };
+  }
+  if (typeof title !== 'string') {
+    return { valid: false, queryId: responseQueryId, error: 'Invalid request' };
+  }
+  const trimmedTitle = title.trim();
+  if (!trimmedTitle || trimmedTitle.length > PRE_MEETING_BRIEF_MAX_TITLE_CHARS) {
+    return { valid: false, queryId: responseQueryId, error: 'Invalid request' };
+  }
+  if (attendees !== undefined && attendees !== null && !Array.isArray(attendees)) {
+    return { valid: false, queryId: responseQueryId, error: 'Invalid request' };
+  }
+  const cleanedAttendees = [];
+  for (const attendee of Array.isArray(attendees) ? attendees : []) {
+    if (cleanedAttendees.length >= PRE_MEETING_BRIEF_MAX_ATTENDEES) {
+      return { valid: false, queryId: responseQueryId, error: 'Invalid request' };
+    }
+    if (typeof attendee !== 'string') {
+      return { valid: false, queryId: responseQueryId, error: 'Invalid request' };
+    }
+    const trimmed = attendee.trim();
+    if (!trimmed) continue;
+    if (trimmed.length > PRE_MEETING_BRIEF_MAX_ATTENDEE_CHARS) {
+      return { valid: false, queryId: responseQueryId, error: 'Invalid request' };
+    }
+    cleanedAttendees.push(trimmed);
+  }
+  return { valid: true, queryId: responseQueryId, title: trimmedTitle, attendees: cleanedAttendees };
+}
+
+function mapPreMeetingBriefStreamError(line) {
+  const msg = line.slice('CHAT_STREAM_ERROR:'.length).trim();
+  return msg === 'No related notes yet' ? msg : FIXED_LIVE_QUERY_ERRORS.FAILED;
+}
+
+ipcMain.on('pre-meeting-brief-stream', (event, queryId, title, attendees) => {
+  const sender = event?.sender;
+  const responseQueryId =
+    typeof queryId === 'string' && queryId.length <= 256 ? queryId : '';
+  const done = (payload) =>
+    safeSendQueryPayload(sender, 'query-done', { queryId: responseQueryId, ...payload });
+
+  // Gate to trusted mainWindow.webContents
+  if (!mainWindow || mainWindow.isDestroyed() || !sender || sender !== mainWindow.webContents) {
+    done({ success: false, error: FIXED_LIVE_QUERY_ERRORS.UNAUTHORIZED });
+    return;
+  }
+
+  const validation = validatePreMeetingBriefInputs(queryId, title, attendees);
+  if (!validation.valid) {
+    done({ success: false, error: validation.error });
+    return;
+  }
+
+  const args = ['pre-meeting-brief', '--title', validation.title];
+  for (const attendee of validation.attendees) {
+    args.push('--attendee', attendee);
+  }
+
+  let proc;
+  try {
+    proc = spawn(
+      getBackendPath(),
+      args,
+      { env: { ...process.env, ...getAiEnv() }, cwd: getBackendCwd(), windowsHide: true },
+    );
+  } catch {
+    done({ success: false, error: FIXED_LIVE_QUERY_ERRORS.FAILED });
+    return;
+  }
+
+  const state = { done: false, totalDecodedBytes: 0, buf: '' };
+  const cleanup = () => {
+    activeQueryProcs.delete(validation.queryId);
+    try {
+      if (!sender.isDestroyed()) sender.removeListener('destroyed', onSenderDestroyed);
+    } catch (_) {}
+  };
+  const onSenderDestroyed = () => {
+    if (activeQueryProcs.has(validation.queryId)) {
+      state.done = true;
+      try { proc.kill(); } catch (_) {}
+      cleanup();
+    }
+  };
+  sender.once('destroyed', onSenderDestroyed);
+
+  if (sender.isDestroyed()) {
+    state.done = true;
+    try { proc.kill(); } catch (_) {}
+    cleanup();
+    return;
+  }
+
+  activeQueryProcs.set(validation.queryId, proc);
+
+  proc.stdout.on('data', (data) => {
+    handleQueryProtocolOutputChunk(data, validation.queryId, sender, proc, state, cleanup, {
+      mapStreamError: mapPreMeetingBriefStreamError,
+    });
+  });
+
+  proc.stderr.on('data', () => {
+    // Backend stderr can include note context; never log it.
+  });
+
+  proc.on('close', (code) => {
+    if (!state.done) {
+      const remainder = (state.buf || '').trim();
+      if (remainder) {
+        handleLiveQueryProtocolLine(remainder, validation.queryId, sender, proc, state, cleanup, {
+          mapStreamError: mapPreMeetingBriefStreamError,
+        });
+      }
+    }
+    if (!state.done && code !== null) {
+      state.done = true;
+      const error = code === 0
+        ? FIXED_LIVE_QUERY_ERRORS.STREAM_CLOSED
+        : FIXED_LIVE_QUERY_ERRORS.FAILED;
+      safeSendQueryPayload(sender, 'query-done', {
+        queryId: validation.queryId,
+        success: false,
+        error,
+      });
+    }
+    cleanup();
+  });
+
+  proc.on('error', () => {
+    if (!state.done) {
+      state.done = true;
+      safeSendQueryPayload(sender, 'query-done', {
+        queryId: validation.queryId,
+        success: false,
+        error: FIXED_LIVE_QUERY_ERRORS.FAILED,
+      });
+    }
+    cleanup();
+  });
+});
 
 // Cancellation intent for streaming queries that are still in their pre-spawn
 // async window. query-transcript-stream now `await`s validateMeetingFilePath
@@ -3459,7 +3990,24 @@ const activeQueryProcs = new Map();
 // that flag on every exit path so it never spawns-then-orphans a proc.
 const pendingQueryCancels = new Map();
 
-ipcMain.on('query-cancel', (_event, queryId) => {
+ipcMain.on('query-cancel', (event, queryId) => {
+  const sender = event?.sender;
+
+  // Live query path: owner-bound cancellation
+  if (activeLiveQuery && activeLiveQuery.queryId === queryId) {
+    if (activeLiveQuery.sender === sender) {
+      console.log(`[LIVE-QUERY] Cancelling queryId=${queryId}`);
+      activeLiveQuery.state.done = true;
+      if (activeLiveQuery.killTimer) clearTimeout(activeLiveQuery.killTimer);
+      try { activeLiveQuery.proc.kill(); } catch (_) {}
+      activeLiveQuery.cleanup();
+      activeLiveQuery = null;
+    } else {
+      console.warn(`[LIVE-QUERY] Rejected cancel for queryId=${queryId} from unauthorized sender`);
+    }
+    return;
+  }
+
   const proc = activeQueryProcs.get(queryId);
   if (proc) {
     console.log(`[QUERY] Cancelling queryId=${queryId}`);
@@ -3486,7 +4034,7 @@ ipcMain.on('query-cancel', (_event, queryId) => {
 });
 
 ipcMain.on('query-transcript-stream', async (event, queryId, summaryFile, question) => {
-  console.log(`[QUERY] IPC received: question="${question.substring(0, 50)}" file="${summaryFile}"`);
+  console.log(`[QUERY] IPC received: questionLen=${String(question || '').length} file="${summaryFile}"`);
   sendDebugLog(`🤖 Streaming query (${String(question || '').length} chars)`);
   const env = { ...process.env, ...getAiEnv() };
 
@@ -3640,9 +4188,8 @@ ipcMain.on('query-transcript-stream', async (event, queryId, summaryFile, questi
     }
   });
 
-  proc.stderr.on('data', (data) => {
-    const msg = data.toString().trim();
-    if (msg) console.log(`[QUERY stderr] ${msg.substring(0, 200)}`);
+  proc.stderr.on('data', () => {
+    // Backend stderr can include prompt/transcript context; never log it.
   });
 
   proc.on('close', (code) => {
@@ -3650,7 +4197,7 @@ ipcMain.on('query-transcript-stream', async (event, queryId, summaryFile, questi
     if (!event.sender.isDestroyed()) {
       event.sender.removeListener('destroyed', onSenderDestroyed);
     }
-    console.log(`[QUERY] Process closed, code=${code}, chunks=${chunkCount}, bufRemainder=${buf.length > 0 ? JSON.stringify(buf.substring(0, 100)) : 'empty'}`);
+    console.log(`[QUERY] Process closed, code=${code}, chunks=${chunkCount}, bufRemainderBytes=${Buffer.byteLength(buf)}`);
     if (buf.trim() === 'CHAT_STREAM_COMPLETE' || buf.trim() === 'STREAM_COMPLETE') {
       console.log(`[QUERY] STREAM_COMPLETE was in buf remainder — sending done now`);
       if (!event.sender.isDestroyed()) event.sender.send('query-done', { queryId, success: true });
@@ -3675,14 +4222,9 @@ ipcMain.on('query-transcript-stream', async (event, queryId, summaryFile, questi
 // provider — the Python CLI sizes the assembled corpus to the active model's
 // context window (smaller for local/remote), so a local model answers over
 // fewer recent notes instead of overflowing. No retrieval (RAG) yet.
-ipcMain.on('chat-global-stream', (event, queryId, question, folderId) => {
-  sendDebugLog(`💬 Global chat query (${String(question || '').length} chars, folder: ${folderId || 'all'})`);
+ipcMain.on('chat-global-stream', async (event, queryId, question, folderId, meetingFiles) => {
+  sendDebugLog(`💬 Global chat query (${String(question || '').length} chars, folder: ${folderId || 'all'}, meetings: ${Array.isArray(meetingFiles) ? meetingFiles.length : 0})`);
   const env = { ...process.env, ...getAiEnv() };
-
-  const args = ['chat-global-streaming', '-q', question];
-  if (folderId && typeof folderId === 'string' && folderId !== 'all') {
-    args.push('-f', folderId);
-  }
 
   // See query-transcript-stream's trackChatOnce comment -- same multi-exit-
   // path guard, scope: 'global' distinguishes cross-note chat from a
@@ -3700,6 +4242,78 @@ ipcMain.on('chat-global-stream', (event, queryId, question, folderId) => {
     });
   };
 
+  const sendDone = (payload) => {
+    try {
+      if (!event.sender.isDestroyed()) event.sender.send('query-done', { queryId, ...payload });
+    } catch (_) { /* renderer gone — nothing to notify */ }
+  };
+
+  // Pre-spawn cancellation guard: if query-cancel arrives while validating paths
+  let cancelled = false;
+  pendingQueryCancels.set(queryId, () => { cancelled = true; });
+  const aborted = () => cancelled || event.sender.isDestroyed();
+
+  // Validate meeting selection if provided
+  let validatedMeetingPaths = [];
+  const hasMeetingSelection = Array.isArray(meetingFiles) && meetingFiles.length > 0;
+  if (hasMeetingSelection) {
+    // Cap selection at 50 notes. Cross-note CLI builds an assembled corpus of summaries,
+    // key points, and transcript excerpts across all selected notes; capping limits OS argv
+    // buffer pressure and stays safely within LLM context-window prompt sizing.
+    const MAX_SELECTED_MEETINGS = 50;
+    const boundedFiles = meetingFiles.slice(0, MAX_SELECTED_MEETINGS);
+
+    try {
+      const results = await Promise.all(
+        boundedFiles.map(async (file) => {
+          try {
+            return await validateMeetingFilePath(file);
+          } catch {
+            return { error: 'Invalid file path' };
+          }
+        })
+      );
+      for (const res of results) {
+        if (res && !res.error && res.realPath) {
+          validatedMeetingPaths.push(res.realPath);
+        }
+      }
+    } catch {
+      // Defense-in-depth
+    }
+
+    pendingQueryCancels.delete(queryId);
+
+    if (aborted()) {
+      trackChatOnce(false);
+      return;
+    }
+
+    // Security & fail-closed: if the user explicitly provided a selection of meetings
+    // but none of them passed validation, fail with a fixed error rather than silently
+    // falling back to a full-corpus or folder query.
+    if (validatedMeetingPaths.length === 0) {
+      sendDone({ success: false, error: 'Invalid file path' });
+      trackChatOnce(false);
+      return;
+    }
+  } else {
+    pendingQueryCancels.delete(queryId);
+    if (aborted()) {
+      trackChatOnce(false);
+      return;
+    }
+  }
+
+  const args = ['chat-global-streaming', '-q', question];
+  if (validatedMeetingPaths.length > 0) {
+    for (const mPath of validatedMeetingPaths) {
+      args.push('--meeting', mPath);
+    }
+  } else if (folderId && typeof folderId === 'string' && folderId !== 'all') {
+    args.push('-f', folderId);
+  }
+
   let proc;
   try {
     proc = require('child_process').spawn(
@@ -3708,8 +4322,12 @@ ipcMain.on('chat-global-stream', (event, queryId, question, folderId) => {
       { env, cwd: getBackendCwd(), windowsHide: true },
     );
   } catch (err) {
-    event.sender.send('query-done', { queryId, success: false, error: err.message });
+    sendDone({ success: false, error: err.message });
     trackChatOnce(false);
+    return;
+  }
+  if (aborted()) {
+    try { proc.kill(); } catch (_) {}
     return;
   }
 
@@ -3809,7 +4427,7 @@ function chatSessionsLegacyPath() {
   return path.join(app.getPath('userData'), CHAT_SESSIONS_LEGACY_FILENAME);
 }
 
-ipcMain.handle('save-chat-sessions', async (event, data) => {
+function writeChatSessionsV2(data) {
   const filePath = chatSessionsV2Path();
   const tmpPath = `${filePath}.tmp`;
   try {
@@ -3820,6 +4438,69 @@ ipcMain.handle('save-chat-sessions', async (event, data) => {
     try { if (fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath); } catch (_) {}
     return { success: false, error: err.message };
   }
+}
+
+function migrateLiveChatSessions(sessionName, summaryFile) {
+  if (
+    typeof sessionName !== 'string' ||
+    !sessionName.trim() ||
+    typeof summaryFile !== 'string' ||
+    !summaryFile.trim()
+  ) {
+    return;
+  }
+  const fromKey = 'live:' + sessionName;
+  const v2Path = chatSessionsV2Path();
+  if (!fs.existsSync(v2Path)) return;
+
+  let data;
+  try {
+    const raw = fs.readFileSync(v2Path, 'utf-8');
+    data = JSON.parse(raw);
+  } catch (_) {
+    return;
+  }
+
+  if (!data || !Array.isArray(data.sessions)) return;
+
+  // The path we hold is canonical (start-recording-ui stores
+  // validateMeetingFilePath's realPath), but the renderer keys its sessions by
+  // the meetings-list path it was handed. Those are the same string under
+  // ~/Library/Application Support, and different under a symlinked
+  // STENOAI_USER_DATA_DIR (macOS $TMPDIR is /var -> /private/var). Keying the
+  // carried-over conversation on a string the renderer never uses would hide
+  // it, so reuse the note's existing session key whenever there is one.
+  const canonicalTarget = canonicalPathForCompare(summaryFile);
+  let toKey = summaryFile;
+  for (const session of data.sessions) {
+    if (!session || typeof session.summaryFile !== 'string') continue;
+    if (session.summaryFile === fromKey || session.summaryFile.startsWith('live:')) continue;
+    if (canonicalPathForCompare(session.summaryFile) === canonicalTarget) {
+      toKey = session.summaryFile;
+      break;
+    }
+  }
+
+  let migratedCount = 0;
+  for (const session of data.sessions) {
+    if (session && session.summaryFile === fromKey) {
+      session.summaryFile = toKey;
+      migratedCount++;
+    }
+  }
+
+  if (migratedCount === 0) return;
+
+  const writeResult = writeChatSessionsV2(data);
+  if (writeResult.success) {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('chat-sessions-migrated', { fromKey, toKey });
+    }
+  }
+}
+
+ipcMain.handle('save-chat-sessions', async (event, data) => {
+  return writeChatSessionsV2(data);
 });
 
 ipcMain.handle('load-chat-sessions', async () => {
@@ -4043,6 +4724,76 @@ ipcMain.handle('export-note-pdf', async (event, defaultFilename, html) => {
       throw writeErr;
     }
     return { success: true, path: targetPath };
+  } catch (err) {
+    return { success: false, error: String(err && err.message ? err.message : err) };
+  }
+});
+
+const EXPORT_ALL_FORMATS = new Set(['md', 'csv']);
+
+function isPathWithinDir(candidatePath, dirPath) {
+  const rel = path.relative(dirPath, candidatePath);
+  return rel === '' || (!!rel && !rel.startsWith('..') && !path.isAbsolute(rel));
+}
+
+async function normalizedExportAllTarget(format, targetPath) {
+  let resolvedTarget = typeof targetPath === 'string' && targetPath.trim() ? targetPath : '';
+
+  if (!resolvedTarget) {
+    if (format === 'md') {
+      const result = await dialog.showOpenDialog(mainWindow, {
+        properties: ['openDirectory', 'createDirectory'],
+      });
+      if (result.canceled || !result.filePaths || !result.filePaths[0]) {
+        return { error: EXPORT_CANCELED };
+      }
+      resolvedTarget = result.filePaths[0];
+    } else {
+      const result = await dialog.showSaveDialog(mainWindow, {
+        defaultPath: 'stenoai-notes.csv',
+        filters: [{ name: 'CSV', extensions: ['csv'] }],
+      });
+      if (result.canceled || !result.filePath) {
+        return { error: EXPORT_CANCELED };
+      }
+      resolvedTarget = result.filePath;
+    }
+  }
+
+  const absoluteTarget = path.resolve(resolvedTarget);
+  const outputDir = getOutputDir();
+  const outputReal = await fs.promises.realpath(outputDir).catch(() => path.resolve(outputDir));
+  const targetForContainment = format === 'csv' ? path.dirname(absoluteTarget) : absoluteTarget;
+  const targetReal = await fs.promises.realpath(targetForContainment)
+    .catch(async () => {
+      const parentReal = await fs.promises.realpath(path.dirname(targetForContainment))
+        .catch(() => path.resolve(path.dirname(targetForContainment)));
+      return path.join(parentReal, path.basename(targetForContainment));
+    });
+
+  if (isPathWithinDir(targetReal, outputReal)) {
+    return { error: 'Cannot export into the notes directory.' };
+  }
+  return { path: absoluteTarget };
+}
+
+ipcMain.handle('export-all-notes', async (_event, payload) => {
+  try {
+    const format = payload && typeof payload.format === 'string' ? payload.format : '';
+    if (!EXPORT_ALL_FORMATS.has(format)) {
+      return { success: false, error: 'Invalid export format' };
+    }
+
+    const target = await normalizedExportAllTarget(format, payload ? payload.targetPath : undefined);
+    if (target.error) {
+      return { success: false, error: target.error };
+    }
+    const out = await runBackendCommandQuiet(['export-all', '--format', format, '--out', target.path]);
+    const parsed = JSON.parse(out);
+    if (parsed.success === false) {
+      return { success: false, error: parsed.error || 'Export failed' };
+    }
+    return { success: true, count: Number(parsed.count || 0) };
   } catch (err) {
     return { success: false, error: String(err && err.message ? err.message : err) };
   }
@@ -4760,7 +5511,13 @@ ipcMain.on('live-transcribe-stop', () => {
 // and back during recording) to backfill segments before subscribing to
 // `live-transcript-chunk` for the tail. Returns an empty array when no
 // recording is active.
-ipcMain.handle('get-live-transcript-state', async () => {
+ipcMain.handle('get-live-transcript-state', async (event) => {
+  if (!mainWindow || mainWindow.isDestroyed() || !event || event.sender !== mainWindow.webContents) {
+    return {
+      success: false,
+      error: FIXED_LIVE_QUERY_ERRORS.UNAUTHORIZED,
+    };
+  }
   return {
     success: true,
     sessionName: liveTranscriptState.sessionName,
@@ -5506,6 +6263,16 @@ async function processNextInQueue() {
     if (currentProcessingJob.appendTo && fs.existsSync(currentProcessingJob.appendTo)) {
       processArgs.push('--append-to', currentProcessingJob.appendTo);
     }
+    if (currentProcessingJob.templateId && typeof currentProcessingJob.templateId === 'string') {
+      processArgs.push('--template-id', currentProcessingJob.templateId);
+    }
+    if (Array.isArray(currentProcessingJob.attendees)) {
+      for (const attendee of currentProcessingJob.attendees) {
+        if (typeof attendee === 'string' && attendee.trim()) {
+          processArgs.push('--attendee', attendee.trim());
+        }
+      }
+    }
 
     await new Promise((resolve, reject) => {
       const proc = spawn(getBackendPath(), processArgs, {
@@ -6021,8 +6788,8 @@ function sweepStuckProcessingFlags() {
   }
 }
 
-function addToProcessingQueue(audioFile, sessionName, notesFile, liveTranscriptFile, appendTo, summaryFile) {
-  processingQueue.push({ audioFile, sessionName, notesFile, liveTranscriptFile, appendTo, summaryFile });
+function addToProcessingQueue(audioFile, sessionName, notesFile, liveTranscriptFile, appendTo, summaryFile, templateId, attendees) {
+  processingQueue.push({ audioFile, sessionName, notesFile, liveTranscriptFile, appendTo, summaryFile, templateId, attendees });
   console.log(`📋 Added to processing queue: ${sessionName} (Queue size: ${processingQueue.length})`);
   processNextInQueue();
 }
@@ -6033,12 +6800,14 @@ function addToProcessingQueue(audioFile, sessionName, notesFile, liveTranscriptF
 // the segment's transcript is folded into that note instead of creating a
 // new one.
 let currentRecordingAppendTarget = null;
+let currentRecordingTemplateId = null;
+let currentRecordingAttendees = [];
 
 // Valid recording_started `trigger` values. Whitelisted so a stale/forged
 // renderer arg can't smuggle an arbitrary string into PostHog.
 const RECORDING_TRIGGERS = new Set(['manual', 'notification_click', 'hotkey', 'tray', 'url_scheme']);
 
-ipcMain.handle('start-recording-ui', async (_, sessionName, trigger, appendTo) => {
+ipcMain.handle('start-recording-ui', async (_, sessionName, trigger, appendTo, templateId) => {
   try {
     if (currentRecordingProcess) {
       return { success: false, error: 'Recording already in progress' };
@@ -6056,6 +6825,14 @@ ipcMain.handle('start-recording-ui', async (_, sessionName, trigger, appendTo) =
     // _append_segment_to_note. A bad target degrades to a normal new-note
     // recording rather than failing the start.
     currentRecordingAppendTarget = null;
+    currentRecordingTemplateId = null;
+    currentRecordingAttendees = [];
+    if (templateId && typeof templateId === 'string') {
+      const trimmed = templateId.trim();
+      if (trimmed.length > 0 && trimmed.length <= 128) {
+        currentRecordingTemplateId = trimmed;
+      }
+    }
     if (appendTo && typeof appendTo === 'string') {
       const validatedAppend = await validateMeetingFilePath(appendTo);
       if (!validatedAppend.error) {
@@ -6149,6 +6926,11 @@ ipcMain.handle('start-recording-ui', async (_, sessionName, trigger, appendTo) =
     const recordingTrigger = RECORDING_TRIGGERS.has(trigger) ? trigger : 'manual';
     withTimeout(getCalendarEventForNow(), 2500)
       .then((calEvent) => {
+        if (calEvent && Array.isArray(calEvent.attendees)) {
+          currentRecordingAttendees = calEvent.attendees
+            .filter((name) => typeof name === 'string' && name.trim().length > 0 && !name.includes('@'))
+            .map((name) => name.trim());
+        }
         trackEvent('recording_started', {
           trigger: recordingTrigger,
           matched_calendar_event: Boolean(calEvent),
@@ -6172,11 +6954,27 @@ ipcMain.handle('start-recording-ui', async (_, sessionName, trigger, appendTo) =
     systemAudioRecordingActive = false;
     currentRecordingSessionName = null;
     currentRecordingAppendTarget = null;
+    currentRecordingTemplateId = null;
+    currentRecordingAttendees = [];
     resetRecordingRuntimeState();
     updateTrayIcon(false);
     trackEvent('error_occurred', { error_type: 'start_recording_ui', reason: classifyErrorReason(error) });
     return { success: false, error: error.message };
   }
+});
+
+ipcMain.handle('set-recording-template', async (_event, templateId) => {
+  if (currentRecordingProcess === null && !systemAudioRecordingActive) {
+    return { success: false, error: 'No active recording' };
+  }
+  currentRecordingTemplateId = null;
+  if (templateId && typeof templateId === 'string') {
+    const trimmed = templateId.trim();
+    if (trimmed.length > 0 && trimmed.length <= 128) {
+      currentRecordingTemplateId = trimmed;
+    }
+  }
+  return { success: true, templateId: currentRecordingTemplateId };
 });
 
 // ── Auto-pause on system sleep ──
@@ -6351,6 +7149,8 @@ ipcMain.handle('stop-recording-ui', async () => {
     // → no live buffer to carry anyway).
     if (instantSummaryFile) {
       liveTranscriptState.summaryFile = instantSummaryFile;
+      const sessionName = currentRecordingSessionName || liveTranscriptState.sessionName || 'Note';
+      migrateLiveChatSessions(sessionName, instantSummaryFile);
     }
     systemAudioRecordingActive = false;
     applyRecordingBackgroundThrottling();
@@ -7299,6 +8099,48 @@ ipcMain.handle('setup-ollama-and-model', async () => {
       sendDebugLog(`Could not read AI provider, proceeding with local setup: ${e.message}`);
     }
 
+    // Check if Apple Intelligence or an already-installed model is available
+    let pullTarget = DEFAULT_AI_MODEL;
+    try {
+      const resolvedRaw = await runPythonScript('simple_recorder.py', ['resolve-setup-model'], true);
+      const resolved = JSON.parse(resolvedRaw.trim());
+      if (resolved && resolved.pull_target) {
+        pullTarget = resolved.pull_target;
+      }
+      if (resolved && resolved.installed) {
+        if (resolved.installed === 'apple:system') {
+          sendDebugLog('Using Apple Intelligence for on-device summaries');
+          try {
+            const setRaw = await runPythonScript('simple_recorder.py', ['set-model', 'apple:system'], true);
+            const jsonLine = setRaw.trim().split('\n').reverse().find((l) => l.trim().startsWith('{'));
+            const setRes = jsonLine ? JSON.parse(jsonLine) : null;
+            if (!setRes || setRes.success !== true) {
+              return { success: false, error: (setRes && setRes.error) || 'Failed to save Apple Intelligence as the selected model.' };
+            }
+          } catch (e) {
+            return { success: false, error: `Failed to save Apple Intelligence as the selected model: ${e.message}` };
+          }
+          trackEvent('setup_completed', { step: 'apple_intelligence' });
+          return { success: true, message: 'Using Apple Intelligence' };
+        }
+        sendDebugLog(`Found already-installed model "${resolved.installed}" — skipping download`);
+        try {
+          const setRaw = await runPythonScript('simple_recorder.py', ['set-model', resolved.installed], true);
+          const jsonLine = setRaw.trim().split('\n').reverse().find((l) => l.trim().startsWith('{'));
+          const setRes = jsonLine ? JSON.parse(jsonLine) : null;
+          if (!setRes || setRes.success !== true) {
+            return { success: false, error: (setRes && setRes.error) || 'Failed to save the selected model.' };
+          }
+        } catch (e) {
+          return { success: false, error: `Failed to save the selected model: ${e.message}` };
+        }
+        trackEvent('setup_completed', { step: 'ollama_existing_model' });
+        return { success: true, message: `Using already-installed model ${resolved.installed}` };
+      }
+    } catch (e) {
+      sendDebugLog(`Could not check for installed models: ${e.message}`);
+    }
+
     // Check macOS version — bundled Ollama requires macOS 14 (Sonoma) or later.
     // os.release() reports the kernel version, which is Darwin on mac but the
     // Windows NT build on Windows; gate the version check to darwin so a non-mac
@@ -7403,44 +8245,7 @@ ipcMain.handle('setup-ollama-and-model', async () => {
       sendDebugLog('Warning: Ollama may not be fully ready, attempting pull anyway...');
     }
 
-    // #123: don't re-download the default if the connected Ollama already has a
-    // supported model. The backend matches installed models against the supported
-    // registry (single source of truth in config.py); on a hit we set it active
-    // and skip the pull entirely, so the default Local path needs no network for
-    // anyone with a usable Ollama already set up. Best-effort: any failure here
-    // falls through to the normal download below.
-    let pullTarget = DEFAULT_AI_MODEL;
-    try {
-      const resolvedRaw = await runPythonScript('simple_recorder.py', ['resolve-setup-model'], true);
-      const resolved = JSON.parse(resolvedRaw.trim());
-      if (resolved && resolved.pull_target) {
-        pullTarget = resolved.pull_target;
-      }
-      if (resolved && resolved.installed) {
-        sendDebugLog(`Found already-installed model "${resolved.installed}" — skipping download`);
-        // Persist it as the active model, and only report success once that
-        // write actually succeeded. set-model now exits non-zero on a
-        // config-write failure (runPythonScript rejects) AND prints
-        // success:false, so we check both: swallowing the failure here would
-        // have setup claim success with no active model saved.
-        try {
-          const setRaw = await runPythonScript('simple_recorder.py', ['set-model', resolved.installed], true);
-          // set-model prints a human line before the JSON, so grab the last
-          // JSON-looking line rather than parsing the whole stdout.
-          const jsonLine = setRaw.trim().split('\n').reverse().find((l) => l.trim().startsWith('{'));
-          const setRes = jsonLine ? JSON.parse(jsonLine) : null;
-          if (!setRes || setRes.success !== true) {
-            return { success: false, error: (setRes && setRes.error) || 'Failed to save the selected model.' };
-          }
-        } catch (e) {
-          return { success: false, error: `Failed to save the selected model: ${e.message}` };
-        }
-        trackEvent('setup_completed', { step: 'ollama_existing_model' });
-        return { success: true, message: `Using already-installed model ${resolved.installed}` };
-      }
-    } catch (e) {
-      sendDebugLog(`Could not check for installed models, proceeding to download: ${e.message}`);
-    }
+    // If no model is installed yet, download the pullTarget model
 
     sendDebugLog('Downloading AI model (this may take several minutes)...');
     sendDebugLog(`POST http://127.0.0.1:11434/api/pull {name: "${pullTarget}"}`);
@@ -7847,6 +8652,7 @@ async function ensureOllamaRunning() {
     ollamaStartedByUs = true;
 
     // Wait for service to start
+
     await new Promise(resolve => setTimeout(resolve, 2000));
     return true;
   } catch (error) {
@@ -8002,6 +8808,34 @@ ipcMain.handle('delete-template', async (_e, id) => {
     return JSON.parse(out);
   } catch (error) {
     return { success: false, error: error.message };
+  }
+});
+ipcMain.handle('list-recipes', async () => {
+  try {
+    const out = await runBackendCommandQuiet(['list-recipes']);
+    return { success: true, ...JSON.parse(out) };
+  } catch (error) {
+    return parsePythonFailureJson(error);
+  }
+});
+
+ipcMain.handle('save-recipe', async (_e, recipe) => {
+  try {
+    const out = await runBackendCommandQuiet(['save-recipe'], {
+      stdin: JSON.stringify(recipe),
+    });
+    return JSON.parse(out);
+  } catch (error) {
+    return parsePythonFailureJson(error);
+  }
+});
+
+ipcMain.handle('delete-recipe', async (_e, id) => {
+  try {
+    const out = await runBackendCommandQuiet(['delete-recipe', id]);
+    return JSON.parse(out);
+  } catch (error) {
+    return parsePythonFailureJson(error);
   }
 });
 
@@ -8847,6 +9681,286 @@ function hasCloudApiKey() {
   return fs.existsSync(getCloudKeyPath());
 }
 
+const MCP_DEFAULT_PORT = 27127;
+const MCP_MIN_PORT = 1024;
+const MCP_MAX_PORT = 65535;
+const MCP_MAX_KEY_LENGTH = 4096;
+let mcpLastError = null;
+let mcpLifecycleQueue = Promise.resolve();
+
+function getMcpKeyPath() {
+  return path.join(getUserDataDir(), '.mcp-api-key');
+}
+
+function generateMcpApiKey() {
+  return crypto.randomBytes(32).toString('base64url');
+}
+
+function saveMcpApiKey(key) {
+  try {
+    const keyDir = path.dirname(getMcpKeyPath());
+    if (!fs.existsSync(keyDir)) {
+      fs.mkdirSync(keyDir, { recursive: true });
+    }
+    const encrypted = getSafeStorage().encryptString(key);
+    fs.writeFileSync(getMcpKeyPath(), encrypted);
+    mcpApiKeyForServer = key;
+    return true;
+  } catch (error) {
+    console.error('Failed to save MCP API key:', error.message);
+    return false;
+  }
+}
+
+function loadMcpApiKey() {
+  const keyPath = getMcpKeyPath();
+  migrateLegacyCredentialFile(keyPath, '.mcp-api-key');
+  if (!fs.existsSync(keyPath)) return null;
+  try {
+    const encrypted = fs.readFileSync(keyPath);
+    return getSafeStorage().decryptString(encrypted);
+  } catch (error) {
+    console.error('Failed to load MCP API key:', error.message);
+    throw new Error('MCP API key could not be read. Unlock your system keychain or set a new key.');
+  }
+}
+
+function hasMcpApiKey() {
+  return fs.existsSync(getMcpKeyPath());
+}
+
+function ensureMcpApiKey() {
+  const existing = loadMcpApiKey();
+  if (existing) {
+    mcpApiKeyForServer = existing;
+    return existing;
+  }
+  const generated = generateMcpApiKey();
+  if (!saveMcpApiKey(generated)) {
+    throw new Error('Failed to save MCP API key.');
+  }
+  return generated;
+}
+
+function isValidMcpPort(port) {
+  return Number.isInteger(port) && port >= MCP_MIN_PORT && port <= MCP_MAX_PORT;
+}
+
+function normalizeMcpPort(port) {
+  return isValidMcpPort(port) ? port : MCP_DEFAULT_PORT;
+}
+
+function parseBackendJsonObject(raw, fallback = {}) {
+  const text = String(raw || '').trim();
+  const jsonMatch = text.match(/\{.*\}/s);
+  return jsonMatch ? JSON.parse(jsonMatch[0]) : fallback;
+}
+
+async function readMcpSettings() {
+  const result = await runPythonScript('simple_recorder.py', ['get-mcp-settings'], true);
+  const parsed = parseBackendJsonObject(result, {});
+  return {
+    enabled: parsed.mcp_enabled === true,
+    port: normalizeMcpPort(Number(parsed.mcp_port)),
+  };
+}
+
+async function saveMcpSettingsPatch({ enabled, port }) {
+  const args = ['set-mcp-settings'];
+  if (enabled === true) args.push('--enabled');
+  if (enabled === false) args.push('--disabled');
+  if (port !== undefined) args.push('--port', String(port));
+  const result = await runPythonScript('simple_recorder.py', args);
+  const parsed = parseBackendJsonObject(result, { success: true });
+  if (parsed.success === false) {
+    throw new Error(parsed.error || 'Failed to save MCP settings');
+  }
+  return parsed;
+}
+
+function formatMcpStartError(error, port) {
+  if (error && error.code === 'EADDRINUSE') {
+    return `MCP server port ${port} is already in use. Choose a different port in Settings.`;
+  }
+  if (error && error.message && error.message.startsWith('MCP API key')) {
+    return error.message;
+  }
+  if (error && error.message === 'Failed to save MCP API key.') {
+    return error.message;
+  }
+  const code = error && error.code ? ` (${error.code})` : '';
+  return `MCP server failed to start${code}.`;
+}
+
+function mcpEndpointForPort(port) {
+  return `http://127.0.0.1:${port}/mcp`;
+}
+
+async function stopMcpServer() {
+  mcpApiKeyForServer = null;
+  await mcpServer.stop();
+  mcpLastError = null;
+}
+
+async function startMcpServerOnPort(port) {
+  try {
+    ensureMcpApiKey();
+    if (mcpServer.isRunning()) {
+      if (mcpServer.port() === port) {
+        mcpLastError = null;
+        return;
+      }
+      await mcpServer.stop();
+    }
+    await mcpServer.start(port);
+    mcpLastError = null;
+  } catch (error) {
+    mcpApiKeyForServer = null;
+    try {
+      await mcpServer.stop();
+    } catch (_) {}
+    mcpLastError = formatMcpStartError(error, port);
+    throw new Error(mcpLastError);
+  }
+}
+
+function enqueueMcpLifecycleOp(op) {
+  const run = mcpLifecycleQueue.then(op);
+  mcpLifecycleQueue = run.then(() => undefined, () => undefined);
+  return run;
+}
+
+async function startMcpServerFromSettings() {
+  const settings = await readMcpSettings();
+  if (!settings.enabled) {
+    mcpLastError = null;
+    return settings;
+  }
+  try {
+    await startMcpServerOnPort(settings.port);
+  } catch (_) {
+    sendDebugLog('[mcp] startup failed');
+  }
+  return settings;
+}
+
+async function mcpStatusResponse() {
+  const settings = await readMcpSettings();
+  const running = mcpServer.isRunning();
+  const port = normalizeMcpPort(running ? mcpServer.port() : settings.port);
+  const response = {
+    success: true,
+    enabled: settings.enabled,
+    port,
+    running,
+    keySet: hasMcpApiKey(),
+    endpoint: mcpEndpointForPort(port),
+  };
+  if (mcpLastError) response.error = mcpLastError;
+  return response;
+}
+
+function validateMcpKeyInput(key) {
+  if (typeof key !== 'string') {
+    return { error: 'MCP API key must be a string.' };
+  }
+  const trimmed = key.trim();
+  if (!trimmed) {
+    return { error: 'MCP API key cannot be empty.' };
+  }
+  if (trimmed.length > MCP_MAX_KEY_LENGTH) {
+    return { error: 'MCP API key is too long.' };
+  }
+  return { value: trimmed };
+}
+
+ipcMain.handle('mcp-get-status', async () => {
+  try {
+    return await mcpStatusResponse();
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('mcp-get-key', async () => {
+  try {
+    return { success: true, key: loadMcpApiKey() || '' };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('mcp-set-key', async (_event, key) => {
+  try {
+    const validated = validateMcpKeyInput(key);
+    if (validated.error) {
+      return { success: false, error: validated.error };
+    }
+    if (!saveMcpApiKey(validated.value)) {
+      return { success: false, error: 'Failed to save MCP API key.' };
+    }
+    return { success: true, keySet: true };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('mcp-regenerate-key', async () => {
+  try {
+    const key = generateMcpApiKey();
+    if (!saveMcpApiKey(key)) {
+      return { success: false, error: 'Failed to save MCP API key.' };
+    }
+    return { success: true, key };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('mcp-set-enabled', async (_event, enabled) => {
+  if (typeof enabled !== 'boolean') {
+    return { success: false, error: 'MCP enabled must be a boolean.' };
+  }
+  try {
+    return await enqueueMcpLifecycleOp(async () => {
+      if (enabled) {
+        const settings = await readMcpSettings();
+        await startMcpServerOnPort(settings.port);
+        try {
+          await saveMcpSettingsPatch({ enabled: true });
+        } catch (error) {
+          await stopMcpServer();
+          throw error;
+        }
+      } else {
+        await saveMcpSettingsPatch({ enabled: false });
+        await stopMcpServer();
+      }
+      return await mcpStatusResponse();
+    });
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('mcp-set-port', async (_event, port) => {
+  if (!isValidMcpPort(port)) {
+    return { success: false, error: 'MCP port must be an integer from 1024 to 65535.' };
+  }
+  try {
+    return await enqueueMcpLifecycleOp(async () => {
+      const wasRunning = mcpServer.isRunning();
+      await saveMcpSettingsPatch({ port });
+      if (wasRunning) {
+        await startMcpServerOnPort(port);
+      }
+      return await mcpStatusResponse();
+    });
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
 // Build the env additions a Python AI-driven subprocess needs. Merges
 // the encrypted-on-disk cloud key (decrypted only here, never written
 // to the env if absent) AND the org adapter URL+JWT when a session
@@ -9548,6 +10662,10 @@ ipcMain.handle('process-system-audio-recording', async (event, audioFilePath, se
     // starts clean.
     const appendTo = currentRecordingAppendTarget;
     currentRecordingAppendTarget = null;
+    const templateId = currentRecordingTemplateId;
+    currentRecordingTemplateId = null;
+    const attendees = currentRecordingAttendees;
+    currentRecordingAttendees = [];
 
     // Instant stop: the note the pipeline will write to. For an append it's the
     // existing note; for a new Parakeet recording it's the deterministic
@@ -9562,7 +10680,7 @@ ipcMain.handle('process-system-audio-recording', async (event, audioFilePath, se
         : undefined;
 
     // Use the existing processing queue to avoid concurrent Ollama/Whisper runs
-    addToProcessingQueue(audioFilePath, actualSessionName, notesPath, liveTranscriptFile, appendTo, jobSummaryFile);
+    addToProcessingQueue(audioFilePath, actualSessionName, notesPath, liveTranscriptFile, appendTo, jobSummaryFile, templateId, attendees);
 
     // recording_stopped is NOT tracked here -- stop-recording-ui already
     // fires it (with the real duration_bucket) for every stop. This handler
@@ -11288,6 +12406,19 @@ function normalizeCalendarEvent(event) {
     eventColor = event.calendarBackgroundColor;
   }
 
+  const attendees = [];
+  if (Array.isArray(event.attendees)) {
+    for (const a of event.attendees) {
+      if (!a) continue;
+      const name = (typeof a.displayName === 'string' && a.displayName.trim()) ||
+                   (typeof a.name === 'string' && a.name.trim()) ||
+                   '';
+      if (name && !name.includes('@')) {
+        attendees.push(name);
+      }
+    }
+  }
+
   return {
     id: event._sourceCalendarId ? `${event._sourceCalendarId}_${event.id}` : event.id,
     title: event.summary || event.title || 'No title',
@@ -11301,9 +12432,9 @@ function normalizeCalendarEvent(event) {
     is_all_day: isAllDay,
     response_status: responseStatus,
     color: eventColor,
+    attendees,
   };
 }
-
 ipcMain.handle('get-calendar-events', async () => {
   try {
     // Check which provider is connected (only one at a time)

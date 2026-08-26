@@ -1459,5 +1459,216 @@ class ConfigPersonProfileTests(unittest.TestCase):
             self.assertIn(newest["prototype_id"], {item["prototype_id"] for item in retained})
 
 
+
+class ConfigMcpSettingsTests(unittest.TestCase):
+    def test_default_mcp_settings_are_disabled_and_27127(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            config = Config(config_path=Path(tmp_dir) / "config.json")
+            self.assertFalse(config.get_mcp_enabled())
+            self.assertEqual(config.get_mcp_port(), 27127)
+            self.assertEqual(
+                config.get_mcp_settings(),
+                {"mcp_enabled": False, "mcp_port": 27127},
+            )
+
+    def test_mcp_settings_round_trip(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            config_path = Path(tmp_dir) / "config.json"
+            config = Config(config_path=config_path)
+
+            self.assertTrue(config.set_mcp_enabled(True))
+            self.assertTrue(config.set_mcp_port(3000))
+            self.assertTrue(config.get_mcp_enabled())
+            self.assertEqual(config.get_mcp_port(), 3000)
+
+            # Reload from disk and verify persistence
+            reloaded = Config(config_path=config_path)
+            self.assertTrue(reloaded.get_mcp_enabled())
+            self.assertEqual(reloaded.get_mcp_port(), 3000)
+            self.assertEqual(
+                reloaded.get_mcp_settings(),
+                {"mcp_enabled": True, "mcp_port": 3000},
+            )
+
+            # Toggle back off
+            self.assertTrue(reloaded.set_mcp_enabled(False))
+            self.assertFalse(reloaded.get_mcp_enabled())
+            on_disk = json.loads(config_path.read_text())
+            self.assertFalse(on_disk["mcp_enabled"])
+            self.assertEqual(on_disk["mcp_port"], 3000)
+
+    def test_mcp_settings_load_normalization_and_corruption_fallback(self):
+        test_cases = [
+            ({"mcp_enabled": "yes", "mcp_port": "not-an-int"}, False, 27127),
+            ({"mcp_enabled": 123, "mcp_port": 80}, False, 27127),
+            ({"mcp_enabled": None, "mcp_port": None}, False, 27127),
+            ({"mcp_enabled": True, "mcp_port": 70000}, True, 27127),
+            ({"mcp_enabled": False, "mcp_port": -10}, False, 27127),
+            ({"mcp_enabled": True, "mcp_port": 0}, True, 27127),
+            ({"mcp_enabled": True, "mcp_port": True}, True, 27127),  # bool port fallback
+        ]
+        for payload, expected_enabled, expected_port in test_cases:
+            with self.subTest(payload=payload):
+                with tempfile.TemporaryDirectory() as tmp_dir:
+                    config_path = Path(tmp_dir) / "config.json"
+                    config_path.write_text(json.dumps(payload))
+                    config = Config(config_path=config_path)
+                    self.assertEqual(config.get_mcp_enabled(), expected_enabled)
+                    self.assertEqual(config.get_mcp_port(), expected_port)
+                    self.assertEqual(
+                        config.get_mcp_settings(),
+                        {"mcp_enabled": expected_enabled, "mcp_port": expected_port},
+                    )
+
+    def test_set_mcp_port_validator(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            config_path = Path(tmp_dir) / "config.json"
+            config = Config(config_path=config_path)
+
+            # Valid boundaries
+            for valid_port in (1024, 27127, 65535):
+                self.assertTrue(config.set_mcp_port(valid_port))
+                self.assertEqual(config.get_mcp_port(), valid_port)
+
+            # Rejected values
+            for invalid_port in (0, 80, 1023, 65536, 100000, -1, -500, "abc", None, True, False):
+                self.assertFalse(config.set_mcp_port(invalid_port))
+                # Remains at last valid port
+                self.assertEqual(config.get_mcp_port(), 65535)
+
+    def test_set_mcp_settings_atomic_validation(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            config_path = Path(tmp_dir) / "config.json"
+            config = Config(config_path=config_path)
+            self.assertFalse(config.get_mcp_enabled())
+            self.assertEqual(config.get_mcp_port(), 27127)
+
+            # Attempting to set an invalid port alongside enabled=True must reject
+            # and leave BOTH settings untouched.
+            success = config.set_mcp_settings(enabled=True, port=80)
+            self.assertFalse(success)
+            self.assertFalse(config.get_mcp_enabled())
+            self.assertEqual(config.get_mcp_port(), 27127)
+
+            # Valid update of both
+            success = config.set_mcp_settings(enabled=True, port=28000)
+            self.assertTrue(success)
+            self.assertTrue(config.get_mcp_enabled())
+            self.assertEqual(config.get_mcp_port(), 28000)
+
+    def test_config_json_is_secret_free(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            config_path = Path(tmp_dir) / "config.json"
+            config = Config(config_path=config_path)
+            config.set_mcp_enabled(True)
+            config.set_mcp_port(28500)
+
+            raw_content = config_path.read_text()
+            data = json.loads(raw_content)
+            self.assertIn("mcp_enabled", data)
+            self.assertIn("mcp_port", data)
+            self.assertNotIn("mcp_key", data)
+            self.assertNotIn("mcp_api_key", data)
+            self.assertNotIn("api_key", data)
+            self.assertNotIn("token", data)
+
+    def test_cli_get_and_set_mcp_settings_round_trip(self):
+        from click.testing import CliRunner
+        import simple_recorder
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            config_path = Path(tmp_dir) / "config.json"
+            cfg = Config(config_path=config_path)
+            with patch("src.config.get_config", return_value=cfg), \
+                 patch.dict("os.environ", {"STENOAI_USER_DATA_DIR": tmp_dir}):
+                runner = CliRunner()
+
+                # get-mcp-settings
+                res = runner.invoke(simple_recorder.get_mcp_settings_cmd)
+                self.assertEqual(res.exit_code, 0)
+                data = json.loads(res.output.strip())
+                self.assertEqual(data, {"mcp_enabled": False, "mcp_port": 27127})
+
+                # set-mcp-settings --enabled --port 28000
+                res = runner.invoke(
+                    simple_recorder.set_mcp_settings_cmd,
+                    ["--enabled", "--port", "28000"],
+                )
+                self.assertEqual(res.exit_code, 0)
+                data = json.loads(res.output.strip())
+                self.assertTrue(data["success"])
+                self.assertTrue(data["mcp_enabled"])
+                self.assertEqual(data["mcp_port"], 28000)
+
+                # get-mcp-settings again
+                res = runner.invoke(simple_recorder.get_mcp_settings_cmd)
+                self.assertEqual(res.exit_code, 0)
+                data = json.loads(res.output.strip())
+                self.assertEqual(data, {"mcp_enabled": True, "mcp_port": 28000})
+
+                # set-mcp-settings --disabled
+                res = runner.invoke(
+                    simple_recorder.set_mcp_settings_cmd,
+                    ["--disabled"],
+                )
+                self.assertEqual(res.exit_code, 0)
+                data = json.loads(res.output.strip())
+                self.assertTrue(data["success"])
+                self.assertFalse(data["mcp_enabled"])
+                self.assertEqual(data["mcp_port"], 28000)
+
+    def test_cli_set_mcp_settings_rejects_bad_port_without_partial_persistence(self):
+        from click.testing import CliRunner
+        import simple_recorder
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            config_path = Path(tmp_dir) / "config.json"
+            cfg = Config(config_path=config_path)
+            self.assertFalse(cfg.get_mcp_enabled())
+            self.assertEqual(cfg.get_mcp_port(), 27127)
+
+            with patch("src.config.get_config", return_value=cfg), \
+                 patch.dict("os.environ", {"STENOAI_USER_DATA_DIR": tmp_dir}):
+                runner = CliRunner()
+
+                # Port too low: 80
+                res = runner.invoke(
+                    simple_recorder.set_mcp_settings_cmd,
+                    ["--enabled", "--port", "80"],
+                )
+                self.assertNotEqual(res.exit_code, 0)
+                data = json.loads(res.output.strip())
+                self.assertFalse(data["success"])
+                self.assertIn("Invalid MCP port", data["error"])
+
+                # Ensure no partial state was persisted!
+                self.assertFalse(cfg.get_mcp_enabled())
+                self.assertEqual(cfg.get_mcp_port(), 27127)
+
+                # Port too high: 65536
+                res = runner.invoke(
+                    simple_recorder.set_mcp_settings_cmd,
+                    ["--port", "65536"],
+                )
+                self.assertNotEqual(res.exit_code, 0)
+
+                # Port zero: 0
+                res = runner.invoke(
+                    simple_recorder.set_mcp_settings_cmd,
+                    ["--port", "0"],
+                )
+                self.assertNotEqual(res.exit_code, 0)
+
+                # Port negative: -1 (handled by Click or our validation)
+                res = runner.invoke(
+                    simple_recorder.set_mcp_settings_cmd,
+                    ["--port", "-1"],
+                )
+                self.assertNotEqual(res.exit_code, 0)
+
+                # Verify state remained completely unchanged
+                self.assertFalse(cfg.get_mcp_enabled())
+                self.assertEqual(cfg.get_mcp_port(), 27127)
+
 if __name__ == "__main__":
     unittest.main()

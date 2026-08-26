@@ -311,3 +311,262 @@ test('the mock sample clip is long enough for a playing state to be observable',
     `the fixture clip is ${match[1]}s; under ~2s the "toggling to stop" assertion races the ended event`,
   );
 });
+
+test('live transcript reads and queries are limited to the trusted app renderer', () => {
+  const getStateIndex = MAIN.indexOf("ipcMain.handle('get-live-transcript-state',");
+  assert.ok(getStateIndex >= 0, 'expected get-live-transcript-state handler in main.js');
+  const getStateBlock = MAIN.slice(getStateIndex, getStateIndex + 500);
+  assert.match(
+    getStateBlock,
+    /event\.sender\s*!==\s*mainWindow\.webContents/,
+    'get-live-transcript-state must verify event.sender === mainWindow.webContents',
+  );
+
+  const queryLiveIndex = MAIN.indexOf("ipcMain.on('query-live-transcript-stream',");
+  assert.ok(queryLiveIndex >= 0, 'expected query-live-transcript-stream handler in main.js');
+  const queryLiveBlock = MAIN.slice(queryLiveIndex, queryLiveIndex + 500);
+  assert.match(
+    queryLiveBlock,
+    /sender\s*!==\s*mainWindow\.webContents/,
+    'query-live-transcript-stream must verify event.sender === mainWindow.webContents',
+  );
+});
+
+test('live queries use the configured provider without putting content or overrides in argv', () => {
+  const queryLiveIndex = MAIN.indexOf("ipcMain.on('query-live-transcript-stream',");
+  const queryLiveBlock = MAIN.slice(queryLiveIndex, queryLiveIndex + 2200);
+  assert.match(
+    queryLiveBlock,
+    /\['query-live-streaming'\]/,
+    'query-live-streaming must use a content-free command argv',
+  );
+  assert.match(
+    queryLiveBlock,
+    /env:\s*\{\s*\.\.\.process\.env,\s*\.\.\.getAiEnv\(\)\s*\}/,
+    'query-live-streaming must inherit the configured provider environment',
+  );
+  assert.doesNotMatch(
+    queryLiveBlock,
+    /--host|--model|-q/,
+    'live query argv must not override provider/model or contain the user question',
+  );
+});
+
+test('live query failures and diagnostics never forward backend or prompt text', () => {
+  const protocolIndex = MAIN.indexOf('function handleLiveQueryProtocolLine(');
+  const cancelIndex = MAIN.indexOf('const pendingQueryCancels = new Map();');
+  assert.ok(protocolIndex >= 0 && cancelIndex > protocolIndex);
+  const liveQueryBlock = MAIN.slice(protocolIndex, cancelIndex);
+  assert.match(liveQueryBlock, /FIXED_LIVE_QUERY_ERRORS\.FAILED/);
+  assert.doesNotMatch(
+    liveQueryBlock,
+    /error:\s*err\.message|error:\s*line\.slice|Process exited with code/,
+    'live query errors must be fixed strings, never raw child-process text',
+  );
+  assert.doesNotMatch(
+    liveQueryBlock,
+    /sendDebugLog|console\.(?:log|warn|error)/,
+    'live query handling must not log transcript, question, or provider output',
+  );
+});
+
+test('live query cancellation is bound to the renderer that started it', () => {
+  const cancelIndex = MAIN.indexOf("ipcMain.on('query-cancel',");
+  assert.ok(cancelIndex >= 0, 'expected query-cancel handler in main.js');
+  const cancelBlock = MAIN.slice(cancelIndex, cancelIndex + 1000);
+  assert.match(
+    cancelBlock,
+    /activeLiveQuery\.sender\s*===\s*sender/,
+    'query-cancel must verify activeLiveQuery.sender === sender',
+  );
+});
+
+test('chat-sessions-migrated is emitted by main.js when live sessions are migrated to a note', () => {
+  const migrateIndex = MAIN.indexOf("'chat-sessions-migrated'");
+  assert.ok(
+    migrateIndex >= 0,
+    'expected chat-sessions-migrated send in main.js',
+  );
+  const migrateBlock = MAIN.slice(migrateIndex, migrateIndex + 200);
+  assert.match(
+    migrateBlock,
+    /fromKey.*toKey|toKey.*fromKey/,
+    'chat-sessions-migrated payload must include fromKey and toKey',
+  );
+});
+
+test('pre-meeting brief stream is trusted-renderer gated and uses the shared query stream channels', () => {
+  const briefIndex = MAIN.indexOf("ipcMain.on('pre-meeting-brief-stream',");
+  assert.ok(briefIndex >= 0, 'expected pre-meeting-brief-stream handler in main.js');
+  const briefBlock = MAIN.slice(briefIndex, briefIndex + 5200);
+  assert.match(
+    briefBlock,
+    /sender\s*!==\s*mainWindow\.webContents/,
+    'pre-meeting-brief-stream must verify event.sender === mainWindow.webContents',
+  );
+  assert.match(
+    briefBlock,
+    /safeSendQueryPayload\(sender,\s*'query-done'/,
+    'pre-meeting-brief-stream must finish on the existing query-done channel',
+  );
+  assert.match(
+    briefBlock,
+    /handleQueryProtocolOutputChunk/,
+    'pre-meeting-brief-stream must use the shared decoder that emits query-chunk',
+  );
+  assert.match(
+    briefBlock,
+    /activeQueryProcs\.set\(validation\.queryId,\s*proc\)/,
+    'pre-meeting-brief-stream must register in activeQueryProcs so query-cancel can kill it',
+  );
+});
+
+test('pre-meeting brief argv uses title flag and repeated attendee flags', () => {
+  const briefIndex = MAIN.indexOf("ipcMain.on('pre-meeting-brief-stream',");
+  assert.ok(briefIndex >= 0, 'expected pre-meeting-brief-stream handler in main.js');
+  const briefBlock = MAIN.slice(briefIndex, briefIndex + 3000);
+  assert.match(
+    briefBlock,
+    /const args = \['pre-meeting-brief',\s*'--title',\s*validation\.title\]/,
+    'brief stream must call pre-meeting-brief --title <title>',
+  );
+  assert.match(
+    briefBlock,
+    /for \(const attendee of validation\.attendees\)\s*{\s*args\.push\('--attendee',\s*attendee\);/s,
+    'brief stream must emit one --attendee flag per attendee',
+  );
+});
+
+test('save-recipe sends recipe JSON on stdin rather than argv', () => {
+  const saveIndex = MAIN.indexOf("ipcMain.handle('save-recipe',");
+  assert.ok(saveIndex >= 0, 'expected save-recipe handler in main.js');
+  const saveBlock = MAIN.slice(saveIndex, saveIndex + 500);
+  assert.match(
+    saveBlock,
+    /runBackendCommandQuiet\(\['save-recipe'\],\s*{\s*stdin:\s*JSON\.stringify\(recipe\),/s,
+    'save-recipe must pass only the command in argv and write the recipe JSON to stdin',
+  );
+  assert.doesNotMatch(
+    saveBlock,
+    /\['save-recipe',\s*JSON\.stringify\(recipe\)\]/,
+    'save-recipe must not put recipe JSON in argv',
+  );
+});
+
+test('export-all-notes validates format and rejects destinations inside notes output', () => {
+  const exportIndex = MAIN.indexOf("ipcMain.handle('export-all-notes',");
+  assert.ok(exportIndex >= 0, 'expected export-all-notes handler in main.js');
+  const exportBlock = MAIN.slice(exportIndex - 2400, exportIndex + 1400);
+  assert.match(
+    exportBlock,
+    /const EXPORT_ALL_FORMATS = new Set\(\['md',\s*'csv'\]\)/,
+    'export-all-notes must allowlist md/csv only',
+  );
+  assert.match(
+    exportBlock,
+    /if \(!EXPORT_ALL_FORMATS\.has\(format\)\)\s*{\s*return { success: false, error: 'Invalid export format' };/s,
+    'export-all-notes must reject unknown formats before spawning the backend',
+  );
+  assert.match(
+    exportBlock,
+    /isPathWithinDir\(targetReal,\s*outputReal\)/,
+    'export-all-notes must reject destinations inside the app notes directory',
+  );
+});
+
+test('set-recording-template rejects cleanly when no recording is active', () => {
+  const setIndex = MAIN.indexOf("ipcMain.handle('set-recording-template',");
+  assert.ok(setIndex >= 0, 'expected set-recording-template handler in main.js');
+  const setBlock = MAIN.slice(setIndex, setIndex + 900);
+  assert.match(
+    setBlock,
+    /currentRecordingProcess\s*===\s*null\s*&&\s*!systemAudioRecordingActive/,
+    'set-recording-template must check both recording activity flags',
+  );
+  assert.match(
+    setBlock,
+    /return \{ success: false, error: 'No active recording' \}/,
+    'set-recording-template must return a clear no-active-recording error',
+  );
+  assert.match(
+    setBlock,
+    /currentRecordingTemplateId\s*=\s*trimmed/,
+    'set-recording-template must update currentRecordingTemplateId with the accepted id',
+  );
+});
+
+test('MCP IPC channels are registered and exposed through the bridge', () => {
+  const channels = [
+    'mcp-get-status',
+    'mcp-get-key',
+    'mcp-set-key',
+    'mcp-regenerate-key',
+    'mcp-set-enabled',
+    'mcp-set-port',
+  ];
+  const registered = new Set(mainRegistrations());
+  const invocable = preloadInvokeChannels();
+  for (const channel of channels) {
+    assert.ok(registered.has(channel), `${channel} must be registered in main.js`);
+    assert.ok(invocable.has(channel), `${channel} must be invoked by preload.js`);
+  }
+});
+
+test('mcp-get-status never returns or reads the API key', () => {
+  const statusIndex = MAIN.indexOf("ipcMain.handle('mcp-get-status',");
+  assert.ok(statusIndex >= 0, 'expected mcp-get-status handler in main.js');
+  const statusBlock = MAIN.slice(statusIndex, statusIndex + 360);
+  assert.match(statusBlock, /mcpStatusResponse\(\)/);
+
+  const responseIndex = MAIN.indexOf('async function mcpStatusResponse()');
+  assert.ok(responseIndex >= 0, 'expected mcpStatusResponse helper in main.js');
+  const responseBlock = MAIN.slice(responseIndex, responseIndex + 900);
+  assert.match(responseBlock, /keySet:\s*hasMcpApiKey\(\)/);
+  assert.doesNotMatch(responseBlock, /\b(loadMcpApiKey|ensureMcpApiKey|mcpApiKeyForServer)\b/);
+});
+
+test('MCP key storage uses the isolated user-data directory', () => {
+  const keyPathIndex = MAIN.indexOf('function getMcpKeyPath()');
+  assert.ok(keyPathIndex >= 0, 'expected getMcpKeyPath helper in main.js');
+  const keyPathBlock = MAIN.slice(keyPathIndex, keyPathIndex + 180);
+  assert.match(
+    keyPathBlock,
+    /path\.join\(getUserDataDir\(\),\s*'\.mcp-api-key'\)/,
+    'MCP key must live under getUserDataDir(), never a hardcoded app-data path',
+  );
+});
+
+test('main wires MCP transport by port only and leaves localhost binding to mcp-server', () => {
+  const startIndex = MAIN.indexOf('async function startMcpServerOnPort(port)');
+  assert.ok(startIndex >= 0, 'expected startMcpServerOnPort helper in main.js');
+  const startBlock = MAIN.slice(startIndex, startIndex + 700);
+  assert.doesNotMatch(
+    startBlock,
+    /\.listen\([^)]*['"]127\.0\.0\.1['"]/,
+    'MCP lifecycle code in main.js must not bind a host; mcp-server owns localhost-only listen()',
+  );
+  assert.match(
+    startBlock,
+    /mcpServer\.start\(port\)/,
+    'main.js must pass only the configured port into mcpServer.start()',
+  );
+  assert.doesNotMatch(
+    startBlock,
+    /mcpServer\.start\([^)]*,/,
+    'main.js must not pass a host argument into mcpServer.start()',
+  );
+});
+
+test('mcp-set-port rejects ports outside the user-safe range', () => {
+  const handlerIndex = MAIN.indexOf("ipcMain.handle('mcp-set-port',");
+  assert.ok(handlerIndex >= 0, 'expected mcp-set-port handler in main.js');
+  const handlerBlock = MAIN.slice(handlerIndex, handlerIndex + 700);
+  assert.match(handlerBlock, /isValidMcpPort\(port\)/);
+
+  const guardIndex = MAIN.indexOf('function isValidMcpPort(port)');
+  assert.ok(guardIndex >= 0, 'expected isValidMcpPort helper in main.js');
+  const guardBlock = MAIN.slice(guardIndex, guardIndex + 220);
+  assert.match(guardBlock, /Number\.isInteger\(port\)/);
+  assert.match(guardBlock, /port\s*>=\s*MCP_MIN_PORT/);
+  assert.match(guardBlock, /port\s*<=\s*MCP_MAX_PORT/);
+});

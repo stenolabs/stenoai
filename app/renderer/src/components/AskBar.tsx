@@ -1,28 +1,14 @@
 import * as React from 'react';
-import {
-  ArrowUp,
-  Check,
-  ChevronDown,
-  ChevronUp,
-  Copy,
-  Square,
-  X,
-} from 'lucide-react';
+import { ArrowUp, Check, ChevronDown, ChevronUp, Copy, Square, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { renderMarkdown } from '@/lib/markdown';
-import { useAskBar } from '@/lib/askBarContext';
-import {
-  useChatSessions,
-  type ChatMessage,
-  type ChatSession,
-} from '@/hooks/useChatSessions';
-import { useGlobalStreaming } from '@/hooks/useStreamingQuery';
-import {
-  OrgTranscriptPanelContent,
-  TranscriptPanelContent,
-} from '@/components/TranscriptPanel';
+import { useAskBar, type ActiveOrgMeeting } from '@/lib/askBarContext';
+import { useChatSessions, type ChatMessage, type ChatSession } from '@/hooks/useChatSessions';
+import { useGlobalStreaming, type StreamResult } from '@/hooks/useStreamingQuery';
+import { OrgTranscriptPanelContent, TranscriptPanelContent } from '@/components/TranscriptPanel';
 import { useMeeting } from '@/hooks/useMeetings';
 import { useRecording } from '@/hooks/useRecording';
+import { useLiveTranscriptStatus } from '@/hooks/useLiveTranscript';
 import { buildTranscriptBundle } from '@/lib/transcriptBundle';
 
 // ---------------------------------------------------------------------------
@@ -30,8 +16,13 @@ import { buildTranscriptBundle } from '@/lib/transcriptBundle';
 // ---------------------------------------------------------------------------
 
 export function TranscriptBar() {
-  const { activeSummaryFile, activeMeetingName, activeOrgMeeting, transcriptOpen, setTranscriptOpen } =
-    useAskBar();
+  const {
+    activeSummaryFile,
+    activeMeetingName,
+    activeOrgMeeting,
+    transcriptOpen,
+    setTranscriptOpen,
+  } = useAskBar();
   const meeting = useMeeting(activeSummaryFile ?? undefined);
   const recording = useRecording();
   const [copied, setCopied] = React.useState(false);
@@ -93,7 +84,13 @@ export function TranscriptBar() {
     >
       <div className="mv-transcript-head">
         <span className="mv-transcript-wave mv-transcript-wave-static" aria-hidden="true">
-          <span /><span /><span /><span /><span /><span /><span />
+          <span />
+          <span />
+          <span />
+          <span />
+          <span />
+          <span />
+          <span />
         </span>
         <span className="mv-transcript-label">Transcript</span>
         <button
@@ -115,7 +112,14 @@ export function TranscriptBar() {
           <ChevronUp size={13} style={{ color: 'var(--fg-2)', flexShrink: 0 }} />
         </button>
       </div>
-      <div style={{ height: 260, display: 'flex', flexDirection: 'column', borderTop: '1px solid var(--border-subtle)' }}>
+      <div
+        style={{
+          height: 260,
+          display: 'flex',
+          flexDirection: 'column',
+          borderTop: '1px solid var(--border-subtle)',
+        }}
+      >
         {activeOrgMeeting ? (
           <OrgTranscriptPanelContent transcript={orgTranscript} />
         ) : (
@@ -186,7 +190,13 @@ export function TranscriptToggle() {
         aria-hidden="true"
         style={{ width: 16, height: 13 }}
       >
-        <span /><span /><span /><span /><span /><span /><span />
+        <span />
+        <span />
+        <span />
+        <span />
+        <span />
+        <span />
+        <span />
       </span>
       {/* Expand indicator (Granola-style) — points up to reveal the transcript,
           flips down when it's open. */}
@@ -203,11 +213,13 @@ export function TranscriptToggle() {
 }
 
 /**
- * The floating chat composer. `disabled` renders it visible-but-inert while a
- * recording is active (chat needs the processed note, so the input carries a
- * "Chat available after recording" hint instead of a dead field) — and unlike
- * the idle state it renders even with no active meeting, so the recording
- * pill always has the bar beside it.
+ * The floating chat composer. `disabled` renders it visible-but-inert only
+ * for genuinely unsupported cases (no caller-override path). While a recording
+ * is active or paused, the composer routes to the live transcript stream only
+ * after that live transcript sidecar is ready; otherwise it stays inert instead
+ * of submitting a question that can only fail.
+ * It renders with no active meeting while recording so the transcription pill
+ * always has the bar beside it.
  */
 export function AskBar({ disabled = false }: { disabled?: boolean }) {
   const {
@@ -217,12 +229,79 @@ export function AskBar({ disabled = false }: { disabled?: boolean }) {
     transcriptOpen,
     setTranscriptOpen,
   } = useAskBar();
-  // For shared notes, persist sessions under a synthetic summaryFile key so
-  // they don't collide with local meetings. Same useChatSessions plumbing.
-  const sessionKey = activeOrgMeeting
-    ? `org:${activeOrgMeeting.id}`
-    : activeSummaryFile;
-  const sessionLabel = activeOrgMeeting?.title ?? activeMeetingName;
+
+  // Detect active recording so we can enable the bar and route to the live
+  // stream rather than the processed-note backend. We read recording state
+  // directly here — PrimaryDock passes disabled={recordingActive} for layout
+  // reasons (pill coexistence doc comment) but the input itself should be live.
+  const recording = useRecording();
+  const isRecording = recording.status === 'recording' || recording.status === 'paused';
+  const liveSessionName = recording.sessionName ?? undefined;
+  const liveTranscript = useLiveTranscriptStatus(isRecording && liveSessionName ? liveSessionName : null);
+  const isLiveTranscriptReady = isRecording ? liveTranscript.status === 'streaming' : false;
+
+  // Session key for live recording: stable synthetic key that won't collide
+  // with saved notes (summaryFile paths) or org notes (org:id).
+  const sessionKey =
+    isRecording && liveSessionName
+      ? `live:${liveSessionName}`
+      : activeOrgMeeting
+        ? `org:${activeOrgMeeting.id}`
+        : activeSummaryFile;
+  const sessionLabel = isRecording
+    ? (liveSessionName ?? 'Live recording')
+    : (activeOrgMeeting?.title ?? activeMeetingName);
+
+  // Hidden when there is nothing to chat about — recording provides its own
+  // context so a live session is always actionable.
+  const hidden = !activeSummaryFile && !activeOrgMeeting && !isRecording;
+  if (hidden) return null;
+
+  return (
+    <AskBarComposer
+      key={sessionKey ?? 'idle'}
+      sessionKey={sessionKey}
+      sessionLabel={sessionLabel}
+      activeMeetingName={activeMeetingName}
+      activeSummaryFile={activeSummaryFile}
+      activeOrgMeeting={activeOrgMeeting}
+      isRecording={isRecording}
+      liveSessionName={liveSessionName}
+      disabled={disabled}
+      liveTranscriptReady={isLiveTranscriptReady}
+      transcriptOpen={transcriptOpen}
+      setTranscriptOpen={setTranscriptOpen}
+    />
+  );
+}
+
+interface AskBarComposerProps {
+  sessionKey: string | null;
+  sessionLabel: string | null;
+  activeMeetingName: string | null;
+  activeSummaryFile: string | null;
+  activeOrgMeeting: ActiveOrgMeeting | null;
+  isRecording: boolean;
+  liveSessionName: string | undefined;
+  disabled: boolean;
+  liveTranscriptReady: boolean;
+  transcriptOpen: boolean;
+  setTranscriptOpen: (open: boolean) => void;
+}
+
+function AskBarComposer({
+  sessionKey,
+  sessionLabel,
+  activeMeetingName,
+  activeSummaryFile,
+  activeOrgMeeting,
+  isRecording,
+  liveSessionName,
+  disabled,
+  liveTranscriptReady,
+  transcriptOpen,
+  setTranscriptOpen,
+}: AskBarComposerProps) {
   const chat = useChatSessions(sessionKey, sessionLabel);
   const streaming = useGlobalStreaming();
 
@@ -230,6 +309,7 @@ export function AskBar({ disabled = false }: { disabled?: boolean }) {
   const [sessionMenuOpen, setSessionMenuOpen] = React.useState(false);
   const [input, setInput] = React.useState('');
   const [activeStreamId, setActiveStreamId] = React.useState<string | null>(null);
+  const activeStreamIdRef = React.useRef<string | null>(null);
   const pendingPersistRef = React.useRef<string | null>(null);
   const scrollRef = React.useRef<HTMLDivElement>(null);
   const containerRef = React.useRef<HTMLDivElement>(null);
@@ -239,32 +319,29 @@ export function AskBar({ disabled = false }: { disabled?: boolean }) {
   const isStreaming = activeStream?.status === 'streaming';
   const session = chat.activeSession;
   const hasMessages = (session?.messages.length ?? 0) > 0;
-  const hidden = !activeSummaryFile && !activeOrgMeeting;
-  const canSend = input.trim().length > 0 && !isStreaming && !disabled;
 
-  const cancelStreamRef = React.useRef(streaming.cancelStream);
-  cancelStreamRef.current = streaming.cancelStream;
+  const composerDisabled = isRecording ? !liveTranscriptReady : disabled;
+  const canSend = input.trim().length > 0 && !isStreaming && !composerDisabled;
 
+  // Clean up any in-flight stream on unmount (e.g. when sessionKey changes or component unmounts)
+  const cancelStream = streaming.cancelStream;
   React.useEffect(() => {
-    setExpanded(false);
-    setSessionMenuOpen(false);
-    setTranscriptOpen(false);
-    setActiveStreamId((prev) => {
-      if (prev) {
-        cancelStreamRef.current(prev);
-        pendingPersistRef.current = null;
+    return () => {
+      const inFlightId = activeStreamIdRef.current;
+      if (inFlightId) {
+        cancelStream(inFlightId);
+        activeStreamIdRef.current = null;
       }
-      return null;
-    });
-  }, [activeSummaryFile, activeOrgMeeting?.id, setTranscriptOpen]);
+      setTranscriptOpen(false);
+    };
+  }, [cancelStream, setTranscriptOpen]);
 
-  // Recording started: close a saved-meeting transcript panel that was
-  // already open. The whole bar goes inert (the toggle below is hidden while
-  // disabled), and leaving the 72-band panel up would let it overlap the
-  // expanded LiveTranscriptBar — the one stacking the dock can't resolve.
+  // Recording started: close the saved-meeting transcript panel because it
+  // would overlap the LiveTranscriptBar. Live recording keeps this composer
+  // active, so only non-recording disabled states close it.
   React.useEffect(() => {
-    if (disabled) setTranscriptOpen(false);
-  }, [disabled, setTranscriptOpen]);
+    if (disabled && !isRecording) setTranscriptOpen(false);
+  }, [disabled, isRecording, setTranscriptOpen]);
 
   React.useEffect(() => {
     if (!expanded && !transcriptOpen) return;
@@ -291,25 +368,25 @@ export function AskBar({ disabled = false }: { disabled?: boolean }) {
     scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
   }, [session?.messages.length, activeStream?.text, expanded]);
 
-  React.useEffect(() => {
-    if (!activeStreamId) return;
-    const stream = streaming.streams[activeStreamId];
-    if (!stream) return;
-    const sessionId = pendingPersistRef.current;
-    if (!sessionId) return;
-    if (stream.status === 'streaming') return;
-
+  const handleStreamComplete = (
+    streamId: string,
+    targetSessionId: string,
+    result: StreamResult
+  ) => {
     const content =
-      stream.text.trim() ||
-      (stream.status === 'error'
-        ? `Error: ${stream.error ?? 'query failed'}`
-        : '(empty response)');
+      result.text.trim() ||
+      (result.status === 'error' ? `Error: ${result.error ?? 'query failed'}` : '(empty response)');
     const message: ChatMessage = { role: 'assistant', content, ts: Date.now() };
-    void chat.appendMessage(sessionId, message);
-    pendingPersistRef.current = null;
-    streaming.clearStream(activeStreamId);
-    setActiveStreamId(null);
-  }, [activeStreamId, streaming, chat]);
+    void chat.appendMessage(targetSessionId, message);
+    if (pendingPersistRef.current === targetSessionId) {
+      pendingPersistRef.current = null;
+    }
+    streaming.clearStream(streamId);
+    if (activeStreamIdRef.current === streamId) {
+      activeStreamIdRef.current = null;
+    }
+    setActiveStreamId((current) => (current === streamId ? null : current));
+  };
 
   // Re-entrancy guard. submitPrompt awaits createSession/appendMessage; rapid
   // suggestion-chip clicks (or Enter) before those resolve would otherwise
@@ -318,8 +395,8 @@ export function AskBar({ disabled = false }: { disabled?: boolean }) {
 
   const submitPrompt = async (raw: string) => {
     const q = raw.trim();
-    if (!q || isStreaming || disabled) return;
-    if (!activeSummaryFile && !activeOrgMeeting) return;
+    if (!q || isStreaming || composerDisabled) return;
+    if (!isRecording && !activeSummaryFile && !activeOrgMeeting) return;
     if (submittingRef.current) return;
     submittingRef.current = true;
 
@@ -334,9 +411,20 @@ export function AskBar({ disabled = false }: { disabled?: boolean }) {
       setInput('');
 
       let streamId: string;
-      if (activeOrgMeeting) {
-        // Org route — system prompt is built from the shared note's body so
-        // the model has the same context the user sees on screen.
+      const targetSessionId = sessionId;
+      const onComplete = (result: StreamResult) => {
+        handleStreamComplete(streamId, targetSessionId, result);
+      };
+
+      if (isRecording && liveSessionName) {
+        // Live route — question sent against the in-progress recording.
+        const history = (session?.messages ?? []).map((m) => ({
+          role: m.role,
+          content: m.content,
+        }));
+        streamId = streaming.startLiveStream(liveSessionName, q, history, { onComplete });
+      } else if (activeOrgMeeting) {
+        // Org route — system prompt built from the shared note's body.
         const system =
           `You answer questions about a single shared meeting note titled "${activeOrgMeeting.title}". ` +
           `Be concise and cite content from the note when relevant.\n\n--- NOTE ---\n${activeOrgMeeting.body}`;
@@ -344,11 +432,12 @@ export function AskBar({ disabled = false }: { disabled?: boolean }) {
           role: m.role,
           content: m.content,
         }));
-        streamId = streaming.startOrgNoteStream(system, q, history);
+        streamId = streaming.startOrgNoteStream(system, q, history, { onComplete });
       } else {
-        streamId = streaming.startStream(activeSummaryFile!, q);
+        streamId = streaming.startStream(activeSummaryFile!, q, { onComplete });
       }
-      pendingPersistRef.current = sessionId;
+      pendingPersistRef.current = targetSessionId;
+      activeStreamIdRef.current = streamId;
       setActiveStreamId(streamId);
 
       setExpanded(true);
@@ -362,7 +451,24 @@ export function AskBar({ disabled = false }: { disabled?: boolean }) {
 
   const stop = () => {
     if (!activeStreamId) return;
-    streaming.cancelStream(activeStreamId);
+    const streamId = activeStreamId;
+    const stream = streaming.streams[streamId];
+    streaming.cancelStream(streamId);
+
+    const sessionId = pendingPersistRef.current;
+    if (sessionId && stream) {
+      const content =
+        stream.text.trim() ||
+        (stream.status === 'error'
+          ? `Error: ${stream.error ?? 'query failed'}`
+          : '(empty response)');
+      const message: ChatMessage = { role: 'assistant', content, ts: Date.now() };
+      void chat.appendMessage(sessionId, message);
+      pendingPersistRef.current = null;
+    }
+    streaming.clearStream(streamId);
+    activeStreamIdRef.current = null;
+    setActiveStreamId(null);
   };
 
   const onPickSession = (id: string) => {
@@ -381,7 +487,6 @@ export function AskBar({ disabled = false }: { disabled?: boolean }) {
     setExpanded(true);
   };
 
-
   const handleInputFocus = () => {
     setExpanded(true);
     if (transcriptOpen) setTranscriptOpen(false);
@@ -392,17 +497,15 @@ export function AskBar({ disabled = false }: { disabled?: boolean }) {
     setSessionMenuOpen(false);
   };
 
-  // Idle with no meeting in context: nothing to chat about, render nothing.
-  // Disabled (recording active) is the exception — the bar stays visible as
-  // an inert shell so the transcription pill has the composer beside it and
-  // the user can see chat will return after processing.
-  if (hidden && !disabled) return null;
-
-  const showChatPanel = !disabled && expanded && (hasMessages || isStreaming);
+  const showChatPanel = (isRecording || !disabled) && expanded && (hasMessages || isStreaming);
 
   return (
-    <div ref={containerRef} data-ask-bar className="flex w-full flex-col gap-2.5" style={{ pointerEvents: 'auto' }}>
-
+    <div
+      ref={containerRef}
+      data-ask-bar
+      className="flex w-full flex-col gap-2.5"
+      style={{ pointerEvents: 'auto' }}
+    >
       {/* Chat message panel */}
       {showChatPanel && (
         <div className="mv-transcript open" style={{ maxHeight: 360 }}>
@@ -420,6 +523,7 @@ export function AskBar({ disabled = false }: { disabled?: boolean }) {
           />
           <div
             ref={scrollRef}
+            data-testid="chat-messages"
             className="scrollbar-clean overflow-y-auto px-4 py-3"
             style={{ maxHeight: 300 }}
           >
@@ -433,11 +537,8 @@ export function AskBar({ disabled = false }: { disabled?: boolean }) {
       )}
 
       {/* Suggestion chips — appear when ask bar is focused with empty conversation */}
-      {!disabled && expanded && !hasMessages && !isStreaming && (
-        <div
-          className="mv-chat flex flex-wrap items-center gap-2"
-          style={{ padding: '10px 14px' }}
-        >
+      {!isRecording && !disabled && expanded && !hasMessages && !isStreaming && (
+        <div className="mv-chat flex flex-wrap items-center gap-2" style={{ padding: '10px 14px' }}>
           {SUGGESTION_CHIPS.map((chip) => (
             <button
               key={chip.label}
@@ -455,7 +556,10 @@ export function AskBar({ disabled = false }: { disabled?: boolean }) {
       {/* Chat composer */}
       <form
         className="mv-chat"
-        onSubmit={(e) => { e.preventDefault(); void submit(); }}
+        onSubmit={(e) => {
+          e.preventDefault();
+          void submit();
+        }}
       >
         {/* Transcript toggle lives as a standalone circular button LEFT of the
             Ask bar (see TranscriptToggle, rendered by PrimaryDock) — Granola-
@@ -466,7 +570,7 @@ export function AskBar({ disabled = false }: { disabled?: boolean }) {
           ref={inputRef}
           className="mv-chat-input"
           value={input}
-          disabled={disabled}
+          disabled={composerDisabled}
           onChange={(e) => setInput(e.target.value)}
           onFocus={handleInputFocus}
           onKeyDown={(e) => {
@@ -481,23 +585,22 @@ export function AskBar({ disabled = false }: { disabled?: boolean }) {
             }
           }}
           placeholder={
-            disabled
-              ? 'Chat available after recording'
-              : hasMessages
-                ? 'Continue chat…'
-                : 'Ask anything about this meeting…'
+            isRecording
+              ? liveTranscriptReady
+                ? 'Ask about the live transcript…'
+                : 'Live transcript unavailable'
+              : disabled
+                ? 'Chat available after recording'
+                : hasMessages
+                  ? 'Continue chat…'
+                  : 'Ask anything about this meeting…'
           }
           aria-label="Ask about this meeting"
         />
 
         {/* Send / stop */}
         {isStreaming ? (
-          <button
-            type="button"
-            className="mv-chat-send active"
-            onClick={stop}
-            aria-label="Stop"
-          >
+          <button type="button" className="mv-chat-send active" onClick={stop} aria-label="Stop">
             <Square size={12} />
           </button>
         ) : (
@@ -545,14 +648,17 @@ function ChatHeader({
   onCollapse,
 }: ChatHeaderProps) {
   return (
-    <div className="relative flex flex-shrink-0 items-center justify-between border-b px-3 py-2" style={{ borderColor: 'var(--border-subtle)' }}>
+    <div
+      className="relative flex flex-shrink-0 items-center justify-between border-b px-3 py-2"
+      style={{ borderColor: 'var(--border-subtle)' }}
+    >
       <div className="relative">
         <button
           type="button"
           onClick={onOpenSessions}
           className={cn(
             'flex items-center gap-1.5 rounded-md px-2 py-1 text-sm font-semibold transition-colors hover:bg-muted',
-            sessionMenuOpen && 'bg-muted',
+            sessionMenuOpen && 'bg-muted'
           )}
           style={{ color: 'var(--fg-1)' }}
         >
@@ -560,7 +666,10 @@ function ChatHeader({
             {session?.name ?? (meetingName ? `Ask about ${meetingName}` : 'Ask AI')}
           </span>
           <ChevronDown
-            className={cn('size-3.5 flex-shrink-0 transition-transform duration-150', sessionMenuOpen && 'rotate-180')}
+            className={cn(
+              'size-3.5 flex-shrink-0 transition-transform duration-150',
+              sessionMenuOpen && 'rotate-180'
+            )}
             style={{ color: 'var(--fg-2)' }}
           />
         </button>
@@ -618,7 +727,9 @@ function SessionDropdown({ sessions, activeId, onPick, onDelete }: SessionDropdo
       style={{ background: 'var(--surface-raised)', borderColor: 'var(--border-subtle)' }}
     >
       {sessions.length === 0 ? (
-        <p className="px-3 py-2 text-xs" style={{ color: 'var(--fg-muted)' }}>No saved chats yet.</p>
+        <p className="px-3 py-2 text-xs" style={{ color: 'var(--fg-muted)' }}>
+          No saved chats yet.
+        </p>
       ) : (
         sessions.map((s) => {
           const isActive = s.id === activeId;
@@ -627,7 +738,7 @@ function SessionDropdown({ sessions, activeId, onPick, onDelete }: SessionDropdo
               key={s.id}
               className={cn(
                 'group flex items-center gap-2 rounded-md px-2.5 py-1.5 text-sm transition-colors hover:bg-muted',
-                isActive && 'bg-muted font-medium',
+                isActive && 'bg-muted font-medium'
               )}
             >
               <button
@@ -676,7 +787,10 @@ function MessageList({ messages, liveText, streaming }: MessageListProps) {
           {liveText ? (
             <div className="max-w-[90%] text-sm leading-[1.7]" style={{ color: 'var(--fg-1)' }}>
               {renderMarkdown(liveText)}
-              <span className="ml-0.5 inline-block h-3.5 w-0.5 animate-pulse align-text-bottom" style={{ background: 'var(--fg-2)' }} />
+              <span
+                className="ml-0.5 inline-block h-3.5 w-0.5 animate-pulse align-text-bottom"
+                style={{ background: 'var(--fg-2)' }}
+              />
             </div>
           ) : (
             <div className="flex items-center gap-1.5 py-1" style={{ color: 'var(--fg-muted)' }}>

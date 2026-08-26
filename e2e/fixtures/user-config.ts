@@ -18,7 +18,15 @@ export function readUserConfig(userDataDir: string): Record<string, unknown> {
   }
 }
 
-/** Merge a partial config into <userDataDir>/config.json, creating it if absent. */
+/**
+ * Merge a partial config into <userDataDir>/config.json, creating it if absent.
+ *
+ * `privacy_notice_seen` is seeded true because a config.json that exists but
+ * lacks the key is treated as an upgrading install (src/config.py
+ * `_migrate_privacy_notice_seen`), which pops the one-time privacy modal over
+ * the app and intercepts pointer events — a spec that clicks anything then
+ * races the dialog. A spec that wants the modal can pass the key as false.
+ */
 export function writeUserConfig(
   userDataDir: string,
   partial: Record<string, unknown>,
@@ -32,7 +40,10 @@ export function writeUserConfig(
       cfg = {};
     }
   }
-  writeFileSync(cfgPath, JSON.stringify({ ...cfg, ...partial }, null, 2));
+  writeFileSync(
+    cfgPath,
+    JSON.stringify({ privacy_notice_seen: true, ...cfg, ...partial }, null, 2),
+  );
 }
 
 /** Explicitly opt a test user into local biometric speaker identification. */

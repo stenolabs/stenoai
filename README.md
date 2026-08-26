@@ -57,7 +57,7 @@ If you're looking for a hosted desktop recording API, consider checking out [Rec
 - **Recording that coexists** — A compact transcription pill docks beside the app instead of taking over; Stop lands you on the note instantly and you can resume recording into an existing note (it appends and re-generates on demand).
 - **Global record shortcut** — Start or stop recording from anywhere with `⌘⇧R` (`Ctrl+Shift+R` on Windows). Toggle it off in Settings if it clashes with another app. On macOS, power users can additionally bind any key of their own via the `stenoai://record/start` / `record/stop` deep links (Shortcuts app).
 - **In-app note-taking** — Jot notes while you record, or keep a dedicated **My notes** tab that stays editable alongside the AI summary; your notes are folded straight into the summary.
-- **Ask your meetings** — Natural-language Q&A across a single note *or* your entire library via the Chat tab. Pulls from summary, key topics, and the full transcript.
+- **Ask your meetings** — Ask the in-progress live transcript while recording, query a single finished note, or search your library via the Chat tab. Live questions use the same local, cloud, or organisation AI provider configured for summaries.
 - **Multi-language (25 live, 99 total)** — Parakeet covers 25 European languages with live transcription; Whisper handles 99 languages including Chinese, Japanese, Arabic, and Hindi post-stop.
 - **Markdown ownership** — Summaries and transcripts save as clean Markdown you can edit, search, or sync to whatever knowledge base you live in.
 - **Report templates** — Define custom report styles and generate them per meeting; a note can hold multiple reports (the structured summary plus template-driven ones), switchable in the detail view.
@@ -170,13 +170,13 @@ Have questions or suggestions? [Join our Discord](https://discord.gg/DZ6vcQnxxu)
 - `Parakeet TDT v3` (572 MB): Highest quality, supports live transcription, 25 European languages (English, Spanish, French, German, Italian, Portuguese, Dutch, Russian, Polish, Czech, and 15 others). Apple Silicon only via MLX. **(default on fresh installs)**
 - `Whisper Large V3 Turbo` (1.6 GB): Best-accuracy Whisper engine for the languages Parakeet can't speak (Chinese, Japanese, Korean, Arabic, Hindi, and 94 others). Post-stop only.
 
-**Summarization Models** (Ollama):
-- `gemma4:e2b-it-qat` (4.3GB): Lightest Gemma 4, quantization-aware, with a real 128K context **(default)**
+**Summarization Models:**
+- `Apple Intelligence (SystemLanguageModel)`: Built-in on-device System Language Model — Advanced wherever available, automatically falling back to 3B Core. **(default on macOS when available)**
+- `gemma4:e2b-it-qat` (4.3GB): Lightest Gemma 4 via Ollama, quantization-aware, with a real 128K context **(default fallback / non-Apple)**
 - `gemma4:e4b-it-qat` (6.1GB): Quantization-aware E4B — higher quality than E2B at a modest footprint
 - `qwen3.5:9b` (6.6GB): Excellent at structured output and action items
 - `gemma4:12b-it-qat` (7.2GB): Gemma 4 (quantization-aware) with a 256K context — best for long meetings
 - `gpt-oss:20b` (14GB): OpenAI open-weight model with reasoning capabilities
-
 ## Future Roadmap
 
 ### Enhanced Features

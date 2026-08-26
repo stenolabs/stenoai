@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { cn } from '@/lib/utils';
 import { useNavigate } from '@/lib/router';
+import { ipc } from '@/lib/ipc';
 import {
   useClearSystemState,
   usePickStorageFolder,
@@ -64,6 +65,44 @@ export function AdvancedTab() {
   const clearState = useClearSystemState();
   const telemetry = useTelemetrySetting();
   const setTelemetry = useSetTelemetry();
+  const [exportFeedback, setExportFeedback] = React.useState<{
+    type: 'success' | 'error';
+    message: string;
+  } | null>(null);
+  const [isExporting, setIsExporting] = React.useState(false);
+  const [exportFormat, setExportFormat] = React.useState<'md' | 'csv' | null>(null);
+
+  const handleExportAll = async (format: 'md' | 'csv') => {
+    setIsExporting(true);
+    setExportFormat(format);
+    setExportFeedback(null);
+    try {
+      const meetingsBridge = ipc().meetings;
+      if ('exportAll' in meetingsBridge && typeof meetingsBridge.exportAll === 'function') {
+        const res = await meetingsBridge.exportAll(format);
+        if (res.success) {
+          setExportFeedback({
+            type: 'success',
+            message: `Successfully exported ${res.count} note${res.count === 1 ? '' : 's'}.`,
+          });
+        } else if (res.error && res.error !== 'CANCELED' && res.error !== 'EXPORT_CANCELED') {
+          setExportFeedback({
+            type: 'error',
+            message: `Export failed: ${res.error}`,
+          });
+        }
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Unknown error';
+      setExportFeedback({
+        type: 'error',
+        message: `Export failed: ${msg}`,
+      });
+    } finally {
+      setIsExporting(false);
+      setExportFormat(null);
+    }
+  };
 
   const chooseFolder = async () => {
     try {
@@ -127,6 +166,61 @@ export function AdvancedTab() {
           )}
         </div>
       </div>
+      <div
+        className="flex items-start justify-between gap-6 py-4"
+        style={{ borderBottom: '1px solid var(--border-subtle)' }}
+      >
+        <div className="min-w-0 flex-1">
+          <div
+            className="text-[14px] font-normal"
+            style={{ color: 'var(--fg-1)', marginBottom: 2 }}
+          >
+            Export all notes
+          </div>
+          <div
+            className="mb-2 text-[13px]"
+            style={{ color: 'var(--fg-2)' }}
+          >
+            Export every note and transcript to individual Markdown files or a single CSV spreadsheet.
+          </div>
+          {exportFeedback && (
+            <div
+              data-testid="export-all-feedback"
+              className={cn(
+                'text-[12px] font-medium mt-1',
+                exportFeedback.type === 'success'
+                  ? 'text-[color:var(--fg-1)]'
+                  : 'text-[color:var(--danger)]'
+              )}
+            >
+              {exportFeedback.message}
+            </div>
+          )}
+        </div>
+        <div className="flex shrink-0 gap-2 pt-1">
+          <Button
+            variant="outline"
+            size="sm"
+            className={COMPACT_BTN}
+            disabled={isExporting}
+            onClick={() => handleExportAll('md')}
+            data-testid="export-all-md-btn"
+          >
+            {isExporting && exportFormat === 'md' ? 'Exporting…' : 'Export Markdown…'}
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            className={COMPACT_BTN}
+            disabled={isExporting}
+            onClick={() => handleExportAll('csv')}
+            data-testid="export-all-csv-btn"
+          >
+            {isExporting && exportFormat === 'csv' ? 'Exporting…' : 'Export CSV…'}
+          </Button>
+        </div>
+      </div>
+
 
       <SettingRow
         label="Setup wizard"

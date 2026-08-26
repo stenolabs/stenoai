@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ipc } from '@/lib/ipc';
+import { ipc, type Folder, type Meeting } from '@/lib/ipc';
 import { unwrap } from '@/lib/result';
 import { meetingsKeys } from './useMeetings';
 
@@ -42,12 +42,10 @@ export function useUpdateFolderIcon() {
       // Cancel in-flight folder fetches so a refetch landing during the
       // optimistic write doesn't overwrite our prediction.
       await qc.cancelQueries({ queryKey: foldersKeys.list() });
-      const previous = qc.getQueryData<import('@/lib/ipc').Folder[]>(
-        foldersKeys.list(),
-      );
+      const previous = qc.getQueryData<Folder[]>(foldersKeys.list());
       qc.setQueryData(
         foldersKeys.list(),
-        (old: import('@/lib/ipc').Folder[] | undefined) =>
+        (old: Folder[] | undefined) =>
           old?.map((f) => (f.id === id ? { ...f, icon } : f)),
       );
       return { previous };
@@ -84,7 +82,7 @@ function patchMeetingFolders(
   summaryFile: string,
   update: (folders: string[]) => string[],
 ) {
-  qc.setQueryData(meetingsKeys.list(), (old: import('@/lib/ipc').Meeting[] | undefined) => {
+  qc.setQueryData(meetingsKeys.list(), (old: Meeting[] | undefined) => {
     if (!old) return old;
     return old.map((m) =>
       m.session_info.summary_file === summaryFile
@@ -96,7 +94,7 @@ function patchMeetingFolders(
 
 function restoreMeetingsSnapshot(
   qc: ReturnType<typeof useQueryClient>,
-  previous: import('@/lib/ipc').Meeting[] | undefined,
+  previous: Meeting[] | undefined,
 ) {
   qc.setQueryData(meetingsKeys.list(), previous);
 }
@@ -107,7 +105,7 @@ export function useAddMeetingToFolder() {
     mutationFn: async (args: { summaryFile: string; folderId: string }) =>
       unwrap(await ipc().folders.addMeeting(args.summaryFile, args.folderId)),
     onMutate: ({ summaryFile, folderId }) => {
-      const previous = qc.getQueryData<import('@/lib/ipc').Meeting[]>(meetingsKeys.list());
+      const previous = qc.getQueryData<Meeting[]>(meetingsKeys.list());
       patchMeetingFolders(qc, summaryFile, (f) => [...new Set([...f, folderId])]);
       return { previous };
     },
@@ -127,7 +125,7 @@ export function useRemoveMeetingFromFolder() {
     mutationFn: async (args: { summaryFile: string; folderId: string }) =>
       unwrap(await ipc().folders.removeMeeting(args.summaryFile, args.folderId)),
     onMutate: ({ summaryFile, folderId }) => {
-      const previous = qc.getQueryData<import('@/lib/ipc').Meeting[]>(meetingsKeys.list());
+      const previous = qc.getQueryData<Meeting[]>(meetingsKeys.list());
       patchMeetingFolders(qc, summaryFile, (f) => f.filter((id) => id !== folderId));
       return { previous };
     },
@@ -140,3 +138,48 @@ export function useRemoveMeetingFromFolder() {
     },
   });
 }
+
+export function useSetFolderTemplate() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (args: { folderId: string; templateId?: string | null }) =>
+      unwrap(await ipc().folders.setTemplate(args.folderId, args.templateId)),
+    onMutate: async ({ folderId, templateId }) => {
+      await qc.cancelQueries({ queryKey: foldersKeys.list() });
+      const previous = qc.getQueryData<Folder[]>(foldersKeys.list());
+      qc.setQueryData(foldersKeys.list(), (old: Folder[] | undefined) =>
+        old?.map((f) => (f.id === folderId ? { ...f, template_id: templateId ?? null } : f)),
+      );
+      return { previous };
+    },
+    onError: (_err, _args, ctx) => {
+      if (ctx?.previous !== undefined) {
+        qc.setQueryData(foldersKeys.list(), ctx.previous);
+      }
+    },
+    onSettled: () => qc.invalidateQueries({ queryKey: foldersKeys.all }),
+  });
+}
+
+export function useSetFolderRecurring() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (args: { folderId: string; titles: string[] }) =>
+      unwrap(await ipc().folders.setRecurring(args.folderId, args.titles)),
+    onMutate: async ({ folderId, titles }) => {
+      await qc.cancelQueries({ queryKey: foldersKeys.list() });
+      const previous = qc.getQueryData<Folder[]>(foldersKeys.list());
+      qc.setQueryData(foldersKeys.list(), (old: Folder[] | undefined) =>
+        old?.map((f) => (f.id === folderId ? { ...f, recurring_titles: titles } : f)),
+      );
+      return { previous };
+    },
+    onError: (_err, _args, ctx) => {
+      if (ctx?.previous !== undefined) {
+        qc.setQueryData(foldersKeys.list(), ctx.previous);
+      }
+    },
+    onSettled: () => qc.invalidateQueries({ queryKey: foldersKeys.all }),
+  });
+}
+

@@ -5,6 +5,7 @@ import { unwrap } from '@/lib/result';
 import { meetingsKeys } from './meetingKeys';
 import { orgKeys } from './useOrg';
 import { useLiveDraftStore } from './liveDraftStore';
+import { useRecordTemplateStore } from './useSystemAudioCapture';
 import { navigate, routeFromHash } from '@/lib/router';
 import { composeShareBody, pickTranscriptForShare } from '@/routes/MeetingDetail';
 import { streamCache } from '@/lib/meetingDetailState';
@@ -118,7 +119,34 @@ export function useRecording() {
   // duplicate cache invalidations and N navigations per recording.
 
   const startRecording = React.useCallback(
-    async (name?: string, trigger: RecordingTrigger = 'manual', appendTo?: string) => {
+    async (
+      name?: string,
+      trigger: RecordingTrigger = 'manual',
+      appendTo?: string,
+      templateId?: string
+    ) => {
+      // Resolve the effective template ID.
+      // Hard Rule 1: Continue/append recordings (`appendTo` truthy) must NEVER send a templateId.
+      // Hard Rule 2: When no template was chosen, the call must be byte-identical to today's
+      //              (no 4th argument).
+      // Hard Rule 3: If a template was explicitly chosen before recording (or supplied via `templateId`),
+      //              we pass it as the 4th argument and track it in `useRecordTemplateStore`
+      //              so LiveDock can display it.
+      //
+      // Design justification for accepting an optional `templateId` parameter with store fallback:
+      // Direct callers (tests, future programmatic APIs) can supply a template directly, while
+      // all decoupled UI triggers (dock record button, New note button, tray/hotkey shortcuts)
+      // seamlessly read the pre-recording selection from `useRecordTemplateStore.getState().chosenTemplateId`.
+      const store = useRecordTemplateStore.getState();
+      const effectiveTemplateId = !appendTo
+        ? (templateId ?? store.chosenTemplateId ?? undefined)
+        : undefined;
+
+      // Activate the template for LiveDock display during this session, and clear the pre-recording choice
+      // so subsequent recordings revert to the global default.
+      store.setActiveTemplateId(effectiveTemplateId ?? null);
+      store.setChosenTemplateId(null);
+
       // Optimistic cache write so the UI flips to status='recording'
       // instantly. The backend's start-recording-ui has a 2s warm-up and
       // the next queue poll (1s) will reconcile sessionName + elapsed.
@@ -175,10 +203,16 @@ export function useRecording() {
       // whatever route the user is on; /recording stays reachable as an
       // optional live-note editor but is never forced.
       try {
-        const data = unwrap(await ipc().recording.start(name, trigger, appendTo));
+        const data = unwrap(
+          await (effectiveTemplateId !== undefined
+            ? ipc().recording.start(name, trigger, appendTo, effectiveTemplateId)
+            : ipc().recording.start(name, trigger, appendTo))
+        );
         qc.invalidateQueries({ queryKey: queueKey });
         return data;
       } catch (err) {
+        // Roll back template store state so an aborted start does not leave stale active state.
+        useRecordTemplateStore.getState().resetChoice();
         // Roll back optimistic state. Restore the prior draft too — the
         // recording never started so the previous session (probably still
         // mid-processing) shouldn't lose its in-memory title / notes.
@@ -201,6 +235,8 @@ export function useRecording() {
   );
 
   const stopRecording = React.useCallback(async ({ navigateToNote = true }: { navigateToNote?: boolean } = {}) => {
+    // Reset any active template choice on stop so subsequent recordings start fresh.
+    useRecordTemplateStore.getState().resetChoice();
     // Optimistic: flip the queue cache to processing so the UI can swap the
     // pill for the processing dock instantly, before the backend SIGTERM
     // round-trip.

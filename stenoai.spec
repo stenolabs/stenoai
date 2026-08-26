@@ -280,6 +280,13 @@ if os.path.exists(ollama_bin_dir):
                 # resolver probes. The guard above intentionally fails a
                 # macOS build when this required release artifact is absent.
                 binaries.append((filepath, '.'))
+            elif (
+                base == 'steno-apple-lm'
+                and _IS_DARWIN
+            ):
+                # macOS-only Swift SystemLanguageModel sidecar (built by
+                # scripts/build-apple-lm-sidecar.sh).
+                binaries.append((filepath, '.'))
             elif _IS_DARWIN:
                 # COLLECT DATA TOC 3-tuple: (dest_path_including_filename,
                 # abs_src_path, 'DATA'). Everything lives under ollama/,

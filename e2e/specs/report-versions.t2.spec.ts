@@ -86,8 +86,9 @@ test('reprocess backup + set-active + delete round-trip', async ({
 
   const ollama = await startMockOllama({ chatReply: REPROCESS_REPLY });
   try {
-    const { page } = await launchApp();
-
+    const { page } = await launchApp({
+      env: { OLLAMA_HOST: `http://127.0.0.1:${ollama.port}` },
+    });
     // --- Step 1: reprocess and wait for summaryComplete ---
     const completed: boolean = await page.evaluate(
       ([f, name]) =>

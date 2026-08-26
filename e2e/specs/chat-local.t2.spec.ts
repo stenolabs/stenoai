@@ -42,8 +42,9 @@ test('local provider answers cross-note chat (no cloud/adapter required)', async
 
   const ollama = await startMockOllama({ chatReply: ANSWER });
   try {
-    const { page } = await launchApp();
-
+    const { page } = await launchApp({
+      env: { OLLAMA_HOST: `http://127.0.0.1:${ollama.port}` },
+    });
     const result: StreamResult = await page.evaluate(
       (q) =>
         new Promise<StreamResult>((resolve) => {

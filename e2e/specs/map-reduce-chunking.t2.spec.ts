@@ -65,8 +65,9 @@ test.describe('Map-reduce summarization @map-reduce', () => {
         '## Summary\nThis was a long planning meeting about the quarterly roadmap.\n\n## Key Points\n- Roadmap agreed\n\n## Action Items\n- Update tracker',
     });
     try {
-      const { page } = await launchApp();
-
+      const { page } = await launchApp({
+        env: { OLLAMA_HOST: `http://127.0.0.1:${ollama.port}` },
+      });
       // Capture PROGRESS: events via the IPC bridge.
       const progressLines: string[] = [];
       await page.exposeFunction('captureProgress', (line: string) => {
@@ -139,8 +140,9 @@ test.describe('Map-reduce summarization @map-reduce', () => {
         '## Summary\nBrief meeting.\n\n## Key Points\n- Started well\n\n## Action Items\n- None',
     });
     try {
-      const { page } = await launchApp();
-
+      const { page } = await launchApp({
+        env: { OLLAMA_HOST: `http://127.0.0.1:${ollama.port}` },
+      });
       const completed: boolean = await page.evaluate(
         (f) =>
           new Promise<boolean>((resolve) => {

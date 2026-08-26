@@ -55,6 +55,7 @@ export interface Meeting {
   session_info: SessionInfo;
   summary: string;
   participants?: unknown[];
+  attendees?: string[];
   discussion_areas?: unknown[];
   key_points?: string[];
   action_items?: unknown[];
@@ -89,6 +90,8 @@ export interface Folder {
   color: string;
   order: number;
   icon?: string;
+  template_id?: string | null;
+  recurring_titles?: string[];
 }
 
 export interface ListedModel {
@@ -121,6 +124,15 @@ export interface CalendarEvent {
   color?: string;
 }
 
+export interface McpStatus {
+  enabled: boolean;
+  port: number;
+  running: boolean;
+  keySet: boolean;
+  endpoint: string;
+  error?: string;
+}
+
 export interface UpdateMeetingPatch {
   name?: string;
   summary?: string;
@@ -138,6 +150,8 @@ export interface ChatSessionsBlob {
     id: string;
     name: string;
     summaryFile?: string;
+    folderId?: string | null;
+    selectedMeetingFiles?: string[];
     messages: Array<{ role: 'user' | 'assistant'; content: string; ts: number }>;
     createdAt: number;
     updatedAt: number;
@@ -444,6 +458,16 @@ export type ListTemplatesResponse = Result<{
   default_template_id: string;
 }>;
 export type SaveTemplateResponse = Result<{ template: Template }>;
+
+export interface ChatRecipe {
+  id: string;
+  label: string;
+  prompt: string;
+}
+export type ListRecipesResponse = Result<{ recipes: ChatRecipe[] }>;
+export type SaveRecipeResponse = Result<{ recipe: ChatRecipe }>;
+export type ExportAllFormat = 'md' | 'csv';
+export type ExportAllNotesResponse = Result<{ count: number }>;
 
 export interface PersonProfile {
   person_id: string;
@@ -971,6 +995,10 @@ export interface LiveTranscriptErrorEvent {
   error?: string;
   message?: string;
 }
+export interface ChatSessionsMigratedEvent {
+  fromKey: string;
+  toKey: string;
+}
 export interface UpdateAvailableEvent {
   version: string;
 }
@@ -1043,10 +1071,11 @@ export interface StenoaiBridge {
      *  existing note to append this recording's transcript to
      *  (continue-recording) instead of creating a new note. */
     start: RequestFn<
-      [name?: string, trigger?: RecordingTrigger, appendTo?: string],
+      [name?: string, trigger?: RecordingTrigger, appendTo?: string, templateId?: string],
       StartRecordingResponse
     >;
     stop: RequestFn<[], StopRecordingResponse>;
+    setTemplate: RequestFn<[templateId?: string | null], Result<{ templateId: string | null }>>;
     pause: RequestFn<[], PauseRecordingResponse>;
     resume: RequestFn<[], ResumeRecordingResponse>;
     reportSystemAudioState: SendFn<[active: boolean]>;
@@ -1119,6 +1148,7 @@ export interface StenoaiBridge {
       [defaultFilename: string, html: string],
       Result<{ path: string }>
     >;
+    exportAll: RequestFn<[format: ExportAllFormat, targetPath?: string | null], ExportAllNotesResponse>;
     regenTitle: RequestFn<[summaryFile: string, name: string], Result<Record<string, never>>>;
     generateReport: RequestFn<
       [summaryFile: string, templateId: string],
@@ -1134,7 +1164,9 @@ export interface StenoaiBridge {
   query: {
     ask: RequestFn<[file: string, q: string], QueryResponse>;
     askStream: SendFn<[id: string, file: string, q: string]>;
-    chatGlobalStream: SendFn<[id: string, q: string, folderId?: string | null]>;
+    askLiveStream: SendFn<[id: string, sessionName: string, q: string, history?: Array<{ role: 'user' | 'assistant'; content: string }>]>;
+    chatGlobalStream: SendFn<[id: string, q: string, folderId?: string | null, meetingFiles?: string[] | null]>;
+    briefStream: SendFn<[id: string, title: string, attendees?: string[] | null]>;
     cancel: SendFn<[id: string]>;
   };
 
@@ -1155,6 +1187,14 @@ export interface StenoaiBridge {
       [summaryFile: string, folderId: string],
       Result<Record<string, never>>
     >;
+    setTemplate: RequestFn<
+      [folderId: string, templateId?: string | null],
+      Result<Record<string, never>>
+    >;
+    setRecurring: RequestFn<
+      [folderId: string, titles: string[]],
+      Result<Record<string, never>>
+    >;
   };
 
   templates: {
@@ -1163,6 +1203,12 @@ export interface StenoaiBridge {
     remove: RequestFn<[id: string], Result<Record<string, never>>>;
     setDefault: RequestFn<[id: string], Result<Record<string, never>>>;
     reset: RequestFn<[id: string], Result<Record<string, never>>>;
+  };
+
+  recipes: {
+    list: RequestFn<[], ListRecipesResponse>;
+    save: RequestFn<[recipe: Partial<ChatRecipe>], SaveRecipeResponse>;
+    delete: RequestFn<[id: string], Result<Record<string, never>>>;
   };
 
   speakers: {
@@ -1317,6 +1363,15 @@ export interface StenoaiBridge {
     >;
   };
 
+  mcp: {
+    getStatus: RequestFn<[], Result<McpStatus>>;
+    getKey: RequestFn<[], Result<{ key: string }>>;
+    setKey: RequestFn<[key: string], Result<{ keySet: boolean }>>;
+    regenerateKey: RequestFn<[], Result<{ key: string }>>;
+    setEnabled: RequestFn<[enabled: boolean], Result<McpStatus>>;
+    setPort: RequestFn<[port: number], Result<McpStatus>>;
+  };
+
   ai: {
     getProvider: RequestFn<[], GetAiProviderResponse>;
     setProvider: RequestFn<[p: AiProvider], Result<Record<string, never>>>;
@@ -1379,6 +1434,7 @@ export interface StenoaiBridge {
     liveTranscriptReady: Subscribe<LiveTranscriptReadyEvent>;
     liveTranscriptChunk: Subscribe<LiveTranscriptChunkEvent>;
     liveTranscriptError: Subscribe<LiveTranscriptErrorEvent>;
+    chatSessionsMigrated: Subscribe<ChatSessionsMigratedEvent>;
     updateAvailable: Subscribe<UpdateAvailableEvent>;
     updateDownloadProgress: Subscribe<UpdateProgressEvent>;
     updateDownloaded: Subscribe<UpdateDownloadedEvent>;

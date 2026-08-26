@@ -1,7 +1,7 @@
 import * as React from 'react';
 import { Search } from 'lucide-react';
 import { useMeetings, LIVE_SUMMARY_PREFIX } from '@/hooks/useMeetings';
-import { searchNotes, snippet } from '@/lib/noteSearch';
+import { searchNotesDetailed, snippet, type NoteSearchResult } from '@/lib/noteSearch';
 import { navigate, useRoute } from '@/lib/router';
 import { isMac } from '@/lib/utils';
 import type { Meeting } from '@/lib/ipc';
@@ -155,10 +155,20 @@ function CommandPalette({ onClose }: { onClose: () => void }) {
     );
   }, [isSettingsMode, query]);
 
-  const noteResults = React.useMemo<Meeting[]>(() => {
+  const noteResults = React.useMemo<NoteSearchResult[]>(() => {
     if (isSettingsMode) return [];
-    if (!query.trim()) return sorted.slice(0, RECENT_COUNT);
-    return searchNotes(sorted, query).slice(0, MAX_RESULTS);
+    if (!query.trim()) {
+      return sorted.slice(0, RECENT_COUNT).map((m) => ({
+        meeting: m,
+        match: {
+          field: 'title' as const,
+          label: '',
+          snippet: snippet(m.summary, ''),
+          rank: 1,
+        },
+      }));
+    }
+    return searchNotesDetailed(sorted, query).slice(0, MAX_RESULTS);
   }, [isSettingsMode, sorted, query]);
 
   const resultCount = isSettingsMode ? settingsResults.length : noteResults.length;
@@ -204,7 +214,7 @@ function CommandPalette({ onClose }: { onClose: () => void }) {
     } else if (e.key === 'Enter') {
       e.preventDefault();
       if (isSettingsMode) openSetting(settingsResults[selected]);
-      else openMeeting(noteResults[selected]);
+      else openMeeting(noteResults[selected]?.meeting);
     } else if (e.key === 'Tab') {
       // The input is the only tab stop in the dialog; trap Tab so focus can't
       // escape behind the aria-modal overlay.
@@ -304,9 +314,11 @@ function CommandPalette({ onClose }: { onClose: () => void }) {
               </li>
             ))
           ) : (
-            noteResults.map((m, i) => {
+            noteResults.map((r, i) => {
+              const m = r.meeting;
               const title = m.session_info.name || 'Untitled Meeting';
-              const sub = snippet(m.summary, query);
+              const showFieldLabel = Boolean(query.trim() && r.match && r.match.field !== 'title' && r.match.label);
+              const sub = r.match?.snippet || snippet(m.summary, query);
               return (
                 <li
                   key={m.session_info.summary_file}
@@ -326,9 +338,21 @@ function CommandPalette({ onClose }: { onClose: () => void }) {
                   <div className="truncate text-[13.5px]" style={{ color: 'var(--fg-1)' }}>
                     {title}
                   </div>
-                  {sub && (
-                    <div className="truncate text-[12px]" style={{ color: 'var(--fg-muted)' }}>
-                      {sub}
+                  {(showFieldLabel || sub) && (
+                    <div className="flex items-center gap-1.5 truncate text-[12px]" style={{ color: 'var(--fg-muted)' }}>
+                      {showFieldLabel && (
+                        <span
+                          className="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium tracking-[0.01em] shrink-0"
+                          style={{
+                            background: 'var(--surface-sunken)',
+                            color: 'var(--fg-2)',
+                            border: '1px solid var(--border-subtle)',
+                          }}
+                        >
+                          {r.match.label}
+                        </span>
+                      )}
+                      {sub && <span className="truncate">{sub}</span>}
                     </div>
                   )}
                 </li>

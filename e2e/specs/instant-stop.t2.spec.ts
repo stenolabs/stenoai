@@ -45,10 +45,16 @@ const OLD_DRAFT_NOTES = 'OLD DRAFT: this should be overwritten by the edit.';
 const FIXED_REPLY = ['## Summary', 'Onboarding shipped; release cut Friday.', '', '## Key Points', '- shipped', ''].join('\n');
 
 type SpawnResult = { code: number | null; stdout: string; stderr: string };
-function runBackend(args: string[], userDataDir: string): Promise<SpawnResult> {
+function runBackend(args: string[], userDataDir: string, extraEnv?: Record<string, string>): Promise<SpawnResult> {
   return new Promise((resolve, reject) => {
     const proc = spawn(BACKEND, args, {
-      env: { ...process.env, STENOAI_USER_DATA_DIR: userDataDir },
+      // Same Apple LM pin as the electron fixture (see auto-summarize.t2).
+      env: {
+        ...process.env,
+        STENOAI_USER_DATA_DIR: userDataDir,
+        STENOAI_DISABLE_APPLE_LM: '1',
+        ...(extraEnv ?? {}),
+      },
     });
     let stdout = '';
     let stderr = '';
@@ -128,6 +134,7 @@ test('placeholder processing flag parses; the rewrite preserves the edited My no
     const res = await runBackend(
       ['process-streaming', wavPath, '--name', 'Instant Note', '--live-transcript', live, '--notes', draft],
       userDataDir,
+      { OLLAMA_HOST: `http://127.0.0.1:${ollama.port}` },
     );
     expect(res.code, `stderr:\n${res.stderr}`).toBe(0);
 

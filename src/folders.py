@@ -152,7 +152,27 @@ class FoldersManager:
     def list_folders(self) -> List[Dict]:
         return self._data.get("folders", [])
 
-    def create_folder(self, name: str, color: str = "#6366f1") -> Optional[Dict]:
+    def get_folder(self, folder_id: str) -> Optional[Dict]:
+        """Get a single folder by its ID."""
+        for folder in self.list_folders():
+            if folder.get("id") == folder_id:
+                return folder
+        return None
+
+    def get_folder_for_recurring_title(self, title: str) -> Optional[str]:
+        """Find the folder ID whose recurring_titles match the given title
+        (exact, case-insensitive, trimmed). Returns None when no match."""
+        if not title or not isinstance(title, str) or not title.strip():
+            return None
+        target = title.strip().lower()
+        for folder in self.list_folders():
+            recurring = folder.get("recurring_titles") or []
+            for r in recurring:
+                if isinstance(r, str) and r.strip().lower() == target:
+                    return folder["id"]
+        return None
+
+    def create_folder(self, name: str, color: str = "#6366f1", template_id: Optional[str] = None, recurring_titles: Optional[List[str]] = None) -> Optional[Dict]:
         def _mutate(data: Dict) -> Dict:
             folder = {
                 "id": str(uuid.uuid4())[:8],
@@ -162,10 +182,45 @@ class FoldersManager:
                 "created_at": datetime.now().isoformat(),
                 "order": len(data["folders"]),
             }
+            if template_id and template_id.strip() and template_id.lower() not in ("none", "null"):
+                folder["template_id"] = template_id.strip()
+            if recurring_titles:
+                cleaned = [t.strip() for t in recurring_titles if isinstance(t, str) and t.strip()]
+                if cleaned:
+                    folder["recurring_titles"] = cleaned
             data["folders"].append(folder)
             return folder
 
         return self._update(_mutate)
+
+    def set_folder_template(self, folder_id: str, template_id: Optional[str]) -> bool:
+        """Set or clear a folder's default template ID."""
+        def _mutate(data: Dict) -> Optional[bool]:
+            for folder in data.get("folders", []):
+                if folder["id"] == folder_id:
+                    if template_id and template_id.strip() and template_id.lower() not in ("none", "null"):
+                        folder["template_id"] = template_id.strip()
+                    else:
+                        folder.pop("template_id", None)
+                    return True
+            return None  # unknown id: nothing to write
+
+        return self._update(_mutate) is True
+
+    def set_folder_recurring(self, folder_id: str, titles: List[str]) -> bool:
+        """Set or clear a folder's recurring meeting titles."""
+        def _mutate(data: Dict) -> Optional[bool]:
+            for folder in data.get("folders", []):
+                if folder["id"] == folder_id:
+                    cleaned = [t.strip() for t in titles if isinstance(t, str) and t.strip()]
+                    if cleaned:
+                        folder["recurring_titles"] = cleaned
+                    else:
+                        folder.pop("recurring_titles", None)
+                    return True
+            return None  # unknown id: nothing to write
+
+        return self._update(_mutate) is True
 
     def update_icon(self, folder_id: str, icon: str) -> bool:
         def _mutate(data: Dict) -> Optional[bool]:

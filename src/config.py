@@ -311,6 +311,11 @@ class Config:
     }
 
     VALID_TRANSCRIPTION_ENGINES = ("parakeet", "whisper")
+    DEFAULT_MCP_ENABLED: bool = False
+    DEFAULT_MCP_PORT: int = 27127
+    MIN_MCP_PORT: int = 1024
+    MAX_MCP_PORT: int = 65535
+
 
     def __init__(self, config_path: Optional[Path] = None):
         """
@@ -359,13 +364,17 @@ class Config:
         self._migrate_cloud_model_map()
         self._migrate_whisper_model()
         self._migrate_summary_model()
+        self._adopt_apple_system_default()
         self._migrate_transcription_engine()
         self._migrate_language_zh()
         self._migrate_privacy_notice_seen()
         self._migrate_identity_matching_privacy_default()
         self._normalize_templates()
         self._seed_sample_template()
+        self._normalize_recipes()
         self._normalize_voiceprints()
+        self._normalize_mcp_settings()
+
 
     def _migrate_language_zh(self) -> None:
         """Migrate the legacy single ``"zh"`` language to Simplified (``zh-Hans``).
@@ -599,6 +608,34 @@ class Config:
         elif current in self._RETIRED_SUMMARY_MODELS:
             self._config["model"] = self.DEFAULT_MODEL
             self._save()
+
+
+    def _adopt_apple_system_default(self) -> None:
+        """On Darwin, adopt Apple System Language Model when available and unset/auto."""
+        if self._load_failed:
+            return
+        if self.get_ai_provider() != "local":
+            return
+        source = self._config.get("summary_model_source")
+        current = self._config.get("model", self.DEFAULT_MODEL)
+        from src.apple_lm import (
+            APPLE_SYSTEM_MODEL,
+            apple_lm_available,
+        )
+
+        if source is None:
+            source = (
+                "auto"
+                if current in (self.DEFAULT_MODEL, APPLE_SYSTEM_MODEL)
+                else "user"
+            )
+            self._config["summary_model_source"] = source
+
+        if source == "auto":
+            target = APPLE_SYSTEM_MODEL if apple_lm_available() else self.DEFAULT_MODEL
+            if current != target:
+                self._config["model"] = target
+                self._save()
 
     def _migrate_cloud_model_map(self) -> None:
         """One-shot migration from legacy single 'cloud_model' to per-provider
@@ -853,8 +890,10 @@ class Config:
 
     def _get_default_config(self) -> Dict[str, Any]:
         """Get default configuration."""
+        from src.apple_lm import resolve_default_summary_model
         return {
-            "model": self.DEFAULT_MODEL,
+            "model": resolve_default_summary_model(),
+            "summary_model_source": "auto",
             "notifications_enabled": True,
             # Default ON — the calendar-based pre-meeting heads-up, independent
             # of notifications_enabled (which now only covers note-ready/
@@ -909,6 +948,12 @@ class Config:
             # vault folder. One-way (Steno -> vault); see app/obsidian-sync.js.
             "obsidian_sync_enabled": False,
             "obsidian_vault_path": "",
+            # Local MCP server settings (#contract-item-5).
+            # Secret-free: the MCP API key is encrypted and stored separately by
+            # the Electron main process in .mcp-api-key; config.json NEVER stores
+            # credentials or tokens.
+            "mcp_enabled": False,
+            "mcp_port": 27127,
             # Default ON — when the app is idle and nothing is in flight, a
             # downloaded update installs itself and relaunches so the user
             # never has to click "Restart". The "update available/downloaded"
@@ -930,6 +975,7 @@ class Config:
                 self.IDENTITY_MATCHING_PRIVACY_DEFAULT_VERSION,
             "whisper_model": "large-v3-turbo",
             "transcription_engine": "parakeet",
+            "chat_recipes": [],
             "version": "1.0"
         }
 
@@ -972,21 +1018,24 @@ class Config:
         """Get the configured model name."""
         return self._config.get("model", self.DEFAULT_MODEL)
 
-    def set_model(self, model_name: str) -> bool:
+    def set_model(self, model_name: str, *, source: str = "user") -> bool:
         """
         Set the model to use for summarization.
 
         Args:
-            model_name: Name of the model (e.g., "llama3.1:8b")
+            model_name: Name of the model (e.g., "llama3.1:8b" or "apple:system")
+            source: "user" (explicit user pick) or "auto" (implicit/system default resolution)
 
         Returns:
             True if saved successfully, False otherwise
         """
         # Validate model name
-        if model_name not in self.SUPPORTED_MODELS:
+        from src.apple_lm import is_apple_system_model
+        if model_name not in self.SUPPORTED_MODELS and not is_apple_system_model(model_name):
             logger.warning(f"Model {model_name} not in supported list, but allowing anyway")
 
         self._config["model"] = model_name
+        self._config["summary_model_source"] = source
         return self._save()
 
     # --- Report templates ---------------------------------------------------
@@ -1111,6 +1160,65 @@ class Config:
         if template_id not in overrides:
             return True  # already at shipped default — no-op success
         del overrides[template_id]
+        return self._save()
+
+    # --- Chat recipes -------------------------------------------------------
+    def _normalize_recipes(self) -> None:
+        """Coerce persisted chat recipes state into a list of dicts on every load."""
+        if self._load_failed:
+            return
+        recipes_raw = self._config.get("chat_recipes", [])
+        self._config["chat_recipes"] = (
+            [r for r in recipes_raw if isinstance(r, dict)]
+            if isinstance(recipes_raw, list)
+            else []
+        )
+
+    def get_chat_recipes(self) -> list:
+        """Return the list of chat recipes."""
+        return [dict(r) for r in self._config.get("chat_recipes", []) or []]
+
+    def get_chat_recipe(self, recipe_id: str) -> Optional[dict]:
+        """Return the chat recipe with the given id, or None if not found."""
+        return next((r for r in self.get_chat_recipes() if r.get("id") == recipe_id), None)
+
+    def save_chat_recipe(self, r: dict) -> tuple:
+        """Upsert a chat recipe. Returns (ok, error, saved_recipe)."""
+        if not isinstance(r, dict):
+            return False, "Invalid recipe payload", {}
+        ok, err = _templates.validate_recipe(r)
+        if not ok:
+            return False, err, {}
+
+        recipes = self._config.setdefault("chat_recipes", [])
+        rid = r.get("id")
+        existing = next((item for item in recipes if isinstance(item, dict) and item.get("id") == rid), None) if rid else None
+        if existing is not None:
+            existing.update({
+                "label": r["label"].strip(),
+                "prompt": r["prompt"].strip(),
+            })
+            saved = dict(existing)
+        else:
+            existing_ids = {item.get("id") for item in recipes if isinstance(item, dict)}
+            new_id = _templates.new_template_id(r["label"], existing_ids)
+            saved = {
+                "id": new_id,
+                "label": r["label"].strip(),
+                "prompt": r["prompt"].strip(),
+            }
+            recipes.append(saved)
+        if not self._save():
+            return False, "Failed to save config", {}
+        return True, "", dict(saved)
+
+    def delete_chat_recipe(self, recipe_id: str) -> bool:
+        """Delete a chat recipe by id. Returns True if deleted, False if not found."""
+        recipes = self._config.get("chat_recipes", [])
+        remaining = [item for item in recipes if isinstance(item, dict) and item.get("id") != recipe_id]
+        if len(remaining) == len(recipes):
+            return False
+        self._config["chat_recipes"] = remaining
         return self._save()
 
     def _normalize_voiceprints(self) -> None:
@@ -1780,8 +1888,10 @@ class Config:
         Returns:
             Dictionary with model metadata or None if not found
         """
+        from src.apple_lm import is_apple_system_model, apple_system_model_info
+        if is_apple_system_model(model_name):
+            return apple_system_model_info(is_default=self.get_model() == model_name)
         return self.SUPPORTED_MODELS.get(model_name)
-
     def list_supported_models(self) -> Dict[str, Dict[str, str]]:
         """Get all supported models with their metadata."""
         return self.SUPPORTED_MODELS.copy()
@@ -2053,6 +2163,115 @@ class Config:
         self._config["silence_auto_stop_minutes"] = minutes
         return self._save()
 
+
+    # --- Local MCP Server ---------------------------------------------------
+    # Secret-free: the MCP API key is encrypted and stored separately by the
+    # Electron main process in .mcp-api-key; config.json NEVER stores secrets.
+
+    def _normalize_mcp_settings(self) -> None:
+        """Coerce persisted MCP settings to valid types on load.
+
+        Secret-free: the MCP API key is stored separately (encrypted by Electron)
+        and must never be placed in config.json.
+        """
+        if self._load_failed:
+            return
+        if "mcp_enabled" in self._config:
+            val = self._config["mcp_enabled"]
+            if not isinstance(val, bool):
+                self._config["mcp_enabled"] = self.DEFAULT_MCP_ENABLED
+        if "mcp_port" in self._config:
+            val = self._config["mcp_port"]
+            if isinstance(val, int) and not isinstance(val, bool) and (self.MIN_MCP_PORT <= val <= self.MAX_MCP_PORT):
+                pass
+            else:
+                self._config["mcp_port"] = self.DEFAULT_MCP_PORT
+
+    def get_mcp_enabled(self) -> bool:
+        """Get whether the local MCP server is enabled. Default False."""
+        val = self._config.get("mcp_enabled", self.DEFAULT_MCP_ENABLED)
+        if isinstance(val, bool):
+            return val
+        return self.DEFAULT_MCP_ENABLED
+
+    def set_mcp_enabled(self, enabled: bool) -> bool:
+        """Set whether the local MCP server is enabled.
+
+        Args:
+            enabled: True to enable the local MCP server, False to disable.
+
+        Returns:
+            True if saved successfully, False otherwise.
+        """
+        self._config["mcp_enabled"] = bool(enabled)
+        return self._save()
+
+    def get_mcp_port(self) -> int:
+        """Get the local MCP server port. Default 27127 (range 1024-65535)."""
+        val = self._config.get("mcp_port", self.DEFAULT_MCP_PORT)
+        if isinstance(val, int) and not isinstance(val, bool) and (self.MIN_MCP_PORT <= val <= self.MAX_MCP_PORT):
+            return val
+        return self.DEFAULT_MCP_PORT
+
+    def set_mcp_port(self, port: int) -> bool:
+        """Set the local MCP server port.
+
+        Args:
+            port: Port number between 1024 and 65535.
+
+        Returns:
+            True if valid and saved successfully, False if rejected or save failed.
+        """
+        if isinstance(port, bool) or not isinstance(port, int):
+            return False
+        if not (self.MIN_MCP_PORT <= port <= self.MAX_MCP_PORT):
+            logger.error(
+                f"Invalid MCP port: {port}; expected integer between "
+                f"{self.MIN_MCP_PORT} and {self.MAX_MCP_PORT}"
+            )
+            return False
+        self._config["mcp_port"] = port
+        return self._save()
+
+    def get_mcp_settings(self) -> Dict[str, Any]:
+        """Get the local MCP server settings (secret-free).
+
+        Returns:
+            Dictionary with 'mcp_enabled' (bool) and 'mcp_port' (int).
+            Note: The API key is stored encrypted separately by the Electron
+            main process and is NEVER stored in config.json.
+        """
+        return {
+            "mcp_enabled": self.get_mcp_enabled(),
+            "mcp_port": self.get_mcp_port(),
+        }
+
+    def set_mcp_settings(
+        self,
+        enabled: Optional[bool] = None,
+        port: Optional[int] = None,
+    ) -> bool:
+        """Set local MCP settings atomically.
+
+        Args:
+            enabled: Optional bool to enable/disable.
+            port: Optional int port (1024-65535).
+
+        Returns:
+            True if valid and saved, False if rejected or save failed.
+        """
+        if port is not None:
+            if isinstance(port, bool) or not isinstance(port, int) or not (self.MIN_MCP_PORT <= port <= self.MAX_MCP_PORT):
+                logger.error(
+                    f"Invalid MCP port: {port}; expected integer between "
+                    f"{self.MIN_MCP_PORT} and {self.MAX_MCP_PORT}"
+                )
+                return False
+        if enabled is not None:
+            self._config["mcp_enabled"] = bool(enabled)
+        if port is not None:
+            self._config["mcp_port"] = port
+        return self._save()
 
     def get_transcription_engine(self) -> str:
         """Return the active ASR engine ('parakeet' or 'whisper').

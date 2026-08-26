@@ -293,6 +293,32 @@ def _find_recording_for_stem(recordings_dir, stem: str):
     return None
 
 
+def _clean_attendee_name(raw: str) -> Optional[str]:
+    """Extract and validate a display name for an attendee.
+
+    If the value contains an angle-bracketed email (e.g. 'John Doe <john@example.com>'),
+    extracts only the display portion. If only an email address is present with no
+    display name, returns None (attendees in meeting notes are user-visible display names
+    only, never raw email addresses).
+    """
+    if not raw or not isinstance(raw, str):
+        return None
+    s = raw.strip()
+    if not s:
+        return None
+    import re
+    m = re.match(r'^(.*?)\s*<[^>]+>$', s)
+    if m:
+        display = m.group(1).strip().strip('"\'')
+        if display and not (re.match(r'^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$', display)):
+            return display
+        return None
+    if '@' in s and re.match(r'^(mailto:)?([a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+)$', s):
+        return None
+    cleaned = s.strip('"\'').strip()
+    return cleaned if cleaned else None
+
+
 def _render_frontmatter(meta: dict) -> list[str]:
     """Render a meeting .md YAML frontmatter block (including the enclosing
     ``---`` fences) from a flat dict, with the type-specific scalar
@@ -310,6 +336,8 @@ def _render_frontmatter(meta: dict) -> list[str]:
             lines.append(f'{k}: {"true" if v else "false"}')
         elif isinstance(v, int):
             lines.append(f'{k}: {v}')
+        elif isinstance(v, list):
+            lines.append(f'{k}: {json.dumps(v)}')
         else:
             escaped = str(v).replace('\\', '\\\\').replace('"', '\\"')
             lines.append(f'{k}: "{escaped}"')
@@ -672,6 +700,7 @@ Summary output language: {config.get_language_name(output_language)}
         session_name: str,
         transcript_data: dict,
         notes_text: Optional[str] = None,
+        attendees: Optional[list[str]] = None,
     ) -> dict:
         """Save a marked, reprocessable meeting when transcription crashed.
 
@@ -708,6 +737,9 @@ Summary output language: {config.get_language_name(output_language)}
             'audio_file': str(audio_path),
             'error': short_error,
         }
+        cleaned_attendees = [cleaned for a in (attendees or []) if (cleaned := _clean_attendee_name(a))]
+        if cleaned_attendees:
+            md_meta['attendees'] = cleaned_attendees
         md_lines = _render_frontmatter(md_meta)
         md_lines.append('')
         # Write the message under a `## Summary` heading so it survives
@@ -756,8 +788,14 @@ Summary output language: {config.get_language_name(output_language)}
             }
         }
 
-    async def process_recording_streaming(self, audio_file: str, session_name: str = "Recording", notes_text: Optional[str] = None) -> dict:
-        """Process recording with streaming summary output via CHUNK: protocol."""
+    async def process_recording_streaming(
+        self,
+        audio_file: str,
+        session_name: str = "Recording",
+        notes_text: Optional[str] = None,
+        attendees: Optional[list[str]] = None,
+        template_id: Optional[str] = None,
+    ) -> dict:
         import base64
         print(f"🔄 Processing recording: {audio_file}")
 
@@ -772,10 +810,9 @@ Summary output language: {config.get_language_name(output_language)}
         transcript_data = await self.transcribe_audio(audio_file, session_name)
 
         # A transcription crash is not silence — preserve the audio and save a
-        # marked, reprocessable meeting instead of summarising a fake-empty one.
+        cleaned_attendees = [cleaned for a in (attendees or []) if (cleaned := _clean_attendee_name(a))]
         if transcript_data.get("transcription_failed"):
-            return self._handle_transcription_failure(audio_path, session_name, transcript_data, notes_text)
-
+            return self._handle_transcription_failure(audio_path, session_name, transcript_data, notes_text, attendees)
         transcript_text = transcript_data.get("transcript_text", "")
         diarised_text = transcript_data.get("diarised_text")
         text_for_summary = diarised_text or transcript_text
@@ -810,6 +847,8 @@ Summary output language: {config.get_language_name(output_language)}
                 'is_diarised': transcript_data.get('is_diarised', False),
                 'notes_generated': False,
             }
+            if cleaned_attendees:
+                md_meta['attendees'] = cleaned_attendees
             md_lines = _render_frontmatter(md_meta)
             md_lines.append('')
             md_lines.append('## Transcript')
@@ -907,6 +946,8 @@ Summary output language: {config.get_language_name(output_language)}
             'detected_language': transcript_data.get('detected_language'),
             'is_diarised': transcript_data.get('is_diarised', False),
         }
+        if cleaned_attendees:
+            md_meta['attendees'] = cleaned_attendees
         md_lines = _render_frontmatter(md_meta)
         md_lines.append('')
         md_lines.append(streamed_md)
@@ -939,13 +980,28 @@ Summary output language: {config.get_language_name(output_language)}
                 print(f"🗑️ Cleaned up audio file: {audio_path}")
             except OSError:
                 pass
-
         state_file = Path("recorder_state.json")
         if state_file.exists():
             try:
                 state_file.unlink()
             except OSError:
                 pass
+        # Check recurring-meeting folder routing
+        from src.folders import get_folders_manager
+        folders_mgr = get_folders_manager()
+        routed_folder_id = folders_mgr.get_folder_for_recurring_title(session_name)
+        folder_ids_for_report = []
+        if routed_folder_id:
+            folders_mgr.add_meeting_to_folder(summary_path, routed_folder_id)
+            folder_ids_for_report = [routed_folder_id]
+
+        # Generate default template report (explicit choice -> folder template -> global default)
+        from src.config import get_config
+        generate_default_template_report(
+            summary_path, text_for_summary, notes_text, output_language,
+            duration_minutes, get_config(), self.summarizer,
+            template_id=template_id, folder_ids=folder_ids_for_report,
+        )
 
         print(f"✅ Complete processing saved: {summary_path}")
         print(f"SAVED:{summary_path}", flush=True)
@@ -959,15 +1015,41 @@ Summary output language: {config.get_language_name(output_language)}
 
 
 def generate_default_template_report(summary_path, transcript, notes, language,
-                                     duration_minutes, config, summarizer):
-    """Best-effort: if the configured default template is not 'standard', generate
-    its report into the meeting's sidecar and make it active. Additive — the
-    Standard note is untouched. Never raises (a new recording must not fail because
-    of the extra report)."""
+                                     duration_minutes, config, summarizer,
+                                     template_id: Optional[str] = None,
+                                     folder_ids: Optional[list[str]] = None):
+    """Best-effort: generate a template report for a newly processed note.
+
+    Resolution order:
+    1. Explicit choice (template_id, e.g. from --template-id)
+    2. Per-folder default template (from any folder the note belongs to)
+    3. Global default_template_id (from config)
+
+    Additive — the Standard note is untouched. Never raises (a new recording
+    must not fail because of the extra report)."""
     try:
         from src import reports as _reports
         from src import report_store as _store
-        tid = config.get_default_template_id()
+        from src.folders import get_folders_manager
+
+        tid = template_id
+        if not tid:
+            if folder_ids is None:
+                try:
+                    meeting_data = _parse_meeting_markdown(summary_path)
+                    folder_ids = meeting_data.get('folders') or []
+                except Exception:
+                    folder_ids = []
+            if folder_ids:
+                folders_mgr = get_folders_manager()
+                for fid in folder_ids:
+                    folder = folders_mgr.get_folder(fid)
+                    if folder and folder.get("template_id"):
+                        tid = folder["template_id"]
+                        break
+        if not tid:
+            tid = config.get_default_template_id()
+
         if not tid or tid == "standard":
             return None
         tmpl = config.get_template(tid)
@@ -1161,7 +1243,11 @@ def _read_existing_user_notes(summary_path: Path):
                    '(continue-recording): the new transcript is appended to the '
                    "note's Transcript section, the note is marked notes_stale, "
                    'and no summary/title generation runs.')
-def process_streaming(audio_file, name, notes, live_transcript, append_to):
+@click.option('--attendee', 'attendees', multiple=True,
+              help='Display name of meeting attendee (repeatable)')
+@click.option('--template-id', 'template_id', default=None,
+              help='Template ID for post-processing report')
+def process_streaming(audio_file, name, notes, live_transcript, append_to, attendees=(), template_id=None):
     """Process audio with streaming summary output.
 
     Transcribes audio, then streams the summary as CHUNK: prefixed lines
@@ -1171,6 +1257,13 @@ def process_streaming(audio_file, name, notes, live_transcript, append_to):
 
     async def run():
         recorder = MeetingPipeline()
+        if template_id:
+            from src.config import get_config as _get_cfg
+            tmpl = _get_cfg().get_template(template_id)
+            if tmpl is None:
+                print("STREAM_ERROR:Unknown template", flush=True)
+                sys.exit(1)
+        cleaned_attendees = [cleaned for a in attendees if (cleaned := _clean_attendee_name(a))]
 
         # Read user notes
         notes_text = None
@@ -1412,6 +1505,8 @@ def process_streaming(audio_file, name, notes, live_transcript, append_to):
                 'is_diarised': transcript_data.get('is_diarised', False),
                 'notes_generated': False,
             }
+            if cleaned_attendees:
+                md_meta['attendees'] = cleaned_attendees
             if is_live_transcript:
                 md_meta['is_live_transcript'] = True
             md_lines = _render_frontmatter(md_meta)
@@ -1527,6 +1622,8 @@ def process_streaming(audio_file, name, notes, live_transcript, append_to):
             'detected_language': transcript_data.get('detected_language'),
             'is_diarised': transcript_data.get('is_diarised', False),
         }
+        if cleaned_attendees:
+            md_meta['attendees'] = cleaned_attendees
         # Mark live-sourced meetings (#207) so the UI and future code know this
         # transcript came from the live capture, not a batch transcription.
         if is_live_transcript:
@@ -1572,14 +1669,21 @@ def process_streaming(audio_file, name, notes, live_transcript, append_to):
 
         print(f"SAVED:{summary_path}", flush=True)
 
-        # B3: if a non-Standard default template is configured, additionally
-        # generate its report into the sidecar (best-effort; the Standard note
-        # is already saved above).
+        # Check recurring-meeting folder routing
+        from src.folders import get_folders_manager
+        folders_mgr = get_folders_manager()
+        routed_folder_id = folders_mgr.get_folder_for_recurring_title(session_name)
+        folder_ids_for_report = []
+        if routed_folder_id:
+            folders_mgr.add_meeting_to_folder(summary_path, routed_folder_id)
+            folder_ids_for_report = [routed_folder_id]
+
+        # Generate template report (explicit choice -> folder template -> global default)
         generate_default_template_report(
             summary_path, text_for_summary, notes_text, output_language,
             duration_minutes, config, recorder.summarizer,
+            template_id=template_id, folder_ids=folder_ids_for_report,
         )
-
     asyncio.run(run())
 
 
@@ -1993,6 +2097,49 @@ def set_silence_auto_stop_minutes_cmd(minutes: int):
             "error": f"Unsupported minutes value; expected one of {list(config.SUPPORTED_SILENCE_AUTO_STOP_MINUTES)}",
         }))
 
+
+
+@cli.command(name='get-mcp-settings')
+def get_mcp_settings_cmd():
+    """Get the local MCP server settings (enabled status and port)."""
+    from src.config import get_config
+    config = get_config()
+    print(json.dumps({
+        "mcp_enabled": config.get_mcp_enabled(),
+        "mcp_port": config.get_mcp_port(),
+    }))
+
+
+@cli.command(name='set-mcp-settings')
+@click.option('--enabled/--disabled', 'enabled', default=None, help='Enable or disable the local MCP server')
+@click.option('--port', type=int, default=None, help='Port for the local MCP server (1024-65535)')
+def set_mcp_settings_cmd(enabled, port):
+    """Set the local MCP server settings (secret-free).
+
+    The MCP API key is stored separately (encrypted by Electron in .mcp-api-key)
+    and must never be placed in config.json.
+    """
+    import sys
+    from src.config import get_config
+    config = get_config()
+
+    if port is not None and not (config.MIN_MCP_PORT <= port <= config.MAX_MCP_PORT):
+        print(json.dumps({
+            "success": False,
+            "error": f"Invalid MCP port: {port}; expected integer between {config.MIN_MCP_PORT} and {config.MAX_MCP_PORT}",
+        }))
+        sys.exit(1)
+
+    if enabled is not None or port is not None:
+        if not config.set_mcp_settings(enabled=enabled, port=port):
+            print(json.dumps({"success": False, "error": "Failed to persist MCP settings"}))
+            sys.exit(1)
+
+    print(json.dumps({
+        "success": True,
+        "mcp_enabled": config.get_mcp_enabled(),
+        "mcp_port": config.get_mcp_port(),
+    }))
 
 @cli.command()
 def status():
@@ -2852,7 +2999,12 @@ def _parse_meeting_markdown(md_path):
                         try:
                             value = json.loads(value)
                         except (ValueError, TypeError):
-                            value = []
+                            try:
+                                import ast
+                                parsed = ast.literal_eval(value)
+                                value = parsed if isinstance(parsed, list) else []
+                            except Exception:
+                                value = []
                     elif value == 'null':
                         value = None
                     elif value == 'true':
@@ -2972,7 +3124,7 @@ def _parse_meeting_markdown(md_path):
     if meta.get('processing'):
         session_info['processing'] = True
 
-    return {
+    res = {
         'session_info': session_info,
         'summary': sections.get('summary', ''),
         'participants': participants,
@@ -2985,6 +3137,9 @@ def _parse_meeting_markdown(md_path):
         'user_notes': sections.get('user notes'),
         'folders': meta.get('folders', []),
     }
+    if 'attendees' in meta and isinstance(meta['attendees'], list):
+        res['attendees'] = meta['attendees']
+    return res
 
 
 @cli.command()
@@ -3395,6 +3550,8 @@ def reprocess(summary_file, regenerate_title, retranscribe):
             # "only set when true, never explicit false" pattern used elsewhere.
             if existing_data.get('session_info', {}).get('is_live_transcript'):
                 md_meta['is_live_transcript'] = True
+            if existing_data.get('attendees'):
+                md_meta['attendees'] = existing_data['attendees']
             for k, v in md_meta.items():
                 if v is None:
                     md_lines.append(f'{k}: null')
@@ -3838,6 +3995,38 @@ def regen_title(summary_file):
         print(f"ERROR: Failed to regenerate title: {e}")
         sys.exit(1)
 
+MAX_LIVE_QUERY_STDIN_BYTES = 1024 * 1024  # 1 MiB
+MAX_LIVE_QUERY_TRANSCRIPT_CHARS = 100_000
+MAX_LIVE_QUERY_QUESTION_CHARS = 2_000
+MAX_LIVE_QUERY_ANSWER_BYTES = 1024 * 1024  # 1 MiB
+
+
+def _live_query_transcript_budget(ai_provider: str, model: str) -> int:
+    """Char budget for the transcript query, sized to the active model.
+
+    Matches _chat_corpus_char_budget: generous for cloud/adapter, derived from
+    resolve_num_ctx for local/remote Ollama/Apple LM models.
+    """
+    if ai_provider in ("local", "remote"):
+        from src.summarizer import resolve_num_ctx
+        return int(resolve_num_ctx(model) * 3.5 * 0.55)
+    return 400_000
+
+
+def _trim_live_transcript(transcript: str, budget: int) -> str:
+    """Trim transcript oldest-first by whole leading lines until it fits budget."""
+    if len(transcript) <= budget:
+        return transcript
+    marker = "[earlier transcript omitted]"
+    lines = transcript.split("\n")
+    for i in range(1, len(lines)):
+        candidate = marker + "\n" + "\n".join(lines[i:])
+        if len(candidate) <= budget:
+            return candidate
+    if len(marker) <= budget:
+        return marker
+    return ""
+
 
 @cli.command()
 @click.argument('transcript_file')
@@ -3931,8 +4120,16 @@ def query(transcript_file, question):
         language = resolve_persisted_output_language(
             session_info, detect_text or transcript_text, config.get_language()
         )
+        ai_provider = config.get_ai_provider()
+        model = config.get_model()
+        raw_budget = _live_query_transcript_budget(ai_provider, model)
+        effective_budget = min(MAX_LIVE_QUERY_TRANSCRIPT_CHARS, raw_budget)
+        trimmed_transcript = _trim_live_transcript(transcript_text.strip(), effective_budget)
+        if not trimmed_transcript or not trimmed_transcript.strip():
+            print(json.dumps({"success": False, "error": "Transcript is empty"}))
+            return
         summarizer = OllamaSummarizer()
-        answer = summarizer.query_transcript(transcript_text, question, language=language)
+        answer = summarizer.query_transcript(trimmed_transcript, question, language=language)
 
         if answer:
             print(json.dumps({"success": True, "answer": answer}))
@@ -4009,7 +4206,12 @@ def query_streaming(transcript_file, question):
             print(f"STREAM_ERROR:Failed to read file: {e}", flush=True)
             return
 
+    if not transcript_text or transcript_text.strip() == "":
+        print("STREAM_ERROR:Transcript is empty", flush=True)
+        return
+
     from src.config import get_config
+    config = get_config()
     # Provenance-aware: honour the note's saved language only when it was a real
     # pin or a Whisper detection, else re-detect (over the RAW transcript) so a
     # stale Parakeet "en" (#283) doesn't lock chat to English. CLI contract
@@ -4017,16 +4219,320 @@ def query_streaming(transcript_file, question):
     language = resolve_persisted_output_language(
         session_info, detect_text or transcript_text, get_config().get_language()
     )
+    ai_provider = config.get_ai_provider()
+    model = config.get_model()
+    raw_budget = _live_query_transcript_budget(ai_provider, model)
+    effective_budget = min(MAX_LIVE_QUERY_TRANSCRIPT_CHARS, raw_budget)
+    trimmed_transcript = _trim_live_transcript(transcript_text.strip(), effective_budget)
+    if not trimmed_transcript or not trimmed_transcript.strip():
+        print("STREAM_ERROR:Transcript is empty", flush=True)
+        return
 
     try:
         summarizer = OllamaSummarizer()
-        for chunk in summarizer.query_transcript_streaming(transcript_text, question, language=language):
+        for chunk in summarizer.query_transcript_streaming(trimmed_transcript, question, language=language):
             encoded = base64.b64encode(chunk.encode('utf-8')).decode('ascii')
             sys.stdout.write(f"CHAT_CHUNK:{encoded}\n")
             sys.stdout.flush()
         print("CHAT_STREAM_COMPLETE", flush=True)
     except Exception as e:
         print(f"CHAT_STREAM_ERROR:{e}", flush=True)
+
+MAX_LIVE_QUERY_STDIN_BYTES = 1024 * 1024  # 1 MiB
+MAX_LIVE_QUERY_TRANSCRIPT_CHARS = 100_000
+MAX_LIVE_QUERY_QUESTION_CHARS = 2_000
+MAX_LIVE_QUERY_ANSWER_BYTES = 1024 * 1024  # 1 MiB
+
+
+@cli.command(name='query-live-streaming')
+@click.pass_context
+def query_live_streaming(ctx):
+    """Answer a question from the finalized live transcript.
+
+    Reads bounded JSON ``{"transcript": "...", "question": "...", "history": [...]}``
+    from stdin (``history`` optional) and uses the same persisted provider and
+    model as meeting summaries. Streams ``CHAT_CHUNK:<base64>`` lines, then
+    ``CHAT_STREAM_COMPLETE`` (or a fixed ``CHAT_STREAM_ERROR`` on failure).
+    Transcript, question, and history content never enters argv, logs, or error text.
+    """
+    import sys
+    import json
+    import base64
+    # This subprocess emits a machine protocol only. Provider/config diagnostics
+    # stay suppressed so no transcript or question content can reach stderr.
+    previous_logging_disable = logging.root.manager.disable
+    logging.disable(logging.CRITICAL)
+    ctx.call_on_close(lambda: logging.disable(previous_logging_disable))
+
+    try:
+        input_stream = getattr(sys.stdin, "buffer", sys.stdin)
+        raw_payload = input_stream.read(MAX_LIVE_QUERY_STDIN_BYTES + 1)
+        if isinstance(raw_payload, str):
+            raw_payload = raw_payload.encode("utf-8")
+    except Exception:
+        raw_payload = b""
+
+    if not raw_payload or not raw_payload.strip():
+        print(
+            "CHAT_STREAM_ERROR:Empty live transcript (nothing to query)",
+            flush=True,
+        )
+        sys.exit(1)
+
+    if len(raw_payload) > MAX_LIVE_QUERY_STDIN_BYTES:
+        print(
+            "CHAT_STREAM_ERROR:Live query payload exceeds maximum length",
+            flush=True,
+        )
+        sys.exit(1)
+
+    try:
+        data = json.loads(raw_payload)
+    except Exception:
+        print(
+            "CHAT_STREAM_ERROR:Invalid live query payload",
+            flush=True,
+        )
+        sys.exit(1)
+
+    if not isinstance(data, dict):
+        print(
+            "CHAT_STREAM_ERROR:Invalid live query payload",
+            flush=True,
+        )
+        sys.exit(1)
+
+    transcript = data.get("transcript")
+    question = data.get("question")
+    raw_history = data.get("history")
+
+    if not isinstance(transcript, str) or not transcript.strip():
+        print(
+            "CHAT_STREAM_ERROR:Empty live transcript (nothing to query)",
+            flush=True,
+        )
+        sys.exit(1)
+
+    if not isinstance(question, str) or not question.strip():
+        print(
+            "CHAT_STREAM_ERROR:Empty live query question",
+            flush=True,
+        )
+        sys.exit(1)
+
+    if len(question) > MAX_LIVE_QUERY_QUESTION_CHARS:
+        print(
+            "CHAT_STREAM_ERROR:Live query question exceeds maximum length",
+            flush=True,
+        )
+        sys.exit(1)
+
+    history = None
+    if raw_history is not None:
+        if not isinstance(raw_history, list):
+            print(
+                "CHAT_STREAM_ERROR:Invalid live query payload",
+                flush=True,
+            )
+            sys.exit(1)
+        valid_entries = []
+        for entry in raw_history:
+            if not isinstance(entry, dict):
+                print(
+                    "CHAT_STREAM_ERROR:Invalid live query payload",
+                    flush=True,
+                )
+                sys.exit(1)
+            role = entry.get("role")
+            if role not in ("user", "assistant"):
+                print(
+                    "CHAT_STREAM_ERROR:Invalid live query payload",
+                    flush=True,
+                )
+                sys.exit(1)
+            content = entry.get("content")
+            if not isinstance(content, str):
+                print(
+                    "CHAT_STREAM_ERROR:Invalid live query payload",
+                    flush=True,
+                )
+                sys.exit(1)
+            if len(content) > 4000:
+                print(
+                    "CHAT_STREAM_ERROR:Invalid live query payload",
+                    flush=True,
+                )
+                sys.exit(1)
+            valid_entries.append({"role": role, "content": content})
+
+        valid_entries = valid_entries[-6:]
+        while valid_entries and sum(len(e["content"]) for e in valid_entries) > 12000:
+            valid_entries.pop(0)
+        history = valid_entries
+
+    from src.config import get_config
+
+    config = get_config()
+    ai_provider = config.get_ai_provider()
+    model = config.get_model()
+    raw_budget = _live_query_transcript_budget(ai_provider, model)
+    effective_budget = min(MAX_LIVE_QUERY_TRANSCRIPT_CHARS, raw_budget)
+
+    trimmed_transcript = _trim_live_transcript(transcript.strip(), effective_budget)
+    if not trimmed_transcript or not trimmed_transcript.strip():
+        print(
+            "CHAT_STREAM_ERROR:Empty live transcript (nothing to query)",
+            flush=True,
+        )
+        sys.exit(1)
+
+    # Reuse the same language resolution the query prompt uses so the live
+    # answer respects the user's language pin / detection like every other path.
+    language = resolve_output_language(
+        config.get_language(), None, trimmed_transcript
+    )
+
+    try:
+        summarizer = OllamaSummarizer()
+        total_answer_bytes = 0
+        for chunk in summarizer.query_transcript_streaming_strict(
+            trimmed_transcript, question.strip(), language=language, history=history
+        ):
+            if not isinstance(chunk, str):
+                raise TypeError("Live query provider returned a non-text chunk")
+            chunk_bytes = chunk.encode('utf-8')
+            total_answer_bytes += len(chunk_bytes)
+            if total_answer_bytes > MAX_LIVE_QUERY_ANSWER_BYTES:
+                raise ValueError("Live query answer exceeded size limit")
+            encoded = base64.b64encode(chunk_bytes).decode('ascii')
+            sys.stdout.write(f"CHAT_CHUNK:{encoded}\n")
+            sys.stdout.flush()
+        print("CHAT_STREAM_COMPLETE", flush=True)
+    except Exception:
+        print("CHAT_STREAM_ERROR:Live query failed", flush=True)
+        sys.exit(1)
+
+
+
+
+_ENGLISH_STOPWORDS = {
+    "a", "about", "above", "after", "again", "against", "all", "am", "an", "and", "any",
+    "are", "aren't", "as", "at", "be", "because", "been", "before", "being", "below",
+    "between", "both", "but", "by", "can", "can't", "cannot", "could", "couldn't", "did",
+    "didn't", "do", "does", "doesn't", "doing", "don't", "down", "during", "each", "few",
+    "for", "from", "further", "had", "hadn't", "has", "hasn't", "have", "haven't", "having",
+    "he", "he'd", "he'll", "he's", "her", "here", "here's", "hers", "herself", "him",
+    "himself", "his", "how", "how's", "i", "i'd", "i'll", "i'm", "i've", "if", "in",
+    "into", "is", "isn't", "it", "it's", "its", "itself", "let's", "me", "more", "most",
+    "mustn't", "my", "myself", "no", "nor", "not", "of", "off", "on", "once", "only",
+    "or", "other", "ought", "our", "ours", "ourselves", "out", "over", "own", "same",
+    "shan't", "she", "she'd", "she'll", "she's", "should", "shouldn't", "so", "some",
+    "such", "than", "that", "that's", "the", "their", "theirs", "them", "themselves",
+    "then", "there", "there's", "these", "they", "they'd", "they'll", "they're", "they've",
+    "this", "those", "through", "to", "too", "under", "until", "up", "very", "was",
+    "wasn't", "we", "we'd", "we'll", "we're", "we've", "were", "weren't", "what", "what's",
+    "when", "when's", "where", "where's", "which", "while", "who", "who's", "whom", "why",
+    "why's", "with", "won't", "would", "wouldn't", "you", "you'd", "you'll", "you're",
+    "you've", "your", "yours", "yourself", "yourselves"
+}
+
+
+def _extract_query_features(text: str) -> tuple[set[str], set[str]]:
+    """Extract space-delimited words and CJK character-bigrams from text.
+
+    CJK languages (Traditional Chinese, Japanese, Korean) do not use spaces
+    between words to segment tokens. For space-delimited text, we extract
+    lowercased word tokens excluding English stopwords. For CJK sequences,
+    we extract character bigrams (and unigrams for single-character sequences)
+    so that multi-character concepts match deterministically without needing
+    heavy third-party segmentation libraries or network dependencies.
+    """
+    if not text:
+        return set(), set()
+    import re
+    lowered = text.lower()
+    words = {
+        w for w in re.findall(r'\b[a-z0-9_\'-]+\b', lowered)
+        if w not in _ENGLISH_STOPWORDS and len(w) > 1
+    }
+    cjk_pattern = re.compile(
+        r'[\u4e00-\u9fff\u3400-\u4dbf\u3040-\u309f\u30a0-\u30ff\uf900-\ufaff\uac00-\ud7af]+'
+    )
+    bigrams = set()
+    for seg in cjk_pattern.findall(lowered):
+        if len(seg) == 1:
+            bigrams.add(seg)
+        else:
+            for i in range(len(seg) - 1):
+                bigrams.add(seg[i:i + 2])
+    return words, bigrams
+
+
+def _question_relevance_score(question: str, haystack: str) -> float:
+    """Compute a deterministic relevance score (0.0 to 1.0) of a haystack against a question.
+
+    Uses case-folded token overlap for space-delimited words plus character-bigram
+    overlap for CJK text. Returns 0.0 when there is no lexical overlap.
+    Pure function for unit-testing without external dependencies.
+    """
+    if not question or not haystack:
+        return 0.0
+    q_words, q_bigrams = _extract_query_features(question)
+    total_features = len(q_words) + len(q_bigrams)
+    if total_features == 0:
+        return 0.0
+
+    h_words, h_bigrams = _extract_query_features(haystack)
+    matched_words = len(q_words & h_words)
+    matched_bigrams = len(q_bigrams & h_bigrams)
+
+    matched = matched_words + matched_bigrams
+    if matched == 0:
+        return 0.0
+    return matched / total_features
+
+
+def _extract_transcript_excerpt(question: str, transcript: str, max_chars: int = 1500, window_lines: int = 8) -> str:
+    """Extract a relevance-driven transcript excerpt window matching the question.
+
+    Finds the highest-scoring window of transcript lines against the question,
+    bounded to max_chars so the assembled corpus respects context limits.
+    """
+    if not transcript or not transcript.strip():
+        return ""
+    lines = [line.strip() for line in transcript.split("\n") if line.strip()]
+    if not lines:
+        return ""
+    full_text = "\n".join(lines)
+    if len(full_text) <= max_chars:
+        return full_text
+
+    best_idx = 0
+    best_score = -1.0
+    for i in range(len(lines)):
+        window = lines[i:i + window_lines]
+        window_text = "\n".join(window)
+        score = _question_relevance_score(question, window_text)
+        if score > best_score:
+            best_score = score
+            best_idx = i
+
+    selected_lines = []
+    curr_len = 0
+    start_idx = best_idx
+    for idx in range(start_idx, len(lines)):
+        line_len = len(lines[idx]) + 1
+        if curr_len + line_len > max_chars and selected_lines:
+            break
+        selected_lines.append(lines[idx])
+        curr_len += line_len
+
+    excerpt = "\n".join(selected_lines)
+    if start_idx > 0:
+        excerpt = "…\n" + excerpt
+    if start_idx + len(selected_lines) < len(lines):
+        excerpt = excerpt + "\n…"
+    return excerpt
 
 
 def _chat_corpus_char_budget(ai_provider: str, model: str) -> int:
@@ -4049,16 +4555,17 @@ def _chat_corpus_char_budget(ai_provider: str, model: str) -> int:
 @cli.command(name='chat-global-streaming')
 @click.option('--question', '-q', required=True, help='Question to ask across notes')
 @click.option('--folder', '-f', default=None, help='Folder ID to scope the corpus to (default: all notes)')
-def chat_global_streaming(question, folder):
-    """Cross-note chat: gather meeting title + summary + key points, feed as
-    context to the configured LLM, stream the answer. Optionally scope to a
-    single folder; default queries every note.
+@click.option('--meeting', '-m', multiple=True, help='Summary file(s) to scope the corpus to (repeatable). When provided, only these notes form the candidate set and --folder is ignored.')
+def chat_global_streaming(question, folder, meeting):
+    """Cross-note chat: gather meeting title + summary + key points + transcript excerpts,
+    feed as context to the configured LLM, stream the answer. Optionally scope to
+    selected meetings or a single folder; default queries every note.
 
     Works with every provider — cloud / org adapter / local / remote Ollama.
     The assembled corpus is capped to the active model's context window
     (model-aware budget below), so a local model with a smaller window simply
-    answers over fewer (most-recent) notes rather than overflowing. We don't
-    have retrieval (RAG) yet, so older notes beyond the budget are omitted."""
+    answers over fewer (most-recent / highest-relevance) notes rather than overflowing.
+    """
     import sys
     import base64
     from pathlib import Path
@@ -4068,52 +4575,89 @@ def chat_global_streaming(question, folder):
     dirs = get_data_dirs()
     output_dir = dirs["output"]
 
-    # Collect every summary file, preferring .md (the new format) but reading
-    # legacy .json too so users with old recordings aren't excluded.
     summaries: list[tuple[Path, dict]] = []
     seen = set()
-    for f in sorted(output_dir.glob("*_summary.md")):
-        try:
-            data = _parse_meeting_markdown(f)
-            summaries.append((f, data))
-            seen.add(f.stem.replace('_summary', ''))
-        except Exception:
-            # Best-effort listing: a single malformed/legacy note must never
-            # break the whole meeting list — skip it and keep scanning.
-            continue
-    for f in sorted(output_dir.glob("*_summary.json")):
-        if f.stem.replace('_summary', '') in seen:
-            continue
-        try:
-            with open(f, 'r', encoding='utf-8') as fh:
-                summaries.append((f, json.load(fh)))
-        except (OSError, ValueError):
-            continue
+    if meeting:
+        for m in meeting:
+            p = Path(m)
+            target = p if p.is_absolute() else (output_dir / p)
+            if not target.exists() and p.exists():
+                target = p
+            if not target.exists() or not target.is_file():
+                continue
+            try:
+                if target.suffix == '.md':
+                    data = _parse_meeting_markdown(target)
+                else:
+                    with open(target, 'r', encoding='utf-8') as fh:
+                        data = json.load(fh)
+                summaries.append((target, data))
+            except Exception:
+                continue
+    else:
+        # Collect every summary file, preferring .md (the new format) but reading
+        # legacy .json too so users with old recordings aren't excluded.
+        for f in sorted(output_dir.glob("*_summary.md")):
+            try:
+                data = _parse_meeting_markdown(f)
+                summaries.append((f, data))
+                seen.add(f.stem.replace('_summary', ''))
+            except Exception:
+                # Best-effort listing: a single malformed/legacy note must never
+                # break the whole meeting list — skip it and keep scanning.
+                continue
+        for f in sorted(output_dir.glob("*_summary.json")):
+            if f.stem.replace('_summary', '') in seen:
+                continue
+            try:
+                with open(f, 'r', encoding='utf-8') as fh:
+                    summaries.append((f, json.load(fh)))
+            except (OSError, ValueError):
+                continue
 
-    # Folder scoping. Each meeting record carries a 'folders' array of IDs;
-    # filter to only those that include the requested ID. Empty folder ID
-    # or 'all' explicitly means no filter.
-    if folder and folder != 'all':
-        summaries = [
-            (path, data) for (path, data) in summaries
-            if isinstance(data.get('folders'), list) and folder in data['folders']
-        ]
+        # Folder scoping (ignored when --meeting was passed). Each meeting record
+        # carries a 'folders' array of IDs; filter to only those that include
+        # the requested ID. Empty folder ID or 'all' explicitly means no filter.
+        if folder and folder != 'all':
+            summaries = [
+                (path, data) for (path, data) in summaries
+                if isinstance(data.get('folders'), list) and folder in data['folders']
+            ]
 
     if not summaries:
-        if folder and folder != 'all':
+        if meeting:
+            print("CHAT_STREAM_ERROR:None of the selected meetings could be loaded.", flush=True)
+        elif folder and folder != 'all':
             print("CHAT_STREAM_ERROR:No notes in this folder yet. Pick another or remove the filter.", flush=True)
         else:
             print("CHAT_STREAM_ERROR:No notes found yet. Record a meeting first.", flush=True)
         return
 
-    # Most-recent first so the model weights newer context higher when token
-    # budget is tight. Each block is kept compact (title + summary + key
-    # points + action items) — full transcripts would blow even a 200k window.
-    def sort_key(item):
-        _, data = item
-        return data.get("session_info", {}).get("processed_at") or ""
+    # Score each candidate note against the question for relevance ordering
+    scored_summaries = []
+    for path, data in summaries:
+        info = data.get("session_info", {}) or {}
+        name = info.get("name") or "Untitled"
+        summary = (data.get("summary") or "").strip()
+        key_points = data.get("key_points") or []
+        action_items = data.get("action_items") or []
+        transcript = data.get("transcript") or ""
+        if not transcript:
+            stem = path.stem.replace('_summary', '')
+            t_path = dirs["transcripts"] / f"{stem}_transcript.txt"
+            if t_path.exists():
+                try:
+                    transcript = t_path.read_text(encoding='utf-8')
+                except OSError:
+                    pass
+        haystack = f"{name}\n{summary}\n" + "\n".join(key_points) + "\n" + "\n".join(action_items) + f"\n{transcript}"
+        score = _question_relevance_score(question, haystack)
+        processed_at = info.get("processed_at") or ""
+        scored_summaries.append((score, processed_at, path, data, transcript))
 
-    summaries.sort(key=sort_key, reverse=True)
+    # Sort by (score DESC, processed_at DESC). When all scores are 0.0,
+    # the order is byte-identical to recency order.
+    scored_summaries.sort(key=lambda x: (x[0], x[1]), reverse=True)
 
     # Cap the assembled corpus so a user with hundreds of meetings can't blow
     # past the active model's context window (see _chat_corpus_char_budget).
@@ -4123,7 +4667,7 @@ def chat_global_streaming(question, folder):
     blocks = []
     used_chars = 0
     truncated = 0
-    for _, data in summaries:
+    for idx, (score, processed_at, path, data, transcript) in enumerate(scored_summaries):
         info = data.get("session_info", {}) or {}
         name = info.get("name") or "Untitled"
         date = (info.get("processed_at") or "")[:10]
@@ -4137,6 +4681,10 @@ def chat_global_streaming(question, folder):
             block.append("Key points:\n" + "\n".join(f"- {p}" for p in key_points))
         if action_items:
             block.append("Action items:\n" + "\n".join(f"- {a}" for a in action_items))
+        if idx < 3 and transcript:
+            excerpt = _extract_transcript_excerpt(question, transcript, max_chars=1500)
+            if excerpt:
+                block.append(f"Transcript excerpt:\n{excerpt}")
         block_text = "\n".join(block)
         # +5 accounts for the "\n\n---\n\n" separator added later.
         if used_chars + len(block_text) + 5 > CORPUS_CHAR_BUDGET:
@@ -4149,7 +4697,7 @@ def chat_global_streaming(question, folder):
                     truncated_block = block_text[:budget_left].rstrip() + "\n…(truncated)"
                     blocks.append(truncated_block)
                     used_chars += len(truncated_block) + 5
-            truncated = len(summaries) - len(blocks)
+            truncated = len(scored_summaries) - len(blocks)
             break
         blocks.append(block_text)
         used_chars += len(block_text) + 5
@@ -4161,7 +4709,6 @@ def chat_global_streaming(question, folder):
             " the model's context window. Ask about a specific older meeting"
             " to pull it in directly._"
         )
-
     language = config.get_language()
     if language == "auto":
         language = "en"
@@ -4175,6 +4722,144 @@ def chat_global_streaming(question, folder):
         print("CHAT_STREAM_COMPLETE", flush=True)
     except Exception as e:
         print(f"CHAT_STREAM_ERROR:{e}", flush=True)
+
+
+@cli.command(name='pre-meeting-brief')
+@click.pass_context
+@click.option('--title', '-t', default='', help='Meeting title to match related notes')
+@click.option('--attendee', '-a', multiple=True, help='Attendee name to match related notes (repeatable)')
+def pre_meeting_brief(ctx, title, attendee):
+    """Pre-meeting brief: find related prior notes by title match or shared attendee,
+    synthesise 2-3 bullets on what happened last time, what's open, and who owes what,
+    and stream the answer."""
+    import sys
+    import base64
+    from pathlib import Path
+    from src.config import get_config, get_data_dirs
+
+    previous_logging_disable = logging.root.manager.disable
+    logging.disable(logging.CRITICAL)
+    ctx.call_on_close(lambda: logging.disable(previous_logging_disable))
+
+    config = get_config()
+    dirs = get_data_dirs()
+    output_dir = dirs["output"]
+
+    target_title = (title or "").strip().lower()
+    target_attendees = {a.strip().lower() for a in attendee if a and a.strip()}
+
+    # Collect notes
+    summaries: list[tuple[Path, dict]] = []
+    seen = set()
+    for f in sorted(output_dir.glob("*_summary.md")):
+        try:
+            data = _parse_meeting_markdown(f)
+            summaries.append((f, data))
+            seen.add(f.stem.replace('_summary', ''))
+        except Exception:
+            continue
+    for f in sorted(output_dir.glob("*_summary.json")):
+        if f.stem.replace('_summary', '') in seen:
+            continue
+        try:
+            with open(f, 'r', encoding='utf-8') as fh:
+                summaries.append((f, json.load(fh)))
+        except (OSError, ValueError):
+            continue
+
+    matched_notes = []
+    for path, data in summaries:
+        info = data.get("session_info", {}) or {}
+        name = (info.get("name") or "").strip()
+        note_title = name.lower()
+        title_match = False
+        if target_title:
+            title_match = bool(target_title in note_title or (note_title and note_title in target_title))
+
+        attendee_match = False
+        if target_attendees:
+            raw_attendees = data.get("attendees") or []
+            note_attendees = {att.strip().lower() for att in raw_attendees if isinstance(att, str) and att.strip()}
+            attendee_match = bool(target_attendees & note_attendees)
+
+        if title_match or attendee_match:
+            processed_at = info.get("processed_at") or ""
+            transcript = data.get("transcript") or ""
+            if not transcript:
+                stem = path.stem.replace('_summary', '')
+                t_path = dirs["transcripts"] / f"{stem}_transcript.txt"
+                if t_path.exists():
+                    try:
+                        transcript = t_path.read_text(encoding='utf-8')
+                    except OSError:
+                        pass
+            matched_notes.append((processed_at, path, data, transcript))
+
+    if not matched_notes:
+        print("CHAT_STREAM_ERROR:No related notes yet", flush=True)
+        sys.exit(1)
+
+    # Sort newest-first (processed_at DESC)
+    matched_notes.sort(key=lambda x: x[0], reverse=True)
+
+    CORPUS_CHAR_BUDGET = _chat_corpus_char_budget(
+        config.get_ai_provider(), config.get_model()
+    )
+    blocks = []
+    used_chars = 0
+    truncated = 0
+    for idx, (processed_at, path, data, transcript) in enumerate(matched_notes):
+        info = data.get("session_info", {}) or {}
+        name = info.get("name") or "Untitled"
+        date = (info.get("processed_at") or "")[:10]
+        summary = (data.get("summary") or "").strip()
+        key_points = data.get("key_points") or []
+        action_items = data.get("action_items") or []
+        block = [f"## {name}" + (f" — {date}" if date else "")]
+        if summary:
+            block.append(summary)
+        if key_points:
+            block.append("Key points:\n" + "\n".join(f"- {p}" for p in key_points))
+        if action_items:
+            block.append("Action items:\n" + "\n".join(f"- {a}" for a in action_items))
+        if idx < 3 and transcript:
+            excerpt = _extract_transcript_excerpt(target_title or "status update", transcript, max_chars=1500)
+            if excerpt:
+                block.append(f"Transcript excerpt:\n{excerpt}")
+        block_text = "\n".join(block)
+        if used_chars + len(block_text) + 5 > CORPUS_CHAR_BUDGET:
+            if not blocks:
+                budget_left = max(0, CORPUS_CHAR_BUDGET - used_chars - 80)
+                if budget_left > 0:
+                    truncated_block = block_text[:budget_left].rstrip() + "\n…(truncated)"
+                    blocks.append(truncated_block)
+                    used_chars += len(truncated_block) + 5
+            truncated = len(matched_notes) - len(blocks)
+            break
+        blocks.append(block_text)
+        used_chars += len(block_text) + 5
+
+    corpus = "\n\n---\n\n".join(blocks)
+    if truncated:
+        corpus += (
+            f"\n\n---\n\n_Note: {truncated} older note(s) omitted to stay within"
+            " the model's context window._"
+        )
+
+    language = config.get_language()
+    if language == "auto":
+        language = "en"
+
+    try:
+        summarizer = OllamaSummarizer()
+        for chunk in summarizer.pre_meeting_brief_streaming_strict(corpus, language=language):
+            encoded = base64.b64encode(chunk.encode('utf-8')).decode('ascii')
+            sys.stdout.write(f"CHAT_CHUNK:{encoded}\n")
+            sys.stdout.flush()
+        print("CHAT_STREAM_COMPLETE", flush=True)
+    except Exception:
+        print("CHAT_STREAM_ERROR:Pre-meeting brief failed", flush=True)
+        sys.exit(1)
 
 
 @cli.command()
@@ -4500,15 +5185,22 @@ def setup_check(as_json):
     else:
         checks.append(("⚠️ whisper-model", "will download on first use (~500MB)"))
 
-    # Check if LLM model is downloaded (check ~/.ollama/models/)
-    ollama_models_path = Path.home() / ".ollama" / "models" / "manifests" / "registry.ollama.ai" / "library"
-    if ollama_models_path.exists() and any(ollama_models_path.iterdir()):
-        model_names = [d.name for d in ollama_models_path.iterdir() if d.is_dir()]
-        checks.append(("✅ llm-model", ", ".join(model_names[:2])))
+    # Check if LLM model is available (Apple System Language Model or ~/.ollama/models/)
+    from src.apple_lm import apple_lm_available, apple_lm_status
+    if sys.platform == "darwin" and apple_lm_available():
+        status = apple_lm_status()
+        variant = status.get("variant") or "available"
+        checks.append(("✅ llm-model", f"Apple System Language Model ({variant})"))
     else:
-        checks.append(("❌ llm-model", "no model installed - needed for summaries"))
-
-    # Derive a structured, machine-readable view of the checks. This is the
+        try:
+            ollama_models_path = Path.home() / ".ollama" / "models" / "manifests" / "registry.ollama.ai" / "library"
+            if ollama_models_path.exists() and any(ollama_models_path.iterdir()):
+                model_names = [d.name for d in ollama_models_path.iterdir() if d.is_dir()]
+                checks.append(("✅ llm-model", ", ".join(model_names[:2])))
+            else:
+                checks.append(("❌ llm-model", "no model installed - needed for summaries"))
+        except Exception:
+            checks.append(("❌ llm-model", "no model installed - needed for summaries"))
     # single source of truth for each check's (name, status, detail) and for the
     # overall verdict; both the JSON output and the human summary below read from
     # it, so the pass/fail logic is never duplicated. Status is decoded from the
@@ -4671,6 +5363,20 @@ def list_models():
                     # "Select" re-offered.
                     if info['mlx_installed']:
                         info['installed'] = True
+        from src.apple_lm import (
+            APPLE_SYSTEM_MODEL,
+            apple_lm_available,
+            apple_system_model_info,
+            is_apple_system_model,
+        )
+        if provider == "local" and (apple_lm_available() or is_apple_system_model(current_model)):
+            is_def = (current_model == APPLE_SYSTEM_MODEL)
+            apple_info = {
+                **apple_system_model_info(is_default=is_def),
+                "installed": apple_lm_available(),
+                "gguf_installed": False,
+            }
+            models = {APPLE_SYSTEM_MODEL: apple_info, **models}
         result = {
             "current_model": current_model,
             "supported_models": models,
@@ -4789,6 +5495,196 @@ def reset_template(template_id):
     print(json.dumps({"success": ok}))
     if not ok:
         sys.exit(1)
+
+
+@cli.command(name='list-recipes')
+def list_recipes():
+    """List all saved chat recipes."""
+    from src.config import get_config
+    config = get_config()
+    print(json.dumps({
+        "recipes": config.get_chat_recipes(),
+    }))
+
+
+@cli.command(name='save-recipe')
+def save_recipe():
+    """Create or update a chat recipe from stdin JSON."""
+    import sys
+    from src.config import get_config
+    try:
+        raw = sys.stdin.read()
+        payload = json.loads(raw)
+    except Exception as e:
+        print(json.dumps({"success": False, "error": f"Invalid JSON: {e}"}))
+        sys.exit(1)
+    ok, err, saved = get_config().save_chat_recipe(payload)
+    print(json.dumps({"success": ok, "recipe": saved} if ok
+                     else {"success": False, "error": err}))
+
+
+@cli.command(name='delete-recipe')
+@click.argument('recipe_id')
+def delete_recipe(recipe_id):
+    """Delete a chat recipe by id."""
+    from src.config import get_config
+    ok = get_config().delete_chat_recipe(recipe_id)
+    print(json.dumps({"success": ok}))
+    if not ok:
+        sys.exit(1)
+
+
+@cli.command(name='export-all')
+@click.option('--format', '-f', 'export_format', type=click.Choice(['md', 'csv'], case_sensitive=False), required=True, help='Export format: md or csv')
+@click.option('--out', '-o', required=True, help='Target output path (directory for md, file or directory for csv)')
+def export_all(export_format, out):
+    """Bulk export all notes to Markdown or CSV."""
+    import sys
+    import csv
+    from pathlib import Path
+    from src.config import get_data_dirs
+
+    dirs = get_data_dirs()
+    output_dir = dirs["output"].resolve()
+
+    if not out or not str(out).strip():
+        print(json.dumps({"success": False, "error": "Output path is required"}))
+        sys.exit(1)
+
+    out_path = Path(out).resolve()
+
+    # Reject writing into notes output directory or its subdirectories
+    if out_path == output_dir or output_dir in out_path.parents:
+        print(json.dumps({"success": False, "error": "Cannot export directly into the StenoAI notes directory"}))
+        sys.exit(1)
+
+    # Collect all notes
+    summaries: list[tuple[str, Path, dict]] = []
+    seen = set()
+    for f in sorted(output_dir.glob("*_summary.md")):
+        stem = f.stem.replace('_summary', '')
+        try:
+            data = _parse_meeting_markdown(f)
+            summaries.append((stem, f, data))
+            seen.add(stem)
+        except Exception:
+            continue
+    for f in sorted(output_dir.glob("*_summary.json")):
+        stem = f.stem.replace('_summary', '')
+        if stem in seen:
+            continue
+        try:
+            with open(f, 'r', encoding='utf-8') as fh:
+                summaries.append((stem, f, json.load(fh)))
+                seen.add(stem)
+        except (OSError, ValueError):
+            continue
+
+    # Sort notes newest-first
+    summaries.sort(
+        key=lambda x: (x[2].get("session_info", {}) or {}).get("processed_at") or "",
+        reverse=True,
+    )
+
+    fmt = export_format.lower()
+    if fmt == 'md':
+        target_dir = out_path
+        try:
+            target_dir.mkdir(parents=True, exist_ok=True)
+        except Exception as e:
+            print(json.dumps({"success": False, "error": f"Failed to create target directory: {e}"}))
+            sys.exit(1)
+
+        count = 0
+        used_filenames = set()
+        for stem, src_file, data in summaries:
+            safe_name = re.sub(r"[^\w\-.]+", "_", stem).strip("._") or "note"
+            filename = f"{safe_name}.md"
+            idx = 2
+            while filename in used_filenames:
+                filename = f"{safe_name}_{idx}.md"
+                idx += 1
+            used_filenames.add(filename)
+
+            dest_file = (target_dir / filename).resolve()
+            if target_dir not in dest_file.parents and dest_file.parent != target_dir:
+                continue
+
+            try:
+                if src_file.suffix == '.md':
+                    content = src_file.read_text(encoding='utf-8')
+                else:
+                    info = data.get("session_info", {}) or {}
+                    title = info.get("name") or stem
+                    date = info.get("processed_at") or ""
+                    summary = data.get("summary") or ""
+                    transcript = data.get("transcript") or ""
+                    content = f"# {title}\n\nDate: {date}\n\n## Summary\n\n{summary}\n\n## Transcript\n\n{transcript}\n"
+                dest_file.write_text(content, encoding='utf-8')
+                count += 1
+            except Exception:
+                continue
+
+        print(json.dumps({"success": True, "count": count}))
+
+    elif fmt == 'csv':
+        if out_path.is_dir():
+            csv_file = out_path / "stenoai_export.csv"
+        else:
+            csv_file = out_path
+
+        try:
+            csv_file.parent.mkdir(parents=True, exist_ok=True)
+            with open(csv_file, 'w', encoding='utf-8', newline='') as fh:
+                writer = csv.writer(fh)
+                writer.writerow(["title", "date", "duration", "folders", "attendees", "summary", "transcript"])
+                # Guard against spreadsheet formula/DDE interpretation of leading trigger characters
+                # (=, +, -, @, \t, \r) which otherwise cause Excel to evaluate cell content or error with #NAME?
+                def _guard_csv_cell(val):
+                    if not isinstance(val, str):
+                        return val
+                    if val and val[0] in ('=', '+', '-', '@', '\t', '\r'):
+                        return "'" + val
+                    return val
+
+                count = 0
+                for stem, src_file, data in summaries:
+                    info = data.get("session_info", {}) or {}
+                    title = info.get("name") or stem
+                    date = info.get("processed_at") or ""
+                    duration = info.get("duration_seconds")
+                    duration_str = str(duration) if duration is not None else ""
+
+                    folders = data.get("folders") or []
+                    folders_str = ", ".join(str(f) for f in folders) if isinstance(folders, list) else str(folders)
+
+                    attendees = data.get("attendees") or []
+                    attendees_str = ", ".join(str(a) for a in attendees) if isinstance(attendees, list) else str(attendees)
+
+                    summary = (data.get("summary") or "").strip()
+                    transcript = data.get("transcript") or ""
+                    if not transcript:
+                        t_path = dirs["transcripts"] / f"{stem}_transcript.txt"
+                        if t_path.exists():
+                            try:
+                                transcript = t_path.read_text(encoding='utf-8')
+                            except OSError:
+                                pass
+
+                    writer.writerow([
+                        _guard_csv_cell(title),
+                        date,
+                        duration_str,
+                        _guard_csv_cell(folders_str),
+                        _guard_csv_cell(attendees_str),
+                        _guard_csv_cell(summary),
+                        _guard_csv_cell(transcript),
+                    ])
+                    count += 1
+            print(json.dumps({"success": True, "count": count}))
+        except Exception as e:
+            print(json.dumps({"success": False, "error": f"Failed to export CSV: {e}"}))
+            sys.exit(1)
 
 
 @cli.command(name='enroll-voiceprint')
@@ -7885,6 +8781,33 @@ def remove_meeting_from_folder(summary_file, folder_id):
     print(json.dumps({"success": success}))
 
 
+@cli.command(name='set-folder-template')
+@click.argument('folder_id')
+@click.argument('template_id')
+def set_folder_template_cmd(folder_id, template_id):
+    """Set or clear a folder's default template (template_id or 'none')."""
+    from src.folders import get_folders_manager
+    mgr = get_folders_manager()
+    tid = None if template_id.lower() in ('none', 'null', '') else template_id
+    success = mgr.set_folder_template(folder_id, tid)
+    print(json.dumps({"success": success}))
+
+
+@cli.command(name='set-folder-recurring')
+@click.argument('folder_id')
+@click.option('--title', '-t', 'titles', multiple=True, help='Recurring meeting title to route to this folder (repeatable)')
+@click.option('--clear', is_flag=True, default=False, help='Clear all recurring titles for this folder')
+def set_folder_recurring_cmd(folder_id, titles, clear):
+    """Set or clear recurring meeting titles for a folder."""
+    from src.folders import get_folders_manager
+    mgr = get_folders_manager()
+    if clear:
+        success = mgr.set_folder_recurring(folder_id, [])
+    else:
+        cleaned = [t.strip() for t in titles if t and t.strip()]
+        success = mgr.set_folder_recurring(folder_id, cleaned)
+    print(json.dumps({"success": success}))
+
 @cli.command()
 def get_ai_provider():
     """Get all AI provider configuration"""
@@ -8190,11 +9113,15 @@ def download_whisper_model():
 @cli.command()
 @click.argument('model_name')
 def check_model(model_name):
-    """Check if a model is installed in Ollama (uses HTTP API)."""
+    """Check if a model is installed in Ollama or available in Apple Intelligence."""
+    from src.apple_lm import is_apple_system_model, apple_lm_available
+    if is_apple_system_model(model_name):
+        print(json.dumps({"installed": apple_lm_available(), "model": model_name}))
+        return
+
     from src.config import get_config
     config = get_config()
     provider = config.get_ai_provider()
-
     if provider == "remote":
         remote_url = config.get_remote_ollama_url()
         if not remote_url:
@@ -8228,6 +9155,14 @@ def check_model(model_name):
 @click.argument('model_name')
 def pull_model(model_name):
     """Download an Ollama model (uses HTTP API)."""
+    from src.apple_lm import is_apple_system_model, apple_lm_available
+    if is_apple_system_model(model_name):
+        if apple_lm_available():
+            print(json.dumps({"success": True, "model": model_name}))
+        else:
+            print(json.dumps({"success": False, "error": "Apple Intelligence is not available on this system"}))
+        return
+
     from src.ollama_manager import start_ollama_server
     start_ollama_server()
     try:
@@ -8266,14 +9201,16 @@ def pull_model(model_name):
 @cli.command(name='verify-model')
 @click.argument('model_name')
 def verify_model(model_name):
-    """Smoke-test a just-pulled model with a 1-token chat call (uses HTTP API).
+    """Smoke-test a model with a 1-token chat call."""
+    from src.apple_lm import is_apple_system_model, complete
+    if is_apple_system_model(model_name):
+        try:
+            complete("hi", timeout=10)
+            print(json.dumps({"success": True, "error": None}))
+        except Exception as e:
+            print(json.dumps({"success": False, "error": str(e)}))
+        return
 
-    Used only by the Settings "switch to faster build" flow, to prove an
-    MLX/NVFP4 tag actually loads and responds before offering to delete the
-    old GGUF build. A generous timeout accounts for MLX cold-load (several
-    seconds after a fresh pull, per local benchmarking) -- a slow-but-working
-    model must not be reported as a failure.
-    """
     from src.ollama_manager import start_ollama_server
     start_ollama_server()
     try:
@@ -8292,16 +9229,12 @@ def verify_model(model_name):
 @cli.command(name='delete-model')
 @click.argument('model_name')
 def delete_model(model_name):
-    """Delete a locally-pulled Ollama model (uses HTTP API).
+    """Delete a locally-pulled Ollama model (uses HTTP API)."""
+    from src.apple_lm import is_apple_system_model
+    if is_apple_system_model(model_name):
+        print(json.dumps({"success": False, "error": "Cannot delete built-in Apple System model"}))
+        return
 
-    Called by the Settings "switch to faster build" flow (the old GGUF tag,
-    after its NVFP4 sibling has been pulled and verified) and by the general
-    "delete this model to free up disk space" action (either the GGUF id or
-    its NVFP4 sibling) -- never a tag currently in active use. Restricted to
-    supported GGUF ids and their NVFP4 siblings: this is a destructive
-    IPC-reachable operation, so it must not delete an arbitrary
-    caller-supplied model name.
-    """
     from src.config import get_config, Config
 
     allowed = set(get_config().list_supported_models()) | set(Config._MLX_EQUIVALENTS.values())
@@ -8357,6 +9290,12 @@ def resolve_setup_model():
     whether to download. Uses the HTTP API (ollama package), not the binary.
     """
     from src.config import get_config, Config
+    from src.apple_lm import apple_lm_available, APPLE_SYSTEM_MODEL
+
+    if apple_lm_available():
+        print(json.dumps({"installed": APPLE_SYSTEM_MODEL, "pull_target": None}))
+        return
+
     from src.ollama_manager import start_ollama_server
     from src.config import is_apple_silicon
 
@@ -8407,6 +9346,13 @@ def resolve_setup_model():
         result["error"] = str(e)
     print(json.dumps(result))
 
+
+
+@cli.command(name='apple-lm-status')
+def apple_lm_status_cmd():
+    """Inspect Apple SystemLanguageModel status and availability."""
+    from src.apple_lm import apple_lm_status
+    print(json.dumps(apple_lm_status()))
 
 @cli.command(name='check-adapter')
 @click.argument('url')

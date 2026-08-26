@@ -66,7 +66,9 @@ test('@pipeline a re-import of a same-basename file is deduped end-to-end and ke
   let recordingsDir: string | undefined;
 
   try {
-    const { page } = await launchApp();
+    const { page } = await launchApp({
+      env: { OLLAMA_HOST: `http://127.0.0.1:${ollama.port}` },
+    });
     await selectEngine(page);
 
     // Skip loudly if the active engine's model isn't installed (transcribe would

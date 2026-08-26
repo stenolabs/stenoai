@@ -68,8 +68,9 @@ test('@contract reprocess builds a transcript-bearing prompt and parses the repl
 
   const ollama = await startMockOllama({ chatReply: FIXED_REPLY });
   try {
-    const { page } = await launchApp();
-
+    const { page } = await launchApp({
+      env: { OLLAMA_HOST: `http://127.0.0.1:${ollama.port}` },
+    });
     const res = await page.evaluate(
       (f) => (window as StenoWindow).stenoai.meetings.reprocess(f, false, 'Contract Meeting'),
       summaryFile,
@@ -132,8 +133,9 @@ test('@contract reprocess fires the summary-complete event (Windows CRLF complet
 
   const ollama = await startMockOllama({ chatReply: FIXED_REPLY });
   try {
-    const { page } = await launchApp();
-
+    const { page } = await launchApp({
+      env: { OLLAMA_HOST: `http://127.0.0.1:${ollama.port}` },
+    });
     const completed: boolean = await page.evaluate(
       (f) =>
         new Promise<boolean>((resolve) => {

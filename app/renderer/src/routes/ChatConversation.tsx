@@ -3,6 +3,7 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 import {
   ArrowLeft,
   ArrowUp,
+  BookmarkPlus,
   ChevronDown,
   Square,
 } from 'lucide-react';
@@ -15,7 +16,14 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover';
-import { PRESETS, PresetGlyph } from '@/lib/chatPresets';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { useRecipes, useDeleteRecipe } from '@/hooks/useRecipes';
+import {
+  PRESETS,
+  ChatRecipesMenuContent,
+  SaveRecipeDialog,
+  type UnifiedRecipeItem,
+} from '@/lib/chatPresets';
 import {
   useAllChatSessions,
   useChatSessions,
@@ -54,10 +62,57 @@ export function ChatConversation({ sessionId }: ChatConversationProps) {
   const [activeStreamId, setActiveStreamId] = React.useState<string | null>(null);
   const [historyOpen, setHistoryOpen] = React.useState(false);
   const [presetsOpen, setPresetsOpen] = React.useState(false);
-  // Folder scope persists for the lifetime of the conversation page mount.
+  const [selectedPresetIndex, setSelectedPresetIndex] = React.useState(0);
+  const [saveDialogOpen, setSaveDialogOpen] = React.useState(false);
+  const [recipeToDelete, setRecipeToDelete] = React.useState<UnifiedRecipeItem | null>(null);
+  const { recipes } = useRecipes();
+  const deleteRecipe = useDeleteRecipe();
+
+  const filterQuery = input.startsWith('/')
+    ? input.slice(1).trim().toLowerCase()
+    : (presetsOpen ? input.trim().toLowerCase() : '');
+
+  const allItems = React.useMemo<UnifiedRecipeItem[]>(() => {
+    const custom: UnifiedRecipeItem[] = (recipes || []).map((r) => ({
+      id: r.id,
+      label: r.label,
+      prompt: r.prompt,
+      builtin: false,
+    }));
+    const builtin: UnifiedRecipeItem[] = PRESETS.map((p, idx) => ({
+      id: `builtin-${idx}`,
+      label: p.label,
+      prompt: p.prompt,
+      description: p.description,
+      builtin: true,
+    }));
+    return [...custom, ...builtin];
+  }, [recipes]);
+
+  const filteredItems = React.useMemo(() => {
+    if (!filterQuery) return allItems;
+    return allItems.filter(
+      (item) =>
+        item.label.toLowerCase().includes(filterQuery) ||
+        item.prompt.toLowerCase().includes(filterQuery) ||
+        (item.description && item.description.toLowerCase().includes(filterQuery))
+    );
+  }, [allItems, filterQuery]);
+
+  React.useEffect(() => {
+    setSelectedPresetIndex(0);
+  }, [filterQuery]);
+
+  const onPickPreset = (prompt: string) => {
+    setInput(prompt);
+    setPresetsOpen(false);
+    inputRef.current?.focus();
+  };
+  // Folder / meetings scope persists for the lifetime of the conversation page mount.
   // The entry page's scope is handed off via consumePendingNewChat; later
   // turns in the same conversation can be re-scoped from this composer.
   const [scopeFolderId, setScopeFolderId] = React.useState<string | null>(null);
+  const [selectedMeetingFiles, setSelectedMeetingFiles] = React.useState<string[]>([]);
   const pendingPersistRef = React.useRef<string | null>(null);
   const submittingRef = React.useRef(false);
   const inputRef = React.useRef<HTMLInputElement>(null);
@@ -90,6 +145,9 @@ export function ChatConversation({ sessionId }: ChatConversationProps) {
       pendingPersistRef.current = pending.sessionId;
       setActiveStreamId(pending.streamId);
       setScopeFolderId(pending.folderId);
+      if (pending.selectedMeetingFiles && pending.selectedMeetingFiles.length > 0) {
+        setSelectedMeetingFiles(pending.selectedMeetingFiles);
+      }
     }
   }, [sessionId]);
 
@@ -205,6 +263,7 @@ export function ChatConversation({ sessionId }: ChatConversationProps) {
       appended = true;
       setInput('');
 
+      const hasMeetings = selectedMeetingFiles.length > 0;
       // Hand the running history to the org backend so follow-ups have
       // context. For local scope this third arg is ignored.
       const history = isOrgScope(scopeFolderId)
@@ -213,7 +272,13 @@ export function ChatConversation({ sessionId }: ChatConversationProps) {
             content: m.content,
           }))
         : undefined;
-      const streamId = streaming.startGlobalStream(q, scopeFolderId, history);
+      const streamId = streaming.startGlobalStream(
+        q,
+        hasMeetings ? null : scopeFolderId,
+        history,
+        undefined,
+        hasMeetings ? selectedMeetingFiles : null,
+      );
       pendingPersistRef.current = session.id;
       setActiveStreamId(streamId);
     } catch (err) {
@@ -265,11 +330,8 @@ export function ChatConversation({ sessionId }: ChatConversationProps) {
   }
 
   return (
-    // bleed: skip AppShell's centered scroll wrapper (which has pb-36 baked
-    // in) so we can own the layout — flex column with a scrolling message
-    // area + composer pinned to the bottom of the viewport with no padding
-    // gap underneath.
-    <MeetingsShell activeSummaryFile={null} bleed>
+    <>
+      <MeetingsShell activeSummaryFile={null} bleed>
       <div className="flex min-h-0 flex-1 flex-col" style={{ background: 'var(--page)' }}>
         {/* Toolbar — back, History dropdown, New chat. */}
         <div className="mx-auto flex w-full max-w-[760px] items-center justify-between gap-2 px-10 pb-3 pt-2">
@@ -450,13 +512,55 @@ export function ChatConversation({ sessionId }: ChatConversationProps) {
             ref={inputRef}
             type="text"
             value={input}
-            onChange={(e) => setInput(e.target.value)}
+            onChange={(e) => {
+              const val = e.target.value;
+              setInput(val);
+              if (val.startsWith('/')) {
+                setPresetsOpen(true);
+              } else if (val === '') {
+                setPresetsOpen(false);
+              }
+            }}
             onKeyDown={(e) => {
+              if (presetsOpen) {
+                if (e.key === 'ArrowDown') {
+                  e.preventDefault();
+                  if (filteredItems.length > 0) {
+                    setSelectedPresetIndex((prev) => (prev + 1) % filteredItems.length);
+                  }
+                  return;
+                }
+                if (e.key === 'ArrowUp') {
+                  e.preventDefault();
+                  if (filteredItems.length > 0) {
+                    setSelectedPresetIndex(
+                      (prev) => (prev - 1 + filteredItems.length) % filteredItems.length
+                    );
+                  }
+                  return;
+                }
+                if (e.key === 'Enter') {
+                  if (
+                    filteredItems.length > 0 &&
+                    selectedPresetIndex >= 0 &&
+                    selectedPresetIndex < filteredItems.length
+                  ) {
+                    e.preventDefault();
+                    onPickPreset(filteredItems[selectedPresetIndex].prompt);
+                    return;
+                  }
+                }
+                if (e.key === 'Escape') {
+                  e.preventDefault();
+                  setPresetsOpen(false);
+                  return;
+                }
+              }
               // Same '/' shortcut as the entry page — opens the preset
               // picker when the input is empty so a literal slash typed
               // mid-sentence doesn't surprise the user.
               if (e.key === '/' && input === '' && ready && !isStreaming) {
-                e.preventDefault();
+                setSelectedPresetIndex(0);
                 setPresetsOpen(true);
                 return;
               }
@@ -472,7 +576,18 @@ export function ChatConversation({ sessionId }: ChatConversationProps) {
           />
           <div className="flex items-center justify-between gap-2 px-1">
             <div className="flex items-center gap-1">
-              <FolderScopePicker value={scopeFolderId} onChange={setScopeFolderId} />
+              <FolderScopePicker
+                value={scopeFolderId}
+                onChange={(fid) => {
+                  setScopeFolderId(fid);
+                  if (fid !== null) setSelectedMeetingFiles([]);
+                }}
+                selectedMeetings={selectedMeetingFiles}
+                onSelectedMeetingsChange={(files) => {
+                  setSelectedMeetingFiles(files);
+                  if (files.length > 0) setScopeFolderId(null);
+                }}
+              />
               <span
                 data-testid="chat-model-indicator"
                 className="text-[12px]"
@@ -491,6 +606,20 @@ export function ChatConversation({ sessionId }: ChatConversationProps) {
               )}
             </div>
             <div className="flex items-center gap-1">
+              {input.trim() && !input.trim().startsWith('/') && !isStreaming && (
+                <button
+                  type="button"
+                  onClick={() => setSaveDialogOpen(true)}
+                  className="inline-flex h-7 items-center gap-1.5 rounded-md px-2 text-[12px] font-medium transition-colors hover:bg-[color:var(--surface-hover)]"
+                  style={{ color: 'var(--fg-2)' }}
+                  title="Save as recipe"
+                  aria-label="Save as recipe"
+                  data-testid="save-recipe-button"
+                >
+                  <BookmarkPlus className="size-3.5" />
+                  <span>Save recipe</span>
+                </button>
+              )}
               {isStreaming ? (
                 <button
                   type="button"
@@ -523,42 +652,42 @@ export function ChatConversation({ sessionId }: ChatConversationProps) {
               className="w-[var(--radix-popover-trigger-width)] max-w-none p-1"
               onOpenAutoFocus={(e) => e.preventDefault()}
             >
-              <div
-                className="px-2 pb-1 pt-0.5 text-[11px] font-medium"
-                style={{ color: 'var(--fg-muted)' }}
-              >
-                Presets
-              </div>
-              <div className="flex flex-col">
-                {PRESETS.map((p) => (
-                  <button
-                    key={p.label}
-                    type="button"
-                    onClick={() => {
-                      setInput(p.prompt);
-                      setPresetsOpen(false);
-                      inputRef.current?.focus();
-                    }}
-                    className="flex flex-col items-start gap-0.5 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-[color:var(--surface-hover)]"
-                  >
-                    <div
-                      className="flex items-center gap-2 text-[13px]"
-                      style={{ color: 'var(--fg-1)' }}
-                    >
-                      <PresetGlyph />
-                      {p.label}
-                    </div>
-                    <div className="pl-[26px] text-[12px]" style={{ color: 'var(--fg-2)' }}>
-                      {p.description}
-                    </div>
-                  </button>
-                ))}
-              </div>
+              <ChatRecipesMenuContent
+                items={filteredItems}
+                selectedIndex={selectedPresetIndex}
+                onSelectIndex={setSelectedPresetIndex}
+                onPick={onPickPreset}
+                onDeleteRequest={setRecipeToDelete}
+                filterQuery={filterQuery}
+              />
             </PopoverContent>
           </Popover>
         </div>
       </div>
-    </MeetingsShell>
+      </MeetingsShell>
+      <SaveRecipeDialog
+        open={saveDialogOpen}
+        onOpenChange={setSaveDialogOpen}
+        defaultPrompt={input}
+      />
+      <ConfirmDialog
+        open={!!recipeToDelete}
+        onOpenChange={(open) => {
+          if (!open) setRecipeToDelete(null);
+        }}
+        title={`Delete recipe "${recipeToDelete?.label}"?`}
+        description="This permanently deletes the recipe."
+        destructive
+        confirmLabel="Delete"
+        onConfirm={async () => {
+          if (recipeToDelete) {
+            await deleteRecipe.mutateAsync(recipeToDelete.id);
+            setRecipeToDelete(null);
+          }
+        }}
+        isPending={deleteRecipe.isPending}
+      />
+    </>
   );
 }
 

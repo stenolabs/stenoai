@@ -60,8 +60,9 @@ test('a re-import of a same-basename file does not overwrite the first import\'s
   let recordingsDir: string | undefined;
 
   try {
-    const { page } = await launchApp();
-
+    const { page } = await launchApp({
+      env: { OLLAMA_HOST: `http://127.0.0.1:${ollama.port}` },
+    });
     // The dir copyImportIntoRecordings copies into, and its sibling output/ —
     // the same pair the collision check consults.
     const dir = await page.evaluate(() =>
@@ -139,8 +140,9 @@ test('two parallel imports of the same stem with different extensions get distin
   const exts = ['wav', 'm4a'];
 
   try {
-    const { page } = await launchApp();
-
+    const { page } = await launchApp({
+      env: { OLLAMA_HOST: `http://127.0.0.1:${ollama.port}` },
+    });
     const dir = await page.evaluate(() =>
       (window as StenoWindow).stenoai.recording.getDir(),
     );
@@ -228,13 +230,12 @@ test('a stale .import marker left by a crash does not permanently force a suffix
   const stem = 'crashedimport';
   const staleMarker = path.join(recordingsDir, `.${stem}.import`);
   const outputDir = path.join(path.dirname(recordingsDir), 'output');
-
-  // Stand in for the orphan a crash mid-import leaves behind.
   writeFileSync(staleMarker, '');
 
   try {
-    const { page } = await launchApp();
-
+    const { page } = await launchApp({
+      env: { OLLAMA_HOST: `http://127.0.0.1:${ollama.port}` },
+    });
     // Sanity: the app copies into exactly the dir we seeded the orphan in.
     const dir = await page.evaluate(() =>
       (window as StenoWindow).stenoai.recording.getDir(),

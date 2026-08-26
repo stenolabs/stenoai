@@ -19,25 +19,27 @@ const http = require('http');
 const OLLAMA_PORT = 11434;
 
 /**
- * Start the mock Ollama on 11434.
+ * Start the mock Ollama on 11434 (or a custom/ephemeral port).
  * @param {object} [opts]
+ * @param {number} [opts.port=0] port to bind (0 for ephemeral port).
  * @param {string} [opts.chatReply='ok'] assistant content returned by /api/chat.
  * @param {string[]} [opts.chatReplyQueue=[]] queue of replies to dequeue per call; falls back to chatReply when exhausted.
  * @param {{status:number, message:string}} [opts.chatError] when set, /api/chat responds with this HTTP
  *   status and JSON body `{"error": message}` (the real Ollama 404 shape) instead of a reply. Off by
  *   default so existing specs are unaffected. chatCalls still increments so callers can assert it was hit.
- * @param {string[]} [opts.installedModels=['gemma4:e2b-it-qat','llama3.2:3b']] models /api/tags reports as installed.
+ * @param {string[]} [opts.installedModels=['gemma4:e2b-it-qat','gemma4:e2b-nvfp4','llama3.2:3b']] models /api/tags reports as installed.
  * @param {number} [opts.pullDelayMs=0] hold the /api/pull response open this long before completing it -- gives a
  *   cancel-mid-download test a real window to call cancel-pull before the mock would otherwise finish first.
- * @returns {Promise<{ close: () => Promise<void>, lastChatPrompt: () => string|null, chatCalls: () => number, pullCalls: () => number, remainingQueueLength: () => number, lastPulledModel: () => string|null, deleteCalls: () => number, lastDeletedModel: () => string|null }>}
+ * @returns {Promise<{ port: number, close: () => Promise<void>, lastChatPrompt: () => string|null, chatCalls: () => number, pullCalls: () => number, remainingQueueLength: () => number, lastPulledModel: () => string|null, deleteCalls: () => number, lastDeletedModel: () => string|null }>}
  */
 function startMockOllama(opts = {}) {
+  const port = opts.port ?? 0;
   const chatReply = opts.chatReply ?? 'ok';
   const chatReplyQueue = Array.isArray(opts.chatReplyQueue) ? [...opts.chatReplyQueue] : [];
   const chatError = opts.chatError ?? null;
   const installedModels = Array.isArray(opts.installedModels)
     ? opts.installedModels
-    : ['gemma4:e2b-it-qat', 'llama3.2:3b'];
+    : ['gemma4:e2b-it-qat', 'gemma4:e2b-nvfp4', 'llama3.2:3b'];
   const pullDelayMs = opts.pullDelayMs ?? 0;
   let lastChatPrompt = null;
   let chatCalls = 0;
@@ -165,8 +167,11 @@ function startMockOllama(opts = {}) {
     });
     // No EADDRINUSE swallow — a bind failure is a real signal (live Ollama up).
     server.on('error', reject);
-    server.listen(OLLAMA_PORT, '127.0.0.1', () => {
+    server.listen(port, '127.0.0.1', () => {
+      const addr = server.address();
+      const boundPort = addr && typeof addr === 'object' ? addr.port : port;
       resolve({
+        port: boundPort,
         close: () => new Promise((r) => server.close(() => r())),
         lastChatPrompt: () => lastChatPrompt,
         chatCalls: () => chatCalls,
