@@ -682,6 +682,12 @@ jobs:
       - name: Ensure no stray Ollama
         run: pkill -f ollama || true
 
+      # sounddevice (setup-check's audio-device enumeration) loads PortAudio
+      # as a system shared lib at runtime — without it setup-check crashes
+      # with "OSError: PortAudio library not found".
+      - name: Install system audio deps (PortAudio)
+        run: sudo apt-get update && sudo apt-get install -y libportaudio2
+
       - name: Install Electron dependencies
         working-directory: app
         run: npm ci
@@ -742,6 +748,9 @@ jobs:
 
       - name: Ensure no stray Ollama
         run: pkill -f ollama || true
+
+      - name: Install system audio deps (PortAudio)
+        run: sudo apt-get update && sudo apt-get install -y libportaudio2
 
       - name: Cache parakeet ONNX model
         uses: actions/cache@v4
