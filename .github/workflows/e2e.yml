@@ -686,13 +686,19 @@ jobs:
         working-directory: app
         run: npm ci
 
+      # Electron is headless-hostile on Linux without a display server —
+      # same reason t1-renderer needs this, see its comment above.
+      - name: Install Linux system deps (+ xvfb)
+        working-directory: app
+        run: npx playwright install-deps
+
       - name: Build renderer
         working-directory: app
         run: npm run build:renderer
 
       - name: Run T2 (org-lock, model-free)
         working-directory: app
-        run: npm run test:e2e -- --project=t2 --grep-invert '@pipeline|@summarize-real'
+        run: xvfb-run -a npm run test:e2e -- --project=t2 --grep-invert '@pipeline|@summarize-real'
 
       - name: Upload report on failure
         if: failure()
@@ -747,6 +753,10 @@ jobs:
         working-directory: app
         run: npm ci
 
+      - name: Install Linux system deps (+ xvfb)
+        working-directory: app
+        run: npx playwright install-deps
+
       - name: Build renderer
         working-directory: app
         run: npm run build:renderer
@@ -768,7 +778,7 @@ jobs:
         working-directory: app
         env:
           STENOAI_E2E_ENGINE: parakeet
-        run: npm run test:e2e -- --project=t2 --grep '@pipeline'
+        run: xvfb-run -a npm run test:e2e -- --project=t2 --grep '@pipeline'
 
       - name: Upload report on failure
         if: failure()
