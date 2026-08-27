@@ -9487,14 +9487,24 @@ let activeLinuxLoopback = null;
 
 ipcMain.handle('start-linux-loopback', async () => {
   try {
-    const capture = startLoopbackCapture({
+    const capture = await startLoopbackCapture({
       onError: (err) => sendDebugLog(`[linux-loopback] capture error: ${err.message}`),
     });
-    // Forwarded as-is: AudioData on the renderer side (linuxLoopbackStream.ts)
-    // computes numberOfFrames per chunk, so there's no fixed-size framing to
-    // maintain here.
+    // No fixed batch size — AudioData on the renderer side
+    // (linuxLoopbackStream.ts) computes numberOfFrames per chunk. But a pipe
+    // 'data' event can split mid-sample, and the renderer's floor() division
+    // would silently DROP a trailing partial frame, desyncing L/R for every
+    // frame after it. So only forward whole frames and carry the remainder
+    // into the next chunk.
+    const frameBytes = 2 * capture.channels; // s16 = 2 bytes/sample
+    let pending = null;
     capture.stdout.on('data', (chunk) => {
-      mainWindow?.webContents.send('linux-loopback-chunk', chunk);
+      const buf = pending ? Buffer.concat([pending, chunk]) : chunk;
+      const whole = buf.length - (buf.length % frameBytes);
+      pending = whole < buf.length ? buf.subarray(whole) : null;
+      if (whole > 0) {
+        mainWindow?.webContents.send('linux-loopback-chunk', buf.subarray(0, whole));
+      }
     });
     capture.proc.on('exit', (code, signal) => {
       // A stop() call sets activeLinuxLoopback = null itself before killing the

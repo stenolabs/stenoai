@@ -37,8 +37,22 @@ export async function startLinuxLoopbackStream(): Promise<LinuxLoopbackStream> {
   const { sampleRate, channels } = result;
   const bytesPerFrame = 2 * channels; // s16 = 2 bytes/sample
 
-  const generator = new MediaStreamTrackGenerator({ kind: 'audio' });
-  const writer = generator.writable.getWriter();
+  // Past this point main has a live pw-record subprocess. Anything that throws
+  // before we hand back a stop handle would orphan it (it would keep capturing
+  // system audio until app quit), so tear it down before rethrowing.
+  let generator: MediaStreamTrackGenerator;
+  let writer: WritableStreamDefaultWriter<AudioData>;
+  try {
+    generator = new MediaStreamTrackGenerator({ kind: 'audio' });
+    writer = generator.writable.getWriter();
+  } catch (err) {
+    try {
+      await bridge.recording.stopLinuxLoopback();
+    } catch {
+      /* best-effort — the throw below is the real failure */
+    }
+    throw err;
+  }
   let timestampUs = 0;
   let stopped = false;
 

@@ -66,6 +66,12 @@ function getDefaultSinkName() {
 // real integration could pipe this straight into the same downsample +
 // IPC-push logic instead of inventing a new wire format.
 //
+// ASYNC: resolves only once pw-record is confirmed spawned, so a caller that
+// gets a capture back knows the process is really running. Without that wait,
+// spawn errors (ENOENT, a PipeWire refusal) surface asynchronously AFTER the
+// IPC handler already told the renderer "success" — and the recording silently
+// gets a dead system channel. Rejects instead if the process fails to start.
+//
 // Returns { proc, stop } — stop() sends SIGTERM and resolves once the
 // process has actually exited (matching main.js's convention elsewhere of
 // awaiting subprocess teardown rather than fire-and-forget kill()).
@@ -78,7 +84,6 @@ function startLoopbackCapture({ sinkName, sampleRate = 48000, channels = 2, onEr
     `--channels=${channels}`,
     '-', // stdout, raw PCM
   ]);
-  proc.on('error', (err) => onError?.(err));
   proc.stderr.on('data', () => {}); // pw-record logs progress to stderr; not an error signal
   const stop = () =>
     new Promise((resolve) => {
@@ -86,7 +91,15 @@ function startLoopbackCapture({ sinkName, sampleRate = 48000, channels = 2, onEr
       proc.once('exit', () => resolve());
       proc.kill('SIGTERM');
     });
-  return { proc, stdout: proc.stdout, stop, target, sampleRate, channels };
+  return new Promise((resolve, reject) => {
+    proc.once('spawn', () => {
+      // Past startup: further errors are a live-capture problem for the
+      // caller's onError, not a failed start.
+      proc.on('error', (err) => onError?.(err));
+      resolve({ proc, stdout: proc.stdout, stop, target, sampleRate, channels });
+    });
+    proc.once('error', reject);
+  });
 }
 
 module.exports = { isLinuxLoopbackSupported, getDefaultSinkName, startLoopbackCapture };

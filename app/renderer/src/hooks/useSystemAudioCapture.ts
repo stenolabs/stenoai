@@ -335,8 +335,14 @@ export function useSystemAudioCapture() {
           sysStream?.getTracks().forEach((t) => t.stop());
           sysStream = null;
           sysStreamRef.current = null;
-          if (linuxLoopbackRef.current) {
+          // Branch on PLATFORM, not on whether linuxLoopbackRef got assigned:
+          // main may already have a live pw-record even when the failure
+          // happened before the ref was set (see linuxLoopbackStream.ts), and
+          // routing that case to disableLoopbackAudio() — a mac/Windows no-op
+          // on Linux — would orphan the subprocess.
+          if (isLinux) {
             stopLinuxLoopback();
+            try { await bridge.recording.stopLinuxLoopback(); } catch { /* */ }
           } else {
             try { await bridge.recording.disableLoopbackAudio(); } catch { /* */ }
           }

@@ -20,7 +20,7 @@ async function main() {
   }
 
   const out = fs.createWriteStream(OUT_PATH);
-  const capture = startLoopbackCapture({
+  const capture = await startLoopbackCapture({
     onError: (err) => console.error('capture error:', err),
   });
   console.log('default sink:', capture.target);

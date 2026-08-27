@@ -220,6 +220,26 @@ Known alpha limitations:
 - **Auto-update** is wired (NSIS + `latest.yml`) but updates are unsigned until code signing is in place.
 - **Transcription** runs through `onnx-asr` (ONNX Runtime) instead of MLX, with the same Parakeet model and behaviour as macOS. Whisper is also available as an engine option.
 
+### Linux (Debian/Ubuntu, alpha)
+
+Verified on Ubuntu 26.04 LTS (GNOME/Wayland, PipeWire), including system-audio loopback capture with `[You]`/`[Others]` diarisation.
+
+**Install (`.deb`, recommended):** download **`stenoAI-linux-<version>-amd64.deb`** and install it with `sudo apt install ./stenoAI-linux-<version>-amd64.deb` — apt pulls in the required system libraries automatically.
+
+**AppImage:** download **`stenoAI-linux-<version>-x86_64.AppImage`**, `chmod +x` it, and run it. An AppImage carries no package metadata, so **you must install PortAudio yourself** or the setup check fails with `OSError: PortAudio library not found`:
+
+```bash
+sudo apt install libportaudio2
+```
+
+Known alpha limitations:
+
+- **Unsigned**, same as the Windows alpha.
+- **CPU-only summarisation** and `onnx-asr` transcription, same as Windows.
+- **System audio requires PipeWire** (Ubuntu's default since 22.10). The toggle reports unsupported on a PulseAudio-only or headless install, and recording falls back to mic-only.
+- **No speaker diarization sidecar** — per-channel `[You]`/`[Others]` labelling works, but the acoustic multi-speaker split is macOS-only.
+- **No auto-update.** `.deb` installs update by downloading a new package; AppImage self-update is a follow-up.
+
 Issues + feedback welcome on the GitHub issues tracker.
 
 ## Local Development/Use Locally
