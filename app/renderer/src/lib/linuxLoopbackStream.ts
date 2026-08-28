@@ -88,11 +88,13 @@ export async function startLinuxLoopbackStream(
     writer.write(audioData).catch(() => {}).finally(() => { inFlight--; });
   });
 
-  const unsubscribeEnded = bridge.on.linuxLoopbackEnded((detail) => {
+  const unsubscribeEnded = bridge.on.linuxLoopbackEnded(async (detail) => {
     if (stopped) return;
     stopped = true;
     unsubscribe();
-    writer.close().catch(() => {});
+    // Await the close before notifying: onEnded's contract is that the track is
+    // already closed, so a caller must not observe pending frames.
+    await writer.close().catch(() => {});
     onEnded?.(detail);
   });
 

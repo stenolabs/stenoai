@@ -286,6 +286,9 @@ export function useSystemAudioCapture() {
               // pw-record died mid-recording: the track is already closed, so
               // the mix continues mic-only. NOT reportCaptureError — that
               // prefixes "Recording couldn't start", which is false here.
+              // The notification follows the same mic-only path (and the same
+              // notifications_enabled gate) the macOS acquisition-failure case
+              // below uses; the debug line above is the ungated record.
               onEnded: ({ code, signal }) => {
                 appendDebugLog(`[linux-loopback] capture ended (code=${code}, signal=${signal})`);
                 void bridge.settings.showSystemAudioMicOnlyNotification();

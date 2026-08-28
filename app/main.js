@@ -9484,7 +9484,18 @@ ipcMain.handle('close-system-audio-file', async () => {
 // ./linux-loopback.js for why). Module-level, like activeSysAudioWriteStream.
 let activeLinuxLoopback = null;
 
-ipcMain.handle('start-linux-loopback', async () => {
+// Serialises start/stop. The reclaim guard below reads activeLinuxLoopback and
+// then awaits twice before assigning it, so two overlapping starts would each
+// pass the check and the loser's pw-record would be orphaned with its stdout
+// handler still attached.
+let linuxLoopbackQueue = Promise.resolve();
+function queueLinuxLoopback(fn) {
+  const run = linuxLoopbackQueue.then(fn, fn);
+  linuxLoopbackQueue = run.then(() => {}, () => {});
+  return run;
+}
+
+ipcMain.handle('start-linux-loopback', () => queueLinuxLoopback(async () => {
   try {
     // Reclaim an unstopped prior capture, same as open-system-audio-file above
     // — and not a rare race: a renderer reload remounts useSystemAudioCapture
@@ -9524,16 +9535,17 @@ ipcMain.handle('start-linux-loopback', async () => {
     sendDebugLog(`[linux-loopback] start failed: ${error.message}`);
     return { success: false, error: error.message };
   }
-});
+}));
 
-ipcMain.handle('stop-linux-loopback', async () => {
+ipcMain.handle('stop-linux-loopback', () => queueLinuxLoopback(async () => {
   const capture = activeLinuxLoopback;
   activeLinuxLoopback = null;
   if (!capture) return { success: true };
+  capture.stdout.removeAllListeners('data');
   await capture.stop();
   sendDebugLog('[linux-loopback] stopped');
   return { success: true };
-});
+}));
 
 // A failed renderer-side capture (mic permission denied, no audio device)
 // would otherwise be silent — the optimistic "recording" pill is dropped via
