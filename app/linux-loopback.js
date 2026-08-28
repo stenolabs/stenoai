@@ -1,42 +1,44 @@
 // Linux system-audio loopback.
 //
-// macOS captures system audio via a CoreAudio Process Tap and Windows via
-// Chromium's WASAPI loopback, both reached through the renderer's
-// getDisplayMedia({video:true, audio:true}) call (see main.js's
-// setDisplayMediaRequestHandler and electron-audio-loopback's initMain).
-// That path does NOT translate cleanly to Linux: under Wayland,
-// getDisplayMedia's video capture goes through xdg-desktop-portal's
-// ScreenCast interface, which shows the user a screen/window picker dialog —
-// even though the video track would be immediately discarded. That's a real
-// UX regression versus mac/Windows, where no dialog appears.
+// WHY NOT getDisplayMedia (the mac/Windows path): on Wayland its video capture
+// goes through xdg-desktop-portal's ScreenCast interface, which shows a
+// screen-share picker — for a video track we discard immediately. mac/Windows
+// show no dialog, so that would be a real UX regression.
 //
-// This module instead talks to PipeWire directly, bypassing Chromium's
-// capture path entirely: PipeWire exposes every sink's "monitor" ports to any
-// client with normal desktop-session access (the same mechanism PulseAudio's
-// ".monitor" sources used), so a plain audio-only capture needs no portal
-// and shows no picker. main.js wires this into isSystemAudioSupported() and
-// IPC handlers (start-linux-loopback/stop-linux-loopback); the renderer side
-// (useSystemAudioCapture.ts + lib/linuxLoopbackStream.ts) wraps the incoming
-// PCM in a MediaStreamTrackGenerator so it drops into the SAME
-// createMediaStreamSource(sysStream) call already used for mic/mac/Windows.
+// PipeWire exposes every sink's monitor ports to any client with normal
+// desktop-session access, so talking to it directly needs no portal and shows
+// no picker. The renderer (lib/linuxLoopbackStream.ts) wraps the PCM in a
+// MediaStreamTrackGenerator, landing in the same createMediaStreamSource call
+// mac/Windows already use.
 
 const { spawn, spawnSync } = require('child_process');
 
-// pw-record ships in the `pipewire-bin` package, which Ubuntu's default
-// desktop image pulls in automatically as a dependency of pipewire-audio
-// (confirmed via `apt-mark showmanual` showing it was never manually
-// installed) — no bundling needed, unlike ffmpeg/Ollama.
-//
-// True only on Linux with pw-record actually runnable. A stock Ubuntu
-// desktop always has this; a minimal/headless install or a PulseAudio-only
-// setup (rare on modern Ubuntu, but not impossible) does not — callers must
-// treat this as a runtime capability check, not a platform check. Checking
-// pw-record alone is enough: getDefaultSinkName()/startLoopbackCapture()
-// below throw their own clear errors if there's no live session when
-// capture actually starts.
+// Both tools ship in `pipewire-bin`, which Ubuntu's desktop image installs by
+// default — nothing to bundle. A runtime capability check, not a platform one:
+// status === 0 (rather than just "not ENOENT") so a present-but-unexecutable
+// binary reports unsupported instead of failing mid-recording. pw-dump is
+// checked too because getDefaultSinkName needs it.
+function isRunnable(bin) {
+  const probe = spawnSync(bin, ['--version']);
+  return !probe.error && probe.status === 0;
+}
+
 function isLinuxLoopbackSupported() {
   if (process.platform !== 'linux') return false;
-  return spawnSync('pw-record', ['--version']).error?.code !== 'ENOENT';
+  return isRunnable('pw-record') && isRunnable('pw-dump');
+}
+
+// Emits only whole frames, carrying a partial trailing frame into the next
+// call — the renderer floors away any remainder it receives, which swaps L/R
+// for the rest of the recording. Returns null when no complete frame is ready.
+function createFrameAligner(frameBytes) {
+  let pending = null;
+  return (chunk) => {
+    const buf = pending ? Buffer.concat([pending, chunk]) : chunk;
+    const whole = buf.length - (buf.length % frameBytes);
+    pending = whole < buf.length ? buf.subarray(whole) : null;
+    return whole > 0 ? buf.subarray(0, whole) : null;
+  };
 }
 
 // Resolves the current default output device's PipeWire node NAME (not a
@@ -45,8 +47,11 @@ function isLinuxLoopbackSupported() {
 // pw-record accepts a node name directly via --target, confirmed by hand.
 function getDefaultSinkName() {
   const result = spawnSync('pw-dump', [], { maxBuffer: 32 * 1024 * 1024 });
+  // A spawn failure (pw-dump missing/unexecutable) leaves status null, so
+  // report result.error first — otherwise this read as "pw-dump failed: null".
+  if (result.error) throw new Error(`pw-dump could not run: ${result.error.message}`);
   if (result.status !== 0) {
-    throw new Error(`pw-dump failed: ${result.stderr?.toString() || result.status}`);
+    throw new Error(`pw-dump failed: ${result.stderr?.toString() || `exit ${result.status}`}`);
   }
   const objects = JSON.parse(result.stdout.toString());
   const defaultMeta = objects.find(
@@ -59,22 +64,10 @@ function getDefaultSinkName() {
   return name;
 }
 
-// Starts capturing the default sink's monitor (i.e. "what's playing") as
-// raw interleaved PCM on stdout — no WAV header, no portal dialog, no video
-// track to discard. This mirrors the RAW format the live-transcript tap
-// already pushes over IPC (see useSystemAudioCapture.ts's tapNode), so a
-// real integration could pipe this straight into the same downsample +
-// IPC-push logic instead of inventing a new wire format.
-//
-// ASYNC: resolves only once pw-record is confirmed spawned, so a caller that
-// gets a capture back knows the process is really running. Without that wait,
-// spawn errors (ENOENT, a PipeWire refusal) surface asynchronously AFTER the
-// IPC handler already told the renderer "success" — and the recording silently
-// gets a dead system channel. Rejects instead if the process fails to start.
-//
-// Returns { proc, stop } — stop() sends SIGTERM and resolves once the
-// process has actually exited (matching main.js's convention elsewhere of
-// awaiting subprocess teardown rather than fire-and-forget kill()).
+// Captures the default sink's monitor as raw interleaved PCM on stdout.
+// Resolves only once pw-record has actually spawned — otherwise a spawn error
+// surfaces after the IPC handler already reported success, leaving the
+// recording with a dead system channel. stop() SIGTERMs and awaits exit.
 function startLoopbackCapture({ sinkName, sampleRate = 48000, channels = 2, onError } = {}) {
   const target = sinkName || getDefaultSinkName();
   const proc = spawn('pw-record', [
@@ -102,4 +95,9 @@ function startLoopbackCapture({ sinkName, sampleRate = 48000, channels = 2, onEr
   });
 }
 
-module.exports = { isLinuxLoopbackSupported, getDefaultSinkName, startLoopbackCapture };
+module.exports = {
+  isLinuxLoopbackSupported,
+  getDefaultSinkName,
+  startLoopbackCapture,
+  createFrameAligner,
+};

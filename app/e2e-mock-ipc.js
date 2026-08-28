@@ -464,6 +464,10 @@ function install({ ipcMain }) {
   // real ipcMain.handle callback. Mirror the real handlers' return shapes from
   // app/main.js (get-ai-provider ~5950, org-* ~7990).
   const MOCKS = {
+    // The permissive default ({success:true}) would leave sampleRate/channels
+    // undefined, making the renderer's bytesPerFrame NaN. Mirror the real
+    // handler's shape (main.js start-linux-loopback) instead.
+    'start-linux-loopback': async () => ({ success: true, sampleRate: 48000, channels: 2 }),
     'start-recording-ui': async (_event, name, _trigger, appendTo) => {
       rec.active = true;
       rec.paused = false;
@@ -1477,6 +1481,11 @@ function install({ ipcMain }) {
     },
   };
 
+  // Invoked-channel log, readable from a spec via app.evaluate(). The
+  // contextBridge object is frozen, so a spec cannot spy on the renderer side;
+  // this is the observable seam for "which IPC did the renderer actually call".
+  global.__mockIpcCalls = [];
+
   const originalHandle = ipcMain.handle.bind(ipcMain);
   ipcMain.handle = (channel, realFn) => {
     let fn;
@@ -1493,8 +1502,20 @@ function install({ ipcMain }) {
       // never installed under mock IPC.
       fn = async () => ({ success: true });
     }
-    return originalHandle(channel, fn);
+    return originalHandle(channel, (...args) => {
+      global.__mockIpcCalls.push(channel);
+      return fn(...args);
+    });
   };
+
+  // send() channels register through ipcMain.on, not .handle — log those too
+  // (the real listener still runs; this only observes).
+  const originalOn = ipcMain.on.bind(ipcMain);
+  ipcMain.on = (channel, listener) =>
+    originalOn(channel, (...args) => {
+      global.__mockIpcCalls.push(channel);
+      return listener(...args);
+    });
 }
 
 module.exports = { install };

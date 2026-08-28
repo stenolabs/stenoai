@@ -1388,6 +1388,9 @@ export interface StenoaiBridge {
      *  recording.startLinuxLoopback. Electron serialises the main-side Buffer
      *  as a Uint8Array on this side of the bridge. */
     linuxLoopbackChunk: Subscribe<Uint8Array>;
+    /** pw-record died on its own (crash, PipeWire restart) — no more chunks
+     *  are coming. Not emitted on a normal stopLinuxLoopback(). */
+    linuxLoopbackEnded: Subscribe<{ code: number | null; signal: string | null }>;
     updateAvailable: Subscribe<UpdateAvailableEvent>;
     updateDownloadProgress: Subscribe<UpdateProgressEvent>;
     updateDownloaded: Subscribe<UpdateDownloadedEvent>;

@@ -1,5 +1,8 @@
 import { ipc } from './ipc';
 
+/** ~2s of audio at the observed ~45 chunks/sec. */
+const MAX_IN_FLIGHT_CHUNKS = 96;
+
 export interface LinuxLoopbackStream {
   /** A live MediaStream wrapping a MediaStreamTrackGenerator — drops into
    *  ctx.createMediaStreamSource() exactly like the mac/Windows loopback
@@ -10,25 +13,21 @@ export interface LinuxLoopbackStream {
   stop: () => Promise<void>;
 }
 
+export interface LinuxLoopbackOptions {
+  /** Called when pw-record dies on its own, after the track has been closed.
+   *  Not called on a normal stop(). */
+  onEnded?: (detail: { code: number | null; signal: string | null }) => void;
+}
+
 /**
- * Linux system-audio loopback, bridged into the renderer's Web Audio graph
- * without touching getDisplayMedia. See app/linux-loopback.js for why: on
- * Wayland, getDisplayMedia's video capture goes through xdg-desktop-portal's
- * ScreenCast picker, which would show the user a screen/window-share dialog
- * just to get a video track we'd immediately discard. Chromium's own
- * PipeWire capturer AND raw pw-record land in the same place (a PipeWire
- * client), but only the portal-mediated one shows a picker — a plain
- * pw-record subprocess does not, matching the mic/mac/Windows UX of "no
- * dialog, audio just starts."
- *
- * main.js spawns pw-record (via linux-loopback.js) targeting the default
- * sink's monitor and streams raw interleaved s16 PCM back over
- * on.linuxLoopbackChunk. This wraps those chunks as AudioData frames written
- * into a MediaStreamTrackGenerator, so the caller gets back an ordinary
- * MediaStream — from that point on it is indistinguishable from the mic or
- * mac/Windows loopback streams to the rest of useSystemAudioCapture.ts.
+ * Wraps the PCM main streams over on.linuxLoopbackChunk into an ordinary
+ * MediaStream, so the rest of useSystemAudioCapture.ts can't tell it apart from
+ * the mic or the mac/Windows loopback. See app/linux-loopback.js for why this
+ * doesn't use getDisplayMedia.
  */
-export async function startLinuxLoopbackStream(): Promise<LinuxLoopbackStream> {
+export async function startLinuxLoopbackStream(
+  { onEnded }: LinuxLoopbackOptions = {},
+): Promise<LinuxLoopbackStream> {
   const bridge = ipc();
   const result = await bridge.recording.startLinuxLoopback();
   if (!result.success) {
@@ -37,9 +36,8 @@ export async function startLinuxLoopbackStream(): Promise<LinuxLoopbackStream> {
   const { sampleRate, channels } = result;
   const bytesPerFrame = 2 * channels; // s16 = 2 bytes/sample
 
-  // Past this point main has a live pw-record subprocess. Anything that throws
-  // before we hand back a stop handle would orphan it (it would keep capturing
-  // system audio until app quit), so tear it down before rethrowing.
+  // main now has a live pw-record; anything throwing before we return a stop
+  // handle would orphan it.
   let generator: MediaStreamTrackGenerator;
   let writer: WritableStreamDefaultWriter<AudioData>;
   try {
@@ -55,18 +53,19 @@ export async function startLinuxLoopbackStream(): Promise<LinuxLoopbackStream> {
   }
   let timestampUs = 0;
   let stopped = false;
+  let inFlight = 0;
 
   const unsubscribe = bridge.on.linuxLoopbackChunk((bytes) => {
     if (stopped) return;
     const numberOfFrames = Math.floor(bytes.length / bytesPerFrame);
     if (numberOfFrames === 0) return;
+    // Drop rather than queue without bound if the consumer falls behind: stale
+    // audio is worth less than unbounded renderer memory.
+    if (inFlight >= MAX_IN_FLIGHT_CHUNKS) return;
     let audioData: AudioData;
     try {
-      // AudioData's `data` must be backed by a plain ArrayBuffer (not the
-      // SharedArrayBuffer-compatible ArrayBufferLike Electron's IPC
-      // deserialiser hands back) — copy into a fresh buffer. AudioData
-      // itself copies its input at construction time, so this isn't a
-      // double-copy for retention purposes, just for the type.
+      // AudioData needs a plain ArrayBuffer, not the ArrayBufferLike Electron's
+      // IPC deserialiser hands back.
       const buf = new ArrayBuffer(bytes.byteLength);
       new Uint8Array(buf).set(bytes);
       audioData = new AudioData({
@@ -78,21 +77,31 @@ export async function startLinuxLoopbackStream(): Promise<LinuxLoopbackStream> {
         data: buf,
       });
     } catch (err) {
-      // A malformed/truncated chunk must not take down the whole recording —
-      // drop it and keep going, same tolerance the mic/system RMS paths give
-      // a single bad read.
+      // One bad chunk shouldn't end the recording.
       console.error('[linuxLoopbackStream] failed to build AudioData', err);
       return;
     }
     timestampUs += Math.round((numberOfFrames / sampleRate) * 1_000_000);
-    // Fire-and-forget: writer.write() rejects once the writable is closed
-    // (a stop() race with an in-flight IPC chunk) — that's expected, not an
-    // error worth surfacing.
-    writer.write(audioData).catch(() => {});
+    // Fire-and-forget: write() rejects once the writable is closed (a stop()
+    // racing an in-flight chunk), which is expected.
+    inFlight++;
+    writer.write(audioData).catch(() => {}).finally(() => { inFlight--; });
+  });
+
+  const unsubscribeEnded = bridge.on.linuxLoopbackEnded((detail) => {
+    if (stopped) return;
+    stopped = true;
+    unsubscribe();
+    writer.close().catch(() => {});
+    onEnded?.(detail);
   });
 
   const stop = async () => {
-    if (stopped) return;
+    unsubscribeEnded();
+    if (stopped) {
+      // Already ended on its own — main's process is gone, nothing to kill.
+      return;
+    }
     stopped = true;
     unsubscribe();
     try {

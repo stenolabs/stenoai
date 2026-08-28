@@ -281,12 +281,18 @@ export function useSystemAudioCapture() {
             throw new Error('loopback disabled');
           }
           if (isLinux) {
-            // Bypasses getDisplayMedia entirely — see
-            // lib/linuxLoopbackStream.ts's docstring for why (a Wayland
-            // portal picker vs. a plain PipeWire client). The resulting
-            // stream still needs a real audio track before we trust it,
-            // same bar the getDisplayMedia branch below applies.
-            const linuxLoopback = await startLinuxLoopbackStream();
+            // Bypasses getDisplayMedia — see lib/linuxLoopbackStream.ts.
+            const linuxLoopback = await startLinuxLoopbackStream({
+              // pw-record died mid-recording: the track is already closed, so
+              // the mix continues mic-only. Tell the user rather than letting
+              // the system channel go quiet with no explanation.
+              onEnded: ({ code, signal }) => {
+                appendDebugLog(`[linux-loopback] capture ended (code=${code}, signal=${signal})`);
+                bridge.recording.reportCaptureError(
+                  'System audio capture stopped; continuing with microphone only.',
+                );
+              },
+            });
             if (cancelled()) { void linuxLoopback.stop(); stopAcquired(); return; }
             sysStream = linuxLoopback.stream;
             if (sysStream.getAudioTracks().length === 0) {
@@ -335,11 +341,9 @@ export function useSystemAudioCapture() {
           sysStream?.getTracks().forEach((t) => t.stop());
           sysStream = null;
           sysStreamRef.current = null;
-          // Branch on PLATFORM, not on whether linuxLoopbackRef got assigned:
-          // main may already have a live pw-record even when the failure
-          // happened before the ref was set (see linuxLoopbackStream.ts), and
-          // routing that case to disableLoopbackAudio() — a mac/Windows no-op
-          // on Linux — would orphan the subprocess.
+          // Branch on PLATFORM, not on whether the ref got assigned: main may
+          // have a live pw-record even when the failure landed before the ref
+          // was set, and disableLoopbackAudio() is a no-op on Linux.
           if (isLinux) {
             stopLinuxLoopback();
             try { await bridge.recording.stopLinuxLoopback(); } catch { /* */ }

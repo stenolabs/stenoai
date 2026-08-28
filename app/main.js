@@ -65,7 +65,7 @@ const { describeUpdateError, updateErrorPhase } = require('./update-error-copy')
 const { isOSUpdateEligible, MIN_MACOS_FOR_AUTOUPDATE } = require('./update-os-gate');
 const processingLog = require('./processing-log');
 const { isMeetingApp, allowsDeviceLevelFallback, isMacos14Plus } = require('./meeting-detect');
-const { isLinuxLoopbackSupported, startLoopbackCapture } = require('./linux-loopback');
+const { isLinuxLoopbackSupported, startLoopbackCapture, createFrameAligner } = require('./linux-loopback');
 const { sweepOrphanedLiveSnapshots } = require('./live-snapshot-sweep');
 const { userNotesFilePath } = require('./notes-file');
 const { buildNoteReadyNotificationOptions, buildTranscriptReadyBody } = require('./notification-copy');
@@ -9475,44 +9475,42 @@ ipcMain.handle('close-system-audio-file', async () => {
   }
 });
 
-// Linux system-audio loopback. Unlike mac/Windows (Chromium's getDisplayMedia,
-// intercepted below via setDisplayMediaRequestHandler), Linux never goes
-// through Chromium's capture path at all — see ./linux-loopback.js for why.
-// Instead this spawns `pw-record` directly and pushes raw PCM to the renderer,
-// which reconstructs a MediaStream via MediaStreamTrackGenerator (see
-// useSystemAudioCapture.ts) and feeds it into the SAME mix graph mac/Windows
-// use past this point. Module-level like activeSysAudioWriteStream above:
-// there is only ever one recording at a time.
+// Linux system-audio loopback — spawns pw-record and streams raw PCM to the
+// renderer instead of going through Chromium's capture path (see
+// ./linux-loopback.js for why). Module-level, like activeSysAudioWriteStream.
 let activeLinuxLoopback = null;
 
 ipcMain.handle('start-linux-loopback', async () => {
   try {
+    // Reclaim an unstopped prior capture, same as open-system-audio-file above
+    // — and not a rare race: a renderer reload remounts useSystemAudioCapture
+    // with a fresh activeRef, which restarts capture off main's still-
+    // 'recording' status. Leaving the old process running would feed the
+    // renderer's new subscription both streams interleaved, and stop-linux-
+    // loopback only knows the newer one.
+    if (activeLinuxLoopback) {
+      const prior = activeLinuxLoopback;
+      activeLinuxLoopback = null;
+      sendDebugLog('[linux-loopback] abandoning unstopped prior capture');
+      prior.stdout.removeAllListeners('data');
+      await prior.stop();
+    }
     const capture = await startLoopbackCapture({
       onError: (err) => sendDebugLog(`[linux-loopback] capture error: ${err.message}`),
     });
-    // No fixed batch size — AudioData on the renderer side
-    // (linuxLoopbackStream.ts) computes numberOfFrames per chunk. But a pipe
-    // 'data' event can split mid-sample, and the renderer's floor() division
-    // would silently DROP a trailing partial frame, desyncing L/R for every
-    // frame after it. So only forward whole frames and carry the remainder
-    // into the next chunk.
-    const frameBytes = 2 * capture.channels; // s16 = 2 bytes/sample
-    let pending = null;
+    const align = createFrameAligner(2 * capture.channels); // s16 = 2 bytes/sample
     capture.stdout.on('data', (chunk) => {
-      const buf = pending ? Buffer.concat([pending, chunk]) : chunk;
-      const whole = buf.length - (buf.length % frameBytes);
-      pending = whole < buf.length ? buf.subarray(whole) : null;
-      if (whole > 0) {
-        mainWindow?.webContents.send('linux-loopback-chunk', buf.subarray(0, whole));
-      }
+      const whole = align(chunk);
+      if (whole) mainWindow?.webContents.send('linux-loopback-chunk', whole);
     });
     capture.proc.on('exit', (code, signal) => {
-      // A stop() call sets activeLinuxLoopback = null itself before killing the
-      // process, so only log an unexpected exit (pw-record crashed, PipeWire
-      // restarted underneath it) — not the normal stop path.
+      // stop() clears the ref before killing, so reaching here still-referenced
+      // means pw-record died on its own. Tell the renderer — otherwise the
+      // recording continues with a dead system channel and no warning.
       if (activeLinuxLoopback?.proc === capture.proc) {
         sendDebugLog(`[linux-loopback] pw-record exited unexpectedly (code=${code}, signal=${signal})`);
         activeLinuxLoopback = null;
+        mainWindow?.webContents.send('linux-loopback-ended', { code, signal });
       }
     });
     activeLinuxLoopback = capture;

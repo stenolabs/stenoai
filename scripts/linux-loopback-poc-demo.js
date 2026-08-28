@@ -36,10 +36,15 @@ async function main() {
   const expectedBytes = capture.sampleRate * bytesPerSample * (DURATION_MS / 1000);
   console.log(`captured ${size} bytes (expected ~${Math.round(expectedBytes)} for ${DURATION_MS}ms @ ${capture.sampleRate}Hz/${capture.channels}ch)`);
 
-  // Proves this isn't just a zeroed buffer — same check used to validate
-  // the manual pw-record test.
   const { peak, rms } = measurePeakRms(fs.readFileSync(OUT_PATH));
   console.log(`peak amplitude: ${peak}/32768  rms: ${rms.toFixed(1)}`);
+
+  // A silent capture is indistinguishable from a broken one, so don't call it a
+  // pass: play audio into the default sink while this runs.
+  if (size === 0) throw new Error('captured nothing — pw-record produced no output');
+  if (peak === 0) {
+    throw new Error('captured only silence — play audio into the default sink while this runs');
+  }
   console.log('PASS: captured non-empty PCM from the default sink monitor with no portal/consent dialog.');
 }
 

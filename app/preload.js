@@ -422,6 +422,7 @@ const stenoai = {
     liveTranscriptChunk: (cb) => subscribe('live-transcript-chunk', cb),
     liveTranscriptError: (cb) => subscribe('live-transcript-error', cb),
     linuxLoopbackChunk: (cb) => subscribe('linux-loopback-chunk', cb),
+    linuxLoopbackEnded: (cb) => subscribe('linux-loopback-ended', cb),
     updateAvailable: (cb) => subscribe('update-available', cb),
     updateDownloadProgress: (cb) => subscribe('update-download-progress', cb),
     updateDownloaded: (cb) => subscribe('update-downloaded', cb),
