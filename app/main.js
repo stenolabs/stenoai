@@ -8338,16 +8338,20 @@ ipcMain.handle('show-silence-auto-stop-notification', async (_event, payload) =>
 });
 
 // Fired by useSystemAudioCapture.ts when an enabled loopback acquisition
-// genuinely fails (for example, System Audio Recording permission is denied).
-// It is not fired when the user turns system audio off or the OS is unsupported.
-// Clicking it opens Settings via the same tray-open-settings event the tray
-// menu uses.
+// genuinely fails (for example, System Audio Recording permission is denied),
+// or when a live Linux capture dies mid-recording. It is not fired when the
+// user turns system audio off or the OS is unsupported. Clicking it opens
+// Settings via the same tray-open-settings event the tray menu uses.
 ipcMain.handle('show-system-audio-mic-only-notification', async () => {
   try {
     if (!(await notificationsEnabled())) return { success: true, shown: false };
     const notif = new Notification({
       title: 'Recording mic-only',
-      body: 'System audio could not be captured. Check Steno’s Screen & System Audio Recording access in System Settings.',
+      // The permissions hint is macOS-only; elsewhere there is no such setting
+      // to send the user to.
+      body: process.platform === 'darwin'
+        ? 'System audio could not be captured. Check Steno’s Screen & System Audio Recording access in System Settings.'
+        : 'System audio could not be captured. Continuing with the microphone only.',
       iconType: 'alert',
     });
     notif.on('click', () => {

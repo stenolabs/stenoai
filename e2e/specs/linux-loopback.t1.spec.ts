@@ -69,21 +69,22 @@ test('a frame-split chunk boundary does not break the bridge', async ({ launchAp
   expect(queue.hasRecording).toBe(true);
 });
 
-test('pw-record dying mid-recording reports a capture error and keeps the mic', async ({
+test('pw-record dying mid-recording warns mic-only and keeps recording', async ({
   launchApp,
 }) => {
   const { app, page } = await launchApp({ mockIpc: true, fakeAudio: true, env: LINUX_ENV });
   await page.evaluate((name) => window.stenoai.recording.start(name), SESSION);
   await expect.poll(() => ipcCalls(app)).toContain('start-linux-loopback');
 
-  // Healthy capture reports nothing.
-  expect(await ipcCalls(app)).not.toContain('recording-capture-error');
+  // Healthy capture warns about nothing.
+  expect(await ipcCalls(app)).not.toContain('show-system-audio-mic-only-notification');
 
   await emitLoopbackEnded(app, { code: 1, signal: null });
 
-  // The loss is surfaced to the user rather than the system channel just going
-  // quiet. reportCaptureError is a send(), so it lands in the same call log.
-  await expect.poll(() => ipcCalls(app)).toContain('recording-capture-error');
+  // The loss is surfaced as "Recording mic-only" rather than the system channel
+  // just going quiet. Deliberately NOT reportCaptureError, whose notification
+  // reads "Recording couldn't start" — untrue once a recording is under way.
+  await expect.poll(() => ipcCalls(app)).toContain('show-system-audio-mic-only-notification');
 
   // The recording itself survives — losing system audio degrades to mic-only
   // rather than tearing the session down.

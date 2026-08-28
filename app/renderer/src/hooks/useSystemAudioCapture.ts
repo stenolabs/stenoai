@@ -284,13 +284,11 @@ export function useSystemAudioCapture() {
             // Bypasses getDisplayMedia — see lib/linuxLoopbackStream.ts.
             const linuxLoopback = await startLinuxLoopbackStream({
               // pw-record died mid-recording: the track is already closed, so
-              // the mix continues mic-only. Tell the user rather than letting
-              // the system channel go quiet with no explanation.
+              // the mix continues mic-only. NOT reportCaptureError — that
+              // prefixes "Recording couldn't start", which is false here.
               onEnded: ({ code, signal }) => {
                 appendDebugLog(`[linux-loopback] capture ended (code=${code}, signal=${signal})`);
-                bridge.recording.reportCaptureError(
-                  'System audio capture stopped; continuing with microphone only.',
-                );
+                void bridge.settings.showSystemAudioMicOnlyNotification();
               },
             });
             if (cancelled()) { void linuxLoopback.stop(); stopAcquired(); return; }

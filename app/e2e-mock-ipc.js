@@ -1508,14 +1508,6 @@ function install({ ipcMain }) {
     });
   };
 
-  // send() channels register through ipcMain.on, not .handle — log those too
-  // (the real listener still runs; this only observes).
-  const originalOn = ipcMain.on.bind(ipcMain);
-  ipcMain.on = (channel, listener) =>
-    originalOn(channel, (...args) => {
-      global.__mockIpcCalls.push(channel);
-      return listener(...args);
-    });
 }
 
 module.exports = { install };
