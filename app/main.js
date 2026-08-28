@@ -65,7 +65,7 @@ const { describeUpdateError, updateErrorPhase } = require('./update-error-copy')
 const { isOSUpdateEligible, MIN_MACOS_FOR_AUTOUPDATE } = require('./update-os-gate');
 const processingLog = require('./processing-log');
 const { isMeetingApp, allowsDeviceLevelFallback, isMacos14Plus } = require('./meeting-detect');
-const { isLinuxLoopbackSupported, startLoopbackCapture, createFrameAligner } = require('./linux-loopback');
+const { isLinuxLoopbackSupported, startLoopbackCapture, createFrameAligner, createSerialQueue } = require('./linux-loopback');
 const { sweepOrphanedLiveSnapshots } = require('./live-snapshot-sweep');
 const { userNotesFilePath } = require('./notes-file');
 const { buildNoteReadyNotificationOptions, buildTranscriptReadyBody } = require('./notification-copy');
@@ -9484,16 +9484,8 @@ ipcMain.handle('close-system-audio-file', async () => {
 // ./linux-loopback.js for why). Module-level, like activeSysAudioWriteStream.
 let activeLinuxLoopback = null;
 
-// Serialises start/stop. The reclaim guard below reads activeLinuxLoopback and
-// then awaits twice before assigning it, so two overlapping starts would each
-// pass the check and the loser's pw-record would be orphaned with its stdout
-// handler still attached.
-let linuxLoopbackQueue = Promise.resolve();
-function queueLinuxLoopback(fn) {
-  const run = linuxLoopbackQueue.then(fn, fn);
-  linuxLoopbackQueue = run.then(() => {}, () => {});
-  return run;
-}
+// Serialises start/stop — see createSerialQueue in ./linux-loopback.js for why.
+const queueLinuxLoopback = createSerialQueue();
 
 ipcMain.handle('start-linux-loopback', () => queueLinuxLoopback(async () => {
   try {

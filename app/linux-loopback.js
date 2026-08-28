@@ -28,6 +28,20 @@ function isLinuxLoopbackSupported() {
   return isRunnable('pw-record') && isRunnable('pw-dump');
 }
 
+// Runs queued operations one at a time. main.js serialises loopback start/stop
+// on this: the start handler reads the active-capture ref and then awaits twice
+// before assigning it, so two overlapping starts would each pass that check and
+// the loser's pw-record would be orphaned. A rejected operation settles the
+// queue without wedging later ones.
+function createSerialQueue() {
+  let tail = Promise.resolve();
+  return (fn) => {
+    const run = tail.then(fn, fn);
+    tail = run.then(() => {}, () => {});
+    return run;
+  };
+}
+
 // Emits only whole frames, carrying a partial trailing frame into the next
 // call — the renderer floors away any remainder it receives, which swaps L/R
 // for the rest of the recording. Returns null when no complete frame is ready.
@@ -100,4 +114,5 @@ module.exports = {
   getDefaultSinkName,
   startLoopbackCapture,
   createFrameAligner,
+  createSerialQueue,
 };

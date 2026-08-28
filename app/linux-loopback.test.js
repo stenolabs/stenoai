@@ -9,7 +9,7 @@
 
 const { test } = require('node:test');
 const assert = require('node:assert');
-const { createFrameAligner } = require('./linux-loopback');
+const { createFrameAligner, createSerialQueue } = require('./linux-loopback');
 
 const FRAME = 4; // stereo s16 = 2 channels * 2 bytes
 
@@ -70,18 +70,10 @@ test('aligners are independent (a restart does not inherit a stale remainder)', 
   );
 });
 
-// The start/stop serialisation in main.js is a promise-chain queue: overlapping
-// calls must run to completion one at a time, or two starts each pass the
-// "is there an active capture?" check before either assigns it and the loser's
-// process is orphaned. Same shape as queueLinuxLoopback there.
-test('a promise-chain queue serialises overlapping operations', async () => {
-  let queue = Promise.resolve();
-  const run = (fn) => {
-    const next = queue.then(fn, fn);
-    queue = next.then(() => {}, () => {});
-    return next;
-  };
-
+// createSerialQueue is the real function main.js serialises loopback start/stop
+// on — imported, not re-implemented, so deleting or breaking it fails here.
+test('serialises overlapping operations', async () => {
+  const run = createSerialQueue();
   const events = [];
   const op = (id) => async () => {
     events.push(`enter:${id}`);
@@ -91,23 +83,25 @@ test('a promise-chain queue serialises overlapping operations', async () => {
 
   await Promise.all([run(op('a')), run(op('b')), run(op('c'))]);
 
-  // Never "enter:b" before "exit:a" — no two operations overlap.
   assert.deepStrictEqual(events, [
     'enter:a', 'exit:a', 'enter:b', 'exit:b', 'enter:c', 'exit:c',
   ]);
 });
 
 test('a rejected operation does not stall the queue', async () => {
-  let queue = Promise.resolve();
-  const run = (fn) => {
-    const next = queue.then(fn, fn);
-    queue = next.then(() => {}, () => {});
-    return next;
-  };
-
-  const failing = run(async () => { throw new Error('start failed'); });
-  await assert.rejects(failing, /start failed/);
-  // A later start must still run — a single failure can't wedge every
-  // subsequent recording.
+  const run = createSerialQueue();
+  await assert.rejects(run(async () => { throw new Error('start failed'); }), /start failed/);
+  // A later start must still run — one failure can't wedge every later recording.
   assert.strictEqual(await run(async () => 'ok'), 'ok');
+});
+
+test('queues are independent', async () => {
+  const a = createSerialQueue();
+  const b = createSerialQueue();
+  let released;
+  const blocked = a(() => new Promise((r) => { released = r; }));
+  // b must not be held up by a's in-flight operation.
+  assert.strictEqual(await b(async () => 'b ran'), 'b ran');
+  released();
+  await blocked;
 });
