@@ -268,6 +268,12 @@ This app ships as a signed DMG to real users. Before considering any change comp
 ## Cross-Platform (macOS + Windows)
 The app ships on **macOS** (primary, signed + notarised DMG) **and Windows** (alpha, NSIS installer). **Any change to shared code must be considered for both platforms** — a fix for one can silently break or regress the other. The macOS build is the stable, signed one; never let a Windows fix change it.
 
+- **Windows priority 0.**
+  Treat Windows as a baseline compatibility target until validated real-user coverage exists.
+  Do not undertake Windows-only parity, polish, packaging, or speculative bug work unless Ben explicitly requests it or a reproducible real-user report justifies it.
+  Shared code should retain only the Windows support needed for baseline buildability and protection against security or data loss.
+  Do not block macOS or shared improvements on hypothetical Windows concerns; require a concrete, reproducible regression before expanding scope.
+  Existing platform gating and baseline CI checks remain in force, but they do not create additional Windows product scope.
 - **Gate platform-specific code on `process.platform`** (JS) / `sys.platform` (Python). Don't apply a platform-only change globally. Examples of macOS-only things that must be gated: `titleBarStyle: 'hiddenInset'` + traffic-light insets (the 82px `sb-top` / toggle offset, behind `html.is-mac`), the `services`/`hide`/`unhide` menu roles, `forceCoreAudioTap`, `app.dock`/dock-icon APIs, `askForMediaAccess`. Windows-only: `windowsHide` on spawns, `setAppUserModelId`, `taskkill` tree-kill, the explicit `BrowserWindow` icon.
 - **electron-builder config is per-platform.** `asar: false` lives in the `win` block only — macOS keeps `asar` (its signing/notarisation integrity depends on it). Put platform-specific build options in the `mac`/`win` blocks, not top-level.
 - **Paths must be cross-platform.** Use `os.pathsep` (not `:`), `src.config.get_user_data_dir()` (Python) and `getUserDataDir()` (main.js) — never hardcode `~/Library/Application Support/...`. The `.exe` suffix + `shutil.which` for bundled binaries.
