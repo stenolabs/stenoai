@@ -336,6 +336,8 @@ tooling you have. The workflow above is the portable part.
 ## Git Commit Guidelines
 - Do NOT include "Generated with Claude Code" attribution in commit messages
 - Do NOT include "Co-Authored-By: Claude <noreply@anthropic.com>" in commit messages
+- Do NOT include identifiers or names from private trackers in public commit messages, branches, pull requests, issues, reviews, or release notes.
+  Link the public GitHub issue or pull request from the private tracker instead.
 - Keep commit messages concise and focused on what changed
 - Use conventional commit format when appropriate (feat:, fix:, docs:, etc.)
 
