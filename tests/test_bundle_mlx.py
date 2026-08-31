@@ -9,6 +9,8 @@ matching this repo's skip convention for environment-dependent tests - it never
 fails just because the bundle wasn't built.
 """
 
+from __future__ import annotations
+
 import os
 import platform
 import subprocess
@@ -45,8 +47,6 @@ class BundleMLXCollisionTests(unittest.TestCase):
         )
 
 
-if __name__ == '__main__':
-    unittest.main()
 
 
 class PinnedMLXVersionTests(unittest.TestCase):
@@ -133,3 +133,7 @@ class PinnedMLXVersionTests(unittest.TestCase):
             'requirements.txt must pin mlx exactly; a floor lets an unverified '
             'mlx reach the shipped bundle and break Parakeet.',
         )
+
+
+if __name__ == '__main__':
+    unittest.main()
