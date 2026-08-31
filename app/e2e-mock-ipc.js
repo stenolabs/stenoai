@@ -290,6 +290,10 @@ function install({ ipcMain }) {
     cloudModel: 'gpt-4o',
     remoteUrl: '', // remote Ollama URL (empty = not configured)
     autoInstallWhenIdle: true, // idle auto-install toggle (config default on)
+    transcriptionEngine: process.env.STENOAI_E2E_MOCK_ENGINE || 'parakeet',
+    openAiAsrUrl: 'https://api.openai.com/v1',
+    openAiAsrModel: 'whisper-1',
+    openAiAsrKeySet: process.env.STENOAI_E2E_OAI_ASR_KEY_SET === '1',
   };
 
   // In-memory recording state machine for the pill-dock T1: start/pause/
@@ -571,12 +575,46 @@ function install({ ipcMain }) {
       error: null,
     }),
 
-    // Engine is static per launch; STENOAI_E2E_MOCK_ENGINE lets the pill-dock
-    // T1 drive the Whisper variant (no live transcript, inline pause/resume).
     'get-transcription-engine': async () => ({
       success: true,
-      engine: process.env.STENOAI_E2E_MOCK_ENGINE || 'parakeet',
+      engine: state.transcriptionEngine,
     }),
+    'set-transcription-engine': async (_event, engine) => {
+      state.transcriptionEngine = engine;
+      return { success: true, engine };
+    },
+
+    // OpenAI-compatible ASR config. Shape-only for first paint; the real
+    // set/get round-trip + key storage is covered by cloud-asr-config.t2.
+    'get-openai-asr-config': async () => ({
+      success: true,
+      api_url: state.openAiAsrUrl,
+      api_key_set: state.openAiAsrKeySet,
+      model: state.openAiAsrModel,
+    }),
+    'set-openai-asr-config': async (_event, cfg) => {
+      if (process.env.STENOAI_E2E_OAI_ASR_SAVE_FAIL === '1') {
+        return { success: false, error: 'mock save rejected' };
+      }
+      if (cfg?.api_url !== undefined) state.openAiAsrUrl = cfg.api_url;
+      if (cfg?.model !== undefined) state.openAiAsrModel = cfg.model;
+      return {
+        success: true,
+        api_url: state.openAiAsrUrl,
+        api_key_set: state.openAiAsrKeySet,
+        model: state.openAiAsrModel,
+      };
+    },
+    'set-openai-asr-key': async (_event, key) => {
+      if (process.env.STENOAI_E2E_OAI_ASR_SAVE_FAIL === '1') {
+        return { success: false, error: 'mock save rejected' };
+      }
+      if (process.env.STENOAI_E2E_OAI_ASR_KEY_RACE === '1' && key) {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+      state.openAiAsrKeySet = Boolean(key);
+      return { success: true, api_key_set: state.openAiAsrKeySet };
+    },
 
     // Default not-installed keeps most T1 specs on their routes; the pill-dock
     // T1 sets STENOAI_E2E_MOCK_PARAKEET_INSTALLED=1 so App.tsx's first-run

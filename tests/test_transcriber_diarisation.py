@@ -12,6 +12,7 @@ Covers:
 import io
 import json
 import math
+import os
 import struct
 import subprocess
 import sys
@@ -23,6 +24,7 @@ import wave
 from pathlib import Path
 from unittest.mock import Mock, patch
 
+import src.transcriber as transcriber_mod
 from src.transcriber import (
     BLEED_JACCARD_THRESHOLD,
     CHANNEL_DOMINANCE_THRESHOLD,
@@ -139,6 +141,43 @@ class TranscribeDiarisedTimestampTests(unittest.TestCase):
         self.assertNotIn("[00:0", result["text"])
         self.assertNotIn("[You]", result["text"])
 
+    def test_final_stereo_cleanup_retries_transient_windows_locks(self):
+        self.transcriber.transcribe_audio = Mock(side_effect=[
+            {"text": "Mic", "segments": [
+                {"text": "Mic", "start": 0.0, "end": 0.5},
+            ]},
+            {"text": "System", "segments": [
+                {"text": "System", "start": 1.0, "end": 1.5},
+            ]},
+        ])
+        real_unlink = Path.unlink
+        attempts = {self.mic_path: 0, self.system_path: 0}
+
+        def windows_transient_unlink(path, *args, **kwargs):
+            if path in attempts:
+                attempts[path] += 1
+                if attempts[path] < 3:
+                    raise PermissionError("Windows indexing holds the WAV briefly")
+            return real_unlink(path, *args, **kwargs)
+
+        with patch.object(Path, "unlink", new=windows_transient_unlink), patch(
+            "src.transcriber.time.sleep"
+        ) as sleep, patch.object(
+            transcriber_mod,
+            "_unlink_temporary_audio",
+            wraps=transcriber_mod._unlink_temporary_audio,
+        ) as cleanup:
+            self.transcriber.transcribe_diarised(self.audio_path)
+
+        self.assertEqual(attempts, {self.mic_path: 3, self.system_path: 3})
+        self.assertEqual(sleep.call_count, 4)
+        self.assertFalse(self.mic_path.exists())
+        self.assertFalse(self.system_path.exists())
+        self.assertEqual(cleanup.call_count, 2)
+        self.assertTrue(all(
+            call.args[1] == "stereo channel" for call in cleanup.call_args_list
+        ))
+
     def test_single_source_is_not_timestamped_or_diarised(self):
         self.transcriber.transcribe_audio = Mock(side_effect=[
             {"text": "Only mic.", "segments": [{"text": "Only mic.", "start": 0.4, "end": 1.0}]},
@@ -147,6 +186,26 @@ class TranscribeDiarisedTimestampTests(unittest.TestCase):
         result = self.transcriber.transcribe_diarised(self.audio_path)
         self.assertFalse(result["is_diarised"])
         self.assertIsNone(result["diarised_text"])
+
+    def test_textonly_fallback_has_no_fabricated_timestamps(self):
+        # An OpenAI-compatible text-only endpoint yields no per-segment
+        # timestamps; each channel returns a single whole-channel segment at
+        # start=end=0. Sorting those by start would collapse both channels to
+        # time 0 and always emit [You] before [Others]. Instead we keep the
+        # speaker labels but omit the fabricated [00:00] timestamp so we don't
+        # silently imply a chronology we don't actually have.
+        self.transcriber.transcribe_audio = Mock(side_effect=[
+            {"text": "Hi from me.", "segments": [{"text": "Hi from me.", "start": 0.0, "end": 0.0}]},
+            {"text": "And from them.", "segments": [{"text": "And from them.", "start": 0.0, "end": 0.0}]},
+        ])
+        result = self.transcriber.transcribe_diarised(self.audio_path)
+        self.assertTrue(result["is_diarised"])
+        self.assertEqual(
+            result["diarised_text"],
+            "[You] Hi from me.\n\n[Others] And from them.",
+        )
+        # No fabricated [MM:SS] marker anywhere in the diarised text.
+        self.assertNotIn("[00:00]", result["diarised_text"])
 
 
 class TranscribeDiarisedMultiSpeakerTests(unittest.TestCase):
@@ -789,6 +848,34 @@ class CheckRmsEnergyTests(unittest.TestCase):
         # surface the late-arriving energy and return True.
         path = self.tmpdir / 'late_speech.wav'
         _write_wav_with_segments(path, [(10, 'silent'), (5, 'loud')])
+        self.assertTrue(self.transcriber._check_rms_energy(path))
+
+    def test_sparse_left_channel_burst_between_old_windows_is_caught(self):
+        path = self.tmpdir / 'sparse_stereo_burst.wav'
+        frame_count = 16000 * 120
+        burst_start = 16000 * 37 + 8000
+        raw = bytearray(frame_count * 4)
+        # Per-channel RMS is above the gate while a stereo-wide average
+        # would dilute this below it.
+        signal_frame = (150).to_bytes(2, 'little', signed=True) + b'\0\0'
+        for frame in range(burst_start, burst_start + 80):
+            raw[frame * 4:(frame + 1) * 4] = signal_frame
+        with wave.open(str(path), 'wb') as wf:
+            wf.setnchannels(2)
+            wf.setsampwidth(2)
+            wf.setframerate(16000)
+            wf.writeframes(raw)
+
+        self.assertTrue(self.transcriber._check_rms_energy(path))
+
+    def test_truncated_pcm_read_is_not_classified_as_silence(self):
+        path = self.tmpdir / 'truncated.wav'
+        _write_wav_with_segments(path, [(1, 'silent')])
+        raw = bytearray(path.read_bytes())
+        raw[4:8] = (36 + 64000).to_bytes(4, 'little')
+        raw[40:44] = (64000).to_bytes(4, 'little')
+        path.write_bytes(raw)
+
         self.assertTrue(self.transcriber._check_rms_energy(path))
 
     def test_zero_frame_file_returns_false(self):
@@ -1907,6 +1994,35 @@ class RunStenoDiarizeTests(unittest.TestCase):
     def test_returns_none_when_binary_unresolved(self):
         with patch("src.transcriber._resolve_steno_diarize", return_value=None):
             self.assertIsNone(_run_steno_diarize(Path("/fake/mic.wav"), 60))
+
+    def test_sidecar_env_removes_cloud_credentials_case_insensitively(self):
+        payload = json.dumps({"segments": [], "speakers": {}}).encode()
+        fake = _FakePopen(stdout=payload)
+        with patch.dict(os.environ, {
+            "STENOAI_OAI_API_KEY": "parent-key",
+            "stenoai_oai_api_origin": "https://parent.example",
+            "STENOAI_OAI_API_URL": "https://parent.example/v1",
+        }), patch(
+            "src.transcriber._resolve_steno_diarize",
+            return_value="/fake/steno-diarize",
+        ), patch("subprocess.Popen", return_value=fake) as popen:
+            self.assertIsNotNone(_run_steno_diarize(
+                Path("/fake/mic.wav"),
+                60,
+                extra_env={
+                    "StEnOaI_OaI_ApI_KeY": "extra-key",
+                    "STENOAI_DIARIZE_COMPUTE_UNITS": "cpuOnly",
+                },
+            ))
+
+        env = popen.call_args.kwargs["env"]
+        self.assertFalse(any(
+            name.upper() in {
+                "STENOAI_OAI_API_KEY", "STENOAI_OAI_API_ORIGIN", "STENOAI_OAI_API_URL",
+            }
+            for name in env
+        ))
+        self.assertEqual(env["STENOAI_DIARIZE_COMPUTE_UNITS"], "cpuOnly")
 
     def test_windows_taskkill_failure_falls_back_to_parent_kill(self):
         proc = _FakePopen()

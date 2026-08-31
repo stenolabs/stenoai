@@ -325,6 +325,124 @@ test('records what the user sees, not the JSX source entity', async () => {
   assert.equal(decodeEntities('&unknown;'), '&unknown;');
 });
 
+test('translation lookups preserve English inventory copy across migration', async () => {
+  const { collectFromSource } = await import('./scripts/i18n-copy-inventory.mjs');
+  const catalogue = {
+    'fixture.confirmTitle': 'Send audio to a cloud service?',
+    'fixture.modelPlaceholder': 'whisper-1',
+  };
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'i18n-translation-'));
+  try {
+    const file = path.join(dir, 'Fixture.tsx');
+    fs.writeFileSync(
+      file,
+      `export function C() { return <p>Send audio to a cloud service?</p>; }`,
+    );
+    const before = collectFromSource(file);
+
+    fs.writeFileSync(
+      file,
+      `import { t as translate } from '@/i18n';\n` +
+        `export function C() { return <p>{translate('fixture.confirmTitle')}</p>; }`,
+    );
+    const after = collectFromSource(file, catalogue);
+
+    assert.deepEqual(after, before, 'moving copy behind t() must not rewrite the inventory');
+
+    fs.writeFileSync(file, `const model = 'whisper-1';`);
+    const uncertainBefore = collectFromSource(file);
+    fs.writeFileSync(
+      file,
+      `import { t } from '@/i18n';\nconst model = t('fixture.modelPlaceholder');`,
+    );
+    const uncertainAfter = collectFromSource(file, catalogue);
+    assert.deepEqual(
+      uncertainAfter,
+      uncertainBefore,
+      'moving ambiguous copy behind t() must preserve the uncertain partition',
+    );
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('translation inventory recognises explicit index, namespace, and re-export imports', async () => {
+  const { collectFromSource } = await import('./scripts/i18n-copy-inventory.mjs');
+  const catalogue = {
+    'fixture.malformed': '{{count items}} and {{1}} stay visible',
+    'fixture.title': 'Translated title',
+  };
+  const sources = [
+    `import { t } from '@/i18n/index';\nconst value = t('fixture.title');`,
+    `import * as i18n from '../i18n/index.ts';\nconst value = i18n.t('fixture.title');`,
+    `import { t as translate } from '@/lib/translation-reexport';\nconst value = translate('fixture.title');`,
+  ];
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'i18n-translation-'));
+  try {
+    const file = path.join(dir, 'Fixture.tsx');
+    for (const source of sources) {
+      fs.writeFileSync(file, source);
+      assert.deepEqual(collectFromSource(file, catalogue), {
+        copy: ['Translated title'],
+        uncertain: [],
+      });
+    }
+
+    fs.writeFileSync(
+      file,
+      `import { t } from '@/i18n';\nconst value = t('fixture.malformed');`,
+    );
+    assert.deepEqual(collectFromSource(file, catalogue), {
+      copy: ['{{count items}} and {{1}} stay visible'],
+      uncertain: [],
+    });
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('translation inventory fails closed for missing or dynamic keys', async () => {
+  const { collectFromSource } = await import('./scripts/i18n-copy-inventory.mjs');
+  const catalogue = { 'fixture.title': 'Translated title' };
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'i18n-translation-'));
+  try {
+    const file = path.join(dir, 'Fixture.tsx');
+    fs.writeFileSync(
+      file,
+      `import { t } from '@/i18n';\nexport function C() { return <p>{t('missing.key')}</p>; }`,
+    );
+    assert.throws(
+      () => collectFromSource(file, catalogue),
+      /missing English translation for "missing\.key"/,
+    );
+
+    fs.writeFileSync(
+      file,
+      `import { t } from '@/i18n';\nexport function C({ keyName }) { return <p>{t(keyName)}</p>; }`,
+    );
+    assert.throws(
+      () => collectFromSource(file, catalogue),
+      /translation keys must be static string literals/,
+    );
+
+    for (const source of [
+      `import * as translations from '@/lib/translation-reexport';\n` +
+        `export function C() { return <p>{translations.t('fixture.title')}</p>; }`,
+      `import translations from '@/lib/translation-reexport';\n` +
+        `export function C() { return <p>{translations.t('fixture.title')}</p>; }`,
+      `export function C(props) { return <p>{props.t('fixture.title')}</p>; }`,
+    ]) {
+      fs.writeFileSync(file, source);
+      assert.throws(
+        () => collectFromSource(file, catalogue),
+        /\.t\(\) cannot be verified as a translation lookup/,
+      );
+    }
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('baseline and glob keys are POSIX on every platform', async () => {
   // On Windows path.relative() returns backslashes: the slash-based ignore globs stop
   // matching and every baseline key differs from the committed one, so both gates fail on

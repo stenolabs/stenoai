@@ -1709,6 +1709,99 @@ def parakeet_status_cmd():
     }))
 
 
+@cli.command(name='get-openai-asr-config')
+def get_openai_asr_config_cmd():
+    """Return the current OpenAI-compatible ASR endpoint config (non-secret)."""
+    from src.config import get_config
+    config = get_config()
+    print(json.dumps({
+        "success": True,
+        "api_url": config.get_openai_asr_api_url(),
+        # Never return the actual key. This reflects only whether the env-var
+        # key is present in THIS process; the Electron main process overrides
+        # it with its safeStorage-backed hasOpenAiAsrKey() check, which is the
+        # authoritative source of truth.
+        "api_key_set": bool(config.get_openai_asr_api_key()),
+        "model": config.get_openai_asr_model(),
+    }))
+
+
+@cli.command(name='set-openai-asr-config')
+@click.option('--api-url', default=None, help='Base URL of the OpenAI-compatible STT endpoint')
+@click.option('--model', default=None, help='Model name (e.g. whisper-1)')
+def set_openai_asr_config_cmd(api_url, model):
+    """Persist OpenAI-compatible ASR endpoint settings (url/model only).
+
+    The API key is intentionally NOT accepted here -- it is a credential and
+    is stored encrypted by the Electron main process (safeStorage), never
+    passed through argv or written to config.json. Omit an option to leave it
+    unchanged.
+    """
+    from src.config import get_config
+    config = get_config()
+    errors = []
+
+    # Every mutation needs an authoritative locked read. A model-only update
+    # must not turn an unreadable existing file into a defaults-based rewrite
+    # that drops a legacy key or unrelated settings.
+    if not config.begin_transaction(require_readable_disk=True):
+        errors.append("Failed to start config transaction")
+    else:
+        try:
+            if api_url is not None:
+                # This transaction has reloaded config.json while holding its
+                # cross-process lock. A legacy plaintext key added after the
+                # Electron migration must prevent an endpoint switch, because
+                # a later cleanup could otherwise bind it to the new origin.
+                if config.has_legacy_openai_asr_api_key():
+                    errors.append("Legacy ASR credential must be migrated before changing endpoint")
+                elif not config.set_openai_asr_api_url(api_url):
+                    errors.append("Failed to save api_url")
+            if model is not None:
+                if not config.set_openai_asr_model(model):
+                    errors.append("Failed to save model")
+
+            if errors:
+                config.rollback_transaction()
+            elif not config.commit_transaction():
+                errors.append("Failed to save config")
+        except Exception:
+            config.rollback_transaction()
+            raise
+
+    if errors:
+        print(json.dumps({"success": False, "error": "; ".join(errors)}))
+    else:
+        print(json.dumps({
+            "success": True,
+            "api_url": config.get_openai_asr_api_url(),
+            "api_key_set": bool(config.get_openai_asr_api_key()),
+            "model": config.get_openai_asr_model(),
+        }))
+
+
+@cli.command(name='remove-legacy-openai-asr-api-key')
+def remove_legacy_openai_asr_api_key_cmd():
+    """Remove a plaintext legacy ASR key after safeStorage migration.
+
+    The value is never accepted, printed, or logged by this CLI. Electron has
+    already encrypted and read it back before invoking this command. Its
+    SHA-256 snapshot digest reaches this command only through a targeted env
+    variable, so a concurrent replacement cannot be deleted by mistake.
+    """
+    import os
+
+    from src.config import get_config
+    config = get_config()
+    expected_snapshot_digest = os.environ.get(
+        "STENOAI_OAI_LEGACY_SNAPSHOT_DIGEST", ""
+    )
+    if config.remove_legacy_openai_asr_api_key(expected_snapshot_digest):
+        print(json.dumps({"success": True}))
+    else:
+        print(json.dumps({"success": False, "error": "Legacy ASR key changed or was not removed"}))
+
+
 @cli.command(name='onnx-selftest')
 def onnx_selftest_cmd():
     """Prove ONNX Runtime's native libraries load + run inside the bundle.

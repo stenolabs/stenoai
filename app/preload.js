@@ -260,6 +260,15 @@ const stenoai = {
     set: (engine) => invoke('set-transcription-engine', engine),
   },
 
+  openaiAsr: {
+    getConfig: () => invoke('get-openai-asr-config'),
+    // cfg may include any subset of { api_url, model } - the key is NOT set
+    // here; use setKey (safeStorage-backed) for the credential.
+    setConfig: (cfg) => invoke('set-openai-asr-config', cfg),
+    // Pass an empty string to clear the stored key.
+    setKey: (key) => invoke('set-openai-asr-key', key),
+  },
+
   settings: {
     getNotifications: () => invoke('get-notifications'),
     setNotifications: (v) => invoke('set-notifications', v),

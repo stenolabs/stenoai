@@ -7,6 +7,7 @@ diarised path's split channels (already 16 kHz mono + high-passed) skip
 the mono pass instead of being processed twice.
 """
 
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -51,6 +52,113 @@ class FilterChainTests(unittest.TestCase):
 
 
 class PreprocessAudioTests(unittest.TestCase):
+    def test_ffmpeg_never_inherits_cloud_asr_credentials_case_insensitively(self):
+        transcriber = _build_transcriber()
+        captured_env = {}
+
+        def fake_run(cmd, **kwargs):
+            captured_env.update(kwargs["env"])
+            Path(cmd[-1]).write_bytes(b"stub")
+            return SimpleNamespace(returncode=0, stderr=b"")
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            audio = _make_audio_file(tmp_dir)
+            with patch.dict(os.environ, {
+                "stenoai_oai_api_key": "private-key",
+                "StEnOaI_OaI_ApI_OrIgIn": "https://private.example",
+                "STENOAI_OAI_API_URL": "https://private.example/v1",
+            }), patch.object(
+                transcriber_mod, "_resolve_ffmpeg", return_value="/fake/ffmpeg"
+            ), patch.object(
+                transcriber_mod.subprocess, "run", side_effect=fake_run
+            ):
+                output, is_temp = transcriber._preprocess_audio(audio)
+            if is_temp:
+                output.unlink()
+
+        self.assertFalse(any(
+            name.upper() in {
+                "STENOAI_OAI_API_KEY", "STENOAI_OAI_API_ORIGIN", "STENOAI_OAI_API_URL",
+            }
+            for name in captured_env
+        ))
+
+    def test_audio_temp_paths_are_source_stem_free_and_unique_for_prep_convert_and_stereo(self):
+        transcriber = _build_transcriber()
+        marker = "PRIVATE-MEETING-NAME"
+        seen_paths = []
+        real_mkstemp = tempfile.mkstemp
+
+        def capture_mkstemp(*args, **kwargs):
+            fd, temp_path = real_mkstemp(*args, **kwargs)
+            seen_paths.append(Path(temp_path))
+            return fd, temp_path
+
+        def fake_run(cmd, **_kwargs):
+            if "-t" in cmd:
+                return SimpleNamespace(
+                    returncode=0,
+                    stderr="Audio: pcm_s16le, stereo\nDuration: 00:00:10.00",
+                    stdout="",
+                )
+            Path(cmd[-1]).write_bytes(b"stub")
+            return SimpleNamespace(returncode=0, stderr=b"")
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            source = _make_audio_file(tmp_dir, f"{marker}.mp3")
+            try:
+                with patch.object(transcriber_mod, "_resolve_ffmpeg", return_value="/fake/ffmpeg"), \
+                     patch.object(transcriber_mod.subprocess, "run", side_effect=fake_run), \
+                     patch.object(transcriber_mod.tempfile, "mkstemp", side_effect=capture_mkstemp):
+                    prep_one, prep_one_is_temp = transcriber._preprocess_audio(source)
+                    prep_two, prep_two_is_temp = transcriber._preprocess_audio(source)
+                    transcriber._convert_to_16khz(source)
+                    transcriber._convert_to_16khz(source)
+                    mic, system, _ = transcriber._split_stereo_to_channels(source)
+
+                self.assertTrue(prep_one_is_temp)
+                self.assertTrue(prep_two_is_temp)
+                self.assertIsNotNone(mic)
+                self.assertIsNotNone(system)
+                self.assertEqual(len(seen_paths), 6)
+                self.assertEqual(len(set(seen_paths)), len(seen_paths))
+                self.assertTrue(all(marker not in str(temp_path) for temp_path in seen_paths))
+                self.assertTrue(all(temp_path.exists() for temp_path in seen_paths))
+            finally:
+                for temp_path in seen_paths:
+                    temp_path.unlink(missing_ok=True)
+
+    def test_failed_stereo_split_uses_retrying_private_temp_cleanup(self):
+        transcriber = _build_transcriber()
+
+        def fake_run(cmd, **_kwargs):
+            if "-t" in cmd:
+                return SimpleNamespace(
+                    returncode=0,
+                    stderr="Audio: pcm_s16le, stereo\nDuration: 00:00:10.00",
+                    stdout="",
+                )
+            return SimpleNamespace(returncode=1, stderr=b"split failed")
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            source = _make_audio_file(tmp_dir)
+            with patch.object(transcriber_mod, "_resolve_ffmpeg", return_value="/fake/ffmpeg"), \
+                 patch.object(transcriber_mod.subprocess, "run", side_effect=fake_run), \
+                 patch.object(
+                     transcriber_mod,
+                     "_unlink_temporary_audio",
+                     wraps=transcriber_mod._unlink_temporary_audio,
+                 ) as cleanup:
+                self.assertEqual(
+                    transcriber._split_stereo_to_channels(source),
+                    (None, None, None),
+                )
+
+        self.assertEqual(cleanup.call_count, 2)
+        self.assertTrue(all(
+            call.args[1] == "stereo channel" for call in cleanup.call_args_list
+        ))
+
     def test_falls_back_when_ffmpeg_missing(self):
         transcriber = _build_transcriber()
         with tempfile.TemporaryDirectory() as tmp_dir:

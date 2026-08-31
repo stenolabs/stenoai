@@ -1,3 +1,4 @@
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -7,6 +8,25 @@ from src.ollama_manager import get_ollama_env
 
 
 class GetOllamaEnvMLXMetalPathTests(unittest.TestCase):
+    def test_does_not_forward_openai_asr_credential_to_ollama(self):
+        with patch.dict(
+            os.environ,
+            {
+                "stenoai_oai_api_key": "private-asr-test-key",
+                "StenoAi_Oai_Api_Origin": "https://private-asr.example",
+                "STENOAI_OAI_API_URL": "https://private-asr.example/v1",
+            },
+            clear=False,
+        ), patch(
+            "src.ollama_manager.get_bundled_ollama_dir", return_value=None
+        ):
+            env = get_ollama_env()
+
+        names = {name.upper() for name in env}
+        self.assertNotIn("STENOAI_OAI_API_KEY", names)
+        self.assertNotIn("STENOAI_OAI_API_ORIGIN", names)
+        self.assertNotIn("STENOAI_OAI_API_URL", names)
+
     def test_does_not_set_stale_flat_mlx_metal_path_on_macos(self):
         # The bundled Ollama (v0.31.1+) ships its Metal library under
         # versioned subdirectories (mlx_metal_v3/, mlx_metal_v4/), not a

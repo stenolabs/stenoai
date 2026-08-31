@@ -19,7 +19,8 @@ import { GoogleIcon } from '@/components/ui/google-icon';
 import { MetaIcon } from '@/components/ui/meta-icon';
 import { QwenIcon } from '@/components/ui/qwen-icon';
 import { cn, isMac } from '@/lib/utils';
-import type { AiProvider, CloudProvider } from '@/lib/ipc';
+import { t } from '@/i18n';
+import type { AiProvider, CloudProvider, TranscriptionEngine } from '@/lib/ipc';
 import {
   useAiProvider,
   useSetAiProvider,
@@ -37,12 +38,15 @@ import {
   useCurrentModel,
   useDeleteModel,
   useModels,
+  useOpenAiAsrConfig,
   useParakeetModels,
   usePullModel,
   usePullParakeetModel,
   usePullWhisperModel,
   useSetActiveTranscription,
   useSetCurrentModel,
+  useSetOpenAiAsrConfig,
+  useSetOpenAiAsrKey,
   useSwitchToFasterBuild,
   useTranscriptionEngine,
   useWhisperModels,
@@ -67,13 +71,6 @@ export function AiTab() {
   return (
     <section data-settings-tab="ai">
       <SectionHeading>Transcription</SectionHeading>
-      <p
-        className="text-[13px] leading-[1.5]"
-        style={{ color: 'var(--fg-2)', marginBottom: 4 }}
-      >
-        Speech-to-text always runs on your device — your audio never leaves
-        your computer.
-      </p>
       <TranscriptionSection />
 
       <SectionHeading>Summarisation &amp; Chat</SectionHeading>
@@ -98,7 +95,9 @@ function TranscriptionSection() {
   const engineQuery = useTranscriptionEngine();
 
   const engine = engineQuery.data ?? 'parakeet';
-  const options = engine === 'whisper' ? LANGUAGES_WHISPER : LANGUAGES_PARAKEET;
+  // Parakeet has the narrower language set; Whisper and the OpenAI-compatible
+  // cloud ASR (whisper-1 family) both offer the full 99-language list.
+  const options = engine === 'parakeet' ? LANGUAGES_PARAKEET : LANGUAGES_WHISPER;
   // useSetActiveTranscription coerces language to 'auto' when switching
   // to an engine that doesn't support the current pick. So by the time
   // this renders, persisted is normally in `options`. Edge case (CLI
@@ -112,6 +111,14 @@ function TranscriptionSection() {
     // Retains the pre-merge data-settings-tab="transcription" identity as a
     // nested wrapper (the page-level section is now data-settings-tab="ai").
     <div data-settings-tab="transcription">
+      <p
+        className="text-[13px] leading-[1.5]"
+        style={{ color: 'var(--fg-2)', marginBottom: 4 }}
+      >
+        {engine === 'openai-asr'
+          ? t('settings.ai.cloudAsr.disclosure')
+          : 'Speech-to-text always runs on your device \u2014 your audio never leaves your computer.'}
+      </p>
       <SettingRow
         label="Language"
         description="Auto-detects by default. Pick one to pin it."
@@ -182,7 +189,7 @@ export function SpeakerIdentificationSetting() {
 // old card layout's note line). Keyed by engine since each only ever has
 // one supported model today (see SUPPORTED_PARAKEET_MODELS /
 // SUPPORTED_WHISPER_MODELS in the Python registries).
-const ENGINE_TAGLINE: Record<'parakeet' | 'whisper', string> = {
+const ENGINE_TAGLINE: Record<Exclude<TranscriptionEngine, 'openai-asr'>, string> = {
   parakeet: 'Fastest — English + European languages',
   whisper: 'Most accurate — 99 languages',
 };
@@ -210,6 +217,7 @@ function TranscriptionModelList() {
   const setActive = useSetActiveTranscription();
   const pullParakeet = usePullParakeetModel();
   const pullWhisper = usePullWhisperModel();
+  const [confirmCloudAsr, setConfirmCloudAsr] = React.useState(false);
 
   const isLoading = parakeet.isLoading || whisper.isLoading || engine.isLoading;
   const isError = parakeet.isError || whisper.isError || engine.isError;
@@ -262,22 +270,32 @@ function TranscriptionModelList() {
   const whisperDownloading = pullWhisper.isPending;
   const downloadingEngine = parakeetDownloading ? 'parakeet' : whisperDownloading ? 'whisper' : null;
   const isDownloading = downloadingEngine !== null;
-  const value = downloadingEngine ?? activeEngine;
+  const value: TranscriptionEngine = downloadingEngine ?? activeEngine;
 
-  const options: Array<{
-    engine: 'parakeet' | 'whisper';
-    model: typeof parakeetModel;
-    icon: React.ReactNode;
-  }> = [
-    { engine: 'parakeet', model: parakeetModel, icon: <NvidiaIcon size={12} /> },
-    { engine: 'whisper', model: whisperModel, icon: <OpenAiIcon size={12} /> },
-  ];
-  const current = options.find((o) => o.engine === value)!;
   const whisperPercent =
     downloadingEngine === 'whisper' ? parsePullPercent(pullWhisper.progress[whisperModel.name]) : null;
 
+  // Trigger label: cloud ASR has no local model object, so resolve icon+name
+  // per engine rather than indexing the model-backed options array (which only
+  // covers parakeet/whisper).
+  const triggerFor: Record<TranscriptionEngine, { icon: React.ReactNode; name: string }> = {
+    parakeet: { icon: <NvidiaIcon size={12} />, name: parakeetModel.displayName ?? parakeetModel.name },
+    whisper: { icon: <OpenAiIcon size={12} />, name: whisperModel.displayName ?? whisperModel.name },
+    'openai-asr': {
+      icon: <Cloud className="size-3" />,
+      name: t('settings.ai.cloudAsr.providerLabel'),
+    },
+  };
+  const current = triggerFor[value];
+
   const onValueChange = (next: string) => {
     if (next === activeEngine) return;
+    if (next === 'openai-asr') {
+      // Switching to the cloud engine sends audio off-device - gate it behind
+      // an explicit privacy confirmation.
+      setConfirmCloudAsr(true);
+      return;
+    }
     if (next === 'parakeet') {
       if (parakeetModel.installed) {
         setActive.mutate({ engine: 'parakeet' });
@@ -292,46 +310,247 @@ function TranscriptionModelList() {
   };
 
   return (
-    <SettingRow
-      label="Model"
-      description="Which speech-to-text model transcribes your recordings."
-      noBorder
-    >
-      <Select value={value} onValueChange={onValueChange} disabled={isDownloading}>
-        <SelectTrigger
-          className={cn(COMPACT_TRIGGER, 'w-[190px]')}
-          data-testid="transcription-model-select"
-        >
-          {/* A plain div, not a span: SelectTrigger applies
-              `[&>span]:line-clamp-1` to any direct-child span, and
-              line-clamp's `display: -webkit-box` clobbers this row's
-              `inline-flex`, stacking the icon above the name instead of
-              beside it. */}
-          <div className="flex min-w-0 items-center gap-1.5">
-            {current.icon}
-            <span className="truncate">{current.model.displayName ?? current.model.name}</span>
-            {isDownloading &&
-              (whisperPercent !== null ? (
-                <span className="shrink-0 text-[11px] tabular-nums" style={{ color: 'var(--fg-muted)' }}>
-                  {whisperPercent}%
-                </span>
-              ) : (
-                <Loader2 className="size-3 shrink-0 animate-spin" style={{ color: 'var(--fg-muted)' }} />
-              ))}
-          </div>
-        </SelectTrigger>
-        <SelectContent className="w-72">
-          {options.map((o) => (
-            <SelectItem key={o.engine} value={o.engine} description={ENGINE_TAGLINE[o.engine]}>
+    <>
+      <SettingRow
+        label="Model"
+        description="Which speech-to-text model transcribes your recordings."
+        noBorder={activeEngine !== 'openai-asr'}
+      >
+        <Select value={value} onValueChange={onValueChange} disabled={isDownloading}>
+          <SelectTrigger
+            className={cn(COMPACT_TRIGGER, 'w-[190px]')}
+            data-testid="transcription-model-select"
+          >
+            {/* A plain div, not a span: SelectTrigger applies
+                `[&>span]:line-clamp-1` to any direct-child span, and
+                line-clamp's `display: -webkit-box` clobbers this row's
+                `inline-flex`, stacking the icon above the name instead of
+                beside it. */}
+            <div className="flex min-w-0 items-center gap-1.5">
+              {current.icon}
+              <span className="truncate">{current.name}</span>
+              {isDownloading &&
+                (whisperPercent !== null ? (
+                  <span className="shrink-0 text-[11px] tabular-nums" style={{ color: 'var(--fg-muted)' }}>
+                    {whisperPercent}%
+                  </span>
+                ) : (
+                  <Loader2 className="size-3 shrink-0 animate-spin" style={{ color: 'var(--fg-muted)' }} />
+                ))}
+            </div>
+          </SelectTrigger>
+          <SelectContent className="w-72">
+            <SelectItem value="parakeet" description={ENGINE_TAGLINE.parakeet}>
               <span className="inline-flex items-center gap-1.5">
-                {o.icon}
-                {o.model.displayName ?? o.model.name}
+                <NvidiaIcon size={12} />
+                {parakeetModel.displayName ?? parakeetModel.name}
               </span>
             </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-    </SettingRow>
+            <SelectItem value="whisper" description={ENGINE_TAGLINE.whisper}>
+              <span className="inline-flex items-center gap-1.5">
+                <OpenAiIcon size={12} />
+                {whisperModel.displayName ?? whisperModel.name}
+              </span>
+            </SelectItem>
+            <SelectItem
+              value="openai-asr"
+              description={t('settings.ai.cloudAsr.engineTagline')}
+            >
+              <span className="inline-flex items-center gap-1.5">
+                <Cloud className="size-3" />
+                {t('settings.ai.cloudAsr.providerLabel')}
+              </span>
+            </SelectItem>
+          </SelectContent>
+        </Select>
+      </SettingRow>
+
+      {activeEngine === 'openai-asr' && <OpenAiAsrConfig />}
+
+      <ConfirmDialog
+        open={confirmCloudAsr}
+        onOpenChange={setConfirmCloudAsr}
+        title={t('settings.ai.cloudAsr.confirmTitle')}
+        description={t('settings.ai.cloudAsr.confirmDescription')}
+        confirmLabel={t('settings.ai.cloudAsr.confirmAction')}
+        onConfirm={() => {
+          setConfirmCloudAsr(false);
+          setActive.mutate({ engine: 'openai-asr' });
+        }}
+      />
+    </>
+  );
+}
+
+// Registry defaults, mirrored from src/config.py's _get_default_config. Clearing
+// a field resets to these rather than persisting a blank value (the backend
+// rejects a blank URL/model - see set_openai_asr_api_url / set_openai_asr_model).
+const DEFAULT_OPENAI_ASR_URL = 'https://api.openai.com/v1';
+const DEFAULT_OPENAI_ASR_MODEL = 'whisper-1';
+
+/**
+ * Config sub-panel shown when the OpenAI-compatible cloud ASR engine is
+ * active. The API URL + model round-trip through config.json; the API key is
+ * held encrypted by the main process (safeStorage) and only its set/not-set
+ * state is ever surfaced (`api_key_set`) - the value is never read back.
+ */
+function OpenAiAsrConfig() {
+  const config = useOpenAiAsrConfig();
+  const setConfig = useSetOpenAiAsrConfig();
+  const setKey = useSetOpenAiAsrKey();
+
+  const [apiUrl, setApiUrl] = React.useState('');
+  const [model, setModel] = React.useState('');
+  const [apiKey, setApiKey] = React.useState('');
+  const [saveError, setSaveError] = React.useState<string | null>(null);
+  const keySaveTail = React.useRef<Promise<unknown>>(Promise.resolve());
+
+  React.useEffect(() => {
+    if (config.data) {
+      setApiUrl(config.data.api_url);
+      setModel(config.data.model);
+    }
+  }, [config.data?.api_url, config.data?.model]);
+
+  const keySet = config.data?.api_key_set ?? false;
+
+  const saveEndpointField = (field: 'api_url' | 'model', value: string) => {
+    void setConfig.mutateAsync({ [field]: value })
+      .then((saved) => {
+        setSaveError(null);
+        if (field === 'api_url') setApiUrl(saved.api_url ?? DEFAULT_OPENAI_ASR_URL);
+        else setModel(saved.model ?? DEFAULT_OPENAI_ASR_MODEL);
+      })
+      .catch(() => {
+        // The backend rejected or failed to save the edit. Restore the
+        // displayed committed value instead of leaving a value that is not
+        // actually active, especially important for an audio-upload endpoint.
+        setSaveError(t('settings.ai.cloudAsr.saveSettingError'));
+        if (field === 'api_url') setApiUrl(config.data?.api_url ?? DEFAULT_OPENAI_ASR_URL);
+        else setModel(config.data?.model ?? DEFAULT_OPENAI_ASR_MODEL);
+      });
+  };
+
+  const saveKey = (key: string) => {
+    // Blur fires before a clicked Clear button. Serialize credential writes so
+    // the later clear always commits after any replacement queued by blur.
+    const operation = keySaveTail.current
+      .catch(() => undefined)
+      .then(() => setKey.mutateAsync(key));
+    keySaveTail.current = operation;
+    void operation
+      .then(() => setSaveError(null))
+      .catch(() => {
+        setSaveError(t('settings.ai.cloudAsr.saveKeyError'));
+      })
+      .finally(() => {
+        // Do not retain a plaintext credential in renderer state after either
+        // outcome. The visible error is sufficient for retry.
+        setApiKey('');
+      });
+  };
+
+  return (
+    <div
+      className="space-y-3 py-4"
+      style={{ borderBottom: '1px solid var(--border-subtle)' }}
+      data-testid="openai-asr-config"
+    >
+      <div>
+        <label
+          htmlFor="openai-asr-api-url"
+          className="mb-1 block text-[12px] font-medium uppercase"
+          style={{ letterSpacing: '0.06em', color: 'var(--fg-muted)' }}
+        >
+          {t('settings.ai.cloudAsr.apiBaseUrlLabel')}
+        </label>
+        <Input
+          id="openai-asr-api-url"
+          value={apiUrl}
+          onChange={(e) => setApiUrl(e.target.value)}
+          placeholder={t('settings.ai.cloudAsr.apiUrlPlaceholder')}
+          onBlur={() => {
+            // A cleared (or whitespace-only) field resets to the default URL
+            // rather than trying to persist a blank the backend would reject -
+            // otherwise the stale value would return on the next refresh.
+            const next = apiUrl.trim() || DEFAULT_OPENAI_ASR_URL;
+            if (next !== apiUrl) setApiUrl(next);
+            if (next !== config.data?.api_url) saveEndpointField('api_url', next);
+          }}
+          className={COMPACT_INPUT}
+        />
+      </div>
+      <div>
+        <label
+          htmlFor="openai-asr-model"
+          className="mb-1 block text-[12px] font-medium uppercase"
+          style={{ letterSpacing: '0.06em', color: 'var(--fg-muted)' }}
+        >
+          {t('settings.ai.cloudAsr.modelLabel')}
+        </label>
+        <Input
+          id="openai-asr-model"
+          value={model}
+          onChange={(e) => setModel(e.target.value)}
+          placeholder={t('settings.ai.cloudAsr.modelPlaceholder')}
+          onBlur={() => {
+            // Same as the URL: a cleared field resets to the default model
+            // rather than persisting a blank (which the backend rejects).
+            const next = model.trim() || DEFAULT_OPENAI_ASR_MODEL;
+            if (next !== model) setModel(next);
+            if (next !== config.data?.model) saveEndpointField('model', next);
+          }}
+          className={COMPACT_INPUT}
+        />
+      </div>
+      <div>
+        <label
+          htmlFor="openai-asr-api-key"
+          className="mb-1 block text-[12px] font-medium uppercase"
+          style={{ letterSpacing: '0.06em', color: 'var(--fg-muted)' }}
+        >
+          {t('settings.ai.cloudAsr.apiKeyLabel')}
+        </label>
+        <div className="flex items-center gap-2">
+          <Input
+            id="openai-asr-api-key"
+            type="password"
+            value={apiKey}
+            onChange={(e) => setApiKey(e.target.value)}
+            placeholder={keySet ? '••••••••' : t('settings.ai.cloudAsr.apiKeyPlaceholder')}
+            onBlur={() => {
+              if (apiKey) {
+                saveKey(apiKey);
+              }
+            }}
+            className={cn(COMPACT_INPUT, 'flex-1')}
+          />
+          {keySet && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className={COMPACT_BTN}
+              onClick={() => {
+                setApiKey('');
+                saveKey('');
+              }}
+            >
+              {t('settings.ai.cloudAsr.clearAction')}
+            </Button>
+          )}
+        </div>
+        <div className="mt-1 text-[11.5px]" style={{ color: 'var(--fg-muted)' }}>
+          {keySet
+            ? t('settings.ai.cloudAsr.keySavedDescription')
+            : t('settings.ai.cloudAsr.keyEmptyDescription')}
+        </div>
+        {saveError && (
+          <p role="alert" className="mt-1 text-[11.5px]" style={{ color: 'var(--danger, #b42318)' }}>
+            {saveError}
+          </p>
+        )}
+      </div>
+    </div>
   );
 }
 

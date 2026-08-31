@@ -13,7 +13,12 @@ let spawnCalls = [];
 let stubChild = { fake: true };
 cp.spawn = (...args) => { spawnCalls.push(args); return stubChild; };
 
-const { spawn, killProcessTree, createBackendCli } = require('./backend-cli');
+const {
+  spawn,
+  killProcessTree,
+  createBackendCli,
+  withoutOpenAiAsrKey,
+} = require('./backend-cli');
 
 afterEach(() => {
   spawnCalls = [];
@@ -69,6 +74,53 @@ test('spawn lets a caller override windowsHide, and merges (not replaces) env', 
 test('spawn lets a caller override PYTHONUNBUFFERED itself', () => {
   spawn('backend', ['a'], { env: { PYTHONUNBUFFERED: '0' } });
   assert.strictEqual(spawnCalls[0][2].env.PYTHONUNBUFFERED, '0');
+});
+
+test('case-insensitive stripping matches Windows environment semantics', () => {
+  const variants = [
+    'STENOAI_OAI_API_KEY',
+    'STENOAI_OAI_API_ORIGIN',
+    'STENOAI_OAI_API_URL',
+    'stenoai_oai_api_key',
+    'StEnOaI_OaI_ApI_KeY',
+  ];
+  const prior = Object.fromEntries(variants.map((name) => [name, process.env[name]]));
+  try {
+    for (const name of variants) process.env[name] = `ambient-secret-${name}`;
+
+    spawn('backend', ['status']);
+    const inherited = spawnCalls[0][2].env;
+    assert.strictEqual(
+      Object.keys(inherited).some((name) => name.toUpperCase() === 'STENOAI_OAI_API_KEY'),
+      false,
+    );
+    assert.strictEqual(
+      Object.keys(inherited).some((name) => name.toUpperCase() === 'STENOAI_OAI_API_URL'),
+      false,
+    );
+
+    spawn('backend', ['process-streaming'], { env: { STENOAI_OAI_API_KEY: 'explicit-secret' } });
+    assert.strictEqual(spawnCalls[1][2].env.STENOAI_OAI_API_KEY, 'explicit-secret');
+  } finally {
+    for (const name of variants) {
+      if (prior[name] === undefined) delete process.env[name];
+      else process.env[name] = prior[name];
+    }
+  }
+});
+
+test('environment helper strips lower and mixed-case keys without mutating input', () => {
+  const input = {
+    PATH: '/bin',
+    stenoai_oai_api_key: 'lower-secret',
+    StEnOaI_OaI_ApI_KeY: 'mixed-secret',
+    stenoai_oai_api_origin: 'https://provider.example',
+    StEnOaI_OaI_ApI_Url: 'https://provider.example/v1',
+  };
+  assert.deepStrictEqual(withoutOpenAiAsrKey(input), { PATH: '/bin' });
+  assert.strictEqual(input.stenoai_oai_api_key, 'lower-secret');
+  assert.strictEqual(input.stenoai_oai_api_origin, 'https://provider.example');
+  assert.strictEqual(input.StEnOaI_OaI_ApI_Url, 'https://provider.example/v1');
 });
 
 test('spawn handles the 2-arg (command, options) form', () => {
@@ -157,10 +209,16 @@ test('getBackendPath/getBackendCwd resolve the packaged resources dir', () => {
 test('runPythonScript (non-silent) sanitizes the echoed argv and streams output', async () => {
   stubChild = fakeChild();
   const { rec, run } = recordingDeps();
-  const p = run('simple_recorder.py', ['create-folder', 'secret'], false);
+  const consoleLog = mock.method(console, 'log', () => {});
+  const secretUrl = 'https://provider.example/v1?sig=secret-value';
+  const p = run('simple_recorder.py', ['create-folder', secretUrl], false);
   // The spawned argv is untouched; only the LOGGED echo is sanitized.
-  assert.deepStrictEqual(spawnCalls[0][1], ['create-folder', 'secret']);
+  assert.deepStrictEqual(spawnCalls[0][1], ['create-folder', secretUrl]);
   assert.ok(rec.debug.includes('$ stenoai SANITIZED'));
+  assert.strictEqual(consoleLog.mock.callCount(), 1);
+  const consoleOutput = consoleLog.mock.calls[0].arguments.join(' ');
+  assert.match(consoleOutput, /SANITIZED/);
+  assert.doesNotMatch(consoleOutput, /secret-value|provider\.example/);
   // No extraEnv -> spawn()'s own PYTHONUNBUFFERED default is all that's set.
   assert.strictEqual(spawnCalls[0][2].env.PYTHONUNBUFFERED, '1');
 

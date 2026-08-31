@@ -84,6 +84,19 @@ test('name / path / folder / URL setters redact their value arg(s)', () => {
   assert.strictEqual(sanitizeArgsForLog(['set-cloud-api-url', 'https://api.example.com/v1']), 'set-cloud-api-url <redacted>');
 });
 
+test('OpenAI ASR config argv logging redacts the entire value-bearing tail', () => {
+  assert.strictEqual(
+    sanitizeArgsForLog([
+      'set-openai-asr-config',
+      '--api-url',
+      'https://provider.example/v1?subscription-key=secret-value',
+      '--model',
+      'private-provider-model',
+    ]),
+    'set-openai-asr-config <redacted>',
+  );
+});
+
 test('set-microphone redacts the device id + user-assigned label', () => {
   assert.strictEqual(
     sanitizeArgsForLog(['set-microphone', 'abc123deviceid', 'Conference AirPods']),

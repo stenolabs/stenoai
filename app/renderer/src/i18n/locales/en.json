@@ -1,0 +1,19 @@
+{
+  "settings.ai.cloudAsr.disclosure": "Speech-to-text is sent to an OpenAI-compatible cloud endpoint. Unlike the on-device engines, your audio leaves your computer.",
+  "settings.ai.cloudAsr.engineTagline": "Cloud API - sends audio to an OpenAI-compatible endpoint",
+  "settings.ai.cloudAsr.providerLabel": "Cloud API",
+  "settings.ai.cloudAsr.confirmTitle": "Send audio to a cloud service?",
+  "settings.ai.cloudAsr.confirmDescription": "Cloud transcription uploads your recording audio to the OpenAI-compatible endpoint you configure. Unlike the on-device engines, your audio leaves your computer. Continue?",
+  "settings.ai.cloudAsr.confirmAction": "Use cloud ASR",
+  "settings.ai.cloudAsr.saveSettingError": "Could not save this cloud transcription setting. The previous value is still active.",
+  "settings.ai.cloudAsr.saveKeyError": "Could not securely save the API key. The existing key was not changed.",
+  "settings.ai.cloudAsr.apiBaseUrlLabel": "API base URL",
+  "settings.ai.cloudAsr.modelLabel": "Model",
+  "settings.ai.cloudAsr.apiKeyLabel": "API key",
+  "settings.ai.cloudAsr.clearAction": "Clear",
+  "settings.ai.cloudAsr.keySavedDescription": "A key is saved. Enter a new one to replace it, or clear it.",
+  "settings.ai.cloudAsr.keyEmptyDescription": "Stored encrypted on your device - never written to config or sent anywhere except your chosen endpoint.",
+  "settings.ai.cloudAsr.apiUrlPlaceholder": "https://api.openai.com/v1",
+  "settings.ai.cloudAsr.modelPlaceholder": "whisper-1",
+  "settings.ai.cloudAsr.apiKeyPlaceholder": "sk-…"
+}
