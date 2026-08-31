@@ -758,7 +758,12 @@ export type StoragePathResponse = Result<{
 export type PickStorageFolderResponse = Result<{ folderPath: string }>;
 export type GetObsidianSyncResponse = Result<{ obsidian_sync_enabled: boolean }>;
 export type GetObsidianVaultPathResponse = Result<{ obsidian_vault_path: string }>;
-export type ObsidianConflict = { vaultRelPath: string; detectedAt: string; reason: string };
+export type ObsidianConflict = {
+  vaultRelPath: string;
+  detectedAt: string;
+  reason: string;
+  replacementVaultRelPath?: string;
+};
 export type GetObsidianConflictsResponse = Result<{ conflicts: Record<string, ObsidianConflict> }>;
 export type GetAiPromptsResponse = Result<{ summarization: string }>;
 
@@ -871,6 +876,17 @@ export interface ProcessingCompleteEvent {
    *  off → SUMMARY_SKIPPED). Drives whether the renderer fires "Note ready" vs
    *  the "Transcript ready — generate notes?" prompt (#bug2/#bug3). */
   notesGenerated?: boolean;
+  /** An unreserved reprocess fork. The renderer chooses its notification only
+   *  when main did not already reserve the note-ready preservation toast. */
+  obsidianSync?: {
+    status: 'forked';
+    preservedVaultRelPath: string;
+    vaultRelPath: string;
+  };
+  /** Main successfully displayed the summarized-fork preservation toast before
+   *  this event. This persists after Electron closes that toast, so the renderer
+   *  can suppress its generic note-ready fallback exactly once. */
+  mainObsidianForkNotificationShown?: boolean;
 }
 export interface QueryChunkEvent {
   queryId: string;
@@ -1275,6 +1291,14 @@ export interface StenoaiBridge {
       ],
       Result<Record<string, never>>
     >;
+    showObsidianForkNotification: RequestFn<
+      [
+        payload: NonNullable<ProcessingCompleteEvent['obsidianSync']> & {
+          summaryFile: string;
+        },
+      ],
+      Result<{ shown: boolean }>
+    >;
     /** Transcript-only note finished transcription with no notes generated
      *  (auto_summarize off). Prompts "Generate notes?" — the action starts
      *  generation in the background, a body tap opens the note. Returns `shown`
@@ -1399,7 +1423,7 @@ export interface StenoaiBridge {
      *  notification). Renderer runs the same reprocess path as GenerateNotesBar. */
     generateNotesRequested: Subscribe<{ summaryFile: string; name?: string | null }>;
     navigateToMeeting: Subscribe<{ summaryFile: string }>;
-    trayOpenSettings: Subscribe<void>;
+    trayOpenSettings: Subscribe<{ tab?: 'integrations' } | undefined>;
     showQuitDialog: Subscribe<{ type: 'recording' | 'processing'; jobCount?: number }>;
     showNotification: Subscribe<{
       id?: string;
@@ -1440,6 +1464,7 @@ export interface StenoaiBridge {
   };
 
   notification: {
+    rendererReady: SendFn<[]>;
     close: RequestFn<[], void>;
     actionClicked: SendFn<[actionId: string, notifId?: string]>;
     bodyClicked: SendFn<[notifId?: string]>;

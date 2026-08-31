@@ -22,6 +22,7 @@
  * already has them is wrong, so a note that already has notes is `note-ready`.
  */
 export type CompletionNotificationKind = 'note-ready' | 'transcript-ready';
+export type CompletionNotificationChoice = CompletionNotificationKind | 'obsidian-fork' | null;
 
 export function classifyCompletionNotification(input: {
   notesGenerated?: boolean;
@@ -33,6 +34,26 @@ export function classifyCompletionNotification(input: {
     Boolean(input.transcriptionFailed) || Boolean(input.meetingTranscriptionFailed);
   const hasNotes = Boolean(input.notesGenerated) || Boolean(input.notesAlreadyExist);
   return hasNotes || isFailed ? 'note-ready' : 'transcript-ready';
+}
+
+/**
+ * Pick the renderer-owned completion notification. A note-ready fork is
+ * reserved in main before this event arrives. Its explicit result remains true
+ * after Electron has closed the toast, so the generic note-ready fallback must
+ * stay suppressed. Unreserved forks are
+ * transcript-only, where Summarise wins in the background and the
+ * preservation notice remains visible when the user is actively watching.
+ */
+export function chooseCompletionNotification(input: {
+  kind: CompletionNotificationKind;
+  shouldNotify: boolean;
+  obsidianForked: boolean;
+  mainObsidianForkNotificationShown?: boolean;
+}): CompletionNotificationChoice {
+  if (input.mainObsidianForkNotificationShown) return null;
+  if (input.shouldNotify && input.kind === 'transcript-ready') return 'transcript-ready';
+  if (input.obsidianForked) return 'obsidian-fork';
+  return input.shouldNotify ? input.kind : null;
 }
 
 /**

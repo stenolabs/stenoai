@@ -58,6 +58,7 @@ const { registerFoldersIpc } = require('./folders-ipc');
 const { registerSettingsIpc } = require('./settings-ipc');
 const { registerPersonSampleIpc } = require('./person-sample-ipc');
 const { registerSpeakerIpc } = require('./speaker-ipc');
+const { registerNotificationIpc } = require('./notification-ipc');
 const { registerObsidianSync } = require('./obsidian-sync');
 const { registerObsidianIpc } = require('./obsidian-ipc');
 const { isSafeToAutoInstall } = require('./update-idle-gate');
@@ -67,7 +68,13 @@ const processingLog = require('./processing-log');
 const { isMeetingApp, allowsDeviceLevelFallback, isMacos14Plus } = require('./meeting-detect');
 const { sweepOrphanedLiveSnapshots } = require('./live-snapshot-sweep');
 const { userNotesFilePath } = require('./notes-file');
-const { buildNoteReadyNotificationOptions, buildTranscriptReadyBody } = require('./notification-copy');
+const {
+  buildNoteReadyNotificationOptions,
+  buildTranscriptReadyBody,
+  shouldSuppressNoteReadyNotification,
+} = require('./notification-copy');
+const { notificationsEnabledFromDisk } = require('./notification-settings');
+const { reserveReprocessObsidianForkNotification } = require('./reprocess-obsidian-fork-notification');
 const { makeLineReader } = require('./backend-stream');
 // Pure deep-link (stenoai://) parsing/sanitizing lives in ./shortcut-url
 // (unit-tested). The stateful side — window creation, IPC dispatch,
@@ -304,6 +311,21 @@ function getOutputDir() {
 
 let mainWindow;
 let notificationWindow;
+const pendingObsidianForkNotifications = new Map();
+
+function markObsidianForkNotificationPending(summaryFile) {
+  if (typeof summaryFile !== 'string' || !summaryFile) return;
+  pendingObsidianForkNotifications.set(
+    summaryFile,
+    (pendingObsidianForkNotifications.get(summaryFile) || 0) + 1,
+  );
+}
+
+function clearObsidianForkNotificationPending(summaryFile) {
+  const count = pendingObsidianForkNotifications.get(summaryFile) || 0;
+  if (count <= 1) pendingObsidianForkNotifications.delete(summaryFile);
+  else pendingObsidianForkNotifications.set(summaryFile, count - 1);
+}
 
 // ── Custom notification toast ────────────────────────────────────────────────
 // Drop-in replacement for Electron's `Notification` that renders our OWN
@@ -447,8 +469,6 @@ class Notification extends EventEmitter {
       autoCloseTimer = setTimeout(() => {
         if (!win.isDestroyed()) win.close();
       }, 15000);
-
-      win.webContents.send('show-notification', this.payload);
     });
   }
 
@@ -2941,6 +2961,50 @@ ipcMain.handle('clear-state', async () => {
   }
 });
 
+function showObsidianForkNotification(result) {
+  if (!result || result.status !== 'forked') return { success: true, shown: false };
+  const { summaryFile } = result;
+  markObsidianForkNotificationPending(summaryFile);
+  try {
+    // This is on the reprocess completion path. Do not await the Python
+    // get-notifications request here: if it stalls, the completion event must
+    // still reach the renderer, which can own the unshown-fork fallback.
+    if (!notificationsEnabledFromDisk(path.join(getUserDataDir(), 'config.json'))) {
+      return { success: true, shown: false };
+    }
+    const replacementName = path.basename(result.vaultRelPath || 'the new copy');
+    const notif = new Notification({
+      title: 'Obsidian edit preserved',
+      body: `Latest version saved as ${replacementName}.`,
+      iconType: 'success',
+      completionKind: 'obsidian-fork',
+      summaryFile,
+    });
+    notif.on('click', () => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        exposeMainWindow();
+        if (summaryFile) {
+          mainWindow.webContents.send('navigate-to-meeting', { summaryFile });
+        }
+      }
+    });
+    trackNotificationLifecycle(notif, 'obsidian_fork');
+    notif.show();
+    return { success: true, shown: true };
+  } finally {
+    clearObsidianForkNotificationPending(summaryFile);
+  }
+}
+
+ipcMain.handle('show-obsidian-fork-notification', async (_event, result) => {
+  try {
+    return await showObsidianForkNotification(result);
+  } catch (e) {
+    sendDebugLog(`Failed to show Obsidian preservation notification: ${e.message}`);
+    return { success: false, error: e.message };
+  }
+});
+
 ipcMain.handle('reprocess-meeting', async (event, summaryFile, regenerateTitle, sessionName, retranscribe) => {
   try {
     // Security: symlink-safe containment-check the renderer-supplied summary path
@@ -3048,14 +3112,42 @@ ipcMain.handle('reprocess-meeting', async (event, summaryFile, regenerateTitle, 
         }
       });
 
-      proc.on('close', (code) => {
+      proc.on('close', async (code) => {
         watchdog.clear();
         if (code === 0) {
           console.log(`✅ Completed reprocessing: ${sessionName}`);
           // Reprocess / generate-notes / re-transcribe rewrote the note — mirror
           // it into the vault (#413) if sync is on. Use the canonical realPath
           // (not the renderer alias) so it indexes under the true summary stem.
-          try { if (realPath) obsidianSync.syncNoteBySummaryPath(realPath); } catch (_) {}
+          let obsidianSyncResult;
+          try {
+            if (realPath) {
+              obsidianSyncResult = obsidianSync.syncNoteBySummaryPath(realPath, {
+                onConflict: 'fork',
+              });
+            }
+          } catch (_) {}
+          const obsidianFork = obsidianSyncResult?.status === 'forked'
+            ? obsidianSyncResult
+            : undefined;
+          // The fork is determined here in main, before the completion event
+          // crosses into the renderer. Schedule and await its notification so
+          // the renderer's ordinary note-ready path cannot race a pending
+          // custom toast and supersede the explanation for the extra vault
+          // file (most visibly on Windows CI).
+          // A transcript-only reprocess stays renderer-owned: it keeps the
+          // actionable "Summarise" toast in the background, or shows the
+          // preservation notice to a user who is already watching it finish.
+          const {
+            mainObsidianForkNotificationShown,
+            obsidianSync: completionObsidianSync,
+          } =
+            await reserveReprocessObsidianForkNotification({
+              obsidianFork,
+              summaryFile,
+              summarizationCompleted,
+              showObsidianForkNotification,
+            });
           // Look up the saved meeting so the completion event carries meetingData
           // with the note's CURRENT title — reprocess may have generated an LLM
           // title, so `sessionName` here can still be the 'Note' placeholder. The
@@ -3074,6 +3166,11 @@ ipcMain.handle('reprocess-meeting', async (event, summaryFile, regenerateTitle, 
                   summaryFile,
                   meetingData: processedMeeting,
                   notesGenerated: summarizationCompleted,
+                  // Main already owns a note-ready fork notification. The
+                  // renderer only receives unreserved forks, where it chooses
+                  // between the background preservation notice and Summarise.
+                  mainObsidianForkNotificationShown,
+                  obsidianSync: completionObsidianSync,
                   message: 'Reprocessing completed successfully'
                 });
               }
@@ -3088,6 +3185,8 @@ ipcMain.handle('reprocess-meeting', async (event, summaryFile, regenerateTitle, 
                   sessionName,
                   summaryFile,
                   notesGenerated: summarizationCompleted,
+                  mainObsidianForkNotificationShown,
+                  obsidianSync: completionObsidianSync,
                   message: 'Reprocessing completed successfully'
                 });
               }
@@ -8292,6 +8391,11 @@ ipcMain.handle('pull-parakeet-model', async (event, modelId) => {
 registerSettingsIpc({ ipcMain, runPythonScript, sendDebugLog });
 registerPersonSampleIpc({ ipcMain, runPythonScript });
 registerSpeakerIpc({ ipcMain, runPythonScript, parsePythonFailureJson });
+registerNotificationIpc({
+  ipcMain,
+  BrowserWindow,
+  getNotificationWindow: () => notificationWindow,
+});
 
 // Fired by the renderer's silence detector. The renderer has already
 // asked main to stop the recording via pause/stop; this just surfaces
@@ -8373,8 +8477,22 @@ async function showNoteReadyNotification(payload) {
   // `shown` = passed the notifications_enabled gate (see show-silence-auto-stop).
   if (!(await notificationsEnabled())) return { success: true, shown: false };
   const { summaryFile } = payload || {};
+  const activeOptions = notificationWindow && !notificationWindow.isDestroyed()
+    ? notificationWindow._activeCustomNotification?.options
+    : undefined;
+  const forkPending = typeof summaryFile === 'string' &&
+    pendingObsidianForkNotifications.has(summaryFile);
+  if (shouldSuppressNoteReadyNotification(activeOptions, summaryFile, forkPending)) {
+    return { success: true, shown: false };
+  }
   const { title, body, iconType, outcome } = buildNoteReadyNotificationOptions(payload);
-  const notif = new Notification({ title, body, iconType });
+  const notif = new Notification({
+    title,
+    body,
+    iconType,
+    completionKind: 'note-ready',
+    summaryFile,
+  });
   notif.on('click', () => {
     if (mainWindow && !mainWindow.isDestroyed()) {
       exposeMainWindow();

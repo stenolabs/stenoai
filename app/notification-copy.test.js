@@ -4,6 +4,8 @@ const assert = require('node:assert');
 const {
   buildNoteReadyNotificationOptions,
   buildTranscriptReadyBody,
+  shouldSuppressNoteReadyNotification,
+  shouldReserveObsidianForkNotification,
 } = require('./notification-copy');
 
 // Bug C regression guard: the note's real title must reach the notification body.
@@ -44,4 +46,62 @@ test('transcript-ready prompt quotes the note title', () => {
   assert.strictEqual(buildTranscriptReadyBody('Weekly 1:1'), 'Summarise "Weekly 1:1"?');
   assert.strictEqual(buildTranscriptReadyBody(''), 'Summarise?');
   assert.strictEqual(buildTranscriptReadyBody(undefined), 'Summarise?');
+});
+
+test('note-ready cannot replace an Obsidian fork notice for the same note', () => {
+  const activeOptions = {
+    completionKind: 'obsidian-fork',
+    summaryFile: '/tmp/output/meeting_summary.md',
+  };
+
+  assert.strictEqual(
+    shouldSuppressNoteReadyNotification(activeOptions, '/tmp/output/meeting_summary.md'),
+    true,
+  );
+  assert.strictEqual(
+    shouldSuppressNoteReadyNotification(undefined, '/tmp/output/meeting_summary.md', true),
+    true,
+  );
+  assert.strictEqual(
+    shouldSuppressNoteReadyNotification(
+      { completionKind: 'note-ready', summaryFile: '/tmp/output/meeting_summary.md' },
+      '/tmp/output/meeting_summary.md',
+      true,
+    ),
+    true,
+    'a main-side fork reservation wins even before its toast is active',
+  );
+  assert.strictEqual(
+    shouldSuppressNoteReadyNotification(activeOptions, '/tmp/output/other_summary.md'),
+    false,
+  );
+  assert.strictEqual(
+    shouldSuppressNoteReadyNotification(
+      { completionKind: 'note-ready', summaryFile: '/tmp/output/meeting_summary.md' },
+      '/tmp/output/meeting_summary.md',
+    ),
+    false,
+  );
+});
+
+test('a fork reserves its toast before the generic completion request, while transcript-only keeps Summarise', () => {
+  const summaryFile = '/tmp/output/meeting_summary.md';
+  const forkPending = shouldReserveObsidianForkNotification(true, true);
+
+  assert.strictEqual(forkPending, true);
+  assert.strictEqual(
+    shouldSuppressNoteReadyNotification(
+      { completionKind: 'note-ready', summaryFile },
+      summaryFile,
+      forkPending,
+    ),
+    true,
+    'the renderer cannot supersede a main-reserved preservation toast',
+  );
+  assert.strictEqual(
+    shouldReserveObsidianForkNotification(true, false),
+    false,
+    'a transcript-only completion retains the renderer-owned Summarise toast',
+  );
+  assert.strictEqual(shouldReserveObsidianForkNotification(false, true), false);
 });

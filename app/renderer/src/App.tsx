@@ -76,7 +76,9 @@ export function App() {
   React.useEffect(() => {
     if (typeof window === 'undefined' || !window.stenoai) return;
     const off = [
-      ipc().on.trayOpenSettings(() => navigate('/settings')),
+      ipc().on.trayOpenSettings((payload) =>
+        navigate(payload?.tab === 'integrations' ? '/settings?tab=integrations' : '/settings'),
+      ),
       ipc().on.setupFlowTriggered(() => navigate('/setup')),
       // Capture backend debug-log lines from app start (not just when Settings
       // → Developer is open) so the console always has the full session.

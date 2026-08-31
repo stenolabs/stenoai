@@ -1,13 +1,16 @@
 import { test, expect } from '../fixtures/electron';
 import { realUserDataDir, fileSig } from '../fixtures/real-user-data';
+import { startMockOllama } from '../fixtures/mock-ollama';
+import { writeMeetingMarkdown, writeUserConfig } from '../fixtures/user-config';
 import { mkdirSync, writeFileSync, readFileSync, existsSync, readdirSync, unlinkSync } from 'fs';
 import path from 'path';
 
 /**
- * T2 — Obsidian vault sync (#413). Model-free: seeds a note file directly in
- * `output/`, then drives the real app's settings + meeting bridges and asserts
- * on-disk vault state. No ASR/LLM. Needs the bundled backend (the config +
- * meeting IPCs shell `simple_recorder.py`); skips cleanly when it's absent.
+ * T2 - Obsidian vault sync (#413). The first scenario seeds a note file directly
+ * in `output/`; the reprocess scenario uses deterministic mock Ollama responses.
+ * Both drive the real app bridges and assert on-disk vault state without a real
+ * ASR/LLM. Needs the bundled backend (the config + meeting IPCs shell
+ * `simple_recorder.py`); skips cleanly when it is absent.
  *
  * Covers the plan's acceptance criteria: backfill-on-enable writes a readable
  * note with Obsidian frontmatter and NO transcript; a title change renames the
@@ -15,20 +18,46 @@ import path from 'path';
  * flagged (never clobbered); a deleted note's vault copy is removed on commit.
  */
 
+type ObsidianConflictInfo = {
+  vaultRelPath: string;
+  replacementVaultRelPath?: string;
+  reason: string;
+};
+
 type StenoWin = Window & {
   stenoai: {
     settings: {
       setObsidianVaultPath: (p: string) => Promise<unknown>;
       setObsidianSync: (v: boolean) => Promise<unknown>;
-      getObsidianConflicts: () => Promise<{ success: boolean; conflicts: Record<string, unknown> }>;
+      getObsidianConflicts: () => Promise<{
+        success: boolean;
+        conflicts: Record<string, ObsidianConflictInfo>;
+      }>;
     };
     meetings: {
+      reprocess: (
+        summaryFile: string,
+        regenerateTitle: boolean,
+        name: string,
+      ) => Promise<{ success: boolean; error?: string }>;
       update: (f: string, patch: { name: string }) => Promise<unknown>;
       delete: (m: unknown) => Promise<{ id?: string; deleteId?: string } | null>;
       commitDelete: (id: string) => Promise<unknown>;
     };
   };
 };
+
+const REGENERATED_REPLY = [
+  '## Summary',
+  'The regenerated Steno summary reached the vault.',
+  '',
+  '## Key Points',
+  '- The edited Obsidian copy stays untouched',
+  '',
+  '## Action Items',
+  '- Review the separate Steno copy',
+  '',
+].join('\n');
 
 const BACKEND = path.resolve(
   __dirname, '..', '..', 'dist', 'stenoai',
@@ -157,4 +186,147 @@ test('backfill writes a transcript-free note; rename moves it; external edits an
 
   // Never touched the developer's real data dir.
   expect(fileSig(realUserDataDir())).toBe(realDirBefore);
+});
+
+test('reprocess preserves an Obsidian edit and writes the regenerated note separately', async ({
+  launchApp,
+  userDataDir,
+}) => {
+  test.setTimeout(180_000);
+  test.skip(!existsSync(BACKEND), 'backend bundle not built');
+
+  const realDirBefore = fileSig(realUserDataDir());
+  const vault = path.join(userDataDir, 'obs-reprocess-vault');
+  mkdirSync(vault, { recursive: true });
+  writeUserConfig(userDataDir, {
+    ai_provider: 'local',
+    obsidian_sync_enabled: true,
+    obsidian_vault_path: vault,
+  });
+  const summaryPath = writeMeetingMarkdown(userDataDir, 'obs-reprocess', {
+    name: 'Reprocess Conflict',
+    summaryMarkdown: '## Summary\n\nOriginal summary.',
+    transcript: 'Alice: regenerate this note with the current template.',
+  });
+
+  const ollama = await startMockOllama({ chatReply: REGENERATED_REPLY });
+  try {
+    const { app, page } = await launchApp();
+
+    await expect
+      .poll(() => vaultFiles(vault).length, { timeout: 20_000, intervals: [250] })
+      .toBe(1);
+    const originalName = vaultFiles(vault)[0];
+    const originalPath = path.join(vault, originalName);
+
+    // The vault write and its ownership index are separate atomic writes. Wait
+    // for both before simulating an external edit so a slow Windows filesystem
+    // cannot make the edit race the initial index commit.
+    const statePath = path.join(userDataDir, '.obsidian-sync-state.json');
+    await expect
+      .poll(() => {
+        try {
+          const state = JSON.parse(readFileSync(statePath, 'utf8'));
+          return state.notes?.['obs-reprocess']?.vaultRelPath === originalName;
+        } catch {
+          return false;
+        }
+      }, { timeout: 20_000, intervals: [250] })
+      .toBe(true);
+    writeFileSync(originalPath, 'HAND-EDITED IN OBSIDIAN', 'utf8');
+
+    const result = await page.evaluate(
+      (f) =>
+        (window as StenoWin).stenoai.meetings.reprocess(f, false, 'Reprocess Conflict'),
+      summaryPath,
+    );
+    expect(result.success).toBe(true);
+
+    // Assert the short-lived toast immediately. The remaining disk and settings
+    // checks can legitimately take longer than its 15-second lifetime on CI.
+    const findNotificationWindow = async () => {
+      // A fast duplicate completion can briefly leave the superseded toast in
+      // ElectronApplication.windows() while its replacement mounts. Search
+      // newest-first and require the expected payload, rather than selecting a
+      // stale blank `/notification` page by URL alone.
+      for (const candidate of app.windows().slice().reverse()) {
+        if (candidate.isClosed()) continue;
+        try {
+          if (new URL(candidate.url()).hash !== '#/notification') continue;
+        } catch {
+          continue;
+        }
+        if (
+          await candidate
+            .getByText('Obsidian edit preserved', { exact: true })
+            .isVisible()
+            .catch(() => false)
+        ) {
+          return candidate;
+        }
+      }
+      return undefined;
+    };
+    let notification: typeof page | undefined;
+    await expect
+      .poll(async () => {
+        notification = await findNotificationWindow();
+        return Boolean(notification);
+      }, {
+        timeout: 14_000,
+        intervals: [100],
+      })
+      .toBe(true);
+    await expect(notification!.getByText(/^Latest version saved as .+\.$/)).toBeVisible();
+    await notification!.getByText('Obsidian edit preserved', { exact: true }).click();
+    await expect
+      .poll(() => page.evaluate(() => window.location.hash), {
+        timeout: 10_000,
+        intervals: [100],
+      })
+      .toBe(`#/meetings/${encodeURIComponent(summaryPath)}`);
+
+    await expect
+      .poll(() => vaultFiles(vault).length, { timeout: 20_000, intervals: [250] })
+      .toBe(2);
+    expect(readFileSync(originalPath, 'utf8')).toBe('HAND-EDITED IN OBSIDIAN');
+
+    const replacementName = vaultFiles(vault).find((name) => name !== originalName);
+    expect(replacementName).toBeTruthy();
+    expect(replacementName).toContain('(obs-reprocess)');
+    expect(readFileSync(path.join(vault, replacementName!), 'utf8')).toContain(
+      'The regenerated Steno summary reached the vault.',
+    );
+
+    const conflicts = await page.evaluate(
+      () => (window as StenoWin).stenoai.settings.getObsidianConflicts(),
+    );
+    expect(conflicts.success).toBe(true);
+    const preservedConflict = Object.values(conflicts.conflicts).find(
+      (conflict) =>
+        conflict.reason === 'external-edit-preserved' && conflict.vaultRelPath === originalName,
+    );
+    expect(preservedConflict).toMatchObject({
+      vaultRelPath: originalName,
+      replacementVaultRelPath: replacementName,
+      reason: 'external-edit-preserved',
+    });
+
+    await page.evaluate(() => {
+      window.location.hash = '/settings?tab=integrations';
+    });
+    const integrations = page.locator('[data-settings-tab="integrations"]');
+    await expect(integrations).toBeVisible();
+    await expect(integrations.getByText(originalName, { exact: true })).toBeVisible();
+    await expect(integrations.getByText(replacementName!, { exact: true })).toBeVisible();
+    await expect(
+      integrations.getByText(
+        'Edited vault file kept on the left. Its regenerated Steno copy was saved on the right.',
+      ),
+    ).toBeVisible();
+
+    expect(fileSig(realUserDataDir())).toBe(realDirBefore);
+  } finally {
+    await ollama.close();
+  }
 });

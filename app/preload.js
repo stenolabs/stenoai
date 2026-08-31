@@ -295,6 +295,7 @@ const stenoai = {
     showSilenceAutoStopNotification: (payload) => invoke('show-silence-auto-stop-notification', payload),
     showNoteReadyNotification: (payload) => invoke('show-note-ready-notification', payload),
     showTranscriptReadyNotification: (payload) => invoke('show-transcript-ready-notification', payload),
+    showObsidianForkNotification: (payload) => invoke('show-obsidian-fork-notification', payload),
     showSystemAudioMicOnlyNotification: () => invoke('show-system-audio-mic-only-notification'),
     // Design-for-test seam: the production fire path is the main-side scheduler
     // timer; this lets e2e drive the gate + suppression deterministically.
@@ -389,6 +390,7 @@ const stenoai = {
   },
 
   notification: {
+    rendererReady: () => send('notification-renderer-ready'),
     close: () => invoke('close-notification-window'),
     actionClicked: (actionId, notifId) => send('notification-action-clicked', { actionId, notifId }),
     bodyClicked: (notifId) => send('notification-body-clicked', { notifId }),

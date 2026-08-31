@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   classifyCompletionNotification,
+  chooseCompletionNotification,
   meetingAlreadyHasNotes,
   completionActions,
 } from './completionNotification';
@@ -85,6 +86,81 @@ describe('classifyCompletionNotification (#bug2/#bug3)', () => {
   it('append into a still-transcript-only note (no notes either way) → transcript-ready', () => {
     expect(
       classifyCompletionNotification({ notesGenerated: false, notesAlreadyExist: false }),
+    ).toBe('transcript-ready');
+  });
+});
+
+describe('chooseCompletionNotification', () => {
+  it('keeps the ordinary note-ready notification', () => {
+    expect(
+      chooseCompletionNotification({
+        kind: 'note-ready',
+        shouldNotify: true,
+        obsidianForked: false,
+      }),
+    ).toBe('note-ready');
+  });
+
+  it('suppresses note-ready after main showed the fork toast, even once that toast has closed', () => {
+    expect(
+      chooseCompletionNotification({
+        kind: 'note-ready',
+        shouldNotify: true,
+        // Main removes the fork payload after it successfully showed its toast.
+        // This durable result must still win after Electron has closed the toast.
+        obsidianForked: false,
+        mainObsidianForkNotificationShown: true,
+      }),
+    ).toBeNull();
+  });
+
+  it('keeps the ordinary transcript-ready notification', () => {
+    expect(
+      chooseCompletionNotification({
+        kind: 'transcript-ready',
+        shouldNotify: true,
+        obsidianForked: false,
+      }),
+    ).toBe('transcript-ready');
+  });
+
+  it('keeps an unreserved note-ready fork visible', () => {
+    expect(
+      chooseCompletionNotification({
+        kind: 'note-ready',
+        shouldNotify: true,
+        obsidianForked: true,
+      }),
+    ).toBe('obsidian-fork');
+  });
+
+  it('shows nothing when the user is watching', () => {
+    expect(
+      chooseCompletionNotification({
+        kind: 'note-ready',
+        shouldNotify: false,
+        obsidianForked: false,
+      }),
+    ).toBeNull();
+  });
+
+  it('keeps a transcript-only fork visible when the user is watching', () => {
+    expect(
+      chooseCompletionNotification({
+        kind: 'transcript-ready',
+        shouldNotify: false,
+        obsidianForked: true,
+      }),
+    ).toBe('obsidian-fork');
+  });
+
+  it('keeps Summarise for a transcript-only fork when the user can act on it', () => {
+    expect(
+      chooseCompletionNotification({
+        kind: 'transcript-ready',
+        shouldNotify: true,
+        obsidianForked: true,
+      }),
     ).toBe('transcript-ready');
   });
 });

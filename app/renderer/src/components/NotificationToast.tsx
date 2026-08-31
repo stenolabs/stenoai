@@ -61,6 +61,9 @@ export function NotificationToast() {
     const off = ipc().on.showNotification((newData) => {
       setData(newData);
     });
+    // The main process returns the payload only after this subscription exists.
+    // This avoids racing React's layout-effect commit against window load events.
+    ipc().notification.rendererReady();
     return off;
   }, []);
 
