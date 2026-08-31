@@ -31,6 +31,7 @@ export const PARAKEET_LANGUAGES: readonly ParakeetLanguageOption[] = [
   { code: 'es', label: 'Spanish', hint: 'Transcribe and summarise in Spanish' },
   { code: 'nl', label: 'Dutch', hint: 'Transcribe and summarise in Dutch' },
   { code: 'pt', label: 'Portuguese', hint: 'Transcribe and summarise in Portuguese' },
+  { code: 'ru', label: 'Russian', hint: 'Transcribe and summarise in Russian' },
 ];
 
 export const PARAKEET_LANGUAGE_CODES: ReadonlySet<string> = new Set(

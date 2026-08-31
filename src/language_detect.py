@@ -10,7 +10,7 @@ summary (#283). Whisper is unaffected (whisper.cpp reports a real
 
 This module fills that gap with a small stopword/function-word classifier over
 the transcript text. It covers exactly the European languages Parakeet
-transcribes well (``en, fr, de, es, nl, pt`` — the ``PARAKEET_LANGUAGES`` set
+transcribes well (``en, fr, de, es, nl, pt, ru`` — the ``PARAKEET_LANGUAGES`` set
 minus ``auto``) and returns ``None`` when the evidence is inconclusive, so the
 existing "en" fallback still applies. No pip dependency (PyInstaller bundle size
 + licensing); the method is a plain aggregate word-match count.
@@ -80,6 +80,15 @@ _STOPWORDS: dict[str, frozenset[str]] = {
         "pode", "podem", "tudo", "nós", "eles", "elas", "você", "vocês",
         "agora", "então",
     }),
+    "ru": frozenset({
+        "и", "в", "не", "на", "что", "с", "он", "как", "это", "по",
+        "но", "они", "все", "так", "его", "от", "за", "к", "же", "вы",
+        "ты", "мы", "для", "был", "была", "было", "были", "быть", "есть",
+        "или", "если", "когда", "уже", "только", "ещё", "еще", "также", "этот",
+        "эта", "эти", "будет", "может", "можно", "нужно", "очень",
+        "здесь", "там", "чем", "потому", "чтобы", "меня", "мне", "нас",
+        "вам",
+    }),
 }
 
 # Strip diarisation markers ([You] / [Others] / [Together]) and bracketed
@@ -102,7 +111,7 @@ _LEAD_RATIO = 1.3
 def detect_transcript_language(text: str) -> Optional[str]:
     """Best-effort language of ``text``, or ``None`` when inconclusive.
 
-    Returns one of ``{en, fr, de, es, nl, pt}`` — the Parakeet-supported set —
+    Returns one of ``{en, fr, de, es, nl, pt, ru}`` — the Parakeet-supported set —
     only when the winning language clears ``_MIN_HITS`` stopword matches and
     leads the runner-up by at least ``_LEAD_RATIO``. Diarisation markers and
     timestamps are ignored and only the first ``_MAX_CHARS`` are scanned.
