@@ -1,11 +1,9 @@
 ---
-import { Landmark, Shield, Scale, Briefcase, ArrowRight } from "lucide-react";
+import { Landmark, Shield, ArrowRight } from "lucide-react";
 
 const inds = [
   { title: "Government", href: "/enterprise/government/", Icon: Landmark, body: "Sensitive briefings, policy discussions, and internal reviews stay within your perimeter. No cloud dependencies, no third-party processors, no records leaving the device." },
-  { title: "Defense", href: "/enterprise/defense/", Icon: Shield, body: "Operational planning and classified discussions run entirely on-device. Works offline, on air-gapped networks, with nothing transiting an external server." },
-  { title: "Legal", href: "/enterprise/legal/", Icon: Scale, body: "Client calls and case discussions remain privileged. Enforced by architecture, not policy or a privacy checkbox." },
-  { title: "Executives", href: "/enterprise/executive/", Icon: Briefcase, body: "Board prep, M&A discussions, exec offsites. The conversations that decide the company's direction never leave the device they're held on." },
+  { title: "Defence", href: "/enterprise/defense/", Icon: Shield, body: "Operational planning and classified discussions run entirely on-device. Works offline, on air-gapped networks, with nothing transiting an external server." },
 ];
 ---
 
@@ -38,8 +36,8 @@ const inds = [
       </p>
       <p class="text-fg-2 text-[15px] leading-[1.55] mt-4">
         Because your meeting recordings, transcripts, and summaries never leave the device,
-        there's no third-party processor handling them — supporting HIPAA and GDPR obligations
-        by design.
+        there's no third-party processor handling them — supporting data-residency and GDPR
+        obligations by design.
       </p>
       <div class="flex flex-wrap items-center gap-x-5 gap-y-3 mt-7">
         <a
@@ -51,7 +49,7 @@ const inds = [
           Book a demo
         </a>
         <a href="/enterprise/" class="inline-flex items-center gap-1.5 text-fg-1 text-sm">
-          All industries <ArrowRight size={14} aria-hidden="true" />
+          Enterprise overview <ArrowRight size={14} aria-hidden="true" />
         </a>
       </div>
     </div>
