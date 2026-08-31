@@ -5,12 +5,18 @@ import Footer from "../../sections/Footer.astro";
 import CTAFooter from "../../sections/CTAFooter.astro";
 import { getCollection } from "astro:content";
 import { ArrowRight } from "lucide-react";
+import { ALL } from "../../content/industries.data.js";
 
-const industries = await getCollection("industries");
+// getCollection returns entries in id order; keep the authored order from
+// industries.data.js so this hub matches the nav, footer, and homepage.
+const order = ALL.map((c) => c.slug);
+const industries = (await getCollection("industries")).sort(
+  (a, b) => order.indexOf(a.data.slug) - order.indexOf(b.data.slug),
+);
 
 const title = "Steno for Enterprise — Private, On-Device AI Meeting Notes for Regulated Teams";
 const description =
-  "Steno records, transcribes, and summarizes meetings entirely on your device — no cloud, no bot, no vendor in your data path. Built for government, defense, legal, healthcare, finance, and executive teams.";
+  "Steno records, transcribes, and summarizes meetings entirely on your device — no cloud, no bot, no vendor in your data path. Built for government and defence teams.";
 
 const breadcrumbJsonLd = {
   "@context": "https://schema.org",

@@ -1,5 +1,5 @@
 ---
-import { Mic, FileText, Sparkles } from "lucide-react";
+import { Mic, Sparkles, MessageSquare } from "lucide-react";
 
 const steps = [
   {
@@ -10,15 +10,15 @@ const steps = [
   },
   {
     n: "02",
-    Icon: FileText,
-    title: "Transcribe",
-    body: "Your words are transcribed in real time, entirely on your device. Works in 99 languages with automatic detection — on Mac and Windows.",
-  },
-  {
-    n: "03",
     Icon: Sparkles,
     title: "Summarize",
     body: "Pulls out a summary, key topics, and action items automatically. Nothing ever leaves your device.",
+  },
+  {
+    n: "03",
+    Icon: MessageSquare,
+    title: "Ask your notes",
+    body: "Ask questions across every meeting you've recorded. Surface decisions, action items, and themes — answered by a model running locally.",
   },
 ];
 ---
@@ -40,7 +40,7 @@ const steps = [
         Everything runs locally. Zero cloud. Maximum privacy.
       </h2>
       <p class="text-fg-2 text-lg leading-[1.55]" style="max-width: 56ch">
-        From raw audio to structured notes, every step happens on your machine, including the language model.
+        From raw audio to answers, every step happens on your machine, including the language model.
       </p>
     </div>
 

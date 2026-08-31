@@ -319,7 +319,7 @@ jobs:
 
       # Exclude @pipeline AND @summarize-real — both need a real model and run in
       # their own model-bearing jobs (t2-pipeline-macos / the nightly
-      # summarize-real-macos) so this job stays fast and model-free.
+      # summarize-real-windows) so this job stays fast and model-free.
       - name: Run T2 (org-lock, model-free)
         working-directory: app
         run: npm run test:e2e -- --project=t2 --grep-invert '@pipeline|@summarize-real'
