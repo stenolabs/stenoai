@@ -134,6 +134,21 @@ jobs:
         working-directory: app
         run: npm run lint:renderer
 
+      # The i18n gate. Runs as its own step so a failure names itself in the job log
+      # rather than hiding inside a generic lint failure.
+      #
+      # lint:i18n blocks NEW hardcoded user-facing strings (per-file ratchet against
+      # renderer/i18n-lint-baseline.json). i18n:inventory records the existing English
+      # wording, so an i18n migration can be shown to move strings without changing them
+      # — the failure that broke three specs in PR #494 and read only as "CI is red".
+      - name: i18n gate (no new hardcoded copy)
+        working-directory: app
+        run: npm run lint:i18n
+
+      - name: i18n copy inventory is current
+        working-directory: app
+        run: npm run i18n:inventory
+
   # ---------------------------------------------------------------------------
   # Deterministic backend/renderer gates (issue #376). These close the CI
   # enforcement gap: the backend unittest suite and the renderer tsc typecheck

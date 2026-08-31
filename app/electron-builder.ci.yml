@@ -1,6 +1,10 @@
 # electron-builder config for CI dry-runs (pack:unsigned).
 #
-# Inherits the base "build" config from package.json, but strips:
+# This is a standalone config, NOT an override on top of the "build" config in
+# package.json — electron-builder treats a --config file as the whole config
+# unless it declares "extends", and this file does not (see #438). Anything
+# from package.json that has to reach the CI-built Info.plist must be repeated
+# here. Compared to a release build it deliberately leaves out:
 #   - extraResources (../dist/stenoai is not built in CI — no PyInstaller)
 #   - afterSign hook (no notarization in unsigned packs)
 #   - DMG signing (no cert in CI)
@@ -22,3 +26,6 @@ dmg:
 mac:
   identity: null
   notarize: false
+  # Keep in sync with build.mac.extendInfo in package.json.
+  extendInfo:
+    NSLocalNetworkUsageDescription: "Steno needs local network access to reach Ollama or other AI services you host on your own network."

@@ -195,7 +195,11 @@ const SPEAKER_SEED_MEETING = {
   transcript: '',
   is_diarised: true,
   has_speaker_sidecar: true,
-  diarised_text: '[00:05] [Speaker 2] hello there',
+  diarised_text:
+    '[00:05] [Speaker 2] hello there\n\n' +
+    '[00:10] [Speaker 3] another participant\n\n' +
+    '[00:15] [Speaker 4] a third participant\n\n' +
+    '[00:20] [Others] fallback channel speech',
   participants: [],
   summary: 'A test meeting for speaker review.',
   key_points: [],

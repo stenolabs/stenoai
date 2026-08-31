@@ -4,6 +4,7 @@ import {
   enableSpeakerIdentification,
   fixtureDiarizationRunId,
   readUserConfig,
+  writeMeetingMarkdown,
   writeSpeakersSidecar,
   writeTranscriptFile,
 } from '../fixtures/user-config';
@@ -36,6 +37,13 @@ type ConfirmSpeakerResult = {
 
 type StenoWindow = Window & {
   stenoai: {
+    meetings: {
+      get: (summaryFile: string) => Promise<{
+        success: boolean;
+        error?: string;
+        meeting?: { diarised_text?: string | null };
+      }>;
+    };
     speakers: {
       confirm: (params: {
         meetingStem: string;
@@ -241,6 +249,12 @@ test('confirm-speaker --relabel-transcript persists a PersonProfile and relabels
     stem,
     '[00:05] [Speaker 2] hello there\n\n[00:20] [You] hi back',
   );
+  const summaryFile = writeMeetingMarkdown(userDataDir, stem, {
+    name: 'Speaker naming',
+    summaryMarkdown: '## Summary\nTwo people discussed the plan.',
+    transcript: '[00:05] [Speaker 2] hello there\n\n[00:20] [You] hi back',
+    frontmatter: { is_diarised: true },
+  });
 
   enableSpeakerIdentification(userDataDir);
 
@@ -268,6 +282,12 @@ test('confirm-speaker --relabel-transcript persists a PersonProfile and relabels
     expect.stringContaining('[00:05] [Person Alpha] hello there'),
   );
   expect(readFileSync(transcriptFile, 'utf8')).toContain('[00:20] [You] hi back');
+  const firstMeeting = await page.evaluate(
+    (file) => (window as StenoWindow).stenoai.meetings.get(file),
+    summaryFile,
+  );
+  expect(firstMeeting.success, firstMeeting.error).toBe(true);
+  expect(firstMeeting.meeting!.diarised_text).toContain('[00:05] [Person Alpha] hello there');
 
   // A second confirm of the SAME cluster (the review UI's "Change"
   // correction) REASSIGNS it: the transcript re-labels idempotently rather
@@ -283,6 +303,13 @@ test('confirm-speaker --relabel-transcript persists a PersonProfile and relabels
     expect.stringContaining('[00:05] [Person Gamma] hello there'),
   );
   expect(readFileSync(transcriptFile, 'utf8')).not.toContain('[Person Alpha]');
+  const correctedMeeting = await page.evaluate(
+    (file) => (window as StenoWindow).stenoai.meetings.get(file),
+    summaryFile,
+  );
+  expect(correctedMeeting.success, correctedMeeting.error).toBe(true);
+  expect(correctedMeeting.meeting!.diarised_text).toContain('[00:05] [Person Gamma] hello there');
+  expect(correctedMeeting.meeting!.diarised_text).not.toContain('[Person Alpha]');
 
   // On disk: Person Alpha keeps his (now evidence-less) profile, Person Gamma owns the
   // cluster with a prototype marked as a correction.

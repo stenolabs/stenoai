@@ -31,6 +31,7 @@ def validate_display_name(value: str) -> str:
     normalized = " ".join(unicodedata.normalize("NFKC", value).split())
     if (
         not normalized
+        or normalized.casefold() == "you"
         or "[" in normalized
         or "]" in normalized
         or not normalized.isprintable()

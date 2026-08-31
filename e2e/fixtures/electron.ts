@@ -67,6 +67,17 @@ export const test = base.extend<Fixtures>({
         // A specific focus/visibility test can override this with "0".
         STENOAI_E2E_HEADLESS: '1',
         STENOAI_USER_DATA_DIR: userDataDir,
+        // Pin the interface language for the whole suite. 25 of the specs assert on
+        // English copy (`getByRole('button', { name: 'Delete' })` and friends) — that is
+        // deliberate: those assertions double as the English-baseline oracle that caught
+        // a silent copy rewrite during an i18n change. They are only trustworthy while
+        // the app is guaranteed to render in English regardless of the host's OS locale,
+        // a stored preference, or a leftover localStorage value. A spec that needs another
+        // language sets STENOAI_UI_LANGUAGE itself via `opts.env`.
+        //
+        // Until the i18n foundation reads this variable it is inert — written down here
+        // first so the contract exists before anything depends on it.
+        STENOAI_UI_LANGUAGE: 'en',
         ...(opts.mockIpc ? { STENOAI_E2E_MOCK_IPC: '1' } : {}),
         ...(opts.env ?? {}),
       };

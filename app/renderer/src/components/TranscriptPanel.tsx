@@ -137,17 +137,15 @@ function TranscriptRow({ segment, highlight }: { segment: Segment; highlight: st
   // (transcriber.py's _resolve_speaker_placeholders) both render as
   // grey/left — only an exact "You" (or no marker at all) is "self".
   const isYou = segment.speaker === 'You' || segment.speaker == null;
-  // A confirmed real name (via the speaker-review panel's relabeling) is
-  // genuinely new information, unlike the generic "Others"/"Speaker N"
-  // placeholders the comment above is about -- show it.
-  const isGenericLabel =
-    segment.speaker === 'Others' || (segment.speaker != null && /^Speaker \d+$/.test(segment.speaker));
-  const realName = !isYou && !isGenericLabel ? segment.speaker : null;
+  // Every acoustic speaker label carries information because several
+  // distinct speakers can share the grey/left lane. Keep only the channel-
+  // level "Others" marker implicit; show both confirmed names and Speaker N.
+  const speakerLabel = !isYou && segment.speaker !== 'Others' ? segment.speaker : null;
   return (
     <div className={cn('flex flex-col gap-0.5 px-1 py-0.5', isYou ? 'items-end' : 'items-start')}>
-      {(segment.timestamp || realName) && (
+      {(segment.timestamp || speakerLabel) && (
         <span className="flex items-center gap-1.5 px-1.5 text-[10.5px] tabular-nums" style={{ color: 'var(--fg-2)' }}>
-          {realName && <span className="font-medium">{realName}</span>}
+          {speakerLabel && <span className="font-medium">{speakerLabel}</span>}
           {segment.timestamp}
         </span>
       )}
@@ -192,5 +190,4 @@ function renderHighlighted(text: string, highlight: string): React.ReactNode {
   if (cursor < text.length) parts.push(text.slice(cursor));
   return parts;
 }
-
 

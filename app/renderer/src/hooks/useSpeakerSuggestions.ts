@@ -78,7 +78,11 @@ export function useConfirmSpeaker() {
     // moment, producing exactly the contradiction a real user hit: "✓
     // Confirmed as X" appearing while the row still says "Unidentified
     // speaker" from the stale pre-confirm data.
-    onSuccess: async (_data, args) => {
+    // The backend can fail after committing the profile and pending recovery
+    // marker (for example when the canonical transcript temp-write fails).
+    // Refresh on either outcome so the panel never keeps pre-mutation state
+    // after a truthful success:false response.
+    onSettled: async (_data, _error, args) => {
       await Promise.all([
         qc.invalidateQueries({ queryKey: speakersKeys.suggestions(args.meetingStem) }),
         qc.invalidateQueries({ queryKey: speakersKeys.profiles() }),
@@ -188,7 +192,10 @@ export function useMarkSpeakerCluster() {
       const { summaryFile: _ignored, ...call } = args;
       return unwrap(await ipc().speakers.markCluster(call));
     },
-    onSuccess: async (_data, args) => {
+    // Profile cleanup and the mixed-speaker sidecar mark are durable before
+    // transcript recovery. A later I/O failure is still a mutation, so error
+    // responses need the same cache refresh as success responses.
+    onSettled: async (_data, _error, args) => {
       await qc.invalidateQueries({ queryKey: speakersKeys.all });
       if (args.summaryFile) {
         await qc.invalidateQueries({ queryKey: meetingsKeys.detail(args.summaryFile) });

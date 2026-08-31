@@ -47,7 +47,6 @@ import subprocess
 import tempfile
 import time
 import uuid
-from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
@@ -1218,38 +1217,13 @@ def relabel_transcript_speaker(
         logger.warning("Could not read transcript %s for relabeling: %s", transcript_path, e)
         return 0
 
-    lines = original.split("\n")
-    new_lines = []
-    changed = 0
-    for line in lines:
-        match = _TRANSCRIPT_LINE_RE.match(line)
-        if not match:
-            new_lines.append(line)
-            continue
-        timestamp_str, label, text = match.groups()
-        if label == "You":
-            new_lines.append(line)
-            continue
-        try:
-            timestamp_seconds = _parse_transcript_timestamp(timestamp_str)
-        except ValueError:
-            new_lines.append(line)
-            continue
-        in_range = any(
-            seg.get("start", 0) - RELABEL_TIMESTAMP_TOLERANCE_SECONDS
-            <= timestamp_seconds
-            <= seg.get("end", 0) + RELABEL_TIMESTAMP_TOLERANCE_SECONDS
-            for seg in segments
-        )
-        if in_range and label != display_name:
-            new_lines.append(f"[{timestamp_str}] [{display_name}] {text}")
-            changed += 1
-        else:
-            new_lines.append(line)
+    relabeled_text, changed = relabel_transcript_text_speaker(
+        original, segments, display_name,
+    )
 
     if changed:
         tmp_path = transcript_path.with_name(transcript_path.name + ".tmp")
-        tmp_path.write_text("\n".join(new_lines), encoding="utf-8")
+        tmp_path.write_text(relabeled_text, encoding="utf-8")
         tmp_path.replace(transcript_path)
     return changed
 
@@ -1488,48 +1462,74 @@ def record_original_labels(
     return recorded
 
 
-def restore_transcript_labels(
-    transcript_path: Path, turn_manifest: list, target_ids: set,
-) -> int:
-    """Undo a confirmation's rename on ONE cluster's lines, putting back the
-    label each line carried before it. Where nothing was recorded, an
-    existing generic diarization label remains unchanged and a person name
-    is replaced with `MULTI_SPEAKER_TRANSCRIPT_LABEL`.
+def restore_transcript_text_labels(
+    transcript_text: str,
+    turn_manifest: list,
+    target_ids: set,
+    *,
+    require_unique_target_timestamps: bool = False,
+    replacement_label: Optional[str] = None,
+) -> tuple[str, int]:
+    """Restore one cluster's labels in diarised transcript text.
 
-    The fallback is not a guess: it is the statement the user just made by
-    marking the cluster, and it is the honest thing to show for a line the
-    app can no longer attribute to one person. Guessing "You" or "Speaker
-    3" instead would invent an attribution.
-
-    Same refusals as relabel_transcript_exact -- a manifest that does not
-    line up with the transcript, by count or by turn times, is not paired
-    at all. Returns the number of lines changed; never raises.
+    This is shared by the canonical transcript file and a saved summary's
+    embedded copy.  The manifest is still the authority: malformed or
+    independently edited text is left untouched instead of guessing which
+    words belong to the cluster.  `replacement_label` switches the operation
+    from restoring the recorded label to a provenance-checked confirmation
+    relabel. A summary-retry caller can require target timestamps to be
+    unique: its embedded copy has only integer-second markers, so two turns
+    in one second are not safely distinguishable after a user reorders them.
     """
-    if not turn_manifest or not target_ids or not transcript_path.exists():
-        return 0
-    try:
-        lines = transcript_path.read_text(encoding="utf-8").split("\n")
-    except OSError as e:
-        logger.warning("Could not read transcript %s for label restore: %s", transcript_path, e)
-        return 0
-
+    if not turn_manifest or not target_ids:
+        return transcript_text, 0
+    lines = transcript_text.split("\n")
     indices = [i for i, line in enumerate(lines) if _TRANSCRIPT_LINE_RE.match(line)]
     if len(indices) != len(turn_manifest):
         logger.warning(
-            "restore_transcript_labels: %s has %d diarised lines but turn_manifest has %d -- "
-            "refusing to guess a pairing, no-op.",
-            transcript_path, len(indices), len(turn_manifest),
+            "restore_transcript_text_labels: %d diarised lines but %d manifest entries; no-op",
+            len(indices), len(turn_manifest),
         )
-        return 0
+        return transcript_text, 0
+    line_starts = [
+        _safe_transcript_timestamp(_TRANSCRIPT_LINE_RE.match(lines[i]).group(1))
+        for i in indices
+    ]
     if not _manifest_describes_lines(
-        [_safe_transcript_timestamp(_TRANSCRIPT_LINE_RE.match(lines[i]).group(1)) for i in indices],
+        line_starts,
         turn_manifest,
     ):
         logger.warning(
-            "restore_transcript_labels: %s and its turn_manifest disagree on turn times -- no-op.",
-            transcript_path,
+            "restore_transcript_text_labels: transcript markers and manifest starts disagree; no-op",
         )
-        return 0
+        return transcript_text, 0
+    if require_unique_target_timestamps:
+        for index, entry in enumerate(turn_manifest):
+            if not isinstance(entry, dict):
+                continue
+            if (entry.get("channel"), entry.get("diarization_speaker_id")) not in target_ids:
+                continue
+            current_label = _TRANSCRIPT_LINE_RE.match(lines[indices[index]]).group(2)
+            if replacement_label is not None and current_label == "You":
+                continue
+            start = entry.get("start")
+            if not isinstance(start, (int, float)) or not math.isfinite(start):
+                logger.warning(
+                    "restore_transcript_text_labels: target turn has no rendered timestamp; "
+                    "refusing summary label repair",
+                )
+                return transcript_text, 0
+            rendered_start = max(0, int(start))
+            # A missing start on a different manifest entry is not evidence
+            # that it belongs to another second. The saved summary carries
+            # only these rendered markers, so its actual duplicate marker is
+            # the relevant ambiguity proof.
+            if line_starts.count(rendered_start) > 1:
+                logger.warning(
+                    "restore_transcript_text_labels: target turn has no unique summary marker; "
+                    "refusing summary label repair",
+                )
+                return transcript_text, 0
 
     changed = 0
     for line_idx, entry in zip(indices, turn_manifest):
@@ -1538,19 +1538,139 @@ def restore_transcript_labels(
         if (entry.get("channel"), entry.get("diarization_speaker_id")) not in target_ids:
             continue
         timestamp_str, label, text = _TRANSCRIPT_LINE_RE.match(lines[line_idx]).groups()
-        restored = entry.get(ORIGINAL_LABEL_KEY)
-        if not restored:
-            if _is_generic_transcript_label(label):
-                continue
-            restored = MULTI_SPEAKER_TRANSCRIPT_LABEL
+        if replacement_label is not None and label == "You":
+            continue
+        if replacement_label is not None:
+            restored = replacement_label
+        else:
+            restored = entry.get(ORIGINAL_LABEL_KEY)
+            if not restored:
+                if _is_generic_transcript_label(label):
+                    continue
+                restored = MULTI_SPEAKER_TRANSCRIPT_LABEL
         if label == restored:
             continue
         lines[line_idx] = f"[{timestamp_str}] [{restored}] {text}"
         changed += 1
 
+    return "\n".join(lines), changed
+
+
+def relabel_transcript_text_speaker(
+    transcript_text: str,
+    segments: list,
+    display_name: str,
+) -> tuple[str, int]:
+    """Apply the legacy segment-based relabeling rules to in-memory text."""
+    if not segments:
+        return transcript_text, 0
+
+    lines = transcript_text.split("\n")
+    changed = 0
+    for index, line in enumerate(lines):
+        match = _TRANSCRIPT_LINE_RE.match(line)
+        if not match:
+            continue
+        timestamp_str, label, text = match.groups()
+        if label == "You":
+            continue
+        try:
+            timestamp_seconds = _parse_transcript_timestamp(timestamp_str)
+        except ValueError:
+            continue
+        in_range = any(
+            seg.get("start", 0) - RELABEL_TIMESTAMP_TOLERANCE_SECONDS
+            <= timestamp_seconds
+            <= seg.get("end", 0) + RELABEL_TIMESTAMP_TOLERANCE_SECONDS
+            for seg in segments
+        )
+        if in_range and label != display_name:
+            lines[index] = f"[{timestamp_str}] [{display_name}] {text}"
+            changed += 1
+    return "\n".join(lines), changed
+
+
+def restore_transcript_text_speaker(
+    transcript_text: str,
+    segments: list,
+    display_names: set,
+) -> tuple[str, int]:
+    """Withdraw legacy fuzzy labels only for the confirmed names being removed."""
+    if not segments or not display_names:
+        return transcript_text, 0
+
+    lines = transcript_text.split("\n")
+    changed = 0
+    for index, line in enumerate(lines):
+        match = _TRANSCRIPT_LINE_RE.match(line)
+        if not match:
+            continue
+        timestamp_str, label, text = match.groups()
+        if label not in display_names:
+            continue
+        try:
+            timestamp_seconds = _parse_transcript_timestamp(timestamp_str)
+        except ValueError:
+            continue
+        in_range = any(
+            segment.get("start", 0) - RELABEL_TIMESTAMP_TOLERANCE_SECONDS
+            <= timestamp_seconds
+            <= segment.get("end", 0) + RELABEL_TIMESTAMP_TOLERANCE_SECONDS
+            for segment in segments
+        )
+        if in_range:
+            lines[index] = (
+                f"[{timestamp_str}] [{MULTI_SPEAKER_TRANSCRIPT_LABEL}] {text}"
+            )
+            changed += 1
+    return "\n".join(lines), changed
+
+
+def restore_transcript_speaker_labels(
+    transcript_path: Path,
+    segments: list,
+    display_names: set,
+) -> int:
+    """Atomically apply legacy segment-based label withdrawal to a file."""
+    if not segments or not display_names or not transcript_path.exists():
+        return 0
+    original = transcript_path.read_text(encoding="utf-8")
+    restored_text, changed = restore_transcript_text_speaker(
+        original, segments, display_names,
+    )
     if changed:
         tmp_path = transcript_path.with_name(transcript_path.name + ".tmp")
-        tmp_path.write_text("\n".join(lines), encoding="utf-8")
+        tmp_path.write_text(restored_text, encoding="utf-8")
+        tmp_path.replace(transcript_path)
+    return changed
+
+
+def restore_transcript_labels(
+    transcript_path: Path, turn_manifest: list, target_ids: set,
+) -> int:
+    """Undo a confirmation's rename on ONE cluster's saved transcript lines.
+
+    Where nothing was recorded, an existing generic diarization label remains
+    unchanged and a person name is replaced with
+    `MULTI_SPEAKER_TRANSCRIPT_LABEL`.  Same refusals as
+    `relabel_transcript_exact` apply: a manifest that does not line up by
+    count and turn times is not paired at all.
+    """
+    if not turn_manifest or not target_ids or not transcript_path.exists():
+        return 0
+    try:
+        original = transcript_path.read_text(encoding="utf-8")
+    except OSError as e:
+        logger.warning("Could not read transcript %s for label restore: %s", transcript_path, e)
+        return 0
+
+    restored_text, changed = restore_transcript_text_labels(
+        original, turn_manifest, target_ids,
+    )
+
+    if changed:
+        tmp_path = transcript_path.with_name(transcript_path.name + ".tmp")
+        tmp_path.write_text(restored_text, encoding="utf-8")
         tmp_path.replace(transcript_path)
     return changed
 
@@ -1646,20 +1766,11 @@ def relabel_transcript_exact(transcript_path: Path, turn_manifest: list, target_
         )
         return 0
 
-    # Diagnostic trail for a real, unexplained incident: two confirm-speaker
-    # calls on the same meeting (different clusters) left one raw cluster's
-    # lines scattered across three different labels instead of the uniform
-    # result this function's own logic (and a controlled replay of it)
-    # produces. Never reproduced from a clean replay, so this call's exact
-    # inputs/outcome are logged to give a real trail if it recurs, rather
-    # than reconstructing after the fact from the file alone.
-    before_labels = Counter(
-        _TRANSCRIPT_LINE_RE.match(lines[i]).group(2) for i in diarised_line_indices
-    )
+    # Keep the diagnostic trail metadata-only. Speaker display names and raw
+    # transcript labels are meeting content and must never enter logs.
     logger.info(
-        "relabel_transcript_exact: %s target_ids=%s display_name=%r lines=%d before_labels=%s",
-        transcript_path, sorted(target_ids), display_name, len(diarised_line_indices),
-        dict(before_labels),
+        "relabel_transcript_exact: %s targets=%d lines=%d",
+        transcript_path, len(target_ids), len(diarised_line_indices),
     )
 
     changed = 0

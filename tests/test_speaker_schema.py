@@ -42,6 +42,11 @@ class SpeakerSchemaTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     validate_display_name(value)
 
+    def test_display_name_rejects_reserved_self_label(self):
+        for value in ("You", " you ", "Ｙｏｕ"):
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                validate_display_name(value)
+
     def test_sidecar_path_rejects_a_stem_outside_the_output_directory(self):
         with self.assertRaises(ValueError):
             speakers_sidecar_path(self.temp_dir, "../private")
