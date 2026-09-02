@@ -189,6 +189,27 @@ class _AnyDiarizationRun:
 ANY_DIARIZATION_RUN = _AnyDiarizationRun()
 
 
+def apple_speech_supported(
+    *,
+    platform_name: Optional[str] = None,
+    mac_version: Optional[str] = None,
+) -> bool:
+    """Return whether this host can run the macOS 26 SpeechTranscriber API."""
+    platform_name = sys.platform if platform_name is None else platform_name
+    if platform_name != "darwin":
+        return False
+    version = platform.mac_ver()[0] if mac_version is None else mac_version
+    try:
+        return int(version.split(".", 1)[0]) >= 26
+    except (TypeError, ValueError):
+        return False
+
+
+def default_transcription_engine() -> str:
+    """Keep the existing Parakeet default until the Apple UI is enabled."""
+    return "parakeet"
+
+
 class Config:
     """Manages application configuration with file persistence."""
 
@@ -311,7 +332,7 @@ class Config:
         "yi": "Yiddish", "yo": "Yoruba", "zh": "Chinese",
     }
 
-    VALID_TRANSCRIPTION_ENGINES = ("parakeet", "whisper")
+    VALID_TRANSCRIPTION_ENGINES = ("apple", "parakeet", "whisper")
 
     def __init__(self, config_path: Optional[Path] = None):
         """
@@ -384,20 +405,19 @@ class Config:
             self._save()
 
     def _migrate_transcription_engine(self) -> None:
-        """Decide the active ASR engine on first launch of a version that has
-        this field.
+        """Choose an ASR engine when an existing config predates this field.
 
-        New installs default to Parakeet. Existing users (config.json existed
-        before this launch) stay on Whisper so their muscle memory and any
-        Asian-language workflows aren't silently swapped under them; the
-        Settings → Transcribe tab is how they opt into Parakeet.
+        Fresh installs receive ``default_transcription_engine`` directly from
+        the defaults dictionary. Existing users without the key stay on
+        Whisper so an upgrade never changes their established language/model
+        behavior. Explicit Apple, Parakeet, and Whisper choices are preserved.
         """
         if self._load_failed:
             return  # never persist defaults over a corrupt-but-recoverable file
         if self._config.get("transcription_engine") in self.VALID_TRANSCRIPTION_ENGINES:
             return
         self._config["transcription_engine"] = (
-            "whisper" if self._existed_at_load else "parakeet"
+            "whisper" if self._existed_at_load else default_transcription_engine()
         )
         self._save()
 
@@ -930,7 +950,7 @@ class Config:
             "identity_matching_privacy_default_version":
                 self.IDENTITY_MATCHING_PRIVACY_DEFAULT_VERSION,
             "whisper_model": "large-v3-turbo",
-            "transcription_engine": "parakeet",
+            "transcription_engine": default_transcription_engine(),
             "version": "1.0"
         }
 
@@ -2056,21 +2076,31 @@ class Config:
 
 
     def get_transcription_engine(self) -> str:
-        """Return the active ASR engine ('parakeet' or 'whisper').
+        """Return the active ASR engine.
 
-        Falls back to 'parakeet' for unknown values. The renderer's
-        Settings → Transcribe tab writes this; the live VAD pipeline reads
-        it to pick which transcribe_samples() implementation to import.
+        A config copied from a newer Mac may contain ``apple`` on a platform
+        that cannot run SpeechTranscriber; use Parakeet there without mutating
+        the stored preference.
         """
-        value = self._config.get("transcription_engine", "parakeet")
-        return value if value in self.VALID_TRANSCRIPTION_ENGINES else "parakeet"
+        value = self._config.get(
+            "transcription_engine", default_transcription_engine()
+        )
+        if value == "apple" and not apple_speech_supported():
+            return "parakeet"
+        return (
+            value
+            if value in self.VALID_TRANSCRIPTION_ENGINES
+            else default_transcription_engine()
+        )
 
     def set_transcription_engine(self, engine: str) -> bool:
-        """Persist the active ASR engine. Validates against
-        VALID_TRANSCRIPTION_ENGINES."""
-        if engine not in self.VALID_TRANSCRIPTION_ENGINES:
+        """Persist a supported ASR engine for this platform."""
+        if (
+            engine not in self.VALID_TRANSCRIPTION_ENGINES
+            or (engine == "apple" and not apple_speech_supported())
+        ):
             logger.error(
-                f"Invalid transcription engine: {engine}. "
+                f"Invalid transcription engine for this platform: {engine}. "
                 f"Must be one of {self.VALID_TRANSCRIPTION_ENGINES}"
             )
             return False
