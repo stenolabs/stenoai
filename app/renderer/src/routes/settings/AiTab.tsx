@@ -163,7 +163,7 @@ export function SpeakerIdentificationSetting() {
   return (
     <SettingRow
       label="Speaker identification"
-      description="Optional and off by default. By enabling this, you confirm that you will inform the people you record and that you are authorised to create and use their numerical biometric voice profiles. Profiles stay on this device and are used only to suggest people across meetings. This opt-in does not by itself establish legal compliance. Anonymous per-meeting speaker splitting (Speaker 2, Speaker 3, ...) remains available when this is off."
+      description="Optional and off by default."
       descriptionId="speaker-identification-description"
     >
       <Switch
