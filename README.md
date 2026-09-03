@@ -225,19 +225,18 @@ Known alpha limitations:
 
 Verified on Ubuntu 26.04 LTS (GNOME/Wayland, PipeWire), including system-audio loopback capture with `[You]`/`[Others]` diarisation.
 
-> Linux has **no tagged release yet** — the packages are built on every push to
-> main but not attached to a release. To try it, grab one from the
-> [Linux build workflow](https://github.com/stenolabs/stenoai/actions/workflows/build-linux.yml):
-> sign in to GitHub, open the latest green run, and download the
-> `stenoai-linux-<version>` artifact.
+**Install (`.deb`, recommended):** download [`stenoAI-linux-amd64.deb`](https://github.com/stenolabs/stenoai/releases/latest/download/stenoAI-linux-amd64.deb) from the [latest release](https://github.com/stenolabs/stenoai/releases/latest) and install it with `sudo apt install ./stenoAI-linux-amd64.deb` — apt pulls in the required system libraries automatically.
 
-**Install (`.deb`, recommended):** install it with `sudo apt install ./stenoAI-linux-<version>-amd64.deb` — apt pulls in the required system libraries automatically.
-
-**AppImage:** `chmod +x` `stenoAI-linux-<version>-x86_64.AppImage` and run it. An AppImage carries no package metadata, so **you must install PortAudio yourself** or the setup check fails with `OSError: PortAudio library not found`:
+**AppImage:** download [`stenoAI-linux-x86_64.AppImage`](https://github.com/stenolabs/stenoai/releases/latest/download/stenoAI-linux-x86_64.AppImage), `chmod +x` it, and run it. An AppImage carries no package metadata, so **you must install PortAudio yourself** or the setup check fails with `OSError: PortAudio library not found`:
 
 ```bash
 sudo apt install libportaudio2
 ```
+
+> Before the first tagged Linux release lands, grab the packages from the
+> [Linux build workflow](https://github.com/stenolabs/stenoai/actions/workflows/build-linux.yml):
+> sign in to GitHub, open the latest green run, and download the
+> `stenoai-linux-<version>` artifact.
 
 Known alpha limitations:
 
