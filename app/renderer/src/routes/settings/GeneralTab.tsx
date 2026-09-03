@@ -440,8 +440,9 @@ export function GeneralTab() {
         </Select>
       </SettingRow>
 
-      {/* macOS only: chooses mic-only vs mic+system. Windows always records
-          mic+system (toggle hidden), so this control isn't shown there. */}
+      {/* macOS only: chooses mic-only vs mic+system. Windows and Linux always
+          record mic+system (toggle hidden), so this control isn't shown
+          there. */}
       {isMac && (
         <SettingRow label="Record system audio" description={systemAudioDescription}>
           <Switch

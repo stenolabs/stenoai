@@ -184,10 +184,10 @@ function RecordingOptionsPopover({
   const systemAudioSupport = useSystemAudioSupport();
   // macOS default is on (system_audio_enabled defaults true on darwin).
   const enabled = systemAudio.data ?? true;
-  // macOS only: the toggle chooses mic-only vs mic+system. On Windows the
-  // product decision is always mic+system, so the toggle is hidden (the
-  // renderer forces loopback on there). Also hidden while support is loading
-  // or on a Mac without loopback support (pre-14.4).
+  // macOS only: the toggle chooses mic-only vs mic+system. On Windows and
+  // Linux the product decision is always mic+system, so the toggle is hidden
+  // (the renderer forces loopback on there). Also hidden while support is
+  // loading or on a Mac without loopback support (pre-14.4).
   const showSystemAudio = isMac && systemAudioSupport.data?.supported === true;
   // Controlled so the import action can close the popover when it fires — the
   // import's progress then shows as a processing row in the meeting list,

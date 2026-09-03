@@ -65,8 +65,10 @@ export function useSystemAudioCapture() {
   // runs while status === 'recording' (the mic is captured regardless). The
   // "Record system audio" setting no longer gates whether we record — it only
   // decides whether system LOOPBACK is mixed in:
-  //  - Windows: always on when the OS supports it (the toggle is hidden; the
-  //    product decision is always mic+system).
+  //  - Windows and Linux: always on when the OS supports it (the toggle is
+  //    hidden on both; the product decision is always mic+system). Whether
+  //    that should stay true now it covers a third platform is an open
+  //    question, raised on #502 and not settled.
   //  - macOS: follows the user's setting (default on; off = mic-only).
   // When the support query is still loading we assume supported so a fast user
   // who records before the IPC resolves still gets loopback.
@@ -330,7 +332,10 @@ export function useSystemAudioCapture() {
             // user to a setting that isn't the cause. macOS raises a
             // NotAllowedError from getDisplayMedia when Screen & System Audio
             // Recording is denied. main gates the notification on
-            // notifications_enabled; it's macOS-only (Windows never fired it).
+            // notifications_enabled. This ACQUISITION-failure path stays
+            // mac-gated: Windows has no equivalent permission error. Linux does
+            // send the same notification, but from the onEnded path below (a
+            // live capture dying mid-recording), not from here.
             const accessDenied =
               loopbackErr instanceof DOMException && loopbackErr.name === 'NotAllowedError';
             if (accessDenied && isMac) {
