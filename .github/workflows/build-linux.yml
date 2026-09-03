@@ -188,10 +188,34 @@ jobs:
           # setup-check exits non-zero with no model downloaded, which is
           # expected on a fresh runner; we only require that it runs to
           # completion without an import or native-library crash.
-          "$BACKEND" setup-check --json > setup-check.json || true
-          cat setup-check.json
-          python3 -c "import json,sys; json.load(open('setup-check.json'))" \
-            || { echo "::error::setup-check produced no parseable JSON — the bundle crashed rather than reporting"; exit 1; }
+          "$BACKEND" setup-check --json > setup-check.txt 2>&1 || true
+          cat setup-check.txt
+          # Parse with app/setup-check-parse.js, the same module main.js uses,
+          # rather than json.load over the whole file. The checks import
+          # sounddevice/pywhispercpp/ollama, any of which can print to stdout
+          # ahead of the payload — that module exists precisely because the
+          # buffer is not guaranteed to be pure JSON, and it is unit tested.
+          # Redirecting stderr in too makes this strictly harsher than the
+          # earlier version, which only survived because Python logging happens
+          # to go to stderr.
+          node -e "
+            const fs = require('fs');
+            const { extractSetupCheckPayload } = require('./app/setup-check-parse');
+            const payload = extractSetupCheckPayload(fs.readFileSync('setup-check.txt', 'utf8'));
+            if (!payload) {
+              console.error('::error::setup-check emitted no valid JSON payload — the bundle crashed rather than reporting');
+              process.exit(1);
+            }
+            const failed = (payload.checks || []).filter((c) => c.status === 'fail').map((c) => c.name);
+            console.log('setup-check parsed: allGood=' + payload.allGood + ', failing=' + (failed.join(',') || 'none'));
+            // sounddevice is the check libportaudio2 exists for (#502). A model
+            // not being downloaded is expected here; a broken native lib is not.
+            const sd = (payload.checks || []).find((c) => c.name === 'sounddevice');
+            if (!sd || sd.status !== 'pass') {
+              console.error('::error::sounddevice check did not pass — the .deb dependency chain is not delivering PortAudio');
+              process.exit(1);
+            }
+          "
 
       - name: Verify the AppImage is well-formed
         run: |
