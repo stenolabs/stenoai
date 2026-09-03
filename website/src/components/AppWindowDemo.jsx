@@ -95,7 +95,7 @@ function AppSidebar({ activeScreen }) {
           </svg>
         </span>
         <span style={{ fontFamily: "var(--font-serif)", fontWeight: 400, fontSize: 18, letterSpacing: "-0.02em", color: "var(--fg-1)", lineHeight: 1 }}>
-          Steno
+          StenoAI
         </span>
       </div>
 

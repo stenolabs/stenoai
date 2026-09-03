@@ -2,7 +2,6 @@
 import BaseLayout from "../layouts/BaseLayout.astro";
 import { Nav } from "../sections/Nav";
 import Hero from "../sections/Hero.astro";
-import TrustStrip from "../sections/TrustStrip.astro";
 import HowItWorks from "../sections/HowItWorks.astro";
 import Features from "../sections/Features.astro";
 import Models from "../sections/Models.astro";
@@ -11,16 +10,15 @@ import { FAQ } from "../sections/FAQ";
 import CTAFooter from "../sections/CTAFooter.astro";
 import Footer from "../sections/Footer.astro";
 
-const title = "Steno — Highly-Secure AI Notetaker for Government & Defence";
+const title = "StenoAI — Highly-Secure AI Notetaker for Government & Defence";
 const description =
-  "Steno is the highly-secure AI notetaker for confidential conversations in government and defence. No cloud, no usage limits and your private data never leaves your premises.";
+  "StenoAI is the highly-secure AI notetaker for confidential conversations in government and defence. No cloud, no usage limits and your private data never leaves your premises.";
 ---
 
 <BaseLayout title={title} description={description} canonical="https://stenoai.co/">
   <Nav client:load />
   <main>
     <Hero />
-    <TrustStrip />
     <HowItWorks />
     <Features />
     <Models />

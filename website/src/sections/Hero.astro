@@ -1,10 +1,16 @@
 ---
 import { ShieldCheck, Lock, HandCoins, BotOff } from "lucide-react";
 import ProviderCluster from "../components/ProviderCluster.astro";
+import TrustStrip from "./TrustStrip.astro";
 import { AppWindowDemo } from "../components/AppWindowDemo";
 import AppleIcon from "../components/icons/AppleIcon.astro";
 import WindowsIcon from "../components/icons/WindowsIcon.astro";
 import { WINDOWS_EXE_URL } from "../lib/downloads";
+
+// The hero download buttons are hidden for now — the nav and the CTA footer
+// both carry a download link. Flip back to true to restore them; the markup,
+// the OS-detection script below, and its analytics attributes are all intact.
+const SHOW_HERO_CTA = false;
 ---
 
 <section class="pt-[40px] pb-[56px] md:pt-[56px] md:pb-[80px]">
@@ -26,45 +32,55 @@ import { WINDOWS_EXE_URL } from "../lib/downloads";
         margin: "0 auto",
       }}
     >
-      Protect your sensitive conversations.
+      Protect your classified conversations.
     </h1>
 
     <p
-      class="text-fg-2 text-lg leading-[1.55] mt-6 mb-8 mx-auto"
+      class="text-fg-2 text-lg leading-[1.55] mt-6 mx-auto"
       style="max-width: 64ch"
     >
-      Steno is the highly-secure AI notetaker for confidential conversations in
+      StenoAI is the highly-secure AI notetaker for confidential conversations in
       government and defence. No cloud, no usage limits and your private data
       never leaves your premises.
     </p>
 
-    <div class="flex gap-[10px] flex-wrap justify-center" id="hero-cta">
-      <a
-        href="/download/?src=hero"
-        data-os-cta="mac"
-        class="btn-base btn-primary inline-flex items-center gap-2 no-underline hover:no-underline"
-      >
-        <AppleIcon size={15} />
-        <span data-os-cta-label="mac">Download for macOS</span>
-      </a>
-      <a
-        href={WINDOWS_EXE_URL}
-        data-track="download"
-        data-location="hero"
-        data-arch="win-x64"
-        data-os-cta="windows"
-        class="btn-base btn-ghost inline-flex items-center gap-2 no-underline hover:no-underline"
-        style="display: none"
-      >
-        <WindowsIcon size={15} />
-        <span data-os-cta-label="windows">Download for Windows (alpha)</span>
-      </a>
-    </div>
-    <noscript>
-      <style>#hero-cta [data-os-cta="windows"] { display: inline-flex !important; }</style>
-    </noscript>
+    <TrustStrip class="mt-11 mb-11" />
 
-    <div class="flex gap-5 flex-wrap justify-center mt-6 mb-12">
+    <div class="mx-auto" style="max-width: 960px">
+      <AppWindowDemo client:visible />
+    </div>
+
+    {SHOW_HERO_CTA && (
+      <>
+        <div class="flex gap-[10px] flex-wrap justify-center mt-12" id="hero-cta">
+          <a
+            href="/download/?src=hero"
+            data-os-cta="mac"
+            class="btn-base btn-primary inline-flex items-center gap-2 no-underline hover:no-underline"
+          >
+            <AppleIcon size={15} />
+            <span data-os-cta-label="mac">Download for macOS</span>
+          </a>
+          <a
+            href={WINDOWS_EXE_URL}
+            data-track="download"
+            data-location="hero"
+            data-arch="win-x64"
+            data-os-cta="windows"
+            class="btn-base btn-ghost inline-flex items-center gap-2 no-underline hover:no-underline"
+            style="display: none"
+          >
+            <WindowsIcon size={15} />
+            <span data-os-cta-label="windows">Download for Windows (alpha)</span>
+          </a>
+        </div>
+        <noscript>
+          <style>#hero-cta [data-os-cta="windows"] { display: inline-flex !important; }</style>
+        </noscript>
+      </>
+    )}
+
+    <div class={`flex gap-5 flex-wrap justify-center ${SHOW_HERO_CTA ? "mt-6" : "mt-10"}`}>
       <span class="inline-flex items-center gap-1.5 text-fg-2 text-[13px]">
         <ShieldCheck size={13} aria-hidden="true" /> Open source
       </span>
@@ -79,16 +95,14 @@ import { WINDOWS_EXE_URL } from "../lib/downloads";
       </span>
     </div>
 
-    <div class="mx-auto" style="max-width: 960px">
-      <AppWindowDemo client:visible />
-    </div>
-
   </div>
 </section>
 
 <script>
   // Best-effort client OS detection, ported from Hero.jsx's detectOS(). The
   // primary CTA follows the visitor's OS; on ambiguous UAs both are shown.
+  // Dormant while SHOW_HERO_CTA is false — #hero-cta isn't rendered, so the
+  // guard below no-ops. Kept in step with the flag, not deleted with it.
   function detectOS() {
     if (typeof navigator === "undefined") return "mac";
     const hint = navigator.userAgentData?.platform || navigator.platform || "";
