@@ -6,6 +6,7 @@ const assert = require('node:assert');
 const {
   describeUpdateError,
   updateErrorPhase,
+  isMissingUpdateFeedError,
   PHASE_CHECK,
   PHASE_DOWNLOAD,
   PHASE_INSTALL,
@@ -217,4 +218,41 @@ test('the same transport error still reads as a transfer problem while downloadi
   const out = describeUpdateError('net::ERR_CONNECTION_RESET', { phase: PHASE_DOWNLOAD });
   assert.match(out.message, /download was interrupted/i);
   assert.strictEqual(out.sticky, false);
+});
+
+// The "no feed published yet" 404 is swallowed rather than shown. The match
+// used to be spelled /latest(-mac)?\.yml/ inline in main.js, which stopped
+// covering the platform it most needed to the moment Linux shipped.
+test('the missing-feed 404 is recognised on every platform\'s feed name', () => {
+  for (const feed of [
+    'latest.yml',            // Windows
+    'latest-mac.yml',        // macOS
+    'latest-linux.yml',      // Linux x64 — the case /latest(-mac)?/ missed
+    'latest-linux-arm64.yml',
+  ]) {
+    assert.strictEqual(
+      isMissingUpdateFeedError(`HttpError: 404 Cannot find ${feed} in the latest release artifacts`),
+      true,
+      `${feed} should be recognised as a missing feed, not surfaced to the user`,
+    );
+  }
+});
+
+test('a real failure is not mistaken for a missing feed', () => {
+  // No feed filename at all.
+  assert.strictEqual(isMissingUpdateFeedError('net::ERR_INTERNET_DISCONNECTED'), false);
+  // Names a manifest, but app-update.yml is the packaged config, not the feed —
+  // and its absence is a genuine packaging fault worth surfacing.
+  assert.strictEqual(
+    isMissingUpdateFeedError("ENOENT: no such file or directory, open 'app-update.yml'"),
+    false,
+  );
+  // Names the feed, but the cause is not a 404 — a 500 is a real server fault.
+  assert.strictEqual(isMissingUpdateFeedError('HttpError: 500 latest-linux.yml'), false);
+});
+
+test('a non-string error does not throw', () => {
+  assert.strictEqual(isMissingUpdateFeedError(undefined), false);
+  assert.strictEqual(isMissingUpdateFeedError(null), false);
+  assert.strictEqual(isMissingUpdateFeedError(new Error('404 latest-linux.yml')), true);
 });
