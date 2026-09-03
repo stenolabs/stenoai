@@ -684,15 +684,24 @@ jobs:
           # One dbus session for the whole thing: pipewire, the playback and the
           # capture must share it or they see different graphs.
           dbus-run-session -- bash -euo pipefail -c '
+            # Start in dependency order and WAIT between each. Launching all
+            # three at once races: wireplumber connects before pipewire has its
+            # socket, dies with "disconnected from pipewire", and without a
+            # session manager there is no default-sink metadata — which then
+            # surfaces confusingly as `pactl set-default-sink` returning
+            # "Failure: Not supported".
             pipewire &
-            pipewire-pulse &
-            wireplumber &
-
-            # Readiness, not a fixed sleep: the graph is up when pactl can talk
-            # to it. Fail loudly rather than proceed into a confusing capture.
             for i in $(seq 1 30); do
-              if pactl info > /dev/null 2>&1; then echo "PipeWire up after ${i}s"; break; fi
-              if [ "$i" = 30 ]; then echo "::error::PipeWire did not start"; exit 1; fi
+              if pw-cli info 0 > /dev/null 2>&1; then echo "pipewire up after ${i}s"; break; fi
+              if [ "$i" = 30 ]; then echo "::error::pipewire did not start"; exit 1; fi
+              sleep 1
+            done
+
+            wireplumber &
+            pipewire-pulse &
+            for i in $(seq 1 30); do
+              if pactl info > /dev/null 2>&1; then echo "pulse layer up after ${i}s"; break; fi
+              if [ "$i" = 30 ]; then echo "::error::pipewire-pulse did not start"; exit 1; fi
               sleep 1
             done
 
@@ -702,7 +711,24 @@ jobs:
             pactl load-module module-null-sink sink_name=steno_test \
               sink_properties=device.description=StenoTest
             pactl set-default-sink steno_test
-            echo "default sink: $(pactl get-default-sink)"
+
+            # getDefaultSinkName() reads the PipeWire "default" metadata
+            # object, not the pulse view of it, so assert on THAT — it is what
+            # the module under test actually parses. wireplumber normally
+            # populates it; set it directly if it has not, so the capture below
+            # tests the module rather than session-manager timing.
+            for i in $(seq 1 15); do
+              if pw-metadata -n default 2>/dev/null | grep -q default.audio.sink; then break; fi
+              if [ "$i" = 15 ]; then
+                echo "wireplumber did not set a default sink — setting it directly"
+                pw-metadata -n default 0 default.audio.sink "{\"name\":\"steno_test\"}"
+              fi
+              sleep 1
+            done
+            echo "--- pipewire default metadata ---"
+            pw-metadata -n default || true
+            echo "--- sinks ---"
+            pactl list short sinks
 
             # Loop so the tone outlasts the capture window regardless of timing.
             ( while true; do paplay --device=steno_test /tmp/tone.wav || true; done ) &
