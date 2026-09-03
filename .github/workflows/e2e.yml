@@ -636,6 +636,118 @@ jobs:
           retention-days: 7
           if-no-files-found: ignore
 
+  # Real PipeWire capture, on a runner. Everything else about Linux system
+  # audio is tested against a stub: linux-loopback.t1 drives synthetic PCM
+  # through the renderer bridge with mock IPC, and recording-lifecycle.t2
+  # SKIPS on Linux ("system-audio path unsupported on this host") because a
+  # bare runner has no PipeWire. So the part that actually talks to the OS —
+  # isLinuxLoopbackSupported, getDefaultSinkName's pw-dump parsing, and
+  # pw-record itself — had no automated coverage anywhere, only one
+  # contributor's desktop. #502's own final commit records that the
+  # frame-alignment fix was never confirmed against real audio.
+  #
+  # PipeWire runs headless here under dbus-run-session with a null sink, and a
+  # known two-tone signal is played into it. That makes "captured only silence"
+  # a failure rather than the normal state, which is what the developer-machine
+  # script could never guarantee.
+  linux-loopback-pipewire:
+    name: Linux loopback (real PipeWire)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # pipewire-pulse + pulseaudio-utils give us pactl/paplay to create the
+      # sink and play into it; wireplumber is the session manager that actually
+      # assigns nodes (without it, pw-dump reports no default sink).
+      - name: Install PipeWire
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pipewire pipewire-pulse wireplumber pulseaudio-utils dbus-x11
+
+      - name: Capture real audio through the loopback module
+        run: |
+          set -euo pipefail
+          export XDG_RUNTIME_DIR="/run/user/$(id -u)"
+          sudo mkdir -p "$XDG_RUNTIME_DIR"
+          sudo chown "$(id -u):$(id -g)" "$XDG_RUNTIME_DIR"
+          chmod 700 "$XDG_RUNTIME_DIR"
+
+          node scripts/make-test-tone.js /tmp/tone.wav 20
+
+          # One dbus session for the whole thing: pipewire, the playback and the
+          # capture must share it or they see different graphs.
+          dbus-run-session -- bash -euo pipefail -c '
+            pipewire &
+            pipewire-pulse &
+            wireplumber &
+
+            # Readiness, not a fixed sleep: the graph is up when pactl can talk
+            # to it. Fail loudly rather than proceed into a confusing capture.
+            for i in $(seq 1 30); do
+              if pactl info > /dev/null 2>&1; then echo "PipeWire up after ${i}s"; break; fi
+              if [ "$i" = 30 ]; then echo "::error::PipeWire did not start"; exit 1; fi
+              sleep 1
+            done
+
+            # A null sink stands in for a real output device. Its monitor is
+            # what the app captures, so anything played to it is what we should
+            # get back.
+            pactl load-module module-null-sink sink_name=steno_test \
+              sink_properties=device.description=StenoTest
+            pactl set-default-sink steno_test
+            echo "default sink: $(pactl get-default-sink)"
+
+            # Loop so the tone outlasts the capture window regardless of timing.
+            ( while true; do paplay --device=steno_test /tmp/tone.wav || true; done ) &
+            PLAY_PID=$!
+            trap "kill $PLAY_PID 2>/dev/null || true" EXIT
+            sleep 2
+
+            # The real module: resolves the default sink by name via pw-dump,
+            # spawns pw-record against its monitor, and fails on a silent or
+            # empty capture.
+            node scripts/linux-loopback-poc-demo.js /tmp/captured.pcm
+          '
+
+      - name: Confirm the capture carries both channels
+        run: |
+          set -euo pipefail
+          # The demo script proves "not silence". This proves the STEREO frame
+          # layout survived: the tone is 440Hz left / 880Hz right, so a channel
+          # that is silent, or two channels that are identical, means the frame
+          # alignment or the channel mapping is wrong — the exact failure #502's
+          # createFrameAligner exists to prevent, and which no test has ever
+          # observed against real audio.
+          node -e "
+            const fs = require('fs');
+            const { measurePeakRms } = require('./scripts/measure-pcm');
+            const buf = fs.readFileSync('/tmp/captured.pcm');
+            if (buf.length < 48000 * 4) throw new Error('capture too short: ' + buf.length + ' bytes');
+            if (buf.length % 4 !== 0) throw new Error('capture is not a whole number of stereo frames: ' + buf.length);
+            const frames = buf.length / 4;
+            const left = Buffer.alloc(frames * 2);
+            const right = Buffer.alloc(frames * 2);
+            for (let i = 0; i < frames; i++) {
+              left.writeInt16LE(buf.readInt16LE(i * 4), i * 2);
+              right.writeInt16LE(buf.readInt16LE(i * 4 + 2), i * 2);
+            }
+            const L = measurePeakRms(left);
+            const R = measurePeakRms(right);
+            console.log('left  peak=' + L.peak + ' rms=' + L.rms.toFixed(1));
+            console.log('right peak=' + R.peak + ' rms=' + R.rms.toFixed(1));
+            if (L.peak === 0) throw new Error('left channel is silent');
+            if (R.peak === 0) throw new Error('right channel is silent');
+            if (left.equals(right)) throw new Error('channels are identical — stereo layout collapsed');
+            console.log('PASS: real PipeWire capture, both channels present and distinct.');
+          "
+
   build-backend-linux:
     name: Build backend bundle (Linux)
     runs-on: ubuntu-latest

@@ -1,7 +1,18 @@
 #!/usr/bin/env node
-// Manual runner for the app/linux-loopback.js feasibility spike. Not wired
-// into any build/test target — run directly with `node scripts/linux-loopback-poc-demo.js`
-// on a Linux desktop session to prove the capture mechanism end-to-end.
+// End-to-end check of app/linux-loopback.js against a REAL PipeWire session:
+// resolves the default sink, captures its monitor, and fails on an empty or
+// silent result.
+//
+// Two callers. On a Linux desktop, run it directly
+// (`node scripts/linux-loopback-poc-demo.js`) with audio playing, to prove the
+// capture mechanism by hand. In CI it is the linux-loopback-pipewire job in
+// .github/workflows/e2e.yml, which stands up headless PipeWire with a null
+// sink and plays a known tone into it — so "captured only silence" is a
+// failure there rather than the ordinary state of a quiet machine.
+//
+// Everything else covering this feature uses a stub: linux-loopback.t1 drives
+// synthetic PCM through the renderer bridge, and recording-lifecycle.t2 skips
+// on Linux. This is the only place pw-record itself runs under test.
 
 const fs = require('fs');
 const path = require('path');
