@@ -205,7 +205,7 @@
     },
     "linux": {
       "category": "AudioVideo",
-      "maintainer": "Steno Team <replace-me@stenolabs.example>",
+      "maintainer": "Steno <ruzin@stenoai.co>",
       "depends": ["libportaudio2"],
       "target": [
         { "target": "deb", "arch": ["x64"] },
