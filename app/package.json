@@ -206,12 +206,26 @@
     "linux": {
       "category": "AudioVideo",
       "maintainer": "Steno <ruzin@stenoai.co>",
-      "depends": ["libportaudio2"],
+      "icon": "build/icon.png",
       "target": [
         { "target": "deb", "arch": ["x64"] },
         { "target": "AppImage", "arch": ["x64"] }
       ],
       "artifactName": "stenoAI-linux-${version}-${arch}.${ext}"
+    },
+    "deb": {
+      "depends": [
+        "libgtk-3-0",
+        "libnotify4",
+        "libnss3",
+        "libxss1",
+        "libxtst6",
+        "xdg-utils",
+        "libatspi2.0-0",
+        "libuuid1",
+        "libsecret-1-0",
+        "libportaudio2"
+      ]
     },
     "nsis": {
       "oneClick": false,

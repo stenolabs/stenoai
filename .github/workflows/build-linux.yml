@@ -2,9 +2,12 @@ name: Build Linux installer
 
 # End-to-end Linux build: PyInstaller backend (onnx-asr Parakeet + whisper.cpp,
 # same CPU backend as Windows) + Electron .deb/AppImage. Mirrors
-# build-windows.yml's shape and trigger. Linux is not an officially shipped
-# platform yet (no release-attach step here, unlike Windows) — this job exists
-# to catch backend/packaging breakage on Linux before that decision is made.
+# build-windows.yml's shape and trigger, but NOT its release-attach step: Linux
+# is not a shipped platform yet, so the .deb/AppImage stay CI artifacts and no
+# tagged release carries them. This job exists to keep the Linux backend and
+# packaging honest on every push to main. Attaching to releases is a small
+# follow-up (mirror build-windows.yml's step + contents: write) for whenever
+# that call is made.
 
 on:
   workflow_dispatch:
