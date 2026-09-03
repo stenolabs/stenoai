@@ -771,7 +771,32 @@ jobs:
             if (L.peak === 0) throw new Error('left channel is silent');
             if (R.peak === 0) throw new Error('right channel is silent');
             if (left.equals(right)) throw new Error('channels are identical — stereo layout collapsed');
-            console.log('PASS: real PipeWire capture, both channels present and distinct.');
+
+            // Which channel is which. Two sines at equal amplitude have equal
+            // peak and near-equal RMS, so the checks above pass just as happily
+            // on a SWAPPED pair. Counting zero crossings identifies the
+            // frequency: the 880Hz channel must cross about twice as often as
+            // the 440Hz one. Cheap, and robust on a clean tone.
+            const crossings = (b) => {
+              let n = 0;
+              for (let i = 1; i < b.length / 2; i++) {
+                const prev = b.readInt16LE((i - 1) * 2);
+                const cur = b.readInt16LE(i * 2);
+                if ((prev < 0 && cur >= 0) || (prev >= 0 && cur < 0)) n++;
+              }
+              return n;
+            };
+            const cl = crossings(left);
+            const cr = crossings(right);
+            const ratio = cr / cl;
+            console.log('zero crossings: left=' + cl + ' right=' + cr + ' ratio=' + ratio.toFixed(2));
+            if (!(ratio > 1.6 && ratio < 2.4)) {
+              throw new Error(
+                'expected right (880Hz) to cross ~2x as often as left (440Hz), got ratio ' +
+                ratio.toFixed(2) + ' — channels are swapped or misaligned'
+              );
+            }
+            console.log('PASS: real PipeWire capture, both channels present, distinct, and correctly ordered.');
           "
 
   build-backend-linux:
