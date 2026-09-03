@@ -174,10 +174,20 @@ const SEED_REPORT = {
 // switch across the invalidate → get-meeting refetch, like the real sidecar.
 let seedActiveReport = null;
 
-const seededMeeting = () =>
-  process.env.STENOAI_E2E_SEED_REPORT === '1'
-    ? { ...SEED_MEETING, reports: [SEED_REPORT], active_report: seedActiveReport }
+const seededMeeting = () => {
+  const meeting = process.env.STENOAI_E2E_SEED_DIARISED_EXPORT === '1'
+    ? {
+        ...SEED_MEETING,
+        transcript: '',
+        is_diarised: true,
+        diarised_text:
+          '[00:00] [You] We should ship Friday.\n[00:02] [You] I will prepare the release.\n[00:06] [Others] Sounds good.',
+      }
     : SEED_MEETING;
+  return process.env.STENOAI_E2E_SEED_REPORT === '1'
+    ? { ...meeting, reports: [SEED_REPORT], active_report: seedActiveReport }
+    : meeting;
+};
 
 // A diarised meeting for the speaker-review T1 spec -- seeded only when
 // STENOAI_E2E_SEED_SPEAKER_SUGGESTIONS=1. summary_file's stem

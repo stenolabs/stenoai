@@ -776,7 +776,6 @@ const GOOGLE_CLIENT_SECRET = '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';
 // no extra userinfo API call needed.
 const GOOGLE_SCOPES = 'openid https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/userinfo.email';
 const GOOGLE_AUTH_URL = 'https://accounts.google.com/o/oauth2/v2/auth';
-const GOOGLE_TOKEN_URL = 'https://oauth2.googleapis.com/token';
 
 // Outlook Calendar OAuth2 configuration (PKCE public client — no client secret)
 const OUTLOOK_CLIENT_ID = '53a8ba1f-3a2e-4fc9-afb1-b9b8ff13de19';
@@ -931,7 +930,7 @@ function trackEvent(eventName, properties = {}) {
         ...properties
       }
     });
-  } catch (error) {
+  } catch {
     // Silent fail -- telemetry must never break the app
   }
 }
@@ -974,7 +973,7 @@ async function shutdownTelemetry() {
       posthogClient = null;
       console.log('Telemetry shut down');
     }
-  } catch (error) {
+  } catch {
     // Silent fail
   }
 }
@@ -1906,7 +1905,7 @@ if (!gotSingleInstanceLock) {
         if (mainWindow && !mainWindow.isDestroyed()) {
           try {
             await mainWindow.webContents.executeJavaScript('stopSystemAudioRecording("quit")');
-          } catch (e) {
+          } catch {
             // Best effort -- file is saved even if processing doesn't start
           }
         }
@@ -2241,7 +2240,7 @@ if (!gotSingleInstanceLock) {
           _cachedCustomStoragePath = spData.storage_path;
           console.log('Custom storage path loaded:', _cachedCustomStoragePath);
         }
-      } catch (e) {
+      } catch {
         // Non-fatal - custom path just won't be cached
       }
     }
@@ -3550,7 +3549,7 @@ ipcMain.on('query-transcript-stream', async (event, queryId, summaryFile, questi
   let validated;
   try {
     validated = await validateMeetingFilePath(summaryFile);
-  } catch (err) {
+  } catch {
     // Defense-in-depth: validateMeetingFilePath is fail-closed and shouldn't
     // throw, but if it ever does (e.g. a future refactor), don't let it become
     // an unhandled rejection that can take down the main process.
@@ -3748,7 +3747,7 @@ ipcMain.on('chat-global-stream', (event, queryId, question, folderId) => {
             proc.kill();
             activeQueryProcs.delete(queryId);
           }
-        } catch (e) { /* ignore decode errors */ }
+        } catch { /* ignore decode errors */ }
       } else if (line === 'CHAT_STREAM_COMPLETE') {
         if (!event.sender.isDestroyed()) {
           event.sender.send('query-done', { queryId, success: true });
@@ -5267,7 +5266,6 @@ let recordingRuntimeState = {
 };
 let ollamaProcess = null;  // Track spawned Ollama process for cleanup on quit
 let ollamaPid = null;      // Store PID separately since unref() disconnects the process
-let ollamaStartedByUs = false;
 
 // Content-free crash/force-quit detection (report Appendix: ~8% of macOS
 // recordings never fire recording_stopped at all -- a silent gap in the
@@ -5405,7 +5403,7 @@ function makeInactivityWatchdog(proc, ms, label) {
       activeInactivityWatchdogs.delete(watchdog);
       console.error(`${label} produced no output for ${Math.round(ms / 60000)} minutes, killing`);
       sendDebugLog(`${label} inactive for ${Math.round(ms / 60000)} minutes — killing process`);
-      try { proc.kill(); } catch (e) { /* process already gone */ }
+      try { proc.kill(); } catch { /* process already gone */ }
     }, ms);
   };
   const watchdog = {
@@ -6427,7 +6425,7 @@ async function runSpeakerModelCommand(command) {
 ipcMain.handle('speaker-model-status', async () => {
   try {
     return await runSpeakerModelCommand('speaker-model-status');
-  } catch (error) {
+  } catch {
     sendDebugLog('Speaker diarization model status check failed');
     return {
       success: false,
@@ -6445,7 +6443,7 @@ ipcMain.handle('setup-speaker-models', async () => {
       sendDebugLog('Speaker diarization models ready');
     }
     return result;
-  } catch (error) {
+  } catch {
     sendDebugLog('Speaker diarization model setup failed');
     return {
       success: false,
@@ -6816,8 +6814,10 @@ const MIC_MONITOR_HEALTHY_RESET_MS = 30_000;
 // Browsers route media capture through helper sub-processes (Safari →
 // com.apple.WebKit.GPU, Chrome → com.google.Chrome.helper, etc.), so the raw
 // app_name reads as "Safari Graphics and Media" / "Google Chrome Helper".
-// Translate those back to the user-recognisable parent app name.
+// FaceTime, Phone.app and Continuity calls use the daemon "avconferenced".
+// Translate both back to the user-recognisable parent app name.
 const APP_NAME_OVERRIDES = [
+  { match: /^com\.apple\.avconferenced/, name: 'Call' },
   { match: /^com\.apple\.WebKit/, name: 'Safari' },
   { match: /^com\.google\.Chrome/, name: 'Google Chrome' },
   { match: /^org\.chromium\./, name: 'Chromium' },
@@ -7367,7 +7367,6 @@ ipcMain.handle('setup-ollama-and-model', async () => {
         }
       });
       ollamaProcess.unref();
-      ollamaStartedByUs = true;
     }
 
     // Wait for Ollama to be ready (poll with early exit detection).
@@ -7394,7 +7393,7 @@ ipcMain.handle('setup-ollama-and-model', async () => {
           sendDebugLog(`Ollama ready after ${i + 1} seconds`);
           break;
         }
-      } catch (e) {
+      } catch {
         // Continue polling
       }
     }
@@ -7565,7 +7564,7 @@ ipcMain.handle('setup-ollama-and-model', async () => {
             let json;
             try {
               json = JSON.parse(line);
-            } catch (e) {
+            } catch {
               // Non-JSON line, log as-is
               sendDebugLog(line);
               continue;
@@ -7598,7 +7597,7 @@ ipcMain.handle('setup-ollama-and-model', async () => {
             sendDebugLog('AI model download completed successfully');
             try {
               await runPythonScript('simple_recorder.py', ['set-model', DEFAULT_AI_MODEL], true);
-            } catch (e) {
+            } catch {
               // Non-fatal -- config reset is best-effort
             }
             trackEvent('setup_completed', { step: 'ollama_and_model' });
@@ -7811,56 +7810,6 @@ ipcMain.handle('get-ai-prompts', async () => {
   }
 });
 
-// Helper function to ensure Ollama service is running
-async function ensureOllamaRunning() {
-  try {
-    // Check if Ollama service is responding
-    const http = require('http');
-    const response = await new Promise((resolve) => {
-      const req = http.get('http://127.0.0.1:11434/api/version', { timeout: 3000 }, (res) => {
-        resolve(res.statusCode === 200);
-      });
-      req.on('error', () => resolve(false));
-      req.on('timeout', () => { req.destroy(); resolve(false); });
-    });
-
-    if (response) {
-      return true; // Service is running
-    }
-
-    // Service not running, try to start it.
-    // The macOS-14 gate only applies to mac (os.release() is the NT build on
-    // Windows, which would always trigger the < 23 check).
-    if (process.platform === 'darwin') {
-      const macRelease = os.release();
-      if (parseInt(macRelease.split('.')[0], 10) < 23) {
-        sendDebugLog('macOS version too old for bundled Ollama — requires macOS 14 (Sonoma) or later');
-        return false;
-      }
-    }
-
-    const ollamaPath = await findOllamaExecutable();
-    if (!ollamaPath) {
-      return false;
-    }
-
-    // Start Ollama service in background with proper env vars for dylibs
-    ollamaProcess = spawn(ollamaPath, ['serve'], { detached: true, stdio: 'ignore', env: getOllamaEnv() });
-    ollamaPid = ollamaProcess.pid;
-    try { require('fs').writeFileSync(path.join(getBackendCwd(), '_internal', 'ollama.pid'), String(ollamaPid)); } catch (_) {}
-    ollamaProcess.on('exit', () => { ollamaPid = null; });
-    ollamaProcess.unref();
-    ollamaStartedByUs = true;
-
-    // Wait for service to start
-    await new Promise(resolve => setTimeout(resolve, 2000));
-    return true;
-  } catch (error) {
-    console.error('Error ensuring Ollama is running:', error);
-    return false;
-  }
-}
-
 // Check if Ollama is installed (for setup wizard)
 ipcMain.handle('check-ollama-installed', async () => {
   try {
@@ -7884,7 +7833,7 @@ ipcMain.handle('check-model-installed', async (event, modelName) => {
       try {
         const data = JSON.parse(lines[i]);
         return { success: true, installed: data.installed };
-      } catch (e) {
+      } catch {
         continue;
       }
     }
@@ -9945,7 +9894,7 @@ async function checkForUpdates() {
       let url;
       try {
         url = new URL(urlStr);
-      } catch (e) {
+      } catch {
         resolve({ success: false, error: 'Invalid update URL' });
         return;
       }
@@ -9971,7 +9920,7 @@ async function checkForUpdates() {
           let next;
           try {
             next = new URL(res.headers.location, urlStr).toString();
-          } catch (e) {
+          } catch {
             resolve({ success: false, error: 'Invalid redirect URL' });
             return;
           }
@@ -10477,7 +10426,7 @@ function exchangeCodeForTokens(code, codeVerifier, port) {
           // Store expiry as absolute timestamp
           parsed.expires_at = Date.now() + (parsed.expires_in * 1000);
           resolve(parsed);
-        } catch (err) {
+        } catch {
           reject(new Error('Failed to parse token response'));
         }
       });
@@ -10564,7 +10513,7 @@ function refreshAccessToken(refreshToken) {
             return;
           }
           resolve(parsed);
-        } catch (err) {
+        } catch {
           reject(new Error('Failed to parse refresh response'));
         }
       });
@@ -10604,7 +10553,7 @@ async function fetchGoogleCalendarList(accessToken, signal) {
             return;
           }
           resolve(parsed.items || []);
-        } catch (err) {
+        } catch {
           reject(new Error('Failed to parse calendar list response'));
         }
       });
@@ -10615,7 +10564,7 @@ async function fetchGoogleCalendarList(accessToken, signal) {
 }
 
 function fetchGoogleEventsForCalendar(accessToken, calendarId, params, signal) {
-  return new Promise((resolve, reject) => {
+  return new Promise((resolve) => {
     const options = {
       hostname: 'www.googleapis.com',
       path: `/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events?${params.toString()}`,
@@ -10658,38 +10607,34 @@ async function fetchCalendarEvents(accessToken, maxResults = 50, signal) {
     fields: 'items(id,status,summary,description,start,end,attendees,htmlLink,conferenceData,colorId)'
   });
 
-  try {
-    const calendars = await fetchGoogleCalendarList(accessToken, signal);
-    const selectedCalendars = calendars.filter(c => c.selected);
-    if (selectedCalendars.length === 0) return [];
+  const calendars = await fetchGoogleCalendarList(accessToken, signal);
+  const selectedCalendars = calendars.filter(c => c.selected);
+  if (selectedCalendars.length === 0) return [];
 
-    const results = [];
-    const concurrency = 3;
-    for (let i = 0; i < selectedCalendars.length; i += concurrency) {
-      const chunk = selectedCalendars.slice(i, i + concurrency);
-      const chunkPromises = chunk.map(async (cal) => {
-        const items = await fetchGoogleEventsForCalendar(accessToken, cal.id, params, signal);
-        items.forEach(item => { 
-          item.calendarBackgroundColor = cal.backgroundColor; 
-          item._sourceCalendarId = cal.id;
-        });
-        return items;
+  const results = [];
+  const concurrency = 3;
+  for (let i = 0; i < selectedCalendars.length; i += concurrency) {
+    const chunk = selectedCalendars.slice(i, i + concurrency);
+    const chunkPromises = chunk.map(async (cal) => {
+      const items = await fetchGoogleEventsForCalendar(accessToken, cal.id, params, signal);
+      items.forEach(item => {
+        item.calendarBackgroundColor = cal.backgroundColor;
+        item._sourceCalendarId = cal.id;
       });
-      const chunkResults = await Promise.all(chunkPromises);
-      results.push(...chunkResults);
-    }
-    let allEvents = results.flat();
-    
-    allEvents.sort((a, b) => {
-      const startA = new Date(a.start?.dateTime || a.start?.date || 0);
-      const startB = new Date(b.start?.dateTime || b.start?.date || 0);
-      return startA.getTime() - startB.getTime();
+      return items;
     });
-
-    return allEvents.slice(0, maxResults);
-  } catch (err) {
-    throw err;
+    const chunkResults = await Promise.all(chunkPromises);
+    results.push(...chunkResults);
   }
+  const allEvents = results.flat();
+
+  allEvents.sort((a, b) => {
+    const startA = new Date(a.start?.dateTime || a.start?.date || 0);
+    const startB = new Date(b.start?.dateTime || b.start?.date || 0);
+    return startA.getTime() - startB.getTime();
+  });
+
+  return allEvents.slice(0, maxResults);
 }
 
 // ── Outlook Calendar: OAuth2 Flow with PKCE ─────────────────────────────
@@ -10883,7 +10828,7 @@ function exchangeOutlookCodeForTokens(code, codeVerifier, port) {
           }
           parsed.expires_at = Date.now() + (parsed.expires_in * 1000);
           resolve(parsed);
-        } catch (err) {
+        } catch {
           reject(new Error('Failed to parse token response'));
         }
       });
@@ -10975,7 +10920,7 @@ function refreshOutlookAccessToken(refreshToken) {
             return;
           }
           resolve(parsed);
-        } catch (err) {
+        } catch {
           reject(new Error('Failed to parse refresh response'));
         }
       });
@@ -11009,7 +10954,7 @@ async function fetchOutlookCalendarList(accessToken, signal) {
             return;
           }
           resolve(parsed.value || []);
-        } catch (err) {
+        } catch {
           reject(new Error('Failed to parse Outlook calendar list response'));
         }
       });
@@ -11020,7 +10965,7 @@ async function fetchOutlookCalendarList(accessToken, signal) {
 }
 
 function fetchOutlookEventsForCalendar(accessToken, calendarId, params, signal) {
-  return new Promise((resolve, reject) => {
+  return new Promise((resolve) => {
     const options = {
       hostname: 'graph.microsoft.com',
       path: `/v1.0/me/calendars/${encodeURIComponent(calendarId)}/calendarView?${params.toString()}`,
@@ -11067,52 +11012,48 @@ async function fetchOutlookCalendarEvents(accessToken, maxResults = 50, signal) 
     $select: 'id,subject,body,start,end,attendees,webLink,onlineMeeting,isOnlineMeeting,isAllDay,isCancelled,responseStatus,categories'
   });
 
-  try {
-    const calendars = await fetchOutlookCalendarList(accessToken, signal);
-    if (calendars.length === 0) return [];
+  const calendars = await fetchOutlookCalendarList(accessToken, signal);
+  if (calendars.length === 0) return [];
 
-    const results = [];
-    const concurrency = 3;
-    for (let i = 0; i < calendars.length; i += concurrency) {
-      const chunk = calendars.slice(i, i + concurrency);
-      const chunkPromises = chunk.map(async (cal) => {
-        const items = await fetchOutlookEventsForCalendar(accessToken, cal.id, params, signal);
-        
-        let hexColor = undefined;
-        switch (cal.color) {
-          case 'lightBlue': hexColor = '#3B82F6'; break;
-          case 'lightGreen': hexColor = '#10B981'; break;
-          case 'lightOrange': hexColor = '#F97316'; break;
-          case 'lightGray': hexColor = '#6B7280'; break;
-          case 'lightYellow': hexColor = '#EAB308'; break;
-          case 'lightTeal': hexColor = '#14B8A6'; break;
-          case 'lightPink': hexColor = '#EC4899'; break;
-          case 'lightBrown': hexColor = '#92400E'; break;
-          case 'lightRed': hexColor = '#EF4444'; break;
-          default: hexColor = '#3B82F6';
-        }
-        
-        items.forEach(item => { 
-          item.calendarBackgroundColor = hexColor; 
-          item.id = `${cal.id}_${item.id}`;
-        });
-        return items;
+  const results = [];
+  const concurrency = 3;
+  for (let i = 0; i < calendars.length; i += concurrency) {
+    const chunk = calendars.slice(i, i + concurrency);
+    const chunkPromises = chunk.map(async (cal) => {
+      const items = await fetchOutlookEventsForCalendar(accessToken, cal.id, params, signal);
+
+      let hexColor;
+      switch (cal.color) {
+        case 'lightBlue': hexColor = '#3B82F6'; break;
+        case 'lightGreen': hexColor = '#10B981'; break;
+        case 'lightOrange': hexColor = '#F97316'; break;
+        case 'lightGray': hexColor = '#6B7280'; break;
+        case 'lightYellow': hexColor = '#EAB308'; break;
+        case 'lightTeal': hexColor = '#14B8A6'; break;
+        case 'lightPink': hexColor = '#EC4899'; break;
+        case 'lightBrown': hexColor = '#92400E'; break;
+        case 'lightRed': hexColor = '#EF4444'; break;
+        default: hexColor = '#3B82F6';
+      }
+
+      items.forEach(item => {
+        item.calendarBackgroundColor = hexColor;
+        item.id = `${cal.id}_${item.id}`;
       });
-      const chunkResults = await Promise.all(chunkPromises);
-      results.push(...chunkResults);
-    }
-    let allEvents = results.flat();
-    
-    allEvents.sort((a, b) => {
-      const startA = new Date(a.start?.dateTime || a.start?.date || 0);
-      const startB = new Date(b.start?.dateTime || b.start?.date || 0);
-      return startA.getTime() - startB.getTime();
+      return items;
     });
-
-    return allEvents.slice(0, maxResults);
-  } catch (err) {
-    throw err;
+    const chunkResults = await Promise.all(chunkPromises);
+    results.push(...chunkResults);
   }
+  const allEvents = results.flat();
+
+  allEvents.sort((a, b) => {
+    const startA = new Date(a.start?.dateTime || a.start?.date || 0);
+    const startB = new Date(b.start?.dateTime || b.start?.date || 0);
+    return startA.getTime() - startB.getTime();
+  });
+
+  return allEvents.slice(0, maxResults);
 }
 
 function normalizeOutlookEvent(event) {
@@ -11203,7 +11144,7 @@ ipcMain.handle('google-auth-status', async () => {
   try {
     const tokens = loadGoogleTokens();
     return { success: true, connected: !!tokens, email: tokens?.email ?? null };
-  } catch (error) {
+  } catch {
     return { success: false, connected: false };
   }
 });
@@ -11230,7 +11171,7 @@ ipcMain.handle('google-auth-disconnect', async () => {
           req.on('error', () => resolve()); // Best-effort
           req.end();
         });
-      } catch (e) {
+      } catch {
         // Best-effort revocation -- ignore errors
       }
     }
@@ -11829,7 +11770,7 @@ ipcMain.handle('outlook-auth-status', async () => {
   try {
     const tokens = loadOutlookTokens();
     return { success: true, connected: !!tokens, email: tokens?.email ?? null };
-  } catch (error) {
+  } catch {
     return { success: false, connected: false };
   }
 });
@@ -11951,7 +11892,7 @@ function clearOrgSession() {
     if (fs.existsSync(p)) fs.unlinkSync(p);
     orgSessionGeneration++;
     return true;
-  } catch (e) {
+  } catch {
     return false;
   }
 }

@@ -17,7 +17,8 @@ the rest of the codebase doesn't churn:
 
 The stereo channel split, RMS-energy gating, and speaker-bleed collapse
 all stay — they operate on transcript text + audio metadata, not on the
-specific ASR engine.
+specific ASR engine. Split channels keep their original relative volume for
+bleed checks; separate loudness-normalised copies are sent to ASR.
 
 Whisper-era hallucination filtering ("Thank you." / "Bye." on silence)
 is gone: Parakeet doesn't produce those canned phrases on silent or
@@ -45,6 +46,7 @@ from typing import Callable, Optional, Tuple
 
 from src._heartbeat import _emit_heartbeat
 from src.speaker_suggestions import (
+    SAME_MEETING_MERGE_DISTANCE_THRESHOLD,
     SUGGESTION_MIN_AVG_TURN_SECONDS,
     build_clusters_from_diarization,
     determine_recording_type,
@@ -129,6 +131,14 @@ RMS_MAX_WINDOWS = 60
 # misattribution in _assign_asr_segments_to_diar_segments. Matches the value
 # validated against real meeting audio in the research playground.
 STENO_DIARIZE_MERGE_GAP_S = 0.3
+
+# Cross-channel echo can make the same voice appear in both independent
+# diarization runs. Only merge mutual-nearest embedding pairs that are as
+# tight as the already-validated same-meeting fragment threshold, and whose
+# runner-up is clearly worse. The margin prevents two acoustically similar
+# speakers from being joined merely because both fall below the distance
+# cutoff.
+CROSS_CHANNEL_SPEAKER_MATCH_MARGIN = 0.05
 
 # Floor for the steno-diarize subprocess timeout. Real measured runtime
 # varies a lot with recording length: single-digit-to-tens-of-seconds for
@@ -256,9 +266,13 @@ def _resolve_steno_diarize() -> Optional[str]:
         return None
 
 
-def _audio_filter_chain() -> str:
+def _audio_filter_chain(*, include_highpass: bool = True) -> str:
     """The ffmpeg ``-af`` chain applied to mono audio before transcription."""
-    return f"highpass=f={AUDIO_HIGHPASS_HZ},loudnorm={AUDIO_LOUDNORM}"
+    filters = []
+    if include_highpass:
+        filters.append(f"highpass=f={AUDIO_HIGHPASS_HZ}")
+    filters.append(f"loudnorm={AUDIO_LOUDNORM}")
+    return ",".join(filters)
 
 
 def _parse_channels_from_ffmpeg_stderr(stderr: str) -> Optional[int]:
@@ -282,6 +296,13 @@ def _parse_duration_from_ffmpeg_stderr(stderr: str) -> Optional[float]:
     return int(m.group(1)) * 3600 + int(m.group(2)) * 60 + float(m.group(3))
 
 
+def _duration_scaled_audio_timeout(duration_seconds: Optional[float], floor_s: int) -> int:
+    """Return a generous bounded timeout for a full-length audio pass."""
+    if duration_seconds and duration_seconds > 0:
+        return max(floor_s, int(duration_seconds * 2))
+    return floor_s
+
+
 def _diarised_split_timeout(duration_seconds: Optional[float]) -> int:
     """Wall-clock cap for one per-channel ffmpeg decode of the full recording.
 
@@ -293,9 +314,17 @@ def _diarised_split_timeout(duration_seconds: Optional[float]) -> int:
     transcript. When duration is unknown (some WebM headers) we fall back to
     the floor, which still comfortably beats the old 120 s.
     """
-    if duration_seconds and duration_seconds > 0:
-        return max(DIARISED_SPLIT_TIMEOUT_S, int(duration_seconds * 2))
-    return DIARISED_SPLIT_TIMEOUT_S
+    return _duration_scaled_audio_timeout(duration_seconds, DIARISED_SPLIT_TIMEOUT_S)
+
+
+def _audio_preprocess_timeout(duration_seconds: Optional[float]) -> int:
+    """Wall-clock cap for preprocessing one full-length channel.
+
+    Stereo channel copies cover the complete recording, so long meetings need
+    the same duration-scaled headroom as the preceding channel split. Mono
+    callers generally do not know the duration yet and use the fixed floor.
+    """
+    return _duration_scaled_audio_timeout(duration_seconds, AUDIO_PREPROCESS_TIMEOUT_S)
 
 
 try:
@@ -727,29 +756,23 @@ def _assign_asr_segments_to_diar_segments(
     return unplaceable
 
 
-# How often to print a HEARTBEAT: line while blocked waiting on
-# steno-diarize. Comfortably under Electron's TRANSCRIBE_INACTIVITY_MS
+# How often to print a HEARTBEAT: line while blocked on work that cannot
+# report its own progress. Comfortably under Electron's TRANSCRIBE_INACTIVITY_MS
 # (8 minutes, app/main.js) -- see _heartbeat_while_waiting's docstring for
 # why this can't just reuse the existing chunk-progress heartbeat registry.
-STENO_DIARIZE_HEARTBEAT_INTERVAL_S = 60.0
+BLOCKING_HEARTBEAT_INTERVAL_S = 60.0
 
 
 @contextlib.contextmanager
-def _heartbeat_while_waiting(label: str, interval_s: float = STENO_DIARIZE_HEARTBEAT_INTERVAL_S):
+def _heartbeat_while_waiting(label: str, interval_s: float = BLOCKING_HEARTBEAT_INTERVAL_S):
     """Print a HEARTBEAT: line every ``interval_s`` seconds on a background
     thread for the duration of the ``with`` block.
 
-    src._heartbeat's chunk-progress registry only works for backends that
-    call back into Python from INSIDE their own per-chunk loop (Parakeet,
-    Whisper.cpp) -- steno-diarize is an opaque external binary invoked via a
-    single blocking subprocess.run() call, with no such checkpoint to hang a
-    callback off of. Without this, a diarization run on an hours-long
-    channel prints nothing for its entire duration, which Electron's
-    inactivity watchdog (app/main.js) can't tell apart from a hung process
-    -- and kills, discarding a real, working meeting (confirmed against a
-    real ~3.5h recording: steno-diarize needed longer than the 8-minute
-    watchdog window and got killed mid-run, losing already-completed
-    transcription work along with it).
+    src._heartbeat's chunk-progress registry only works for code that calls
+    back into Python during its own loop. Opaque subprocess work, including
+    ffmpeg preprocessing and steno-diarize, has no checkpoint for that
+    callback. Without this heartbeat, Electron can mistake a long healthy
+    subprocess for a hang and stop the meeting job after eight minutes.
 
     Never affects the wrapped call's own return value or exceptions --
     the background thread only ever writes heartbeat lines.
@@ -1427,9 +1450,10 @@ def _resolve_speaker_placeholders(
     channels merged and time-sorted — so a reader sees new speakers
     introduced as 2, 3, 4... regardless of which channel they came from.
 
-    No cross-channel identity matching: a mic placeholder and a system
-    placeholder are always treated as different people — telling them
-    apart would need voiceprint embeddings, out of scope here.
+    Cross-channel echo copies have already been conservatively unified by
+    _reconcile_cross_channel_speakers when embeddings made that possible.
+    Any placeholders still distinct here are intentionally numbered as
+    different people.
 
     `channel` and `raw_diarization_speaker_id` pass through untouched —
     only `label` is ever rewritten here.
@@ -1445,6 +1469,198 @@ def _resolve_speaker_placeholders(
             label = numbering[label]
         resolved.append((start, label, text, channel, raw_sid))
     return resolved
+
+
+def _reconcile_cross_channel_speakers(
+    tagged: list[tuple[float, str, str, str, Optional[str]]],
+    mic_clusters: dict,
+    system_clusters: dict,
+) -> tuple[list[tuple[float, str, str, str, Optional[str]]], dict, dict]:
+    """Collapse unambiguous mic/system copies of the same acoustic speaker.
+
+    Bleed correction removes duplicate ASR segments, but acoustic diarization
+    still runs against each complete channel WAV. With speakers playing aloud,
+    Sortformer can therefore discover the same leaked voice independently in
+    both channels. Without this reconciliation, placeholder resolution turns
+    those channel-local IDs into two visible people and speaker review exposes
+    two rows for one person.
+
+    WeSpeaker centroids from the same recording are safe enough for a narrow,
+    conservative merge: require a mutual-nearest pair at or below the existing
+    same-meeting fragment threshold and a clear runner-up margin on both sides.
+    The channel retaining more post-bleed transcript text is canonical. Alias
+    turns inherit its label and provenance, and the duplicate sidecar cluster
+    is removed. Ambiguous, malformed, or unmatched clusters stay untouched.
+    """
+    if not tagged or not mic_clusters or not system_clusters:
+        return tagged, mic_clusters, system_clusters
+
+    from src.voiceprint import cosine_distance
+
+    distances: dict[tuple[str, str], float] = {}
+    for mic_sid, mic_cluster in mic_clusters.items():
+        mic_embedding = mic_cluster.get("embedding") if isinstance(mic_cluster, dict) else None
+        if not mic_embedding:
+            continue
+        for system_sid, system_cluster in system_clusters.items():
+            system_embedding = (
+                system_cluster.get("embedding") if isinstance(system_cluster, dict) else None
+            )
+            if not system_embedding:
+                continue
+            try:
+                distance = cosine_distance(mic_embedding, system_embedding)
+            except (TypeError, ValueError, OverflowError):
+                continue
+            if math.isfinite(distance):
+                distances[(mic_sid, system_sid)] = distance
+
+    if not distances:
+        return tagged, mic_clusters, system_clusters
+
+    def _confident_nearest(
+        sid: str,
+        *,
+        from_mic: bool,
+    ) -> Optional[tuple[str, float]]:
+        candidates = sorted(
+            (
+                (distance, system_sid if from_mic else mic_sid)
+                for (mic_sid, system_sid), distance in distances.items()
+                if (mic_sid if from_mic else system_sid) == sid
+            ),
+            key=lambda candidate: candidate[0],
+        )
+        if not candidates:
+            return None
+        best_distance, best_sid = candidates[0]
+        if best_distance > SAME_MEETING_MERGE_DISTANCE_THRESHOLD:
+            return None
+        if (
+            len(candidates) > 1
+            and candidates[1][0] - best_distance < CROSS_CHANNEL_SPEAKER_MATCH_MARGIN
+        ):
+            return None
+        return best_sid, best_distance
+
+    matches: list[tuple[str, str, float]] = []
+    for mic_sid in mic_clusters:
+        mic_best = _confident_nearest(mic_sid, from_mic=True)
+        if mic_best is None:
+            continue
+        system_sid, distance = mic_best
+        system_best = _confident_nearest(system_sid, from_mic=False)
+        if system_best is not None and system_best[0] == mic_sid:
+            matches.append((mic_sid, system_sid, distance))
+
+    if not matches:
+        return tagged, mic_clusters, system_clusters
+
+    text_weights: dict[tuple[str, str], int] = {}
+    labels: dict[tuple[str, str], str] = {}
+    for _start, label, text, channel, raw_sid in tagged:
+        if raw_sid is None:
+            continue
+        key = (channel, raw_sid)
+        text_weights[key] = text_weights.get(key, 0) + len((text or "").strip())
+        labels.setdefault(key, label)
+
+    mic_out = dict(mic_clusters)
+    system_out = dict(system_clusters)
+    aliases: dict[tuple[str, str], tuple[str, str, str]] = {}
+    for mic_sid, system_sid, distance in matches:
+        mic_key = ("mic", mic_sid)
+        system_key = ("system", system_sid)
+        mic_weight = text_weights.get(mic_key, 0)
+        system_weight = text_weights.get(system_key, 0)
+        if mic_weight == 0 and system_weight == 0:
+            continue
+
+        mic_label = labels.get(mic_key)
+        system_label = labels.get(system_key)
+        # Merging the two dominant legacy labels would erase a normal 1:1 call
+        # if unrelated centroids happen to fall below the distance threshold.
+        # For all other pairs, post-bleed text remains the best evidence of
+        # which channel contains the direct signal: minority echo clusters may
+        # have been folded into either channel's legacy label.
+        if mic_label == "You" and system_label == "Others":
+            continue
+        if mic_weight >= system_weight:
+            canonical_key, alias_key = mic_key, system_key
+        else:
+            canonical_key, alias_key = system_key, mic_key
+
+        canonical_label = labels.get(canonical_key) or labels.get(alias_key)
+        if canonical_label is None:
+            continue
+        aliases[alias_key] = (*canonical_key, canonical_label)
+
+        canonical_out = mic_out if canonical_key[0] == "mic" else system_out
+        alias_out = mic_out if alias_key[0] == "mic" else system_out
+        canonical_cluster = canonical_out.get(canonical_key[1])
+        alias_cluster = alias_out.get(alias_key[1])
+        if isinstance(canonical_cluster, dict) and isinstance(alias_cluster, dict):
+            # Transcript provenance is rewritten to the canonical cluster, so
+            # retain the alias time ranges there as well. This keeps review
+            # clips placeable without double-counting overlapping echo ranges.
+            segments = []
+            for cluster in (canonical_cluster, alias_cluster):
+                for segment in cluster.get("segments") or []:
+                    try:
+                        start = float(segment["start"])
+                        end = float(segment["end"])
+                    except (KeyError, TypeError, ValueError):
+                        continue
+                    if math.isfinite(start) and math.isfinite(end) and end > start:
+                        segments.append((start, end))
+            if segments:
+                merged_segments: list[list[float]] = []
+                for start, end in sorted(segments):
+                    if merged_segments and start <= merged_segments[-1][1]:
+                        merged_segments[-1][1] = max(merged_segments[-1][1], end)
+                    else:
+                        merged_segments.append([start, end])
+                canonical_cluster = dict(canonical_cluster)
+                canonical_cluster["segments"] = [
+                    {"start": start, "end": end} for start, end in merged_segments
+                ]
+                canonical_cluster["speech_duration_seconds"] = sum(
+                    end - start for start, end in merged_segments
+                )
+                canonical_cluster["segment_count"] = sum(
+                    int(cluster.get("segment_count") or 0)
+                    for cluster in (canonical_cluster, alias_cluster)
+                )
+                canonical_out[canonical_key[1]] = canonical_cluster
+        alias_out.pop(alias_key[1], None)
+        logger.info(
+            "Cross-channel speaker reconciliation: %s/%s -> %s/%s "
+            "(distance=%.3f, retained_chars=%d/%d)",
+            alias_key[0], alias_key[1], canonical_key[0], canonical_key[1],
+            distance, mic_weight, system_weight,
+        )
+
+    if not aliases:
+        return tagged, mic_clusters, system_clusters
+
+    reconciled = []
+    for start, label, text, channel, raw_sid in tagged:
+        canonical = aliases.get((channel, raw_sid)) if raw_sid is not None else None
+        if canonical is not None:
+            channel, raw_sid, label = canonical
+        reconciled.append((start, label, text, channel, raw_sid))
+    original_labels = {
+        label for _start, label, _text, _channel, _raw_sid
+        in _resolve_speaker_placeholders(tagged)
+    }
+    resolved_labels = {
+        label for _start, label, _text, _channel, _raw_sid
+        in _resolve_speaker_placeholders(reconciled)
+    }
+    if len(original_labels) > 1 and len(resolved_labels) <= 1:
+        logger.info("Cross-channel speaker reconciliation skipped: would erase speaker split")
+        return tagged, mic_clusters, system_clusters
+    return reconciled, mic_out, system_out
 
 
 @dataclass(frozen=True)
@@ -1693,8 +1909,14 @@ class WhisperTranscriber:
         else:
             logger.warning("ffmpeg not found - stereo diarisation will fall back to mono")
 
-    def _preprocess_audio(self, audio_filepath: Path) -> Tuple[Path, bool]:
-        """Clean mono audio before transcription: high-pass + loudnorm.
+    def _preprocess_audio(
+        self,
+        audio_filepath: Path,
+        *,
+        include_highpass: bool = True,
+        timeout_s: int = AUDIO_PREPROCESS_TIMEOUT_S,
+    ) -> Tuple[Path, bool]:
+        """Clean mono audio before transcription with loudnorm and optional high-pass.
 
         Returns ``(path_to_transcribe, is_temp)``. On any problem — ffmpeg
         missing, non-zero exit, timeout — falls back to ``(original, False)``
@@ -1726,17 +1948,19 @@ class WhisperTranscriber:
             # time on a long recording, with zero other output in between --
             # without this, the terminal goes silent for that whole stretch
             # right after "Saved: ...", which reads as a hang.
-            logger.info(f"Pre-processing audio (highpass + loudnorm): {audio_filepath.name}...")
-            result = subprocess.run(
-                [ffmpeg, '-y', '-i', str(audio_filepath),
-                 '-af', _audio_filter_chain(),
-                 '-ar', '16000', '-ac', '1', '-c:a', 'pcm_s16le',
-                 str(temp_path)],
-                capture_output=True,
-                timeout=AUDIO_PREPROCESS_TIMEOUT_S,
-            )
+            filter_description = "highpass + loudnorm" if include_highpass else "loudnorm"
+            logger.info(f"Pre-processing audio ({filter_description}): {audio_filepath.name}...")
+            with _heartbeat_while_waiting("transcribe:preprocess"):
+                result = subprocess.run(
+                    [ffmpeg, '-y', '-i', str(audio_filepath),
+                     '-af', _audio_filter_chain(include_highpass=include_highpass),
+                     '-ar', '16000', '-ac', '1', '-c:a', 'pcm_s16le',
+                     str(temp_path)],
+                    capture_output=True,
+                    timeout=timeout_s,
+                )
             if result.returncode == 0 and temp_path.exists() and temp_path.stat().st_size > 0:
-                logger.info("Audio pre-processed (highpass + loudnorm): %s", temp_path.name)
+                logger.info("Audio pre-processed (%s): %s", filter_description, temp_path.name)
                 return temp_path, True
             logger.warning(
                 "Audio pre-processing failed (rc=%s); using original audio: %s",
@@ -1972,6 +2196,8 @@ class WhisperTranscriber:
         audio_filepath: Path,
         language: str = "en",
         _preprocessed: bool = False,
+        _preprocess_include_highpass: bool = True,
+        _preprocess_timeout_s: int = AUDIO_PREPROCESS_TIMEOUT_S,
     ) -> Optional[dict]:
         """Transcribe a single-channel (or mono-mixed) audio file.
 
@@ -1979,9 +2205,12 @@ class WhisperTranscriber:
         otherwise a dict with ``text`` / ``segments`` / ``duration_seconds`` /
         ``detected_language`` / ``detected_language_probability``.
 
-        ``_preprocessed`` marks input that is already cleaned (the diarised
-        path's split channels are 16 kHz mono + high-passed by the split
-        ffmpeg pass) so the mono pre-processing pass isn't applied twice.
+        ``_preprocessed`` skips the cleaning pass only when the caller has
+        already applied the complete high-pass + loudness-normalisation
+        chain. Stereo split files are high-pass-only, so the diarised path
+        leaves this false and creates loudness-normalised copies for ASR.
+        Its private preprocessing options avoid applying the high-pass twice
+        and scale the subprocess timeout to the known recording duration.
         """
         if not audio_filepath.exists():
             logger.error(f"Audio file not found: {audio_filepath}")
@@ -2004,7 +2233,11 @@ class WhisperTranscriber:
 
             transcribe_path = audio_filepath
             if not _preprocessed:
-                transcribe_path, is_temp = self._preprocess_audio(audio_filepath)
+                transcribe_path, is_temp = self._preprocess_audio(
+                    audio_filepath,
+                    include_highpass=_preprocess_include_highpass,
+                    timeout_s=_preprocess_timeout_s,
+                )
                 if is_temp:
                     preprocess_temp = transcribe_path
 
@@ -2132,13 +2365,14 @@ class WhisperTranscriber:
                 # would erase the relative-RMS difference that
                 # _drop_per_segment_bleed uses to tell the direct signal
                 # from its attenuated echo on the other channel.
-                result = subprocess.run(
-                    [ffmpeg, '-y', '-i', str(audio_filepath),
-                     '-af', f'pan=mono|c0=c{ch_idx},highpass=f={AUDIO_HIGHPASS_HZ}',
-                     '-ar', '16000', '-ac', '1', '-c:a', 'pcm_s16le',
-                     str(out_path)],
-                    capture_output=True, timeout=split_timeout
-                )
+                with _heartbeat_while_waiting("transcribe:split"):
+                    result = subprocess.run(
+                        [ffmpeg, '-y', '-i', str(audio_filepath),
+                         '-af', f'pan=mono|c0=c{ch_idx},highpass=f={AUDIO_HIGHPASS_HZ}',
+                         '-ar', '16000', '-ac', '1', '-c:a', 'pcm_s16le',
+                         str(out_path)],
+                        capture_output=True, timeout=split_timeout
+                    )
                 if result.returncode != 0:
                     logger.error(f"Channel {ch_idx} extraction failed: {result.stderr.decode()}")
                     return None, None, None
@@ -2233,12 +2467,22 @@ class WhisperTranscriber:
             # window-coverage roll-up at the end) can't hit an unbound name.
             mic_result: Optional[dict] = None
             sys_result: Optional[dict] = None
+            preprocess_timeout = _audio_preprocess_timeout(duration)
 
-            # Split channels are already 16 kHz mono + high-passed by the
-            # split ffmpeg pass above — skip the mono pre-processing pass.
+            # Keep the split files high-pass-only so the cross-channel bleed
+            # heuristics below can compare their original relative levels.
+            # The ASR inputs still need the normal pre-processing pass,
+            # especially per-channel loudness normalisation: a quiet, sparse
+            # microphone channel can otherwise decode as mostly silence even
+            # though it contains real speech.
             if mic_has_audio:
                 logger.info("Transcribing mic channel (You)...")
-                mic_result = self.transcribe_audio(mic_path, language, _preprocessed=True)
+                mic_result = self.transcribe_audio(
+                    mic_path,
+                    language,
+                    _preprocess_include_highpass=False,
+                    _preprocess_timeout_s=preprocess_timeout,
+                )
                 if mic_result and mic_result.get("transcription_failed"):
                     channel_failed = True
                     channel_error = channel_error or mic_result.get("error")
@@ -2265,7 +2509,12 @@ class WhisperTranscriber:
 
             if system_has_audio:
                 logger.info("Transcribing system channel (Others)...")
-                sys_result = self.transcribe_audio(system_path, language, _preprocessed=True)
+                sys_result = self.transcribe_audio(
+                    system_path,
+                    language,
+                    _preprocess_include_highpass=False,
+                    _preprocess_timeout_s=preprocess_timeout,
+                )
                 if sys_result and sys_result.get("transcription_failed"):
                     channel_failed = True
                     channel_error = channel_error or sys_result.get("error")
@@ -2384,6 +2633,10 @@ class WhisperTranscriber:
                 )
             )
             tagged.sort(key=lambda t: t[0])
+            if identity_enabled:
+                tagged, mic_clusters, system_clusters = _reconcile_cross_channel_speakers(
+                    tagged, mic_clusters, system_clusters,
+                )
             tagged = _resolve_speaker_placeholders(tagged)
 
             # Same {"mic"|"system": {"recording_type", "clusters"}} shape
@@ -2395,12 +2648,12 @@ class WhisperTranscriber:
             # non-empty) is included -- a channel that fell back to legacy
             # labeling has no cluster/embedding data to persist.
             speaker_clusters: dict = {}
-            if mic_clusters:
+            if identity_enabled and mic_clusters:
                 speaker_clusters["mic"] = {
                     "recording_type": determine_recording_type("mic", has_audio=True),
                     "clusters": mic_clusters,
                 }
-            if system_clusters:
+            if identity_enabled and system_clusters:
                 speaker_clusters["system"] = {
                     "recording_type": determine_recording_type("system", has_audio=True),
                     "clusters": system_clusters,
@@ -2427,8 +2680,11 @@ class WhisperTranscriber:
                 "engine": engine or self.backend,
                 # {"mic"|"system": {"recording_type", "clusters"}} for
                 # src.speaker_suggestions.write_speakers_sidecar, or {} if
-                # neither channel diarized. See _tag_channel_segments'
-                # clusters_out param.
+                # neither channel diarized. Cross-channel echo aliases were
+                # removed above, so the Speakers panel and exact relabel manifest
+                # share the same canonical cluster ids. See _tag_channel_segments'
+                # clusters_out param. Identity matching off neither collects nor
+                # compares embeddings here.
                 "speaker_clusters": speaker_clusters,
                 # list[{"start", "channel", "diarization_speaker_id"}], one
                 # per turn -- see comment above turn_manifest's construction.

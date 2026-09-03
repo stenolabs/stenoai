@@ -2,9 +2,9 @@
 
 The contract: pre-processing improves the input when it can and silently
 steps aside when it can't — a missing ffmpeg, a failed run, or a timeout
-must never fail the meeting. Temp files are always cleaned up, and the
-diarised path's split channels (already 16 kHz mono + high-passed) skip
-the mono pass instead of being processed twice.
+must never fail the meeting. Temp files are always cleaned up. Stereo split
+files preserve their relative levels for bleed detection, while separate
+normalised copies are passed to ASR so quiet channels remain transcribable.
 """
 
 import tempfile
@@ -14,7 +14,11 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 import src.transcriber as transcriber_mod
-from src.transcriber import WhisperTranscriber, _audio_filter_chain
+from src.transcriber import (
+    WhisperTranscriber,
+    _audio_filter_chain,
+    _audio_preprocess_timeout,
+)
 
 
 def _build_transcriber() -> WhisperTranscriber:
@@ -48,6 +52,19 @@ class FilterChainTests(unittest.TestCase):
         chain = _audio_filter_chain()
         self.assertIn(f"highpass=f={transcriber_mod.AUDIO_HIGHPASS_HZ}", chain)
         self.assertIn(f"loudnorm={transcriber_mod.AUDIO_LOUDNORM}", chain)
+
+    def test_chain_can_skip_highpass_for_already_filtered_split(self):
+        chain = _audio_filter_chain(include_highpass=False)
+        self.assertNotIn("highpass", chain)
+        self.assertEqual(chain, f"loudnorm={transcriber_mod.AUDIO_LOUDNORM}")
+
+    def test_preprocess_timeout_scales_for_long_recordings(self):
+        four_hours = 4 * 60 * 60
+        self.assertEqual(_audio_preprocess_timeout(four_hours), four_hours * 2)
+        self.assertEqual(
+            _audio_preprocess_timeout(None),
+            transcriber_mod.AUDIO_PREPROCESS_TIMEOUT_S,
+        )
 
 
 class PreprocessAudioTests(unittest.TestCase):
@@ -106,6 +123,17 @@ class PreprocessAudioTests(unittest.TestCase):
         finally:
             if out_path.exists():
                 out_path.unlink()
+
+    def test_wraps_ffmpeg_in_heartbeat(self):
+        transcriber = _build_transcriber()
+        completed = SimpleNamespace(returncode=1, stderr=b"boom")
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            audio = _make_audio_file(tmp_dir)
+            with patch.object(transcriber_mod, "_resolve_ffmpeg", return_value="/fake/ffmpeg"), \
+                 patch.object(transcriber_mod, "_heartbeat_while_waiting") as heartbeat_mock, \
+                 patch.object(transcriber_mod.subprocess, "run", return_value=completed):
+                transcriber._preprocess_audio(audio)
+        heartbeat_mock.assert_called_once_with("transcribe:preprocess")
 
 
 class ConvertTo16khzSkipTests(unittest.TestCase):
@@ -167,11 +195,20 @@ class TranscribeAudioPreprocessIntegrationTests(unittest.TestCase):
                 transcriber.transcribe_audio(audio, language="en", _preprocessed=True)
             prep_mock.assert_not_called()
 
-    def test_diarised_channels_skip_mono_pass(self):
+    def test_diarised_channels_are_normalised_for_asr(self):
         transcriber = _build_transcriber()
         with tempfile.TemporaryDirectory() as tmp_dir:
             mic = _make_audio_file(tmp_dir, "stenoai_ch0_meeting.wav")
             system = _make_audio_file(tmp_dir, "stenoai_ch1_meeting.wav")
+
+            normalised_paths = []
+
+            def fake_preprocess(path, **kwargs):
+                normalised = Path(tmp_dir) / f"normalised_{path.name}"
+                normalised.write_bytes(b"\x00" * 2048)
+                normalised_paths.append(normalised)
+                return normalised, True
+
             with patch.object(
                      transcriber, "_split_stereo_to_channels",
                      return_value=(mic, system, 10.0),
@@ -181,15 +218,47 @@ class TranscribeAudioPreprocessIntegrationTests(unittest.TestCase):
                      transcriber, "transcribe_audio",
                      wraps=transcriber.transcribe_audio,
                  ) as ta_mock, \
-                 patch.object(transcriber, "_preprocess_audio") as prep_mock, \
-                 patch.object(transcriber, "_run_backend", return_value=dict(_OK_RESULT)):
-                transcriber.transcribe_diarised(Path(tmp_dir) / "meeting.wav", language="en")
-            # Both per-channel calls passed _preprocessed=True and the mono
-            # pre-processing pass never ran.
+                 patch.object(transcriber, "_preprocess_audio", side_effect=fake_preprocess) as prep_mock, \
+                 patch.object(transcriber, "_run_backend", return_value=dict(_OK_RESULT)) as run_mock, \
+                 patch.object(
+                     transcriber_mod,
+                     "_drop_per_segment_bleed",
+                     side_effect=lambda mic_segments, system_segments, **kwargs: (
+                         mic_segments,
+                         system_segments,
+                     ),
+                 ) as bleed_mock:
+                result = transcriber.transcribe_diarised(
+                    Path(tmp_dir) / "meeting.wav", language="en"
+                )
+            # The split files stay high-pass-only for later relative-RMS bleed
+            # checks, but each ASR call gets its own normalised temp input.
             self.assertEqual(ta_mock.call_count, 2)
             for call in ta_mock.call_args_list:
-                self.assertTrue(call.kwargs.get("_preprocessed"))
-            prep_mock.assert_not_called()
+                self.assertFalse(call.kwargs.get("_preprocessed", False))
+                self.assertFalse(call.kwargs["_preprocess_include_highpass"])
+                self.assertEqual(
+                    call.kwargs["_preprocess_timeout_s"],
+                    _audio_preprocess_timeout(10.0),
+                )
+            self.assertEqual(prep_mock.call_count, 2)
+            self.assertEqual(run_mock.call_count, 2)
+            self.assertEqual(
+                [call.args[0] for call in run_mock.call_args_list],
+                normalised_paths,
+            )
+            for call in prep_mock.call_args_list:
+                self.assertFalse(call.kwargs["include_highpass"])
+                self.assertEqual(
+                    call.kwargs["timeout_s"],
+                    _audio_preprocess_timeout(10.0),
+                )
+            bleed_mock.assert_called_once()
+            self.assertEqual(bleed_mock.call_args.kwargs["mic_path"], mic)
+            self.assertEqual(bleed_mock.call_args.kwargs["system_path"], system)
+            for normalised in normalised_paths:
+                self.assertFalse(normalised.exists())
+            self.assertFalse(result.get("transcription_failed", False))
 
     def test_split_filter_includes_highpass_no_loudnorm(self):
         """The diarised split applies highpass only — per-channel loudnorm
@@ -216,3 +285,26 @@ class TranscribeAudioPreprocessIntegrationTests(unittest.TestCase):
             af = cmd[cmd.index("-af") + 1]
             self.assertIn(f"highpass=f={transcriber_mod.AUDIO_HIGHPASS_HZ}", af)
             self.assertNotIn("loudnorm", af)
+
+    def test_split_wraps_each_full_decode_in_heartbeat(self):
+        transcriber = _build_transcriber()
+
+        def fake_run(cmd, **kwargs):
+            if "-t" in cmd:
+                return SimpleNamespace(
+                    returncode=0,
+                    stderr="Audio: pcm_s16le, stereo\nDuration: 00:00:10.00",
+                    stdout="",
+                )
+            Path(cmd[-1]).write_bytes(b"\x00" * 64)
+            return SimpleNamespace(returncode=0, stderr=b"")
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            audio = _make_audio_file(tmp_dir)
+            with patch.object(transcriber_mod, "_resolve_ffmpeg", return_value="/fake/ffmpeg"), \
+                 patch.object(transcriber_mod.subprocess, "run", side_effect=fake_run), \
+                 patch.object(transcriber_mod, "_heartbeat_while_waiting") as heartbeat_mock:
+                transcriber._split_stereo_to_channels(audio)
+
+        self.assertEqual(heartbeat_mock.call_count, 2)
+        heartbeat_mock.assert_any_call("transcribe:split")

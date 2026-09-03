@@ -88,6 +88,32 @@ test('Copy transcript copies the renderer-built bundle and confirms only on succ
   await expect(page.getByRole('button', { name: 'Copied' })).toBeVisible();
 });
 
+test('Copy transcript includes a readable diarised view and the timestamped source', async ({
+  launchApp,
+}) => {
+  const { page } = await launchApp({
+    mockIpc: true,
+    env: {
+      STENOAI_E2E_SEED_MEETING: '1',
+      STENOAI_E2E_SEED_DIARISED_EXPORT: '1',
+    },
+  });
+  await openDetail(page);
+  await installClipboardRecorder(page);
+
+  await page.getByRole('button', { name: 'Copy transcript' }).click();
+
+  const writes = await clipboardWrites(page);
+  expect(writes).toHaveLength(1);
+  const bundle = writes[0];
+  expect(bundle).toContain(
+    '## Transcript\nMe: We should ship Friday. I will prepare the release.\n\nOthers: Sounds good.',
+  );
+  expect(bundle).toContain(
+    '## Timestamped transcript\n[00:00] [You] We should ship Friday.\n[00:02] [You] I will prepare the release.\n[00:06] [Others] Sounds good.',
+  );
+});
+
 test('Copy transcript does not confirm when the clipboard write is rejected', async ({
   launchApp,
 }) => {

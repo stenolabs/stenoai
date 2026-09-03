@@ -1,10 +1,10 @@
 ---
-import { Check, ShieldCheck, Plus, Minus } from "lucide-react";
+import { Check, ShieldCheck, Plus, Minus, ArrowUpRight } from "lucide-react";
 import { Nav } from "../sections/Nav";
 import Footer from "../sections/Footer.astro";
 import CTAFooter from "../sections/CTAFooter.astro";
 import AppleIcon from "./icons/AppleIcon.astro";
-import { ALL, COMPLIANCE_BODY, CTA_MAILTO } from "../content/industries.data.js";
+import { ALL, COMPLIANCE_BODY, CTA_MAILTO, BREACHES_VERIFIED } from "../content/industries.data.js";
 
 const { data } = Astro.props;
 const others = ALL.filter((c) => c.slug !== data.slug);
@@ -90,6 +90,66 @@ const H2_STYLE = {
       </ul>
     </div>
   </section>
+
+  {data.breaches && (
+    <section class="pt-[64px] pb-[8px]">
+      <div class="container-site" style="max-width: 880px">
+        <h2 class="mb-5" style={H2_STYLE}>{data.breaches.heading}</h2>
+        <p class="text-fg-2 text-[15px] leading-[1.65] mb-9" style="max-width: 68ch">
+          {data.breaches.intro}
+        </p>
+
+        <div class="flex flex-col">
+          {data.breaches.items.map((b, i) => (
+            <article
+              class="py-8"
+              style={{
+                borderTop: "1px solid var(--border-subtle)",
+                borderBottom: i === data.breaches.items.length - 1 ? "1px solid var(--border-subtle)" : "none",
+              }}
+            >
+              <p
+                class="text-fg-muted text-[11px] mb-3"
+                style={{ fontFamily: "var(--font-mono)", textTransform: "uppercase", letterSpacing: "0.12em" }}
+              >
+                {b.meta}
+              </p>
+              <h3 class="text-fg-1 mb-3" style={{ fontWeight: 500, fontSize: 18, lineHeight: 1.35 }}>
+                {b.title}
+              </h3>
+              <p class="text-fg-2 text-[15px] leading-[1.65]" style="max-width: 68ch">{b.what}</p>
+
+              <div class="mt-5 pl-5" style="border-left: 2px solid var(--fg-1)">
+                <p
+                  class="text-fg-muted text-[11px] mb-2"
+                  style={{ fontFamily: "var(--font-mono)", textTransform: "uppercase", letterSpacing: "0.12em" }}
+                >
+                  What Steno changes
+                </p>
+                <p class="text-fg-2 text-[15px] leading-[1.65]" style="max-width: 64ch">{b.why}</p>
+              </div>
+
+              <a
+                href={b.source.href}
+                target="_blank"
+                rel="noopener noreferrer"
+                class="inline-flex items-center gap-1.5 text-fg-2 text-[13px] mt-5"
+              >
+                {b.source.label}
+                <span class="sr-only">(opens in a new tab)</span>
+                <ArrowUpRight size={13} aria-hidden="true" class="flex-shrink-0" />
+              </a>
+            </article>
+          ))}
+        </div>
+
+        <p class="text-fg-muted text-[13px] mt-5" style="max-width: 70ch">
+          Each incident above is a matter of public record, summarised from the linked source and
+          verified {BREACHES_VERIFIED}. Steno is not affiliated with any organisation named here.
+        </p>
+      </div>
+    </section>
+  )}
 
   <section class="pt-[56px] pb-[8px]">
     <div class="container-site" style="max-width: 880px">

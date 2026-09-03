@@ -56,6 +56,14 @@ class ConfigLanguageTests(unittest.TestCase):
             self.assertEqual(config.get_language(), "nl")
             self.assertEqual(config.get_language_name("nl"), "Dutch")
 
+    def test_set_language_accepts_supported_russian_code(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            config = Config(config_path=Path(tmp_dir) / "config.json")
+            self.assertTrue(config.set_language("ru"))
+            self.assertEqual(config.get_language(), "ru")
+            self.assertEqual(config.get_language_name("ru"), "Russian")
+            self.assertEqual(config.get_whisper_language(), "ru")
+
     def test_set_language_accepts_auto_detection_mode(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             config = Config(config_path=Path(tmp_dir) / "config.json")

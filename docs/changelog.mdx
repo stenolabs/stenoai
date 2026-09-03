@@ -3,6 +3,32 @@ title: "Changelog"
 description: "What's new in Steno -- recent releases and notable changes."
 ---
 
+<Update label="v0.7.0" description="August 31, 2026">
+**New**
+- **Individual speaker labels (macOS)** — Steno now separates the voices that share one side of a call. A meeting with several remote participants reads as `Speaker 2`, `Speaker 3`, and so on, instead of collapsing everyone into a single `[Others]`. This runs on-device after the recording stops, and works whether the people are around one microphone or joining remotely.
+- **Speaker identification** — Name a speaker once and Steno suggests that person in later meetings. This is off by default: turn it on under Settings → AI → Speaker identification. It creates a numerical voice profile, so enable it only if you have told the people you record and are authorised to do so. Anonymous per-meeting splitting keeps working with it off.
+- **People management** — Settings → People lists everyone you have named, plays back the voice sample behind each profile, and deletes a person and their profile permanently. Recordings and transcripts are stored separately and are not deleted with a profile.
+- **Review who is who** — When Steno is unsure, a review panel in the note offers excerpts you can play, lets you confirm or rename a speaker, mark a cluster as more than one person, or keep the generic label. It also says what a delete would cost before you confirm it.
+- **FaceTime and Phone calls are detected** — Calls through FaceTime and Phone.app now trigger the meeting prompt like any other call.
+- **Readable transcript export** — Exported transcripts now open with a clean conversation view that merges each speaker's consecutive lines into paragraphs, with the original timestamped transcript kept below it. Falls back to the raw transcript when timestamps aren't usable.
+- **Russian** — Russian can now be selected in Settings → Transcribe, so summaries, titles and chat come back in Russian instead of defaulting to English. Available on both engines, and covered by auto-detect.
+
+**Improved**
+- Diarization is roughly 6.65x faster, using Sortformer's offline chunk preset.
+- Processing shows live per-stage progress while speakers are being worked out, rather than one long opaque step.
+- The Overview now marks which notes still have their original audio, so you can see what can be re-transcribed.
+- Interrupted Parakeet model downloads resume instead of starting over.
+
+**Fixed**
+- macOS no longer shows an unexplained local-network prompt on first launch; Steno now declares why it needs local network access.
+- An interrupted batch transcription now keeps what it managed to transcribe instead of discarding the whole run.
+
+**Known Issues**
+- Speaker separation is macOS-only. Windows keeps the existing `[You]` / `[Others]` channel labels.
+- Speaker accuracy depends on recording quality; overlapping speech and shared microphones are the hardest cases.
+- Selecting Russian pins the language of the summary, title and chat. Transcription accuracy for Russian on the default Parakeet engine has not been measured; switch to Whisper in Settings → AI if the transcript itself is poor.
+</Update>
+
 <Update label="v0.6.7" description="August 4, 2026">
 **Added**
 - **Sync to Obsidian** — mirror your notes into an Obsidian vault folder as Markdown, one file per note with Obsidian-friendly properties, organised into subfolders that mirror your Steno folders. Turn it on in Settings → Integrations and choose a vault folder. One-way (Steno → vault); notes you edit in Obsidian are never overwritten, and renames/deletes are kept in sync.

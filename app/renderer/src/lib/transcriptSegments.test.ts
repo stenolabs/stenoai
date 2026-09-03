@@ -26,6 +26,13 @@ describe('parseTranscript — diarised', () => {
     expect(segs[0].text).toBe('Still going');
   });
 
+  test('preserves fractional seconds when present', () => {
+    const segs = parseTranscript('[00:02.5] [You] Exact gap boundary', true);
+    expect(segs).toEqual([
+      { speaker: 'You', text: 'Exact gap boundary', timestamp: '00:02.5' },
+    ]);
+  });
+
   test('parses timestamp-less transcripts (saved before this feature)', () => {
     const segs = parseTranscript('[You] Hello\n\n[Others] Hi', true);
     expect(segs).toEqual([

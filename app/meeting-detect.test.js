@@ -8,6 +8,11 @@ test('isMeetingApp accepts a known meeting app bundle id', () => {
   assert.strictEqual(isMeetingApp({ app_id: 'com.microsoft.teams2' }), true);
 });
 
+test('isMeetingApp accepts the Apple avconferenced daemon bundle id', () => {
+  // FaceTime, Phone.app and Continuity calls open the mic via avconferenced
+  assert.strictEqual(isMeetingApp({ app_id: 'com.apple.avconferenced' }), true);
+});
+
 test('isMeetingApp accepts browser helper-process bundle ids', () => {
   // Chromium browsers capture the mic in a helper process, whose bundle id
   // may differ in case from the main app (Arc: company.thebrowser.Browser

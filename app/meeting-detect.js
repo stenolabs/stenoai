@@ -9,6 +9,7 @@ const MEETING_APP_ALLOWLIST = [
   /^com\.cisco\.webexmeetingsapp/,     // Cisco Webex
   /^com\.webex\.meetingmanager/,       // Cisco Webex (alt id)
   /^com\.apple\.FaceTime/,             // FaceTime
+  /^com\.apple\.avconferenced/,        // FaceTime / Phone.app / Continuity call audio
   /^com\.hnc\.Discord/,                // Discord
   /^com\.tinyspeck\.slackmacgap/,      // Slack (huddles)
   /^com\.logmein\.GoToMeeting/,        // GoToMeeting
