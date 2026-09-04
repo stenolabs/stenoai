@@ -735,7 +735,11 @@ jobs:
             if [ "$DEFAULT_SINK_READY" != true ]; then
               echo "wireplumber did not select steno_test — setting it directly"
               for i in $(seq 1 5); do
-                pw-metadata -n default 0 default.audio.sink "{\"name\":\"steno_test\"}"
+                if ! pw-metadata -n default 0 default.audio.sink "{\"name\":\"steno_test\"}"; then
+                  echo "pw-metadata set failed on attempt $i — retrying"
+                  sleep 1
+                  continue
+                fi
                 sleep 1
                 DEFAULT_METADATA="$(pw-metadata -n default 2>/dev/null || true)"
                 if grep -Eq "default\.audio\.sink.*\"name\"[[:space:]]*:[[:space:]]*\"steno_test\"" \
