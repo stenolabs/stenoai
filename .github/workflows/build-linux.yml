@@ -79,6 +79,12 @@ jobs:
           pyinstaller stenoai.spec --noconfirm
           ls -lh dist/stenoai
 
+      - name: Verify bundled Ollama GPU backends
+        run: |
+          output=$(python scripts/verify_ollama_gpu_bundle.py bin dist/stenoai)
+          echo "$output"
+          echo "$output" >> "$GITHUB_STEP_SUMMARY"
+
       - name: Smoke-test bundled CLI
         run: |
           ./dist/stenoai/stenoai --help
@@ -184,6 +190,7 @@ jobs:
           # the crash that motivated adding it (#502) was exactly this.
           BACKEND=/opt/Steno/resources/stenoai/stenoai
           test -x "$BACKEND"
+          python scripts/verify_ollama_gpu_bundle.py bin /opt/Steno/resources/stenoai
           "$BACKEND" --help > /dev/null
           # setup-check exits non-zero with no model downloaded, which is
           # expected on a fresh runner; we only require that it runs to
@@ -228,11 +235,21 @@ jobs:
           "$APPIMAGE" --appimage-extract > /dev/null
           test -x squashfs-root/stenoai
           test -x squashfs-root/resources/stenoai/stenoai
+          python scripts/verify_ollama_gpu_bundle.py bin squashfs-root/resources/stenoai
           rm -rf squashfs-root
 
       - name: Show built artifacts
         if: always()
-        run: ls -lh app/dist
+        run: |
+          ls -lh app/dist
+          for artifact in app/dist/*.deb app/dist/*.AppImage; do
+            [ -f "$artifact" ] || continue
+            bytes=$(stat --format=%s "$artifact")
+            human=$(du -h "$artifact" | cut -f1)
+            line="$(basename "$artifact"): ${bytes} bytes (${human})"
+            echo "$line"
+            echo "$line" >> "$GITHUB_STEP_SUMMARY"
+          done
 
       - name: Upload Linux artifacts
         if: always()
