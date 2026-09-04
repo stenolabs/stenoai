@@ -57,6 +57,21 @@ def _all_files(root: Path) -> list[Path]:
     return [path for path in root.rglob("*") if path.is_file()]
 
 
+def _payload_problem(path: Path, root: Path) -> Optional[str]:
+    try:
+        resolved_root = root.resolve(strict=True)
+        resolved_path = path.resolve(strict=True)
+    except (OSError, RuntimeError):
+        return "missing or broken"
+    if resolved_root not in resolved_path.parents:
+        return "resolves outside the Ollama tree"
+    if not resolved_path.is_file():
+        return "not a file"
+    if resolved_path.stat().st_size == 0:
+        return "empty"
+    return None
+
+
 def verify_ollama_gpu_bundle(
     source_root: Path,
     bundle_root: Path,
@@ -71,6 +86,17 @@ def verify_ollama_gpu_bundle(
         raise FileNotFoundError(f"Bundled Ollama tree not found: {target_root}")
 
     source_payloads = _payload_files(source_root)
+    invalid_source_payloads = [
+        f"{path.relative_to(source_root).as_posix()} ({problem})"
+        for path in source_payloads
+        if (problem := _payload_problem(path, source_root)) is not None
+    ]
+    if invalid_source_payloads:
+        raise FileNotFoundError(
+            "Downloaded Ollama GPU payload is invalid: "
+            + ", ".join(invalid_source_payloads)
+        )
+
     source_families = {
         family
         for path in source_payloads
@@ -89,27 +115,21 @@ def verify_ollama_gpu_bundle(
             + ", ".join(missing_families)
         )
 
-    missing_payloads: list[str] = []
-    empty_payloads: list[str] = []
+    invalid_target_payloads: list[str] = []
     target_payloads: list[Path] = []
     for source_path in source_payloads:
         relative_path = source_path.relative_to(source_root)
         target_path = target_root / relative_path
-        if not target_path.exists():
-            missing_payloads.append(relative_path.as_posix())
-            continue
-        if not target_path.is_file() or target_path.stat().st_size == 0:
-            empty_payloads.append(relative_path.as_posix())
+        if (problem := _payload_problem(target_path, target_root)) is not None:
+            invalid_target_payloads.append(f"{relative_path.as_posix()} ({problem})")
             continue
         target_payloads.append(target_path)
 
-    if missing_payloads or empty_payloads:
-        details = []
-        if missing_payloads:
-            details.append("missing or broken: " + ", ".join(missing_payloads))
-        if empty_payloads:
-            details.append("empty or not a file: " + ", ".join(empty_payloads))
-        raise FileNotFoundError("Bundled Ollama GPU payload is incomplete; " + "; ".join(details))
+    if invalid_target_payloads:
+        raise FileNotFoundError(
+            "Bundled Ollama GPU payload is incomplete: "
+            + ", ".join(invalid_target_payloads)
+        )
 
     return {
         "families": tuple(sorted(source_families)),

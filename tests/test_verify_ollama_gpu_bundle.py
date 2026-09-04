@@ -63,7 +63,9 @@ class OllamaGpuBundleTests(unittest.TestCase):
 
         self.assertEqual(result["families"], ("cuda", "vulkan"))
         self.assertEqual(result["payload_count"], 2)
-        self.assertGreater(result["gpu_logical_bytes"], 0)
+        self.assertEqual(result["gpu_logical_bytes"], 30)
+        self.assertEqual(result["ollama_logical_bytes"], 30)
+        self.assertEqual(result["bundle_logical_bytes"], 30)
 
     def test_accepts_valid_relative_gpu_symlink(self):
         cuda_dir = self.source / "lib/ollama/cuda_v12"
@@ -98,6 +100,23 @@ class OllamaGpuBundleTests(unittest.TestCase):
         target.symlink_to("missing.so")
 
         with self.assertRaisesRegex(FileNotFoundError, "missing or broken"):
+            verify_ollama_gpu_bundle(self.source, self.bundle)
+
+    def test_rejects_gpu_symlink_that_escapes_ollama_tree(self):
+        outside = self.bundle.parent / "outside.so"
+        outside.write_bytes(b"outside payload")
+        target = self.target / "lib/ollama/cuda_v12/libggml-cuda.so"
+        target.unlink()
+        target.symlink_to(outside)
+
+        with self.assertRaisesRegex(FileNotFoundError, "outside the Ollama tree"):
+            verify_ollama_gpu_bundle(self.source, self.bundle)
+
+    def test_rejects_invalid_source_payload(self):
+        source = self.source / "lib/ollama/cuda_v12/libggml-cuda.so"
+        source.write_bytes(b"")
+
+        with self.assertRaisesRegex(FileNotFoundError, "Downloaded.*invalid.*empty"):
             verify_ollama_gpu_bundle(self.source, self.bundle)
 
     def test_rejects_source_without_required_cuda_payload(self):
