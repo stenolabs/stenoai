@@ -5,10 +5,10 @@
 //
 // Two callers. On a Linux desktop, run it directly
 // (`node scripts/linux-loopback-poc-demo.js`) with audio playing, to prove the
-// capture mechanism by hand. In CI it is the linux-loopback-pipewire job in
-// .github/workflows/e2e.yml, which stands up headless PipeWire with a null
-// sink and plays a known tone into it — so "captured only silence" is a
-// failure there rather than the ordinary state of a quiet machine.
+// capture mechanism by hand. In CI the advisory linux-loopback-pipewire job
+// in .github/workflows/e2e.yml stands up headless PipeWire with a null sink
+// and plays a known tone into it — so "captured only silence" is a failure
+// there rather than the ordinary state of a quiet machine.
 //
 // Everything else covering this feature uses a stub: linux-loopback.t1 drives
 // synthetic PCM through the renderer bridge, and recording-lifecycle.t2 skips

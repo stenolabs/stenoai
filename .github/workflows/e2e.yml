@@ -649,7 +649,9 @@ jobs:
   # PipeWire runs headless here under dbus-run-session with a null sink, and a
   # known two-tone signal is played into it. That makes "captured only silence"
   # a failure rather than the normal state, which is what the developer-machine
-  # script could never guarantee.
+  # script could never guarantee. This check is intentionally advisory while
+  # its stability on hosted runners is established; promoting it to a required
+  # branch-protection context is a separate maintainer decision.
   linux-loopback-pipewire:
     name: Linux loopback (real PipeWire)
     runs-on: ubuntu-latest
@@ -672,6 +674,7 @@ jobs:
           sudo apt-get install -y pipewire pipewire-pulse wireplumber pulseaudio-utils dbus-x11
 
       - name: Capture real audio through the loopback module
+        timeout-minutes: 5
         run: |
           set -euo pipefail
           export XDG_RUNTIME_DIR="/run/user/$(id -u)"
@@ -713,18 +716,28 @@ jobs:
             pactl set-default-sink steno_test
 
             # getDefaultSinkName() reads the PipeWire "default" metadata
-            # object, not the pulse view of it, so assert on THAT — it is what
-            # the module under test actually parses. wireplumber normally
-            # populates it; set it directly if it has not, so the capture below
-            # tests the module rather than session-manager timing.
+            # object, not the pulse view of it, so require the exact sink value
+            # that the module under test will parse. An existing default for a
+            # different sink is not readiness. wireplumber normally updates it;
+            # set it directly if it has not converged, then verify once more.
             for i in $(seq 1 15); do
-              if pw-metadata -n default 2>/dev/null | grep -q default.audio.sink; then break; fi
+              DEFAULT_METADATA="$(pw-metadata -n default 2>/dev/null || true)"
+              if grep -Eq "default\.audio\.sink.*\"name\"[[:space:]]*:[[:space:]]*\"steno_test\"" \
+                <<< "$DEFAULT_METADATA"; then
+                break
+              fi
               if [ "$i" = 15 ]; then
-                echo "wireplumber did not set a default sink — setting it directly"
+                echo "wireplumber did not select steno_test — setting it directly"
                 pw-metadata -n default 0 default.audio.sink "{\"name\":\"steno_test\"}"
               fi
               sleep 1
             done
+            DEFAULT_METADATA="$(pw-metadata -n default 2>/dev/null || true)"
+            if ! grep -Eq "default\.audio\.sink.*\"name\"[[:space:]]*:[[:space:]]*\"steno_test\"" \
+              <<< "$DEFAULT_METADATA"; then
+              echo "::error::PipeWire default sink did not converge to steno_test"
+              exit 1
+            fi
             echo "--- pipewire default metadata ---"
             pw-metadata -n default || true
             echo "--- sinks ---"
