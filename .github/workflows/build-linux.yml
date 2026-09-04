@@ -200,17 +200,19 @@ jobs:
           # to go to stderr.
           node -e "
             const fs = require('fs');
-            const { extractSetupCheckPayload } = require('./app/setup-check-parse');
-            const payload = extractSetupCheckPayload(fs.readFileSync('setup-check.txt', 'utf8'));
-            if (!payload) {
-              console.error('::error::setup-check emitted no valid JSON payload — the bundle crashed rather than reporting');
+            const { parseSetupCheckOutput } = require('./app/setup-check-parse');
+            let payload;
+            try {
+              payload = parseSetupCheckOutput(fs.readFileSync('setup-check.txt', 'utf8'));
+            } catch (error) {
+              console.error('::error::setup-check emitted an invalid payload — ' + error.message);
               process.exit(1);
             }
-            const failed = (payload.checks || []).filter((c) => c.status === 'fail').map((c) => c.name);
+            const failed = payload.checks.filter((c) => c.status === 'fail').map((c) => c.name);
             console.log('setup-check parsed: allGood=' + payload.allGood + ', failing=' + (failed.join(',') || 'none'));
             // sounddevice is the check libportaudio2 exists for (#502). A model
             // not being downloaded is expected here; a broken native lib is not.
-            const sd = (payload.checks || []).find((c) => c.name === 'sounddevice');
+            const sd = payload.checks.find((c) => c.name === 'sounddevice');
             if (!sd || sd.status !== 'pass') {
               console.error('::error::sounddevice check did not pass — the .deb dependency chain is not delivering PortAudio');
               process.exit(1);
