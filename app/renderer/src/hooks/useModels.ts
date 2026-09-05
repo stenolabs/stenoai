@@ -27,6 +27,11 @@ export const transcriptionEngineKeys = {
   current: () => [...transcriptionEngineKeys.all, 'current'] as const,
 };
 
+export const openaiAsrKeys = {
+  all: ['openaiAsrConfig'] as const,
+  config: () => [...openaiAsrKeys.all, 'config'] as const,
+};
+
 function parseSizeGb(size?: string): number | undefined {
   if (!size) return undefined;
   const match = size.match(/^([\d.]+)\s*(GB|MB|KB|B)?$/i);
@@ -550,13 +555,13 @@ export function useTranscriptionEngine() {
 
 /**
  * Whether live (during-recording) transcription is available: Parakeet only —
- * Whisper never spawns the transcribe-stream sidecar, so it has no live
- * drawer, no partials, and its recording pill keeps Pause/Resume inline.
- * Defaults to parakeet while the query hydrates so the first paint doesn't
- * briefly hide live-only controls. Single-sourced here because the
- * pause-reachability invariant spans PrimaryDock (panel gate), LiveDock
- * (inline controls), and LiveTranscriptBar (footer controls) — they must all
- * agree.
+ * Whisper and OpenAI ASR never spawn the transcribe-stream sidecar, so they
+ * have no live drawer, no partials, and their recording pill keeps
+ * Pause/Resume inline. Defaults to parakeet while the query hydrates so
+ * the first paint doesn't briefly hide live-only controls. Single-sourced
+ * here because the pause-reachability invariant spans PrimaryDock (panel
+ * gate), LiveDock (inline controls), and LiveTranscriptBar (footer
+ * controls) — they must all agree.
  */
 export function useLiveTranscriptAvailable(): boolean {
   const engineQuery = useTranscriptionEngine();
@@ -607,5 +612,33 @@ export function useSetActiveTranscription() {
       // and the live dock toggle, both of which read from the same key.
       qc.invalidateQueries({ queryKey: ['settings', 'language'] });
     },
+  });
+}
+
+// ---------------------------------------------------------------------------
+// OpenAI-compatible ASR config
+// ---------------------------------------------------------------------------
+
+/** Query for the current OpenAI ASR endpoint config (url, api_key_set, model). */
+export function useOpenAiAsrConfig() {
+  return useQuery({
+    queryKey: openaiAsrKeys.config(),
+    queryFn: async () => {
+      const raw = unwrap(await ipc().openaiAsr.getConfig());
+      return raw;
+    },
+  });
+}
+
+/**
+ * Mutation to save any subset of the OpenAI ASR config.
+ * Pass only the fields you want to change; others are left untouched.
+ */
+export function useSetOpenAiAsrConfig() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (cfg: { api_url?: string; api_key?: string; model?: string }) =>
+      unwrap(await ipc().openaiAsr.setConfig(cfg)),
+    onSuccess: () => qc.invalidateQueries({ queryKey: openaiAsrKeys.all }),
   });
 }

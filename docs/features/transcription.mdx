@@ -1,9 +1,9 @@
 ---
 title: "Transcription"
-description: "Steno transcribes recordings on-device with two engines: Parakeet (default) and Whisper (optional). Automatic language detection, live transcription, no audio uploads."
+description: "Steno transcribes recordings on-device by default with Parakeet and Whisper, with optional support for OpenAI-compatible cloud transcription endpoints."
 ---
 
-Steno transcribes with two on-device engines: **Parakeet** (the default, NVIDIA Parakeet TDT v3 running via MLX on Apple Silicon) and **Whisper** (an optional alternate, OpenAI's Whisper `large-v3-turbo`). Both run entirely on your device -- your audio is never sent to any server. You choose the engine in **Settings → Transcribe**.
+Steno transcribes on-device by default using two local engines: **Parakeet** (the default, NVIDIA Parakeet TDT v3 running via MLX on Apple Silicon) and **Whisper** (an optional alternate, OpenAI's Whisper `large-v3-turbo`). Both run locally on your device -- your audio is never sent to any server unless you explicitly opt in to an **OpenAI-compatible ASR endpoint** in **Settings → Transcribe**.
 
 ## How it works
 

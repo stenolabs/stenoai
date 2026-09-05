@@ -1760,12 +1760,21 @@ class WhisperTranscriber:
     """
 
     def __init__(self, model_size: str = "large-v3-turbo"):
-        if not (PARAKEET_AVAILABLE or WHISPER_CPP_AVAILABLE):
+        try:
+            from src.config import get_config
+            _cfg = get_config()
+            requested = _cfg.get_transcription_engine()
+        except Exception:
+            requested = "parakeet"
+            _cfg = None
+
+        if requested != "openai-asr" and not (PARAKEET_AVAILABLE or WHISPER_CPP_AVAILABLE):
             raise ImportError(
                 "No ASR backend available. Need parakeet-mlx (Apple Silicon) "
                 "or pywhispercpp (cross-platform). Rebuild the PyInstaller "
                 "bundle or `pip install` the relevant package."
             )
+
         # Kept on the instance so existing callers / logs that read
         # ``model_size`` and ``backend`` don't change. Backend selection
         # respects the user-selected engine from Settings → Transcribe
@@ -1780,13 +1789,22 @@ class WhisperTranscriber:
         self.model_size = model_size
         self.model = None
 
-        try:
-            from src.config import get_config
-            requested = get_config().get_transcription_engine()
-        except Exception:
-            requested = "parakeet"
-
-        if requested == "whisper" and WHISPER_CPP_AVAILABLE:
+        if requested == "openai-asr":
+            self.backend = "openai-asr"
+            # Read endpoint config from config; store on instance so the
+            # batch transcriber can pick them up without re-reading config
+            # on every call. Fall back to empty strings — _run_openai_asr
+            # will surface a useful error if they're not set.
+            try:
+                self._openai_asr_api_url = _cfg.get_openai_asr_api_url() if _cfg else "https://api.openai.com/v1"
+                self._openai_asr_api_key = _cfg.get_openai_asr_api_key() if _cfg else ""
+                self._openai_asr_model = _cfg.get_openai_asr_model() if _cfg else "whisper-1"
+            except Exception as e:
+                logger.warning("Could not read openai-asr config: %s", e)
+                self._openai_asr_api_url = "https://api.openai.com/v1"
+                self._openai_asr_api_key = ""
+                self._openai_asr_model = "whisper-1"
+        elif requested == "whisper" and WHISPER_CPP_AVAILABLE:
             self.backend = "whisper.cpp"
             self._load_whisper_cpp()
         elif PARAKEET_AVAILABLE:
@@ -1982,9 +2000,315 @@ class WhisperTranscriber:
 
     def _run_backend(self, audio_filepath: Path, language: str) -> dict:
         """Dispatch to whichever ASR backend is active for this instance."""
+        if self.backend == "openai-asr":
+            return self._run_openai_asr(audio_filepath, language)
         if self.backend == "parakeet-tdt-v3":
             return self._run_parakeet(audio_filepath, language)
         return self._run_whisper_cpp(audio_filepath, language)
+
+    # ------------------------------------------------------------------
+    # OpenAI-compatible Speech-to-Text REST backend
+    # ------------------------------------------------------------------
+
+    def _run_openai_asr(self, audio_filepath: Path, language: str) -> dict:
+        """POST audio to an OpenAI-compatible /audio/transcriptions endpoint.
+
+        Uses only Python stdlib (urllib + email) — no new runtime dependency.
+
+        Return shape is identical to ``_run_parakeet`` / ``_run_whisper_cpp``
+        so the rest of the pipeline is unchanged.
+
+        Two-pass strategy:
+        1. Try ``response_format=verbose_json`` to get per-segment timestamps.
+        2. If the endpoint returns a non-200 or malformed response, fall back
+           to ``response_format=text`` and synthesise a single full-text
+           segment with no timestamps.
+
+        Errors surface as a raised exception so ``transcribe_audio``'s outer
+        try/except records them as ``transcription_failed`` (audio preserved,
+        reprocessable) rather than silently returning an empty meeting.
+        """
+        import json as _json
+        import mimetypes
+        import urllib.error
+        import urllib.request
+        import uuid
+        import os
+        import urllib.parse
+        import tempfile
+        import wave
+
+        raw_url = getattr(self, "_openai_asr_api_url", None)
+        if not raw_url:
+            from src.config import get_config
+            raw_url = get_config().get_openai_asr_api_url()
+        raw_url = (raw_url or "").strip()
+        if not raw_url:
+            raise RuntimeError(
+                "openai-asr: Endpoint URL is not configured. "
+                "Set it in Settings → Transcribe → OpenAI-compatible ASR."
+            )
+
+        api_url = raw_url.rstrip("/")
+        parts = urllib.parse.urlsplit(api_url)
+        scheme = parts.scheme.lower()
+        hostname = (parts.hostname or "").lower()
+        is_local = hostname in ("localhost", "127.0.0.1", "::1") or hostname.endswith(".local")
+        if scheme == "http" and not is_local:
+            raise RuntimeError(
+                f"openai-asr: Insecure HTTP endpoint '{api_url}' is not allowed for remote servers. "
+                "Use HTTPS to protect audio and credentials."
+            )
+        if scheme not in ("http", "https"):
+            raise RuntimeError(
+                f"openai-asr: Invalid URL scheme '{scheme}'. Endpoint URL must start with https:// (or http:// for localhost)."
+            )
+
+        api_key = getattr(self, "_openai_asr_api_key", None)
+        if not api_key:
+            from src.config import get_config
+            api_key = get_config().get_openai_asr_api_key()
+        if not api_key:
+            raise RuntimeError(
+                "openai-asr: No API key configured. "
+                "Set it in Settings → Transcribe → OpenAI-compatible ASR."
+            )
+
+        model = getattr(self, "_openai_asr_model", "") or "whisper-1"
+        
+        if "/audio/transcriptions" not in api_url:
+            if "?" in api_url:
+                new_path = parts.path.rstrip("/") + "/audio/transcriptions"
+                endpoint = urllib.parse.urlunsplit((parts.scheme, parts.netloc, new_path, parts.query, parts.fragment))
+            else:
+                endpoint = f"{api_url}/audio/transcriptions"
+        else:
+            endpoint = api_url
+
+        # Prevent credential leak to cross-origin redirect targets
+        class NoRedirectHandler(urllib.request.HTTPRedirectHandler):
+            def redirect_request(self, req, fp, code, msg, hdrs, newurl):
+                old_url = urllib.parse.urlsplit(req.full_url)
+                target_url = urllib.parse.urlsplit(newurl)
+                if (old_url.scheme, old_url.netloc) == (target_url.scheme, target_url.netloc):
+                    if code in (307, 308):
+                        new_req = urllib.request.Request(
+                            newurl,
+                            data=req.data,
+                            headers=req.headers,
+                            method=req.method,
+                            origin_req_host=req.origin_req_host,
+                            unverifiable=True
+                        )
+                        return new_req
+                    return super().redirect_request(req, fp, code, msg, hdrs, newurl)
+                raise urllib.error.HTTPError(
+                    req.full_url, code, f"Cross-origin redirect to {newurl} denied", hdrs, fp
+                )
+        opener = urllib.request.build_opener(NoRedirectHandler)
+
+        def _transcribe_file_chunk(target_path: Path, offset_sec: float) -> dict:
+            chunk_dur = 0.0
+            try:
+                with wave.open(str(target_path), "rb") as wf:
+                    frames = wf.getnframes()
+                    rate = wf.getframerate()
+                    if rate > 0:
+                        chunk_dur = float(frames) / float(rate)
+            except Exception:
+                pass
+
+            boundary = uuid.uuid4().hex
+            mime_type = mimetypes.guess_type(str(target_path))[0] or "audio/wav"
+
+            def _field(name: str, value: str) -> bytes:
+                return (
+                    f"--{boundary}\r\n"
+                    f'Content-Disposition: form-data; name="{name}"\r\n\r\n'
+                    f"{value}\r\n"
+                ).encode()
+
+            def _file_field_header(name: str, filename: str, ctype: str) -> bytes:
+                return (
+                    f"--{boundary}\r\n"
+                    f'Content-Disposition: form-data; name="{name}"; filename="{filename}"\r\n'
+                    f"Content-Type: {ctype}\r\n\r\n"
+                ).encode()
+
+            class _MultipartStream:
+                def __init__(self, response_format: str):
+                    self.prefix_parts = [
+                        _field("model", model),
+                        _field("response_format", response_format),
+                    ]
+                    if language and language != "auto":
+                        self.prefix_parts.append(_field("language", language))
+                    self.prefix_parts.append(_file_field_header("file", target_path.name, mime_type))
+                    
+                    self.prefix_bytes = b"".join(self.prefix_parts)
+                    self.suffix_bytes = f"\r\n--{boundary}--\r\n".encode()
+                    
+                    self.file_size = os.path.getsize(target_path)
+                    self.total_size = len(self.prefix_bytes) + self.file_size + len(self.suffix_bytes)
+
+                def __iter__(self):
+                    yield self.prefix_bytes
+                    with open(target_path, "rb") as fh:
+                        while True:
+                            chunk = fh.read(8192 * 8)
+                            if not chunk:
+                                break
+                            yield chunk
+                    yield self.suffix_bytes
+
+                def __len__(self):
+                    return self.total_size
+
+            headers = {
+                "Content-Type": f"multipart/form-data; boundary={boundary}",
+                "Authorization": f"Bearer {api_key}"
+            }
+
+            def _do_request(response_format: str) -> bytes:
+                stream = _MultipartStream(response_format)
+                req = urllib.request.Request(
+                    endpoint,
+                    data=stream,
+                    headers={**headers, "Content-Length": str(len(stream))},
+                    method="POST",
+                )
+                try:
+                    with opener.open(req, timeout=300) as resp:
+                        return resp.read()
+                except urllib.error.HTTPError as e:
+                    err_body = e.read().decode(errors="replace")[:500]
+                    logger.debug("openai-asr HTTP %s response body: %s", e.code, err_body)
+                    raise RuntimeError(
+                        f"openai-asr HTTP {e.code}"
+                    ) from e
+
+            # Pass 1: verbose_json
+            try:
+                raw = _do_request("verbose_json")
+                data = _json.loads(raw.decode())
+                if not isinstance(data, dict) or ("text" not in data and "error" in data):
+                    raise ValueError("Invalid verbose_json response structure from endpoint")
+                raw_text = str(data.get("text") or "").strip()
+                raw_segs = data.get("segments") if isinstance(data.get("segments"), list) else []
+                detected_lang = data.get("language") or (None if language == "auto" else language)
+                dur = float(data.get("duration") or 0.0) or chunk_dur
+                segments = []
+                for s in raw_segs:
+                    if isinstance(s, dict):
+                        stext = str(s.get("text") or "").strip()
+                        if stext:
+                            s_start = float(s.get("start") or 0.0) + offset_sec
+                            s_end = float(s.get("end") or 0.0) + offset_sec
+                            segments.append({"text": stext, "start": s_start, "end": s_end})
+                if raw_text and not segments:
+                    segments = [{"text": raw_text, "start": offset_sec, "end": offset_sec + (dur or 0.0)}]
+                return {
+                    "text": raw_text or None,
+                    "segments": segments,
+                    "duration_seconds": dur or None,
+                    "detected_language": detected_lang,
+                }
+            except Exception as primary_err:
+                fallback = False
+                if isinstance(primary_err, (_json.JSONDecodeError, ValueError, TypeError, AttributeError)):
+                    fallback = True
+                elif isinstance(primary_err, RuntimeError) and getattr(primary_err.__cause__, "code", None) in (400, 406, 415, 422, 501):
+                    fallback = True
+
+                if not fallback:
+                    raise
+
+                logger.warning(
+                    "openai-asr verbose_json failed (%s); falling back to text format",
+                    primary_err,
+                )
+
+            # Pass 2: plain text fallback
+            raw = _do_request("text")
+            text = raw.decode(errors="replace").strip()
+            detected_lang = None if language == "auto" else language
+            seg_end = offset_sec + chunk_dur if chunk_dur > 0 else offset_sec
+            return {
+                "text": text or None,
+                "segments": [{"text": text, "start": offset_sec, "end": seg_end}] if text else [],
+                "duration_seconds": chunk_dur if chunk_dur > 0 else None,
+                "detected_language": detected_lang,
+            }
+
+        # Chunking if file > 24 MB (~13 min of 16 kHz mono WAV)
+        file_size = os.path.getsize(audio_filepath)
+        chunks_to_process = []
+        temp_dir_to_clean = None
+        
+        if file_size > 24 * 1024 * 1024:
+            try:
+                with wave.open(str(audio_filepath), "rb") as wf:
+                    n_channels = wf.getnchannels()
+                    sampwidth = wf.getsampwidth()
+                    framerate = wf.getframerate()
+                    total_frames = wf.getnframes()
+                    frames_per_chunk = 600 * framerate # 10 minutes
+                    offset_frames = 0
+                    temp_dir_to_clean = Path(tempfile.mkdtemp(prefix="steno_asr_chunks_"))
+                    idx = 0
+                    while offset_frames < total_frames:
+                        chunk_frames = min(frames_per_chunk, total_frames - offset_frames)
+                        off_sec = offset_frames / float(framerate)
+                        chunk_p = temp_dir_to_clean / f"chunk_{idx}.wav"
+                        wf.setpos(offset_frames)
+                        data_frames = wf.readframes(chunk_frames)
+                        with wave.open(str(chunk_p), "wb") as cwf:
+                            cwf.setnchannels(n_channels)
+                            cwf.setsampwidth(sampwidth)
+                            cwf.setframerate(framerate)
+                            cwf.writeframes(data_frames)
+                        chunks_to_process.append((chunk_p, off_sec))
+                        offset_frames += chunk_frames
+                        idx += 1
+                logger.info("openai-asr: split audio %s (%d MB) into %d chunks", audio_filepath.name, file_size // (1024*1024), len(chunks_to_process))
+            except Exception as e:
+                logger.warning("openai-asr WAV chunking failed: %s; processing unchunked", e)
+                chunks_to_process = [(audio_filepath, 0.0)]
+        else:
+            chunks_to_process = [(audio_filepath, 0.0)]
+
+        all_text_parts = []
+        all_segments = []
+        total_dur = 0.0
+        det_lang = None
+
+        try:
+            for c_path, c_off in chunks_to_process:
+                res = _transcribe_file_chunk(c_path, c_off)
+                if res.get("text"):
+                    all_text_parts.append(res["text"])
+                if res.get("segments"):
+                    all_segments.extend(res["segments"])
+                if res.get("duration_seconds"):
+                    total_dur += res["duration_seconds"]
+                if not det_lang and res.get("detected_language"):
+                    det_lang = res["detected_language"]
+        finally:
+            if temp_dir_to_clean and temp_dir_to_clean.exists():
+                import shutil
+                try:
+                    shutil.rmtree(temp_dir_to_clean)
+                except Exception:
+                    pass
+
+        merged_text = " ".join(all_text_parts).strip() or None
+        return {
+            "text": merged_text,
+            "segments": all_segments,
+            "duration_seconds": total_dur or None,
+            "detected_language": det_lang,
+            "detected_language_probability": None,
+        }
 
     def _run_parakeet(self, audio_filepath: Path, language: str) -> dict:
         """Call into ``src.parakeet`` and normalise the result shape.

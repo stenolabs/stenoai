@@ -311,7 +311,7 @@ class Config:
         "yi": "Yiddish", "yo": "Yoruba", "zh": "Chinese",
     }
 
-    VALID_TRANSCRIPTION_ENGINES = ("parakeet", "whisper")
+    VALID_TRANSCRIPTION_ENGINES = ("parakeet", "whisper", "openai-asr")
 
     def __init__(self, config_path: Optional[Path] = None):
         """
@@ -931,6 +931,13 @@ class Config:
                 self.IDENTITY_MATCHING_PRIVACY_DEFAULT_VERSION,
             "whisper_model": "large-v3-turbo",
             "transcription_engine": "parakeet",
+            # OpenAI-compatible ASR endpoint settings.
+            # api_url: base URL of any OpenAI Speech-to-Text compatible
+            #   server (e.g. https://api.openai.com/v1, Groq, Azure, etc.).
+            # api_key: Bearer token sent in the Authorization header.
+            # model: model name passed in the multipart form (e.g. whisper-1).
+            "openai_asr_api_url": "https://api.openai.com/v1",
+            "openai_asr_model": "whisper-1",
             "version": "1.0"
         }
 
@@ -2091,6 +2098,74 @@ class Config:
             logger.error(f"Unsupported Whisper model: {model_size}")
             return False
         self._config["whisper_model"] = model_size
+        return self._save()
+
+    # ------------------------------------------------------------------
+    # OpenAI-compatible ASR endpoint settings
+    # ------------------------------------------------------------------
+
+    def get_openai_asr_api_url(self) -> str:
+        """Base URL of the OpenAI-compatible STT endpoint.
+
+        Defaults to the official OpenAI endpoint. Users can override with
+        any compatible server: Groq, Azure OpenAI, local llama.cpp, etc.
+        The transcriber appends ``/audio/transcriptions`` to this URL.
+        """
+        return self._config.get("openai_asr_api_url", "https://api.openai.com/v1") or "https://api.openai.com/v1"
+
+    def set_openai_asr_api_url(self, url: str) -> bool:
+        """Set the base URL for the OpenAI-compatible STT endpoint."""
+        cleaned = (url or "").strip()
+        if not cleaned:
+            cleaned = "https://api.openai.com/v1"
+        else:
+            import urllib.parse
+            parts = urllib.parse.urlsplit(cleaned)
+            scheme = parts.scheme.lower()
+            hostname = (parts.hostname or "").lower()
+            is_local = hostname in ("localhost", "127.0.0.1", "::1") or hostname.endswith(".local")
+            if scheme == "http" and not is_local:
+                logger.error("openai_asr_api_url must use HTTPS for remote endpoints")
+                return False
+            if scheme not in ("http", "https"):
+                logger.error("openai_asr_api_url must start with https:// (or http:// for localhost)")
+                return False
+        self._config["openai_asr_api_url"] = cleaned
+        return self._save()
+
+    def get_openai_asr_api_key(self) -> str:
+        """Bearer token for the OpenAI-compatible STT endpoint.
+
+        Stored encrypted on disk using Electron safeStorage in .openai-asr-api-key
+        and passed via STENOAI_OAI_API_KEY env. Never persisted to config.json.
+        """
+        return os.environ.get("STENOAI_OAI_API_KEY", "")
+
+    def set_openai_asr_api_key(self, key: str) -> bool:
+        """Set the API key in environment.
+
+        Encrypted storage is managed by Electron safeStorage in .openai-asr-api-key.
+        """
+        os.environ["STENOAI_OAI_API_KEY"] = (key or "").strip()
+        if "openai_asr_api_key" in self._config:
+            del self._config["openai_asr_api_key"]
+            return self._save()
+        return True
+
+    def get_openai_asr_model(self) -> str:
+        """Model name passed to the OpenAI-compatible STT endpoint.
+
+        Defaults to ``whisper-1`` (the standard OpenAI Whisper model).
+        Groq uses ``whisper-large-v3``; other providers vary.
+        """
+        return self._config.get("openai_asr_model", "whisper-1") or "whisper-1"
+
+    def set_openai_asr_model(self, model: str) -> bool:
+        """Set the model name for the OpenAI-compatible STT endpoint."""
+        if not model or not model.strip():
+            logger.error("openai_asr_model must not be empty")
+            return False
+        self._config["openai_asr_model"] = model.strip()
         return self._save()
 
     def get_system_audio_enabled(self) -> bool:

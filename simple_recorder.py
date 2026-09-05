@@ -1709,6 +1709,62 @@ def parakeet_status_cmd():
     }))
 
 
+@cli.command(name='get-openai-asr-config')
+def get_openai_asr_config_cmd():
+    """Return the current OpenAI-compatible ASR endpoint config."""
+    from src.config import get_config
+    config = get_config()
+    print(json.dumps({
+        "success": True,
+        "api_url": config.get_openai_asr_api_url(),
+        # Never return the actual key; the UI only needs to know if one is set.
+        "api_key_set": bool(config.get_openai_asr_api_key()),
+        "model": config.get_openai_asr_model(),
+    }))
+
+
+@cli.command(name='set-openai-asr-config')
+@click.option('--api-url', default=None, help='Base URL of the OpenAI-compatible STT endpoint')
+@click.option('--model', default=None, help='Model name (e.g. whisper-1)')
+@click.option('--prompt-api-key', is_flag=True, help='Securely prompt for the API key (leave blank to clear)')
+def set_openai_asr_config_cmd(api_url, model, prompt_api_key):
+    """Persist OpenAI-compatible ASR endpoint settings. Omit an option to leave it unchanged."""
+    import os
+    import click
+    from src.config import get_config
+    config = get_config()
+    errors = []
+    
+    api_key = None
+    if prompt_api_key:
+        api_key = click.prompt("API Key (leave blank to clear)", hide_input=True, default="", show_default=False)
+    else:
+        env_api_key = os.environ.get('STENOAI_OAI_API_KEY')
+        if env_api_key is not None:
+            api_key = env_api_key
+
+    if api_url is not None:
+        clean_url = api_url.strip() or "https://api.openai.com/v1"
+        if not config.set_openai_asr_api_url(clean_url):
+            errors.append("Failed to save api_url")
+    if api_key is not None:
+        if not config.set_openai_asr_api_key(api_key):
+            errors.append("Failed to save api_key")
+    if model is not None:
+        if not config.set_openai_asr_model(model):
+            errors.append("Failed to save model")
+    if errors:
+        print(json.dumps({"success": False, "error": "; ".join(errors)}))
+    else:
+        print(json.dumps({
+            "success": True,
+            "api_url": config.get_openai_asr_api_url(),
+            "api_key_set": bool(config.get_openai_asr_api_key()),
+            "model": config.get_openai_asr_model(),
+        }))
+
+
+
 @cli.command(name='onnx-selftest')
 def onnx_selftest_cmd():
     """Prove ONNX Runtime's native libraries load + run inside the bundle.

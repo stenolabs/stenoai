@@ -167,24 +167,20 @@ export function Sidebar({
   const [dragOverAllMeetings, setDragOverAllMeetings] = React.useState(false);
   const isDraggingRef = React.useRef(false);
   const [iconPicker, setIconPicker] = React.useState<{ id: string; anchorRect: DOMRect } | null>(null);
+
+
   const updateIcon = useUpdateFolderIcon();
 
   const isHomeActive = currentRoute === '/' || currentRoute === '';
   const isAllMeetingsActive = currentRoute === '/meetings';
-  // Match /chat as well as any /chat/<id> conversation route — the same Chat
-  // tab item should stay highlighted when drilling into a session.
   const isChatActive = currentRoute === '/chat' || currentRoute.startsWith('/chat/');
   const isOrgSharedActive = currentRoute.startsWith('/org/');
 
   const orgSession = useOrgSession();
   const orgLogout = useOrgLogout();
   const orgSignedIn = orgSession.data?.signedIn ?? false;
-  // Enterprise can hide the Shared notes feature (tab + cross-folder chat).
-  // `enabled` stays false until policy resolves, so the tab doesn't flash in
-  // then vanish for an org that has the feature turned off.
   const sharedNotes = useSharedNotesGate(orgSignedIn);
-  // Malformed % escapes throw URIError. Guard so a bad route can't crash
-  // the entire sidebar render.
+
   const activeFolderId = React.useMemo<string | null>(() => {
     if (!currentRoute.startsWith('/folders/')) return null;
     const raw = currentRoute.slice('/folders/'.length);
@@ -235,21 +231,15 @@ export function Sidebar({
     [width, onWidthChange],
   );
 
-
   return (
     <aside
       data-sidebar
       className="fixed inset-y-0 left-0 z-20 flex flex-col"
       style={{
         width,
-        // Disable pointer events on the collapsed aside so clicks reach the
-        // content behind it. sb-top overrides this below to stay interactive.
         pointerEvents: collapsed ? 'none' : undefined,
       }}
     >
-      {/* Full-sidebar background + right border — fades when collapsed.
-          zIndex:-1 keeps it behind sb-top and content inside the aside's
-          stacking context (position:fixed creates one). */}
       <div
         aria-hidden
         style={{
@@ -264,19 +254,10 @@ export function Sidebar({
         }}
       />
 
-      {/* Top band — drag region for macOS traffic lights.
-          The toggle button is rendered in MainToolbar instead (position:fixed,
-          inside a no-drag DOM branch) so Electron's app-region logic reliably
-          registers the no-drag exclusion. Spacer preserves the visual gap. */}
-      {/* sb-top: drag region for traffic lights. Height spacer preserves the
-          original 46px row height (14px padding-top + 26px + 6px padding-bottom)
-          so the brand section clears the traffic lights. */}
       <div className="sb-top">
         <div style={{ height: 26 }} aria-hidden />
       </div>
 
-      {/* Sidebar content — fades with the background. No explicit pointer-events
-          needed: inherits none from aside when collapsed, auto when expanded. */}
       <div
         className="flex min-h-0 flex-1 flex-col overflow-hidden"
         style={{
@@ -324,7 +305,7 @@ export function Sidebar({
               style={{ background: 'rgba(27,27,25,0.04)', color: 'var(--fg-muted)', fontFamily: 'var(--font-sans)' }}
               aria-label="Search notes"
             >
-              Search
+              Search…
             </button>
             <span
               className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 rounded px-1.5 py-px text-[11px] tabular-nums tracking-[0.02em]"
@@ -340,158 +321,153 @@ export function Sidebar({
         {/* Nav */}
         <nav className="scrollbar-clean flex min-h-0 flex-1 flex-col gap-px overflow-auto px-2 pb-2 pt-2">
           <button
-            type="button"
-            className={cn('sb-row', isHomeActive && 'active')}
-            onClick={() => navigate('/')}
-          >
-            <HomeIcon className="size-[14px]" />
-            <span className="flex-1 truncate">Home</span>
-          </button>
+                type="button"
+                className={cn('sb-row', isHomeActive && 'active')}
+                onClick={() => navigate('/')}
+              >
+                <HomeIcon className="size-[14px]" />
+                <span className="flex-1 truncate">Home</span>
+              </button>
 
-          <div
-            className={cn(dragOverAllMeetings && 'rounded bg-[color:var(--surface-hover)]')}
-            onDragOver={(e) => {
-              if (e.dataTransfer.types.includes('application/x-steno-meeting')) {
-                e.preventDefault();
-                e.dataTransfer.dropEffect = 'move';
-                setDragOverAllMeetings(true);
-              }
-            }}
-            onDragLeave={(e) => {
-              if (e.currentTarget.contains(e.relatedTarget as Node)) return;
-              setDragOverAllMeetings(false);
-            }}
-            onDrop={(e) => handleFolderDrop(e, null)}
-          >
-            <button
-              type="button"
-              className={cn('sb-row', isAllMeetingsActive && 'active')}
-              onClick={() => navigate('/meetings')}
-            >
-              <Inbox className="size-[14px]" />
-              <span className="flex-1 truncate">All notes</span>
-              {totalMeetings > 0 && (
-                <span className="text-xs tabular-nums" style={{ color: 'var(--fg-muted)' }}>
-                  {totalMeetings}
-                </span>
+              <div
+                className={cn(dragOverAllMeetings && 'rounded bg-[color:var(--surface-hover)]')}
+                onDragOver={(e) => {
+                  if (e.dataTransfer.types.includes('application/x-steno-meeting')) {
+                    e.preventDefault();
+                    e.dataTransfer.dropEffect = 'move';
+                    setDragOverAllMeetings(true);
+                  }
+                }}
+                onDragLeave={(e) => {
+                  if (e.currentTarget.contains(e.relatedTarget as Node)) return;
+                  setDragOverAllMeetings(false);
+                }}
+                onDrop={(e) => handleFolderDrop(e, null)}
+              >
+                <button
+                  type="button"
+                  className={cn('sb-row', isAllMeetingsActive && 'active')}
+                  onClick={() => navigate('/meetings')}
+                >
+                  <Inbox className="size-[14px]" />
+                  <span className="flex-1 truncate">All notes</span>
+                  {totalMeetings > 0 && (
+                    <span className="text-xs tabular-nums" style={{ color: 'var(--fg-muted)' }}>
+                      {totalMeetings}
+                    </span>
+                  )}
+                </button>
+              </div>
+
+              <button
+                type="button"
+                className={cn('sb-row', isChatActive && 'active')}
+                onClick={() => navigate('/chat')}
+              >
+                <MessageSquare className="size-[14px]" />
+                <span className="flex-1 truncate">Chat</span>
+              </button>
+
+              {sharedNotes.enabled && (
+                <button
+                  type="button"
+                  className={cn('sb-row', isOrgSharedActive && 'active')}
+                  onClick={() => navigate('/org/shared')}
+                  title={`Shared across ${orgSession.data?.orgId ?? 'your org'}`}
+                >
+                  <Globe className="size-[14px]" />
+                  <span className="flex-1 truncate">Shared notes</span>
+                </button>
               )}
-            </button>
-          </div>
 
-          <button
-            type="button"
-            className={cn('sb-row', isChatActive && 'active')}
-            onClick={() => navigate('/chat')}
-          >
-            <MessageSquare className="size-[14px]" />
-            <span className="flex-1 truncate">Chat</span>
-          </button>
-
-          {sharedNotes.enabled && (
-            <button
-              type="button"
-              className={cn('sb-row', isOrgSharedActive && 'active')}
-              onClick={() => navigate('/org/shared')}
-              title={`Shared across ${orgSession.data?.orgId ?? 'your org'}`}
-            >
-              <Globe className="size-[14px]" />
-              <span className="flex-1 truncate">Shared notes</span>
-            </button>
-          )}
-
-          {/* Folders group */}
-          <div className="mt-3.5">
-            <div
-              className="sb-group-head flex cursor-pointer select-none items-center justify-between px-2.5 py-1.5 text-[11.5px] font-medium tracking-[0.02em] transition-colors hover:text-[color:var(--fg-1)]"
-              style={{ color: 'var(--fg-2)' }}
-              onClick={() => setFoldersOpen((o) => !o)}
-            >
-              <span className="flex items-center gap-1.5">
-                <ChevronDown className={cn('size-3 transition-transform', !foldersOpen && '-rotate-90')} />
-                <span>Folders</span>
-              </span>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <button
-                    type="button"
-                    className="inline-flex size-5 items-center justify-center rounded opacity-0 transition-opacity hover:bg-[color:var(--surface-active)] [.sb-group-head:hover_&]:opacity-100"
-                    onClick={(e) => { e.stopPropagation(); onNewFolder(); }}
-                    aria-label="New folder"
-                    style={{ color: 'var(--fg-2)' }}
-                  >
-                    <Plus className="size-3" />
-                  </button>
-                </TooltipTrigger>
-                <TooltipContent side="top">Create folder</TooltipContent>
-              </Tooltip>
-            </div>
-
-            {foldersOpen &&
-              folders.map((folder) => {
-                const isOver = dragOverFolder === folder.id;
-                const isActive = activeFolderId === folder.id;
-                return (
-                  <div
-                    key={folder.id}
-                    className={cn('rounded', isOver && 'bg-[color:var(--surface-hover)] ring-1 ring-[color:var(--focus-ring)]')}
-                    onDragOver={(e) => {
-                      if (e.dataTransfer.types.includes('application/x-steno-meeting')) {
-                        e.preventDefault();
-                        e.dataTransfer.dropEffect = 'move';
-                        setDragOverFolder(folder.id);
-                      }
-                    }}
-                    onDragLeave={(e) => {
-                      if (e.currentTarget.contains(e.relatedTarget as Node)) return;
-                      setDragOverFolder(null);
-                    }}
-                    onDrop={(e) => handleFolderDrop(e, folder.id)}
-                    onContextMenu={(e) => handleFolderContext(e, folder.id)}
-                  >
-                    <button
-                      type="button"
-                      data-testid="sidebar-folder"
-                      className={cn('sb-row', isActive && 'active')}
-                      style={{ paddingLeft: 12 }}
-                      onClick={() => navigate(`/folders/${encodeURIComponent(folder.id)}`)}
-                    >
-                      <span
-                        role="button"
-                        tabIndex={0}
-                        aria-label="Change folder icon"
-                        className="flex-shrink-0 rounded p-0.5 hover:bg-[color:var(--surface-active)]"
+              {/* Folders group */}
+              <div className="mt-3.5">
+                <div
+                  className="sb-group-head flex cursor-pointer select-none items-center justify-between px-2.5 py-1.5 text-[11.5px] font-medium tracking-[0.02em] transition-colors hover:text-[color:var(--fg-1)]"
+                  style={{ color: 'var(--fg-2)' }}
+                  onClick={() => setFoldersOpen((o) => !o)}
+                >
+                  <span className="flex items-center gap-1.5">
+                    <ChevronDown className={cn('size-3 transition-transform', !foldersOpen && '-rotate-90')} />
+                    <span>Folders</span>
+                  </span>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        type="button"
+                        className="inline-flex size-5 items-center justify-center rounded opacity-0 transition-opacity hover:bg-[color:var(--surface-active)] [.sb-group-head:hover_&]:opacity-100"
+                        onClick={(e) => { e.stopPropagation(); onNewFolder(); }}
+                        aria-label="New folder"
                         style={{ color: 'var(--fg-2)' }}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setIconPicker({ id: folder.id, anchorRect: e.currentTarget.getBoundingClientRect() });
-                        }}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter' || e.key === ' ') {
+                      >
+                        <Plus className="size-3" />
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent side="top">Create folder</TooltipContent>
+                  </Tooltip>
+                </div>
+
+                {foldersOpen &&
+                  folders.map((folder) => {
+                    const isOver = dragOverFolder === folder.id;
+                    const isActive = activeFolderId === folder.id;
+                    return (
+                      <div
+                        key={folder.id}
+                        className={cn('rounded', isOver && 'bg-[color:var(--surface-hover)] ring-1 ring-[color:var(--focus-ring)]')}
+                        onDragOver={(e) => {
+                          if (e.dataTransfer.types.includes('application/x-steno-meeting')) {
                             e.preventDefault();
-                            e.stopPropagation();
-                            setIconPicker({ id: folder.id, anchorRect: e.currentTarget.getBoundingClientRect() });
+                            e.dataTransfer.dropEffect = 'move';
+                            setDragOverFolder(folder.id);
                           }
                         }}
+                        onDragLeave={(e) => {
+                          if (e.currentTarget.contains(e.relatedTarget as Node)) return;
+                          setDragOverFolder(null);
+                        }}
+                        onDrop={(e) => handleFolderDrop(e, folder.id)}
+                        onContextMenu={(e) => handleFolderContext(e, folder.id)}
                       >
-                        <LucideIcon name={folder.icon ?? 'folder'} size={14} />
-                      </span>
-                      <span className="flex-1 truncate">{folder.name}</span>
-                      <span className="text-xs tabular-nums" style={{ color: 'var(--fg-muted)' }}>
-                        {folder.meetings.length}
-                      </span>
-                    </button>
-                  </div>
-                );
-              })}
-          </div>
+                        <button
+                          type="button"
+                          data-testid="sidebar-folder"
+                          className={cn('sb-row', isActive && 'active')}
+                          style={{ paddingLeft: 12 }}
+                          onClick={() => navigate(`/folders/${encodeURIComponent(folder.id)}`)}
+                        >
+                          <span
+                            role="button"
+                            tabIndex={0}
+                            aria-label="Change folder icon"
+                            className="flex-shrink-0 rounded p-0.5 hover:bg-[color:var(--surface-active)]"
+                            style={{ color: 'var(--fg-2)' }}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setIconPicker({ id: folder.id, anchorRect: e.currentTarget.getBoundingClientRect() });
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter' || e.key === ' ') {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                setIconPicker({ id: folder.id, anchorRect: e.currentTarget.getBoundingClientRect() });
+                              }
+                            }}
+                          >
+                            <LucideIcon name={folder.icon ?? 'folder'} size={14} />
+                          </span>
+                          <span className="flex-1 truncate">{folder.name}</span>
+                          <span className="text-xs tabular-nums" style={{ color: 'var(--fg-muted)' }}>
+                            {folder.meetings.length}
+                          </span>
+                        </button>
+                      </div>
+                    );
+                  })}
+              </div>
         </nav>
 
-        {/* Profile chip + Settings cog. When the user is signed in to an org
-            adapter, the chip sits on the left and the cog moves to the right
-            (justify-between). When signed out we surface a one-click sign-in
-            CTA, but ONLY for users who've previously connected to an org —
-            personal users who have never signed in don't see clutter for a
-            feature they don't use. */}
+        {/* Profile chip + Settings cog */}
         <div className="flex items-center justify-between gap-2 px-3 py-2">
           {orgSignedIn ? (
             <ProfileChip
@@ -507,7 +483,7 @@ export function Sidebar({
                 rememberNonSettingsRoute(currentRoute);
                 navigate('/settings?tab=organisation');
               }}
-              className="inline-flex h-[26px] min-w-0 items-center gap-1.5 rounded-md px-2 text-[12px] transition-colors hover:bg-[color:var(--surface-active)]"
+              className="inline-flex h-[26px] min-w-0 items-center gap-1.5 rounded-md px-2 text-[12px] transition-colors hover:bg-[color:var(--surface-hover)]"
               style={{ color: 'var(--fg-1)' }}
               title="Sign in to share notes with your organisation"
             >
@@ -517,46 +493,41 @@ export function Sidebar({
           ) : (
             <span />
           )}
-          {/* Grouped together so justify-between (which splits this row into
-              exactly two sides: profile/sign-in-CTA on the left, this group
-              on the right) doesn't treat Help as a third independent side and
-              spread it away from the Settings cog. */}
+
           <div className="flex items-center gap-1">
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button
-                type="button"
-                onClick={() => void ipc().shell.openExternal('https://docs.stenoai.co')}
-                aria-label="Help"
-                className="inline-flex h-[26px] w-7 items-center justify-center rounded-md transition-colors hover:bg-[color:var(--surface-active)] hover:text-[color:var(--fg-1)]"
-                style={{ color: 'var(--fg-2)' }}
-              >
-                <HelpCircle className="size-[15px]" />
-              </button>
-            </TooltipTrigger>
-            <TooltipContent side="top">Documentation</TooltipContent>
-          </Tooltip>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button
-                type="button"
-                onClick={() => toggleSettings(currentRoute)}
-                aria-label="Settings"
-                // startsWith so the cog still reads "active" on deep-link routes
-                // like /settings?tab=organisation, not just bare /settings.
-                aria-pressed={currentRoute.startsWith('/settings')}
-                className={cn(
-                  'inline-flex h-[26px] w-7 items-center justify-center rounded-md transition-colors hover:bg-[color:var(--surface-active)] hover:text-[color:var(--fg-1)]',
-                  currentRoute.startsWith('/settings')
-                    ? 'bg-[color:var(--surface-active)] text-[color:var(--fg-1)]'
-                    : 'text-[color:var(--fg-2)]',
-                )}
-              >
-                <SettingsIcon className="size-[15px]" />
-              </button>
-            </TooltipTrigger>
-            <TooltipContent side="top">Settings</TooltipContent>
-          </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  onClick={() => void ipc().shell.openExternal('https://docs.stenoai.co')}
+                  aria-label="Help"
+                  className="inline-flex h-[26px] w-7 items-center justify-center rounded-md transition-colors hover:bg-[color:var(--surface-active)] hover:text-[color:var(--fg-1)]"
+                  style={{ color: 'var(--fg-2)' }}
+                >
+                  <HelpCircle className="size-[15px]" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="top">Documentation</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  onClick={() => toggleSettings(currentRoute)}
+                  aria-label="Settings"
+                  aria-pressed={currentRoute.startsWith('/settings')}
+                  className={cn(
+                    'inline-flex h-[26px] w-7 items-center justify-center rounded-md transition-colors hover:bg-[color:var(--surface-active)] hover:text-[color:var(--fg-1)]',
+                    currentRoute.startsWith('/settings')
+                      ? 'bg-[color:var(--surface-active)] text-[color:var(--fg-1)]'
+                      : 'text-[color:var(--fg-2)]',
+                  )}
+                >
+                  <SettingsIcon className="size-[15px]" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="top">Settings</TooltipContent>
+            </Tooltip>
           </div>
         </div>
 
@@ -569,7 +540,6 @@ export function Sidebar({
         )}
       </div>
 
-      {/* Resize handle */}
       {!collapsed && (
         <div
           onMouseDown={onResizeMouseDown}
@@ -581,12 +551,6 @@ export function Sidebar({
     </aside>
   );
 }
-
-// ---------------------------------------------------------------------------
-// ProfileChip — shown bottom-left when signed in to an org adapter. Click
-// opens a small popover with the full identity + sign-out button. The avatar
-// is an emoji per email so we don't need a real photo backend for the demo.
-// ---------------------------------------------------------------------------
 
 const AVATAR_BY_LOCAL_PART: Record<string, string> = {
   alice: '👩‍💼',

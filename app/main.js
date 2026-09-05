@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, shell, systemPreferences, globalShortcut, Tray, Menu, nativeImage, powerMonitor, net, session } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, systemPreferences, globalShortcut, Tray, Menu, nativeImage, powerMonitor, net, session, desktopCapturer } = require('electron');
 
 // safeStorage is accessed lazily via getSafeStorage(), NOT destructured from the
 // require above. On macOS, merely retrieving the safeStorage binding at load
@@ -46,6 +46,7 @@ if (process.platform !== 'darwin') {
   process.on('uncaughtException', (err) => { _logStartupCrash('uncaughtException', err); process.exit(1); });
   process.on('unhandledRejection', (reason) => { _logStartupCrash('unhandledRejection', reason); });
 }
+
 
 const path = require('path');
 // Backend CLI seam (spawn wrapper, process-tree kill, bundled-backend paths,
@@ -5070,7 +5071,8 @@ function loadTranscriptionEngine() {
     if (!fs.existsSync(cfgPath)) return 'parakeet';
     const cfg = JSON.parse(fs.readFileSync(cfgPath, 'utf-8'));
     const engine = cfg.transcription_engine;
-    return engine === 'whisper' ? 'whisper' : 'parakeet';
+    if (engine === 'whisper' || engine === 'openai-asr') return engine;
+    return 'parakeet';
   } catch (_) {
     return 'parakeet';
   }
@@ -5087,12 +5089,19 @@ function loadTranscriptionContext() {
       return { engine: 'parakeet', model: 'parakeet', language: 'auto' };
     }
     const cfg = JSON.parse(fs.readFileSync(cfgPath, 'utf-8'));
-    const engine = cfg.transcription_engine === 'whisper' ? 'whisper' : 'parakeet';
+    const rawEngine = cfg.transcription_engine;
+    const engine = (rawEngine === 'whisper' || rawEngine === 'openai-asr') ? rawEngine : 'parakeet';
+    let model;
+    if (engine === 'whisper') {
+      model = sanitizeModelForAnalytics(cfg.whisper_model);
+    } else if (engine === 'openai-asr') {
+      model = sanitizeModelForAnalytics(cfg.openai_asr_model) || 'whisper-1';
+    } else {
+      model = 'parakeet';
+    }
     return {
       engine,
-      // Parakeet has no separate user-selectable model today (single bundled
-      // default) -- report the engine name rather than guess a variant id.
-      model: engine === 'whisper' ? sanitizeModelForAnalytics(cfg.whisper_model) : 'parakeet',
+      model,
       language: cfg.language || 'auto',
     };
   } catch (_) {
@@ -8001,6 +8010,33 @@ ipcMain.handle('set-transcription-engine', async (event, engine) => {
   } catch (e) { return { success: false, error: e.message }; }
 });
 
+ipcMain.handle('get-openai-asr-config', async () => {
+  try {
+    const extraEnv = {};
+    const oaiKey = loadOpenAiAsrApiKey();
+    if (oaiKey) { extraEnv.STENOAI_OAI_API_KEY = oaiKey; }
+    const result = await runPythonScript('simple_recorder.py', ['get-openai-asr-config'], true, extraEnv);
+    return JSON.parse(result.trim());
+  } catch (e) { return { success: false, error: e.message }; }
+});
+
+ipcMain.handle('set-openai-asr-config', async (_event, cfg) => {
+  try {
+    if (cfg.api_key !== undefined) {
+      const saved = saveOpenAiAsrApiKey(cfg.api_key);
+      if (!saved) return { success: false, error: 'Failed to save OpenAI ASR API key' };
+    }
+    const args = ['set-openai-asr-config'];
+    if (cfg.api_url !== undefined) { args.push('--api-url', cfg.api_url); }
+    if (cfg.model !== undefined)   { args.push('--model',   cfg.model);   }
+    const extraEnv = {};
+    const oaiKey = loadOpenAiAsrApiKey();
+    if (oaiKey) { extraEnv.STENOAI_OAI_API_KEY = oaiKey; }
+    const result = await runPythonScript('simple_recorder.py', args, false, extraEnv);
+    return JSON.parse(result.trim());
+  } catch (e) { return { success: false, error: e.message }; }
+});
+
 ipcMain.handle('list-parakeet-models', async () => {
   try {
     const result = await runPythonScript('simple_recorder.py', ['list-parakeet-models'], true);
@@ -8812,6 +8848,55 @@ function hasCloudApiKey() {
   return fs.existsSync(getCloudKeyPath());
 }
 
+function getOpenAiAsrKeyPath() {
+  return path.join(getUserDataDir(), '.openai-asr-api-key');
+}
+
+function saveOpenAiAsrApiKey(key) {
+  try {
+    const keyPath = getOpenAiAsrKeyPath();
+    if (!key || !key.trim()) {
+      if (fs.existsSync(keyPath)) {
+        fs.unlinkSync(keyPath);
+      }
+      return true;
+    }
+    const keyDir = path.dirname(keyPath);
+    if (!fs.existsSync(keyDir)) {
+      fs.mkdirSync(keyDir, { recursive: true });
+    }
+    const safe = getSafeStorage();
+    if (!safe || !safe.isEncryptionAvailable()) {
+      console.error('safeStorage is not available to encrypt OpenAI ASR key');
+      return false;
+    }
+    const encrypted = safe.encryptString(key.trim());
+    fs.writeFileSync(keyPath, encrypted);
+    return true;
+  } catch (error) {
+    console.error('Failed to save OpenAI ASR API key:', error.message);
+    return false;
+  }
+}
+
+function loadOpenAiAsrApiKey() {
+  try {
+    const keyPath = getOpenAiAsrKeyPath();
+    if (!fs.existsSync(keyPath)) return null;
+    const safe = getSafeStorage();
+    if (!safe || !safe.isEncryptionAvailable()) return null;
+    const encrypted = fs.readFileSync(keyPath);
+    return safe.decryptString(encrypted);
+  } catch (error) {
+    console.error('Failed to load OpenAI ASR API key:', error.message);
+    return null;
+  }
+}
+
+function hasOpenAiAsrApiKey() {
+  return fs.existsSync(getOpenAiAsrKeyPath());
+}
+
 // Build the env additions a Python AI-driven subprocess needs. Merges
 // the encrypted-on-disk cloud key (decrypted only here, never written
 // to the env if absent) AND the org adapter URL+JWT when a session
@@ -8822,6 +8907,8 @@ function getAiEnv() {
   const env = {};
   const cloudKey = loadCloudApiKey();
   if (cloudKey) env.STENOAI_CLOUD_API_KEY = cloudKey;
+  const oaiAsrKey = loadOpenAiAsrApiKey();
+  if (oaiAsrKey) env.STENOAI_OAI_API_KEY = oaiAsrKey;
   const session = loadOrgSession();
   if (session && session.adapterUrl && session.token && !isJwtExpired(session.token)) {
     env.STENOAI_ADAPTER_URL = session.adapterUrl;
@@ -11594,18 +11681,17 @@ async function firePreMeetingNotification(event) {
   notif.payload.attendees = event.attendees
     ? event.attendees.map((a) => a.name || a.email).join(', ')
     : '';
-  // Only count a PASSIVE dismiss here (15s auto-close or being superseded). An
-  // active click/X-dismiss is tracked by the renderer, which also flags
-  // _analyticsInteracted via close-notification-window — so skip it here to
-  // avoid double-counting. This is the same split the old createNotificationWindow
-  // used, preserved verbatim.
-  //
-  // Read THIS notif's own window (notif._window), never the module-level
-  // `notificationWindow`: when this toast is superseded, the successor reassigns
-  // `notificationWindow` (and resets its `_analyticsInteracted` to false) before
-  // this 'close' fires, so reading the module-level var would attribute this
-  // toast's dismissal to the NEXT toast's interaction flag — dropping or
-  // duplicating the dismiss. The per-instance window keeps the flag correct.
+
+  notif.on('click', () => {
+    if (event.meeting_url) {
+      shell.openExternal(event.meeting_url);
+    }
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.focus();
+    }
+  });
+
   notif.on('close', () => {
     if (!notif._window || !notif._window._analyticsInteracted) {
       trackEvent('notification_dismissed', { type: 'premeeting' });
@@ -11614,8 +11700,6 @@ async function firePreMeetingNotification(event) {
   notif.show();
   trackEvent('notification_shown', { type: 'premeeting' });
 
-  // Mark fired only after we've actually shown it, so an unshowable notif
-  // (no OS support) isn't permanently skipped by the scheduler's dedupe.
   premeetingFiredIds.add(event.id);
   return true;
 }

@@ -265,6 +265,12 @@ const stenoai = {
     set: (engine) => invoke('set-transcription-engine', engine),
   },
 
+  openaiAsr: {
+    getConfig: () => invoke('get-openai-asr-config'),
+    // cfg may include any subset of { api_url, api_key, model }
+    setConfig: (cfg) => invoke('set-openai-asr-config', cfg),
+  },
+
   settings: {
     getNotifications: () => invoke('get-notifications'),
     setNotifications: (v) => invoke('set-notifications', v),

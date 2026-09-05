@@ -75,7 +75,7 @@ const SETTINGS_INDEX: SettingsEntry[] = [
   },
   { id: 'general-dock', tab: 'general', title: 'Hide dock icon', sub: 'Menu bar / tray icon only', macOnly: true },
   { id: 'ai-language', tab: 'ai', title: 'Language', sub: 'Transcription and summary language' },
-  { id: 'ai-transcription', tab: 'ai', title: 'Transcription model', sub: 'Parakeet or Whisper' },
+  { id: 'ai-transcription', tab: 'ai', title: 'Transcription model', sub: 'Parakeet, Whisper, or OpenAI-compatible ASR' },
   { id: 'ai-save-recordings', tab: 'ai', title: 'Save recordings', sub: 'Keep the audio files after transcription' },
   { id: 'ai-autonotes', tab: 'ai', title: 'Generate notes automatically', sub: 'Summarise after transcription' },
   { id: 'ai-provider', tab: 'ai', title: 'AI provider', sub: 'Local, private server, cloud, or organisation' },

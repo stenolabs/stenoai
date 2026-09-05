@@ -272,3 +272,28 @@ test('Advanced-tab Reset button clears the custom storage path (#304); real dir 
   // Keystone: the real user-data dir is byte-for-byte untouched.
   expect(fileSig(realUserDataDir())).toBe(realDirBefore);
 });
+
+test('openaiAsr.setConfig / getConfig roundtrips endpoint URL and model to config.json; real dir untouched', async ({
+  launchApp,
+  userDataDir,
+}) => {
+  const realDirBefore = fileSig(realUserDataDir());
+  const { page } = await launchApp();
+
+  const res = await page.evaluate(() =>
+    (window as any).stenoai.openaiAsr.setConfig({
+      api_url: 'https://api.example.com/v1',
+      model: 'whisper-large-v3',
+    }),
+  );
+  expect(res.success).toBe(true);
+
+  await expect.poll(() => readUserConfig(userDataDir).openai_asr_api_url).toBe('https://api.example.com/v1');
+  await expect.poll(() => readUserConfig(userDataDir).openai_asr_model).toBe('whisper-large-v3');
+
+  const cfg = await page.evaluate(() => (window as any).stenoai.openaiAsr.getConfig());
+  expect(cfg.api_url).toBe('https://api.example.com/v1');
+  expect(cfg.model).toBe('whisper-large-v3');
+
+  expect(fileSig(realUserDataDir())).toBe(realDirBefore);
+});

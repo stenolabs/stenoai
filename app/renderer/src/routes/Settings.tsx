@@ -89,9 +89,6 @@ function tabFromRoute(route: string): SettingsTabId | null {
 
 export function Settings() {
   const navigate = useNavigate();
-  // Deep-link support: /settings?tab=<id> opens the matching tab on mount.
-  // Used by the sidebar's "Sign in to organisation" CTA to land users
-  // directly on the org sign-in form rather than the General tab.
   const route = useRoute();
   const initialTab = React.useMemo<SettingsTabId>(
     () => tabFromRoute(route) ?? 'general',
