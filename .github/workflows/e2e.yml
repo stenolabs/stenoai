@@ -665,6 +665,9 @@ jobs:
         with:
           node-version: '22'
 
+      - name: Test PipeWire readiness retries
+        run: node --test scripts/wait-pipewire-sink.test.js
+
       # pipewire-pulse + pulseaudio-utils give us pactl/paplay to create the
       # sink and play into it; wireplumber is the session manager that actually
       # assigns nodes (without it, pw-dump reports no default sink).
@@ -713,47 +716,10 @@ jobs:
             # get back.
             pactl load-module module-null-sink sink_name=steno_test \
               sink_properties=device.description=StenoTest
-            pactl set-default-sink steno_test
-
-            # getDefaultSinkName() reads the PipeWire "default" metadata
-            # object, not the pulse view of it, so require the exact sink value
-            # that the module under test will parse. An existing default for a
-            # different sink is not readiness. wireplumber normally updates it;
-            # set it directly if it has not converged, then allow the session
-            # manager a short second convergence window before failing.
-            DEFAULT_SINK_READY=false
-            for i in $(seq 1 15); do
-              DEFAULT_METADATA="$(pw-metadata -n default 2>/dev/null || true)"
-              if grep -Eq "default\.audio\.sink.*\"name\"[[:space:]]*:[[:space:]]*\"steno_test\"" \
-                <<< "$DEFAULT_METADATA"; then
-                DEFAULT_SINK_READY=true
-                break
-              fi
-              sleep 1
-            done
-
-            if [ "$DEFAULT_SINK_READY" != true ]; then
-              echo "wireplumber did not select steno_test — setting it directly"
-              for i in $(seq 1 5); do
-                if ! pw-metadata -n default 0 default.audio.sink "{\"name\":\"steno_test\"}"; then
-                  echo "pw-metadata set failed on attempt $i — retrying"
-                  sleep 1
-                  continue
-                fi
-                sleep 1
-                DEFAULT_METADATA="$(pw-metadata -n default 2>/dev/null || true)"
-                if grep -Eq "default\.audio\.sink.*\"name\"[[:space:]]*:[[:space:]]*\"steno_test\"" \
-                  <<< "$DEFAULT_METADATA"; then
-                  DEFAULT_SINK_READY=true
-                  break
-                fi
-              done
-            fi
-
-            if [ "$DEFAULT_SINK_READY" != true ]; then
-              echo "::error::PipeWire default sink did not converge to steno_test"
-              exit 1
-            fi
+            # Pulse can answer before WirePlumber accepts a default sink.
+            # Retry the setter and check the active metadata via the same
+            # getDefaultSinkName() reader used by the capture below.
+            bash scripts/wait-pipewire-sink.sh steno_test
             echo "--- pipewire default metadata ---"
             pw-metadata -n default || true
             echo "--- sinks ---"
