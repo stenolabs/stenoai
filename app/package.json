@@ -1,6 +1,6 @@
 {
   "name": "stenoai",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "description": "AI powered intelligence layer for confidential workflows",
   "main": "main.js",
   "homepage": "https://github.com/stenolabs/stenoai",

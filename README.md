@@ -42,11 +42,10 @@
 If you're looking for a hosted desktop recording API, consider checking out [Recall.ai](https://www.recall.ai/product/desktop-recording-sdk?utm_source=github&utm_medium=sponsorship&utm_campaign=ruzin-stenoai), an API that records Zoom, Google Meet, Microsoft Teams, in-person meetings, and more.
 
 ## 📢 What's New
-- **2026-08-31** 🗣️ Individual speaker labels — Steno now tells apart the voices sharing one side of a call, so a three-person meeting reads as `Speaker 2` / `Speaker 3` instead of one merged `[Others]`. macOS only.
-- **2026-08-31** 👤 Name a speaker once — confirm who someone is and Steno suggests them in later meetings. Off by default: turn on Speaker identification in Settings → AI, and manage or delete profiles in Settings → People.
-- **2026-08-31** 📄 Readable transcript export — exported transcripts open with a clean conversation view, with the original timestamped transcript kept below it.
-- **2026-08-31** 🇷🇺 Russian — pick Russian in Settings → Transcribe and summaries, titles and chat come back in Russian instead of English.
-
+- **2026-09-05** 🐧 Linux alpha: Debian/Ubuntu packages and an AppImage support microphone and PipeWire system-audio recording, with CPU-only bundled summaries.
+- **2026-09-05** 📁 Reliable recording and folders: failed recording starts no longer leave a stuck entry, and repeated clicks no longer create duplicate folders.
+- **2026-09-05** 📥 Clear download progress: Parakeet shows actual download progress and a separate model-preparation stage.
+- **2026-09-05** 📝 Transcript recovery: on Windows and Linux, the available live transcript replaces an ONNX batch transcript that read less than half the recording.
 
 ## Features
 
@@ -54,7 +53,7 @@ If you're looking for a hosted desktop recording API, consider checking out [Rec
 - **Live speaker labels** — Real-time on-screen text as you speak via Parakeet TDT v3 on Apple Silicon (MLX). Granola-style chat-bubble view with `[You]` vs `[Others]` attribution live during the recording.
 - **Individual speakers (macOS)** — Once the recording stops, Steno separates the voices sharing each channel, so the saved transcript reads `Speaker 2` / `Speaker 3` rather than one merged `[Others]`. Name a speaker once and Steno can suggest them in later meetings — that part is off by default, and the voice profiles never leave your Mac.
 - **Auto start/stop meetings** — Steno notices when a meeting starts and offers to take notes, then offers to summarise when it ends. Granola-style frictionless capture.
-- **System audio capture** — Record both sides of virtual meetings, headphones on, no extra setup or virtual cable. Native Core Audio Tap on macOS 14.4+, with selectable microphone input.
+- **System audio capture** — Record both sides of virtual meetings. Native Core Audio Tap on macOS 14.4+, Windows loopback capture, and PipeWire capture on Linux, with selectable microphone input.
 - **Recording that coexists** — A compact transcription pill docks beside the app instead of taking over; Stop lands you on the note instantly and you can resume recording into an existing note (it appends and re-generates on demand).
 - **Global record shortcut** — Start or stop recording from anywhere with `⌘⇧R` (`Ctrl+Shift+R` on Windows). Toggle it off in Settings if it clashes with another app. On macOS, power users can additionally bind any key of their own via the `stenoai://record/start` / `record/stop` deep links (Shortcuts app).
 - **In-app note-taking** — Jot notes while you record, or keep a dedicated **My notes** tab that stays editable alongside the AI summary; your notes are folded straight into the summary.
@@ -233,15 +232,10 @@ Verified on Ubuntu 26.04 LTS (GNOME/Wayland, PipeWire), including system-audio l
 sudo apt install libportaudio2
 ```
 
-> Before the first tagged Linux release lands, grab the packages from the
-> [Linux build workflow](https://github.com/stenolabs/stenoai/actions/workflows/build-linux.yml):
-> sign in to GitHub, open the latest green run, and download the
-> `stenoai-linux-<version>` artifact.
-
 Known alpha limitations:
 
 - **Unsigned**, same as the Windows alpha.
-- **CPU-only summarisation** and `onnx-asr` transcription, same as Windows.
+- **CPU-only bundled summarisation** and `onnx-asr` transcription, same as Windows. To use GPU-accelerated summaries, run a separately installed Ollama with a supported GPU and driver, select **Settings → AI → Private Server**, enter `http://127.0.0.1:11434`, and choose a model installed on that server.
 - **System audio requires PipeWire** (Ubuntu's default since 22.10). The toggle reports unsupported on a PulseAudio-only or headless install, and recording falls back to mic-only.
 - **No speaker diarization sidecar** — per-channel `[You]`/`[Others]` labelling works, but the acoustic multi-speaker split is macOS-only.
 - **No auto-update.** `.deb` installs update by downloading a new package; AppImage self-update is a follow-up.
