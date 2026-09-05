@@ -47,14 +47,17 @@ BUILTIN_TEMPLATES = {
         "name": "Product Demo",
         "icon": "presentation",
         "prompt": (
-            "Summarise this call for someone evaluating a product or service "
-            "being demonstrated to them. Cover: what was demoed and the "
-            "problem it's meant to solve; key features or capabilities shown; "
-            "pricing or commercial terms if mentioned; how well it fits the "
-            "stated needs; concerns or open questions raised; and next steps. "
-            "Structure the report with a short markdown heading per area, and "
-            "omit any area that wasn't discussed. Write in the language of the "
-            "meeting."
+            "Write a concise product-demo report in the same language as the speakers, "
+            "including the headings. Use each section once, with brief bullets: Stated "
+            "needs and buyer assessment; Capabilities and limitations; Commercial "
+            "terms; Open questions and next steps. Omit sections not discussed. For "
+            "each capability, state whether it was demonstrated, only promised, or "
+            "explicitly unavailable. Include stated needs and participants' own "
+            "assessment of fit; do not assess fit yourself. Preserve unsupported "
+            "requirements, conditions on pricing, and unresolved questions. Label "
+            "follow-up requests as requests until someone explicitly accepts them. "
+            "Never turn a proposed date into a deadline. Include action owners and "
+            "dates only when stated. Avoid repetition and bilingual headings."
         ),
         "language": "auto",
         "format": "markdown",
@@ -64,13 +67,17 @@ BUILTIN_TEMPLATES = {
         "name": "Sales Call",
         "icon": "handshake",
         "prompt": (
-            "Summarise this call for the person running the sales "
-            "conversation. Cover: the prospect's stated needs, pain points, "
-            "and priorities; objections or concerns raised; budget, timeline, "
-            "or decision-process details mentioned; competitors or "
-            "alternatives referenced; and agreed next steps. Structure the "
-            "report with a short markdown heading per area, and omit any area "
-            "that wasn't discussed. Write in the language of the meeting."
+            "Write a concise sales-call report in the same language as the speakers, "
+            "including the headings. Use each section once, with brief bullets: Needs "
+            "and constraints; Budget and decision process; Alternatives; Next steps. "
+            "Omit sections not discussed. Record stated buying interest and any "
+            "explicit lack of purchase commitment. Keep buyer statements separate from "
+            "seller proposals. Preserve objections, conditions, and uncertainty. "
+            "Interest is not a purchase commitment; an estimated budget is not "
+            "approved; a proposed date is not agreed. Do not infer buying authority or "
+            "deal probability. Separate unaccepted requests from agreed actions. "
+            "Include action owners and dates only when explicitly stated. State each "
+            "fact once and avoid bilingual headings."
         ),
         "language": "auto",
         "format": "markdown",
@@ -80,12 +87,16 @@ BUILTIN_TEMPLATES = {
         "name": "1:1",
         "icon": "user-check",
         "prompt": (
-            "Summarise this 1:1 conversation. Cover: topics discussed and any "
-            "updates shared, feedback given in either direction, concerns or "
-            "blockers raised, decisions made, and follow-up actions with who "
-            "owns them. Structure the report with a short markdown heading per "
-            "area, and omit any area that wasn't discussed. Write in the "
-            "language of the meeting."
+            "Write a concise 1:1 report in the same language as the speakers, including "
+            "the headings. Use each section once, with brief bullets: Updates; Feedback "
+            "and concerns; Decisions and next steps. Omit sections not discussed. "
+            "Record each person's position when they disagree, with the speaker's name "
+            "when clear. Keep both positions without judging who is right. Distinguish "
+            "suggestions and requests from agreed decisions and actions. Keep "
+            "unresolved requests explicit. Do not infer motives, feelings, or "
+            "performance ratings. Include action owners and deadlines only when "
+            "explicitly stated, preserving tentative dates and dependencies. State each "
+            "point once and avoid bilingual headings."
         ),
         "language": "auto",
         "format": "markdown",
@@ -95,11 +106,16 @@ BUILTIN_TEMPLATES = {
         "name": "Standup",
         "icon": "list-checks",
         "prompt": (
-            "Summarise this standup/status meeting concisely. For each "
-            "update, capture what was done, what's planned next, and any "
-            "blockers raised. List updates as brief bullet points, grouped by "
-            "person or topic. Keep it brief - this is a quick status sync, "
-            "not a detailed report. Write in the language of the meeting."
+            "Write concise standup notes in the language of the speakers. Use one short "
+            "bullet list per identified person, and a separate topic list for "
+            "unattributed work. Each bullet should preserve the actual status: "
+            "completed, still in progress, tentative, blocked, or resolved. Keep the "
+            "specific work item attached to its status and any dependency; for example, "
+            "a plan to test an export is not a plan to test a completed login fix. "
+            "Capture explicit requests for help and accepted actions with stated owners "
+            "and times. Leave unassigned work unassigned. Include only information "
+            "discussed. Avoid empty status categories, repeated updates, and a separate "
+            "summary."
         ),
         "language": "auto",
         "format": "markdown",
