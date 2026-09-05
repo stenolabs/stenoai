@@ -1,3 +1,4 @@
+import { parakeetProgressLabel } from '@/lib/parakeetProgress';
 import * as React from 'react';
 import { Building2, Check, ChevronDown, ChevronRight, Cloud, Laptop, Loader2, Server, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -331,6 +332,12 @@ function TranscriptionModelList() {
           ))}
         </SelectContent>
       </Select>
+      {parakeetDownloading && (
+        <p role="status" className="mt-2 max-w-[240px] text-xs text-muted-foreground">
+          {parakeetProgressLabel(pullParakeet.progress[parakeetModel.name])}
+        </p>
+      )}
+      {pullParakeet.isError && <p role="alert">{String(pullParakeet.error.message)}</p>}
     </SettingRow>
   );
 }

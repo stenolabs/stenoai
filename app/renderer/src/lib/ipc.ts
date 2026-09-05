@@ -904,7 +904,10 @@ export interface ParakeetPullProgressEvent {
   /** Present on pull-parakeet-model invocations; omitted on
    *  setup-parakeet (which downloads the default model with no id arg). */
   model?: string | null;
-  stage: 'downloading' | 'loading' | string;
+  stage: 'preparing' | 'downloading' | 'loading' | 'complete' | string;
+  completed_files?: number;
+  total_files?: number;
+  file_bytes?: number;
 }
 export interface ParakeetPullCompleteEvent {
   model?: string | null;

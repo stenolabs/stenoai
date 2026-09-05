@@ -1,5 +1,5 @@
 {
-  "total": 751,
+  "total": 749,
   "files": {
     "renderer/src/components/AskBar.tsx": 25,
     "renderer/src/components/ChatHistoryRow.tsx": 5,
@@ -10,7 +10,7 @@
     "renderer/src/components/LiveDock.tsx": 10,
     "renderer/src/components/LiveTranscriptBar.tsx": 29,
     "renderer/src/components/MainToolbar.tsx": 23,
-    "renderer/src/components/MeetingsShell.tsx": 13,
+    "renderer/src/components/MeetingsShell.tsx": 12,
     "renderer/src/components/NotificationToast.tsx": 2,
     "renderer/src/components/PrivacyConsentModal.tsx": 9,
     "renderer/src/components/QuitDialog.tsx": 1,
@@ -32,7 +32,7 @@
     "renderer/src/routes/OrgShared.tsx": 20,
     "renderer/src/routes/Processing.tsx": 7,
     "renderer/src/routes/Recording.tsx": 7,
-    "renderer/src/routes/Setup.tsx": 42,
+    "renderer/src/routes/Setup.tsx": 41,
     "renderer/src/routes/settings/AboutTab.tsx": 16,
     "renderer/src/routes/settings/AdvancedTab.tsx": 19,
     "renderer/src/routes/settings/AiTab.tsx": 81,

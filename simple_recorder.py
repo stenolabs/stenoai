@@ -1805,15 +1805,7 @@ def warmup_parakeet_cmd():
 @cli.command(name='download-parakeet-model')
 @click.argument('model_id', required=False)
 def download_parakeet_model_cmd(model_id):
-    """Download a Parakeet snapshot from HuggingFace.
-
-    Emits ``PARAKEET_PULL_STAGE:<stage>`` lines (parsed by main.js into a
-    parakeet-pull-progress IPC event) before the final JSON result. Stages
-    are coarse (``downloading`` / ``loading``) because the snapshot is
-    multiple files and threading byte-level progress through
-    huggingface_hub's tqdm isn't worth the wire complexity for a one-time
-    ~600 MB download.
-    """
+    """Download a snapshot, emitting structured progress before the result."""
     from src.parakeet_models import (
         DEFAULT_MODEL_ID,
         SUPPORTED_PARAKEET_MODELS,
@@ -1828,8 +1820,8 @@ def download_parakeet_model_cmd(model_id):
         print(json.dumps({"success": True, "model": target, "already_installed": True}))
         return
 
-    def emit(stage: str):
-        print(f"PARAKEET_PULL_STAGE:{stage}", flush=True)
+    def emit(progress: dict):
+        print("PARAKEET_PULL_PROGRESS:" + json.dumps(progress), flush=True)
 
     ok = download(target, emit)
     if ok:

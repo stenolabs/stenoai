@@ -51,7 +51,7 @@ test('transcription step renders an indeterminate "preparing" bar (no fabricated
 }) => {
   // Parakeet NOT installed → the transcription download runs. It only reports
   // coarse stages, so the UI shows an indeterminate bar, never a percentage.
-  const { page } = await launchApp({
+  const { app, page } = await launchApp({
     mockIpc: true,
     env: { STENOAI_E2E_SETUP_PROGRESS: '1' },
   });
@@ -67,9 +67,21 @@ test('transcription step renders an indeterminate "preparing" bar (no fabricated
 
   const bar = transcriptionStep.locator('[data-setup-transcription-progress]');
   await expect(bar).toBeVisible();
-  await expect(bar.getByText('Downloading and preparing model...')).toBeVisible();
+  await expect(bar.getByText('Downloading model…')).toBeVisible();
   await expect(transcriptionStep.getByRole('progressbar')).toBeVisible();
 
+  for (const [event, label] of [
+    [{ stage: 'preparing' }, 'Preparing download…'],
+    [{ stage: 'downloading', completed_files: 1, total_files: 2, file_bytes: 120000000 },
+      'Downloading model… 1 of 2 files ready. Current file: 120.0 MB available.'],
+    [{ stage: 'loading' }, 'Download complete. Preparing model…'],
+    [{ stage: 'complete' }, 'Model ready'],
+  ] as const) {
+    await app.evaluate(({ BrowserWindow }, progress) => {
+      BrowserWindow.getAllWindows()[0].webContents.send('parakeet-pull-progress', progress);
+    }, event);
+    await expect(bar.getByText(label, { exact: true })).toBeVisible();
+  }
   // No fabricated percentage on the indeterminate bar.
   await expect(bar.getByText('%')).toHaveCount(0);
 });
@@ -120,3 +132,32 @@ test('speaker model setup is absent on non-macOS', async ({ launchApp }) => {
     'done',
   );
 });
+
+test('Settings displays Parakeet file progress next to the pending model selection', async ({ launchApp }) => {
+  const { app, page } = await launchApp({ mockIpc: true, env: {
+    STENOAI_E2E_SETUP_PROGRESS: '1', STENOAI_E2E_MOCK_ENGINE: 'whisper',
+    STENOAI_E2E_MOCK_PARAKEET_INSTALLED: '0',
+  } });
+  await page.evaluate(() => { window.location.hash = '#/settings?tab=ai'; });
+  await page.getByTestId('transcription-model-select').click();
+  await page.getByRole('option', { name: /Parakeet TDT v3/ }).click();
+  await expect(page.getByTestId('transcription-model-select')).toBeDisabled();
+  await expect(page.getByRole('status')).toContainText('Current file: 120.0 MB available.');
+  await app.evaluate(({ BrowserWindow }) => {
+    const model = process.platform === 'darwin'
+      ? 'mlx-community/parakeet-tdt-0.6b-v3' : 'istupakov/parakeet-tdt-0.6b-v3-onnx';
+    BrowserWindow.getAllWindows()[0].webContents.send('parakeet-pull-progress', { model, stage: 'loading' });
+  });
+  await expect(page.getByRole('status')).toContainText('Download complete. Preparing model…');
+});
+
+for (const [platform, size] of [['darwin', '~2.5 GB'], ['win32', '~670 MB']] as const) {
+  test(`Parakeet setup shows the download estimate on ${platform}`, async ({ launchApp }) => {
+    const { page } = await launchApp({ mockIpc: true, env: {
+      STENOAI_E2E_SETUP_PROGRESS: '1', STENOAI_E2E_RENDERER_PLATFORM: platform,
+    } });
+    await page.evaluate(() => { window.location.hash = '#/setup'; });
+    await page.getByRole('button', { name: 'Begin setup' }).click();
+    await expect(page.locator('[data-setup-step="transcription"]')).toContainText(`Downloading Parakeet TDT v3 (${size})...`);
+  });
+}

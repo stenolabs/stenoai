@@ -877,11 +877,24 @@ function install({ ipcMain }) {
     // download-progress spec can observe the bar. The app is torn down at test
     // end. Without the flag they resolve success, matching the permissive
     // default so nothing else changes.
+    'create-folder': async () => {
+      if (process.env.STENOAI_E2E_FOLDER_CREATE_PENDING !== '1') return { success: true };
+      const state = global.__folderCreateTest ||= { calls: 0, finish: null };
+      state.calls++;
+      return new Promise(resolve => { state.finish = resolve; });
+    },
+    'pull-parakeet-model': async (event, model) => {
+      if (process.env.STENOAI_E2E_SETUP_PROGRESS !== '1') return { success: true };
+      event.sender.send('parakeet-pull-progress', {
+        model, stage: 'downloading', completed_files: 1, total_files: 2, file_bytes: 120000000,
+      });
+      return new Promise(() => {});
+    },
     'setup-parakeet': async (event) => {
       if (process.env.STENOAI_E2E_SETUP_PROGRESS === '1') {
         const wc = event && event.sender;
         if (wc && !wc.isDestroyed()) {
-          // Parakeet exposes only coarse stages (no byte counts).
+          // First event may arrive before any file/byte measurement.
           wc.send('parakeet-pull-progress', { stage: 'downloading' });
         }
         return new Promise(() => {});
@@ -1385,8 +1398,8 @@ function install({ ipcMain }) {
       supported_models: {
         [PARAKEET_MODEL_ID]: {
           name: 'Parakeet TDT v3',
-          size: '572MB',
-          installed: true,
+          size: process.platform === 'darwin' ? '2.5GB' : '670MB',
+          installed: process.env.STENOAI_E2E_MOCK_PARAKEET_INSTALLED !== '0',
           description:
             'Highest quality. Supports live transcription in English and 25 European languages — Spanish, French, German, Italian, Portuguese, Dutch, Russian, Polish, Czech, and 16 others.',
           speed: 'very fast',
