@@ -13,7 +13,12 @@ let spawnCalls = [];
 let stubChild = { fake: true };
 cp.spawn = (...args) => { spawnCalls.push(args); return stubChild; };
 
-const { spawn, killProcessTree, createBackendCli } = require('./backend-cli');
+const {
+  spawn,
+  killProcessTree,
+  createBackendCli,
+  parsePythonFailureJson,
+} = require('./backend-cli');
 
 afterEach(() => {
   spawnCalls = [];
@@ -46,6 +51,41 @@ function recordingDeps(extra = {}) {
   };
   return { rec, run: createBackendCli(deps).runPythonScript };
 }
+
+test('parsePythonFailureJson accepts a clean structured failure', () => {
+  const error = Object.assign(new Error('generic'), {
+    stdout: '{"success":false,"error":"actionable"}',
+  });
+  assert.deepStrictEqual(
+    parsePythonFailureJson(error),
+    { success: false, error: 'actionable' },
+  );
+});
+
+test('parsePythonFailureJson recovers the last JSON line after CLI output', () => {
+  const error = Object.assign(new Error('generic'), {
+    stdout: 'ERROR: Failed to save model configuration\r\n{"success":false,"error":"Failed to save config"}\r\n',
+  });
+  assert.deepStrictEqual(
+    parsePythonFailureJson(error),
+    { success: false, error: 'Failed to save config' },
+  );
+});
+
+test('parsePythonFailureJson falls back for malformed or successful stdout', () => {
+  const malformed = Object.assign(new Error('backend failed'), { stdout: 'not json' });
+  const successful = Object.assign(new Error('backend failed'), {
+    stdout: '{"success":true}',
+  });
+  assert.deepStrictEqual(
+    parsePythonFailureJson(malformed),
+    { success: false, error: 'backend failed' },
+  );
+  assert.deepStrictEqual(
+    parsePythonFailureJson(successful),
+    { success: false, error: 'backend failed' },
+  );
+});
 
 // ---- spawn wrapper -------------------------------------------------------
 

@@ -471,6 +471,7 @@ test('sanitizeModelForAnalytics keeps known public model ids but collapses custo
   // deliberate literal duplicate of ANALYTICS_MODEL_ALLOWLIST so that an
   // accidental removal or typo in the allowlist fails here.
   const curatedPublicIds = [
+    'apple:system',
     'gemma4:e2b-it-qat',
     'gemma4:e4b-it-qat',
     'gemma4:12b-it-qat',

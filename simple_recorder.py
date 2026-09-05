@@ -843,9 +843,6 @@ Summary output language: {config.get_language_name(output_language)}
             }
 
         # Step 2: Streaming summary
-        if self.summarizer is None:
-            self.summarizer = OllamaSummarizer()
-
         from src.config import get_config
         config = get_config()
         configured_language = config.get_language()
@@ -858,6 +855,8 @@ Summary output language: {config.get_language_name(output_language)}
         print("🧠 Generating summary...", flush=True)
         streamed_chunks = []
         try:
+            if self.summarizer is None:
+                self.summarizer = OllamaSummarizer()
             for chunk in self.summarizer.summarize_transcript_streaming(
                 text_for_summary, duration_minutes, output_language, notes_text,
                 progress_callback=_emit_progress,
@@ -1447,9 +1446,6 @@ def process_streaming(audio_file, name, notes, live_transcript, append_to):
             return
 
         # Step 2: Stream summary
-        if recorder.summarizer is None:
-            recorder.summarizer = OllamaSummarizer()
-
         from src.config import get_config
         config = get_config()
         configured_language = config.get_language()
@@ -1467,6 +1463,8 @@ def process_streaming(audio_file, name, notes, live_transcript, append_to):
         summary_heartbeat = _start_summary_heartbeat()
         _stream_error = None
         try:
+            if recorder.summarizer is None:
+                recorder.summarizer = OllamaSummarizer()
             for chunk in recorder.summarizer.summarize_transcript_streaming(
                 text_for_summary, duration_minutes, output_language, notes_text,
                 progress_callback=_emit_progress,
@@ -3281,11 +3279,6 @@ def reprocess(summary_file, regenerate_title, retranscribe):
             existing_session_info, transcript, get_config().get_language()
         )
 
-        # Use streaming summarization (same as new recordings)
-        if recorder.summarizer is None:
-            from src.summarizer import OllamaSummarizer
-            recorder.summarizer = OllamaSummarizer()
-
         print("Generating summary...", flush=True)
         streamed_chunks = []
         # Same watchdog-liveness cover as process_streaming: model load +
@@ -3293,6 +3286,11 @@ def reprocess(summary_file, regenerate_title, retranscribe):
         summary_heartbeat = _start_summary_heartbeat()
         _stream_error = None
         try:
+            # Initialization can reject a disabled/unavailable provider before
+            # streaming starts. Surface it through the same user-safe protocol.
+            if recorder.summarizer is None:
+                from src.summarizer import OllamaSummarizer
+                recorder.summarizer = OllamaSummarizer()
             for chunk in recorder.summarizer.summarize_transcript_streaming(
                 transcript, duration_minutes, output_language, notes_text,
                 progress_callback=_emit_progress,
@@ -3722,15 +3720,14 @@ def generate_report(summary_file, template_id):
             persisted_info, transcript, config.get_language()
         )
 
-    if recorder.summarizer is None:
-        from src.summarizer import OllamaSummarizer
-        recorder.summarizer = OllamaSummarizer()
-
     print("Generating report...", flush=True)
     streamed_chunks = []
     summary_heartbeat = _start_summary_heartbeat()
     _stream_error = None
     try:
+        if recorder.summarizer is None:
+            from src.summarizer import OllamaSummarizer
+            recorder.summarizer = OllamaSummarizer()
         for chunk in recorder.summarizer.summarize_transcript_streaming(
             transcript, duration_minutes, output_language, notes_text,
             progress_callback=_emit_progress,
@@ -4501,15 +4498,31 @@ def setup_check(as_json):
     else:
         checks.append(("⚠️ whisper-model", "will download on first use (~500MB)"))
 
-    # Check if LLM model is downloaded (check ~/.ollama/models/)
-    ollama_models_path = Path.home() / ".ollama" / "models" / "manifests" / "registry.ollama.ai" / "library"
-    if ollama_models_path.exists() and any(ollama_models_path.iterdir()):
-        model_names = [d.name for d in ollama_models_path.iterdir() if d.is_dir()]
-        checks.append(("✅ llm-model", ", ".join(model_names[:2])))
+    # Check the configured LLM. Apple availability only satisfies setup when
+    # the user explicitly selected that model; it never changes the selection.
+    from src.apple_lm import (
+        apple_lm_status,
+        apple_lm_unavailable_message,
+        is_apple_system_model,
+    )
+    from src.config import get_config
+    configured_model = get_config().get_model()
+    if is_apple_system_model(configured_model):
+        status = apple_lm_status()
+        if status.get("available") is True:
+            checks.append(("✅ llm-model", "Apple System Language Model (available)"))
+        else:
+            checks.append(("❌ llm-model", apple_lm_unavailable_message(status)))
     else:
-        checks.append(("❌ llm-model", "no model installed - needed for summaries"))
-
-    # Derive a structured, machine-readable view of the checks. This is the
+        try:
+            ollama_models_path = Path.home() / ".ollama" / "models" / "manifests" / "registry.ollama.ai" / "library"
+            if ollama_models_path.exists() and any(ollama_models_path.iterdir()):
+                model_names = [d.name for d in ollama_models_path.iterdir() if d.is_dir()]
+                checks.append(("✅ llm-model", ", ".join(model_names[:2])))
+            else:
+                checks.append(("❌ llm-model", "no model installed - needed for summaries"))
+        except Exception:
+            checks.append(("❌ llm-model", "no model installed - needed for summaries"))
     # single source of truth for each check's (name, status, detail) and for the
     # overall verdict; both the JSON output and the human summary below read from
     # it, so the pass/fail logic is never duplicated. Status is decoded from the
@@ -4672,6 +4685,31 @@ def list_models():
                     # "Select" re-offered.
                     if info['mlx_installed']:
                         info['installed'] = True
+        from src.apple_lm import (
+            APPLE_SYSTEM_MODEL,
+            apple_lm_should_list,
+            apple_lm_status,
+            apple_system_model_info,
+            is_apple_system_model,
+        )
+        if provider == "local":
+            apple_status = apple_lm_status()
+            apple_selected = is_apple_system_model(current_model)
+            if apple_lm_should_list(apple_status, selected=apple_selected):
+                apple_info = {
+                    **apple_system_model_info(
+                        is_default=apple_selected,
+                        status=apple_status,
+                    ),
+                    "installed": apple_status.get("available") is True,
+                    "available": apple_status.get("available") is True,
+                    "managed": True,
+                    "selectable": apple_status.get("available") is True,
+                    "downloadable": False,
+                    "deletable": False,
+                    "gguf_installed": False,
+                }
+                models = {APPLE_SYSTEM_MODEL: apple_info, **models}
         result = {
             "current_model": current_model,
             "supported_models": models,
@@ -4710,7 +4748,27 @@ def set_model(model_name):
     config = get_config()
 
     # Validate model
-    if model_name not in config.SUPPORTED_MODELS:
+    from src.apple_lm import (
+        apple_lm_status,
+        apple_lm_unavailable_message,
+        is_apple_system_model,
+    )
+    apple_model = is_apple_system_model(model_name)
+    if apple_model and config.get_ai_provider() == "remote":
+        print(json.dumps({
+            "success": False,
+            "error": "Apple Intelligence can only be used with the local AI provider.",
+        }))
+        sys.exit(1)
+    if apple_model:
+        status = apple_lm_status()
+        if status.get("available") is not True:
+            print(json.dumps({
+                "success": False,
+                "error": apple_lm_unavailable_message(status),
+            }))
+            sys.exit(1)
+    if model_name not in config.SUPPORTED_MODELS and not apple_model:
         print(f"WARNING: Model '{model_name}' is not in the recommended list.")
         print(f"Supported models: {', '.join(config.SUPPORTED_MODELS.keys())}")
         print(f"Setting anyway (make sure it's installed with 'ollama pull {model_name}')")
@@ -4726,6 +4784,44 @@ def set_model(model_name):
         # Exit non-zero so callers (e.g. the setup-ollama-and-model reuse path in
         # main.js) can't read a config-write failure as success — the model was
         # NOT persisted as active. sys.exit (not bare exit) for the PyInstaller bundle.
+        sys.exit(1)
+
+
+@cli.command(name='set-model-if-current')
+@click.argument('expected_model')
+@click.argument('model_name')
+def set_model_if_current(expected_model, model_name):
+    """Atomically update the setup model unless the user changed it meanwhile."""
+    from src.config import get_config
+
+    config = get_config()
+    if not config.begin_transaction():
+        print(json.dumps({"success": False, "error": "Could not lock config"}))
+        sys.exit(1)
+
+    try:
+        current_model = config.get_model()
+        current_source = config.get("summary_model_source")
+        if current_model != expected_model or current_source == "user":
+            config.rollback_transaction()
+            print(json.dumps({
+                "success": True,
+                "updated": False,
+                "model": current_model,
+            }))
+            return
+
+        if not config.set_model(model_name, source="auto"):
+            config.rollback_transaction()
+            print(json.dumps({"success": False, "error": "Failed to stage model config"}))
+            sys.exit(1)
+        if not config.commit_transaction():
+            print(json.dumps({"success": False, "error": "Failed to save config"}))
+            sys.exit(1)
+        print(json.dumps({"success": True, "updated": True, "model": model_name}))
+    except Exception as error:
+        config.rollback_transaction()
+        print(json.dumps({"success": False, "error": str(error)}))
         sys.exit(1)
 
 
@@ -8994,6 +9090,14 @@ def set_ai_provider(provider):
         }))
         return
 
+    from src.apple_lm import is_apple_system_model
+    if provider == "remote" and is_apple_system_model(config.get_model()):
+        print(json.dumps({
+            "success": False,
+            "error": "Choose an Ollama model before switching to the remote AI provider.",
+        }))
+        return
+
     success = config.set_ai_provider(provider)
     if success:
         print(json.dumps({"success": True, "ai_provider": provider}))
@@ -9261,11 +9365,15 @@ def download_whisper_model():
 @cli.command()
 @click.argument('model_name')
 def check_model(model_name):
-    """Check if a model is installed in Ollama (uses HTTP API)."""
+    """Check if a model is installed in Ollama or available in Apple Intelligence."""
+    from src.apple_lm import is_apple_system_model, apple_lm_available
+    if is_apple_system_model(model_name):
+        print(json.dumps({"installed": apple_lm_available(), "model": model_name}))
+        return
+
     from src.config import get_config
     config = get_config()
     provider = config.get_ai_provider()
-
     if provider == "remote":
         remote_url = config.get_remote_ollama_url()
         if not remote_url:
@@ -9299,6 +9407,14 @@ def check_model(model_name):
 @click.argument('model_name')
 def pull_model(model_name):
     """Download an Ollama model (uses HTTP API)."""
+    from src.apple_lm import is_apple_system_model, apple_lm_available
+    if is_apple_system_model(model_name):
+        if apple_lm_available():
+            print(json.dumps({"success": True, "model": model_name}))
+        else:
+            print(json.dumps({"success": False, "error": "Apple Intelligence is not available on this system"}))
+        return
+
     from src.ollama_manager import start_ollama_server
     start_ollama_server()
     try:
@@ -9337,14 +9453,16 @@ def pull_model(model_name):
 @cli.command(name='verify-model')
 @click.argument('model_name')
 def verify_model(model_name):
-    """Smoke-test a just-pulled model with a 1-token chat call (uses HTTP API).
+    """Smoke-test a model with a 1-token chat call."""
+    from src.apple_lm import is_apple_system_model, complete
+    if is_apple_system_model(model_name):
+        try:
+            complete("hi", timeout=10)
+            print(json.dumps({"success": True, "error": None}))
+        except Exception as e:
+            print(json.dumps({"success": False, "error": str(e)}))
+        return
 
-    Used only by the Settings "switch to faster build" flow, to prove an
-    MLX/NVFP4 tag actually loads and responds before offering to delete the
-    old GGUF build. A generous timeout accounts for MLX cold-load (several
-    seconds after a fresh pull, per local benchmarking) -- a slow-but-working
-    model must not be reported as a failure.
-    """
     from src.ollama_manager import start_ollama_server
     start_ollama_server()
     try:
@@ -9363,16 +9481,12 @@ def verify_model(model_name):
 @cli.command(name='delete-model')
 @click.argument('model_name')
 def delete_model(model_name):
-    """Delete a locally-pulled Ollama model (uses HTTP API).
+    """Delete a locally-pulled Ollama model (uses HTTP API)."""
+    from src.apple_lm import is_apple_system_model
+    if is_apple_system_model(model_name):
+        print(json.dumps({"success": False, "error": "Cannot delete built-in Apple System model"}))
+        return
 
-    Called by the Settings "switch to faster build" flow (the old GGUF tag,
-    after its NVFP4 sibling has been pulled and verified) and by the general
-    "delete this model to free up disk space" action (either the GGUF id or
-    its NVFP4 sibling) -- never a tag currently in active use. Restricted to
-    supported GGUF ids and their NVFP4 siblings: this is a destructive
-    IPC-reachable operation, so it must not delete an arbitrary
-    caller-supplied model name.
-    """
     from src.config import get_config, Config
 
     allowed = set(get_config().list_supported_models()) | set(Config._MLX_EQUIVALENTS.values())
@@ -9424,16 +9538,16 @@ def resolve_setup_model():
     redundant download (#123).
 
     Prints {"installed": "<model-id>"} when the connected Ollama already has a
-    supported model, else {"installed": null}. Never pulls — the caller decides
-    whether to download. Uses the HTTP API (ollama package), not the binary.
+    supported model, else {"installed": null}. Never starts Ollama or pulls a
+    model: the Electron caller owns the service lifecycle and decides whether
+    to download. Uses the HTTP API (ollama package), not the binary.
     """
     from src.config import get_config, Config
-    from src.ollama_manager import start_ollama_server
+
     from src.config import is_apple_silicon
 
     result = {"installed": None, "pull_target": Config.DEFAULT_MODEL}
     try:
-        start_ollama_server()
         import ollama
         resp = ollama.list()
         installed = {
@@ -9478,6 +9592,13 @@ def resolve_setup_model():
         result["error"] = str(e)
     print(json.dumps(result))
 
+
+
+@cli.command(name='apple-lm-status')
+def apple_lm_status_cmd():
+    """Inspect Apple SystemLanguageModel status and availability."""
+    from src.apple_lm import apple_lm_status
+    print(json.dumps(apple_lm_status()))
 
 @cli.command(name='check-adapter')
 @click.argument('url')

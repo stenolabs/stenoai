@@ -46,6 +46,7 @@ export const COPY_ATTRIBUTES = [
   'confirmLabel',
   'cancelLabel',
   'submitLabel',
+  'selectLabel',
 ];
 
 /**

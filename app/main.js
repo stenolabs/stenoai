@@ -51,7 +51,12 @@ const path = require('path');
 // Backend CLI seam (spawn wrapper, process-tree kill, bundled-backend paths,
 // runPythonScript), the debug-log sink, and the quit teardown registry are
 // carved out of this file (RFC #327, Phase 0); wired once below via factories.
-const { spawn, killProcessTree, createBackendCli } = require('./backend-cli');
+const {
+  spawn,
+  killProcessTree,
+  createBackendCli,
+  parsePythonFailureJson,
+} = require('./backend-cli');
 const { createDebugLog } = require('./debug-log');
 const { createTeardownRegistry } = require('./teardown');
 const { registerFoldersIpc } = require('./folders-ipc');
@@ -85,6 +90,11 @@ const {
 } = require('./shortcut-url');
 const { parseSetupCheckOutput } = require('./setup-check-parse');
 const { parseSpeakerModelStatusOutput } = require('./speaker-model-status');
+const {
+  assertOllamaSetupModel,
+  modelSetupSaveError,
+  cleanupFailedOllamaSetup,
+} = require('./model-setup-guard');
 const { isDiagnosticStdoutLine, sanitizeArgsForLog } = require('./diagnostics-filter');
 // Pure analytics bucketing/classification/sanitization lives in
 // ./analytics-helpers (unit-tested). trackEvent() itself and every IPC
@@ -2491,22 +2501,6 @@ ipcMain.handle('get-system-audio-support', async () => {
 // runPythonScript is provided by createBackendCli(...) wired near the top of
 // this file (verbatim body moved to ./backend-cli).
 
-// Recovers a graceful {"success": false, "error": ...} a CLI command printed
-// to stdout right before exiting non-zero (see runPythonScript's err.stdout
-// above) -- without this, a real "already exists"/"not found" message gets
-// discarded in favor of a generic "Python script failed with code 1: <stderr>"
-// wrapper that's useless to a human. Falls back to that generic message when
-// stdout wasn't valid JSON (an actual crash, not a graceful failure).
-function parsePythonFailureJson(error) {
-  try {
-    const parsed = JSON.parse(error.stdout || '');
-    if (parsed && typeof parsed === 'object' && parsed.success === false) return parsed;
-  } catch (_) {
-    // stdout wasn't JSON -- fall through to the generic error below.
-  }
-  return { success: false, error: error.message };
-}
-
 async function getBackendStatusInternal(silent = true) {
   const result = await runPythonScript('simple_recorder.py', ['status'], silent);
   return { success: true, status: result };
@@ -2992,6 +2986,7 @@ ipcMain.handle('reprocess-meeting', async (event, summaryFile, regenerateTitle, 
       });
 
       let stderrBuf = '';
+      let reprocessStreamError = '';
       // Mirrors the main pipeline: true only if summarization actually ran
       // (STREAM_COMPLETE). "Generate notes" reprocess always summarises; a
       // retranscribe with auto_summarize off wouldn't, so track it rather than
@@ -3037,6 +3032,7 @@ ipcMain.handle('reprocess-meeting', async (event, summaryFile, regenerateTitle, 
             }
           } else if (line.startsWith('STREAM_ERROR:')) {
             const errMsg = line.slice('STREAM_ERROR:'.length);
+            reprocessStreamError = errMsg.trim();
             sendDebugLog(`❌ Reprocess stream error: ${errMsg}`);
             if (mainWindow && !mainWindow.isDestroyed()) {
               mainWindow.webContents.send('summary-complete', { success: false, sessionName, summaryFile });
@@ -3108,10 +3104,10 @@ ipcMain.handle('reprocess-meeting', async (event, summaryFile, regenerateTitle, 
               success: false,
               sessionName,
               summaryFile,
-              message: `Reprocessing failed (exit ${code})`,
+              message: reprocessStreamError || `Reprocessing failed (exit ${code})`,
             });
           }
-          reject(new Error(`reprocess exited with code ${code}: ${stderrBuf.slice(-500)}`));
+          reject(new Error(reprocessStreamError || `reprocess exited with code ${code}: ${stderrBuf.slice(-500)}`));
         }
       });
     });
@@ -3206,6 +3202,7 @@ ipcMain.handle('generate-report-meeting', async (event, summaryFile, templateId)
       let stderrBuf = '';
 
       const watchdog = makeInactivityWatchdog(proc, TRANSCRIBE_INACTIVITY_MS, 'generate-report');
+      let reportStreamError = '';
 
       proc.on('error', (err) => {
         watchdog.clear();
@@ -3242,6 +3239,7 @@ ipcMain.handle('generate-report-meeting', async (event, summaryFile, templateId)
             }
           } else if (line.startsWith('STREAM_ERROR:')) {
             const errMsg = line.slice('STREAM_ERROR:'.length);
+            reportStreamError = errMsg.trim();
             sendDebugLog(`❌ Report generation stream error: ${errMsg}`);
             if (mainWindow && !mainWindow.isDestroyed()) {
               mainWindow.webContents.send('summary-complete', { success: false, sessionName, summaryFile, report: true });
@@ -3290,10 +3288,10 @@ ipcMain.handle('generate-report-meeting', async (event, summaryFile, templateId)
               sessionName,
               summaryFile,
               report: true,
-              message: `Report generation failed (exit ${code})`,
+              message: reportStreamError || `Report generation failed (exit ${code})`,
             });
           }
-          reject(new Error(`generate-report exited with code ${code}: ${stderrBuf.slice(-500)}`));
+          reject(new Error(reportStreamError || `generate-report exited with code ${code}: ${stderrBuf.slice(-500)}`));
         }
       });
     });
@@ -7297,6 +7295,14 @@ function forwardDiagnosticStdout(line, source) { // eslint-disable-line no-unuse
   if (isDiagnosticStdoutLine(line)) sendDebugLog(line.trim());
 }
 
+async function setOllamaSetupModelIfCurrent(expectedModel, targetModel) {
+  return runPythonScript(
+    'simple_recorder.py',
+    ['set-model-if-current', expectedModel, assertOllamaSetupModel(targetModel)],
+    true,
+  );
+}
+
 ipcMain.handle('setup-ollama-and-model', async () => {
   try {
     // Check AI provider -- skip local Ollama setup for remote/cloud
@@ -7308,7 +7314,28 @@ ipcMain.handle('setup-ollama-and-model', async () => {
         return { success: true, skipped: true };
       }
     } catch (e) {
-      sendDebugLog(`Could not read AI provider, proceeding with local setup: ${e.message}`);
+      sendDebugLog(`Could not read AI provider: ${e.message}`);
+      return { success: false, error: 'Could not read the AI provider. Please retry setup.' };
+    }
+
+    // Re-running the setup wizard must not replace an explicit Apple
+    // Intelligence choice with whichever Ollama model happens to be installed.
+    // Availability is reported in Settings; setup only preserves the choice.
+    let setupModelAtStart;
+    try {
+      const currentRaw = await runPythonScript('simple_recorder.py', ['get-model'], true);
+      const current = JSON.parse(currentRaw.trim());
+      if (!current || typeof current.model !== 'string' || !current.model) {
+        throw new Error('invalid model response');
+      }
+      setupModelAtStart = current.model;
+      if (current.model === 'apple:system') {
+        sendDebugLog('Apple Intelligence is already selected - skipping Ollama model setup');
+        return { success: true, skipped: true, message: 'Apple Intelligence remains selected' };
+      }
+    } catch (e) {
+      sendDebugLog(`Could not read current summary model: ${e.message}`);
+      return { success: false, error: 'Could not read current summary model. Please retry setup.' };
     }
 
     // Check macOS version — bundled Ollama requires macOS 14 (Sonoma) or later.
@@ -7352,27 +7379,32 @@ ipcMain.handle('setup-ollama-and-model', async () => {
     let ollamaExited = false;
     let ollamaExitCode = null;
     let ollamaDyldError = false;
+    let setupStartedOllamaProcess = null;
+    let setupStartedOllamaPid = null;
     if (!ollamaAlreadyRunning) {
       sendDebugLog('Starting Ollama service...');
       sendDebugLog(`$ ${finalOllamaPath} serve`);
-      ollamaProcess = spawn(finalOllamaPath, ['serve'], { detached: true, stdio: ['ignore', 'ignore', 'pipe'], env: getOllamaEnv() });
-      ollamaPid = ollamaProcess.pid;
+      setupStartedOllamaProcess = spawn(finalOllamaPath, ['serve'], { detached: true, stdio: ['ignore', 'ignore', 'pipe'], env: getOllamaEnv() });
+      setupStartedOllamaPid = setupStartedOllamaProcess.pid;
+      ollamaProcess = setupStartedOllamaProcess;
+      ollamaPid = setupStartedOllamaPid;
       // Write PID file so quit handler can find the process
       try { require('fs').writeFileSync(path.join(getBackendCwd(), '_internal', 'ollama.pid'), String(ollamaPid)); } catch (_) {}
-      ollamaProcess.stderr.on('data', (data) => {
+      setupStartedOllamaProcess.stderr.on('data', (data) => {
         const msg = data.toString().trim();
         if (msg) sendDebugLog(`Ollama: ${msg}`);
         if (msg.includes('Symbol not found') || msg.includes('dyld')) ollamaDyldError = true;
       });
-      ollamaProcess.on('exit', (code) => {
+      setupStartedOllamaProcess.on('exit', (code) => {
         ollamaExited = true;
         ollamaExitCode = code;
-        ollamaPid = null;
+        if (ollamaProcess === setupStartedOllamaProcess) ollamaProcess = null;
+        if (ollamaPid === setupStartedOllamaPid) ollamaPid = null;
         if (code !== 0 && code !== null) {
           sendDebugLog(`Ollama process exited with code ${code}`);
         }
       });
-      ollamaProcess.unref();
+      setupStartedOllamaProcess.unref();
     }
 
     // Wait for Ollama to be ready (poll with early exit detection).
@@ -7405,53 +7437,66 @@ ipcMain.handle('setup-ollama-and-model', async () => {
     }
 
     if (!ready) {
+      const cleaned = cleanupFailedOllamaSetup({
+        startedProcess: setupStartedOllamaProcess,
+        startedPid: setupStartedOllamaPid,
+        currentProcess: ollamaProcess,
+        currentPid: ollamaPid,
+        pidFile: path.join(getBackendCwd(), '_internal', 'ollama.pid'),
+        killProcessTree,
+        fs: require('fs'),
+        processExited: ollamaExited,
+      });
+      ollamaProcess = cleaned.ollamaProcess;
+      ollamaPid = cleaned.ollamaPid;
       if (ollamaExited) {
         if (ollamaDyldError) {
           return { success: false, error: 'Ollama crashed due to incompatible macOS version. Steno requires macOS 14 (Sonoma) or later for local AI. Please update macOS or use a remote Ollama server in Settings.' };
         }
         return { success: false, error: `Ollama failed to start (exit code: ${ollamaExitCode}). Check debug logs for details.` };
       }
-      sendDebugLog('Warning: Ollama may not be fully ready, attempting pull anyway...');
+      sendDebugLog('Ollama did not become ready during setup');
+      return { success: false, error: 'Ollama did not become ready. Please retry setup.' };
     }
 
-    // #123: don't re-download the default if the connected Ollama already has a
-    // supported model. The backend matches installed models against the supported
-    // registry (single source of truth in config.py); on a hit we set it active
-    // and skip the pull entirely, so the default Local path needs no network for
-    // anyone with a usable Ollama already set up. Best-effort: any failure here
-    // falls through to the normal download below.
+    // Query installed models only after Electron has either reused an existing
+    // service or started and recorded the bundled service. The Python command
+    // is deliberately probe-only: letting it start a detached Ollama process
+    // here would leave that process outside Electron's quit cleanup.
     let pullTarget = DEFAULT_AI_MODEL;
+    let resolved = null;
     try {
       const resolvedRaw = await runPythonScript('simple_recorder.py', ['resolve-setup-model'], true);
-      const resolved = JSON.parse(resolvedRaw.trim());
+      resolved = JSON.parse(resolvedRaw.trim());
       if (resolved && resolved.pull_target) {
         pullTarget = resolved.pull_target;
       }
-      if (resolved && resolved.installed) {
-        sendDebugLog(`Found already-installed model "${resolved.installed}" — skipping download`);
-        // Persist it as the active model, and only report success once that
-        // write actually succeeded. set-model now exits non-zero on a
-        // config-write failure (runPythonScript rejects) AND prints
-        // success:false, so we check both: swallowing the failure here would
-        // have setup claim success with no active model saved.
-        try {
-          const setRaw = await runPythonScript('simple_recorder.py', ['set-model', resolved.installed], true);
-          // set-model prints a human line before the JSON, so grab the last
-          // JSON-looking line rather than parsing the whole stdout.
-          const jsonLine = setRaw.trim().split('\n').reverse().find((l) => l.trim().startsWith('{'));
-          const setRes = jsonLine ? JSON.parse(jsonLine) : null;
-          if (!setRes || setRes.success !== true) {
-            return { success: false, error: (setRes && setRes.error) || 'Failed to save the selected model.' };
-          }
-        } catch (e) {
-          return { success: false, error: `Failed to save the selected model: ${e.message}` };
+    } catch (e) {
+      sendDebugLog(`Could not check for installed models: ${e.message}`);
+    }
+    if (resolved && resolved.installed) {
+      try {
+        sendDebugLog(`Found already-installed model "${resolved.installed}" - skipping download`);
+        const setRaw = await setOllamaSetupModelIfCurrent(
+          setupModelAtStart,
+          resolved.installed,
+        );
+        const jsonLine = setRaw.trim().split('\n').reverse().find((l) => l.trim().startsWith('{'));
+        const setRes = jsonLine ? JSON.parse(jsonLine) : null;
+        if (!setRes || setRes.success !== true) {
+          return { success: false, error: modelSetupSaveError(setRes) };
+        }
+        if (setRes.updated !== true) {
+          return { success: true, skipped: true, message: 'A newer model selection was preserved' };
         }
         trackEvent('setup_completed', { step: 'ollama_existing_model' });
         return { success: true, message: `Using already-installed model ${resolved.installed}` };
+      } catch (e) {
+        return { success: false, error: modelSetupSaveError(e) };
       }
-    } catch (e) {
-      sendDebugLog(`Could not check for installed models, proceeding to download: ${e.message}`);
     }
+
+    // If no model is installed yet, download the pullTarget model
 
     sendDebugLog('Downloading AI model (this may take several minutes)...');
     sendDebugLog(`POST http://127.0.0.1:11434/api/pull {name: "${pullTarget}"}`);
@@ -7602,9 +7647,23 @@ ipcMain.handle('setup-ollama-and-model', async () => {
           if (res.statusCode === 200) {
             sendDebugLog('AI model download completed successfully');
             try {
-              await runPythonScript('simple_recorder.py', ['set-model', DEFAULT_AI_MODEL], true);
-            } catch {
-              // Non-fatal -- config reset is best-effort
+              const setRaw = await setOllamaSetupModelIfCurrent(
+                setupModelAtStart,
+                DEFAULT_AI_MODEL,
+              );
+              const jsonLine = setRaw.trim().split('\n').reverse().find((l) => l.trim().startsWith('{'));
+              const setRes = jsonLine ? JSON.parse(jsonLine) : null;
+              if (!setRes || setRes.success !== true) {
+                settle({ success: false, error: modelSetupSaveError(setRes) });
+                return;
+              }
+              if (setRes.updated !== true) {
+                settle({ success: true, skipped: true, message: 'A newer model selection was preserved' });
+                return;
+              }
+            } catch (e) {
+              settle({ success: false, error: modelSetupSaveError(e) });
+              return;
             }
             trackEvent('setup_completed', { step: 'ollama_and_model' });
             settle({ success: true, message: 'Ollama and AI model ready' });
@@ -7905,7 +7964,7 @@ ipcMain.handle('set-model', async (event, modelName) => {
     return { success: true, model: modelName };
   } catch (error) {
     sendDebugLog(`Error setting model: ${error.message}`);
-    return { success: false, error: error.message };
+    return parsePythonFailureJson(error);
   }
 });
 

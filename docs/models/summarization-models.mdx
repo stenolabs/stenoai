@@ -9,21 +9,49 @@ After transcription, Steno passes the transcript to a language model to generate
 
 | Model | Size | Notes |
 |-------|------|-------|
-| `gemma4:e2b-it-qat` | ~4.3GB (~6.5GB on Apple Silicon) | Default. Fast, 128K context. |
+| `apple:system` (Apple Intelligence) | Built-in | Experimental, disabled by default. Requires macOS 26+ and an explicit test opt-in. |
+| `gemma4:e2b-it-qat` | ~4.3GB (~6.5GB on Apple Silicon) | Default local model. Fast, 128K context. |
 | `gemma4:e4b-it-qat` | ~6.1GB (~8.8GB on Apple Silicon) | Higher quality, modest footprint. |
 | `qwen3.5:9b` | ~6.6GB | Strong at structured output and action items. |
 | `gemma4:12b-it-qat` | ~7.2GB (~7.7GB on Apple Silicon) | 256K context, best for long meetings. |
 | `gpt-oss:20b` | ~14GB | Highest quality, reasoning. |
 
-On Apple Silicon, the three Gemma 4 models are automatically pulled as MLX/NVFP4 builds instead of the base GGUF -- a meaningful speed win, at a larger download size (shown above).
+Local summarization runs via Ollama with `gemma4:e2b-it-qat` by default.
+Apple's built-in `SystemLanguageModel` integration is experimental and disabled
+by default. It is not offered in the normal model picker. Testers on macOS 26+
+can opt in by launching Steno with `STENOAI_ENABLE_EXPERIMENTAL_APPLE_LM=1` in
+its process environment, then explicitly selecting **Apple Intelligence
+(Experimental)** when macOS reports it available. `STENOAI_DISABLE_APPLE_LM=1`
+overrides this opt-in. The experiment applies to Apple summaries, reports and chat.
+Results can omit facts or invent details, even with short inputs; review every
+result against the source. This is not a production-quality recommendation.
+Steno does not silently change an existing model selection or fall back to another provider if Apple becomes unavailable.
+An Apple selection from an earlier test remains saved when the experiment is
+disabled, but cannot generate. Select another model in **Settings → AI** to continue.
 
-`gemma4:e2b-it-qat` (Gemma 4 E2B) is the default and handles most meetings well. `llama3.2:3b` is still available for existing users pinned to it, but is deprecated in favor of the Gemma 4 lineup and hidden from the default model picker. Larger models produce better-structured, more detailed notes; the trade-off is processing time and disk space.
+Apple summaries and reports currently support short transcripts only: up to
+2,000 UTF-8 bytes for the transcript, notes and template instructions combined,
+after removing transcript timestamps. The complete request, including notes,
+template instructions and formatting instructions, must also fit within 5,000
+UTF-8 bytes. Non-ASCII text can use several bytes per character. These limits are
+not a meeting-duration limit or a guarantee of summary accuracy.
+
+If the input exceeds either limit, Steno stops before generation. It does not
+shorten the transcript or notes, combine partial summaries, or switch models.
+Your source text is preserved. Choose another model in **Settings → AI** and retry
+for longer transcripts, or shorten optional notes/template instructions when
+those exceed the request limit. An automatic extra template report is best-effort:
+if it exceeds the limit, the Standard note remains available; generating the
+report explicitly shows the error.
+
+For local Ollama on Apple Silicon, the three Gemma 4 models are automatically pulled as MLX/NVFP4 builds instead of the base GGUF, providing faster inference at the larger download sizes shown above.
+`llama3.2:3b` remains available for existing users pinned to it, but it is deprecated and hidden from the default model picker.
 
 ## How to change models
 
 1. Open **Settings → AI**
 2. Select a model from the list
-3. If the model is not yet downloaded, Steno will download it via Ollama
+3. If an Ollama model is not yet downloaded, Steno will download it via Ollama. Apple's built-in model is managed by macOS.
 
 The new model is used for all future recordings. You can re-summarize an existing recording from its detail view using any model.
 

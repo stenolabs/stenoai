@@ -59,7 +59,11 @@ test('setup reuses an installed supported model and skips the pull (#123)', asyn
     // Seed a supported model that the mock does NOT list as installed, so the
     // picker must fall through to the installed default (gemma4:e2b-it-qat) — and
     // the post-setup model change proves the reuse path ran.
-    writeUserConfig(userDataDir, { ai_provider: 'local', model: 'qwen3.5:9b' });
+    writeUserConfig(userDataDir, {
+      ai_provider: 'local',
+      model: 'qwen3.5:9b',
+      summary_model_source: 'auto',
+    });
     const { page } = await launchApp();
 
     const res = await page.evaluate(() =>

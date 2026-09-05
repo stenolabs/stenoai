@@ -64,6 +64,18 @@ if [ "$(uname -s)" = "Darwin" ]; then
         exit 1
     fi
     echo ""
+    echo "Building sandboxed Apple LM helper app (needs macOS 26+ SDK)..."
+    APPLE_LM_HELPER="$PROJECT_ROOT/bin/Steno Apple LM.app"
+    APPLE_LM_EXECUTABLE="$APPLE_LM_HELPER/Contents/MacOS/steno-apple-lm"
+    if ! "$SCRIPT_DIR/build-apple-lm-sidecar.sh" "$(uname -m)"; then
+        rm -rf "$APPLE_LM_HELPER"
+        echo "Warning: Apple LM helper was not built at bin/Steno Apple LM.app." >&2
+        echo "The Apple model choice will be unavailable; other local summaries continue to use Ollama." >&2
+    elif [ ! -x "$APPLE_LM_EXECUTABLE" ]; then
+        rm -rf "$APPLE_LM_HELPER"
+        echo "Warning: Apple LM helper build produced no executable artifact." >&2
+        echo "The Apple model choice will be unavailable; other local summaries continue to use Ollama." >&2
+    fi
 fi
 
 python3 -m PyInstaller stenoai.spec --noconfirm

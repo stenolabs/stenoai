@@ -37,6 +37,7 @@ if SPECPATH not in sys.path:
     sys.path.insert(0, SPECPATH)
 
 from scripts.diarize_bundle_guard import require_diarize_sidecar
+from scripts.apple_lm_bundle_guard import resolve_apple_lm_sidecar
 
 # Apple Silicon uses parakeet-mlx for ASR; Windows / Linux use onnx-asr via
 # ONNX Runtime. The two backends live in src/_parakeet_{mlx,onnx}.py and
@@ -256,8 +257,17 @@ required_diarize_sidecar = require_diarize_sidecar(
     Path(ollama_bin_dir) / 'steno-diarize',
     platform=sys.platform,
 )
+_apple_lm_sidecar = resolve_apple_lm_sidecar(
+    Path(ollama_bin_dir) / 'Steno Apple LM.app',
+    platform=sys.platform,
+    required=os.environ.get('STENOAI_REQUIRE_APPLE_LM_SIDECAR') == '1',
+)
 if os.path.exists(ollama_bin_dir):
-    for root, _dirs, files in os.walk(ollama_bin_dir):
+    for root, dirs, files in os.walk(ollama_bin_dir):
+        if Path(root) == Path(ollama_bin_dir):
+            # The sandboxed Apple helper is packaged as a nested app by
+            # electron-builder, not inside the unsandboxed Python backend.
+            dirs[:] = [item for item in dirs if item != 'Steno Apple LM.app']
         for filename in files:
             filepath = os.path.join(root, filename)
             rel = os.path.relpath(filepath, ollama_bin_dir)

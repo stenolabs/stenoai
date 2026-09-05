@@ -74,6 +74,44 @@ back to channel labels when the cache is unavailable. The cache lives below
 the Steno user-data directory and therefore honors `STENOAI_USER_DATA_DIR` in
 tests; `STENOAI_DIARIZE_MODEL_DIR` is the lower-level sidecar override.
 
+### Apple System Language Model (macOS only)
+
+Apple Intelligence is experimental and disabled by default, including in packaged
+builds. Only an explicit process environment value
+`STENOAI_ENABLE_EXPERIMENTAL_APPLE_LM=1` makes it available for testing; then it
+still requires an explicit model choice. No GUI toggle or automatic hardware/OS
+activation is provided. `STENOAI_DISABLE_APPLE_LM=1` always disables it.
+The gate precedes status fixtures, cached availability and helper resolution.
+Previously selected Apple configurations are preserved but cannot generate while
+the gate is off; the user must choose another model explicitly. Experimental
+results can omit facts or invent details and must not be treated as release-quality.
+On-device summarization uses `bin/Steno Apple LM.app`, a minimal sandboxed Swift helper app (`apple-lm-sidecar/`) wrapping `FoundationModels.SystemLanguageModel.default`.
+The OS manages the concrete model behind that API.
+Apple summaries and reports are short-input only: at most 2,000 UTF-8 bytes of
+timestamp-normalized transcript, notes and template combined, and 5,000 UTF-8 bytes in the complete prompt,
+including notes, template and language instructions. The existing character
+budget also reserves output space. These are product limits, not tokenizer
+guarantees. Oversized requests fail before generation without truncation,
+snapshot compaction, or provider fallback. Query/chat context selection is separate.
+Python launches the helper through LaunchServices and talks to it through private named pipes via `src.apple_lm` (`status` / `complete` / `stream`).
+Prompts are not written to disk, and errors are fixed strings.
+Build it before `pyinstaller` when the macOS 26+ SDK is present:
+
+```
+scripts/build-apple-lm-sidecar.sh   # outputs bin/Steno Apple LM.app
+```
+
+`stenoai.spec` validates the helper on Darwin but deliberately leaves it out of the unsandboxed Python backend.
+A custom electron-builder signing hook gives only the nested helper its App Sandbox entitlement and packages it under `Steno.app/Contents/Helpers/`.
+A development host without the SDK omits it and the app keeps Ollama `gemma4:e2b-it-qat`.
+Release builds set `STENOAI_REQUIRE_APPLE_LM_SIDECAR=1`, so a missing helper fails the build.
+The release workflow builds the helper separately with Xcode 27 and packages it beside the backend built on macOS 15 with `MACOSX_DEPLOYMENT_TARGET=14.4`, preserving the application's Sonoma compatibility floor.
+Tests isolate with `STENOAI_DISABLE_APPLE_LM=1`; Apple-specific tests explicitly
+enable the experiment and override the disable flag. An unfrozen E2E process can
+inject a fake binary via `STENOAI_APPLE_LM_BIN` only when `STENOAI_E2E=1`.
+Windows/Linux never resolve the helper.
+
+
 ### End-to-end tests (Playwright)
 The e2e suite drives the **real Electron app** (real window, real clicks) to catch
 full-app regressions like the org-provider reset before they reach users. It lives

@@ -112,6 +112,29 @@ CHARS_PER_TOKEN = 4               # English baseline; used for the reduce-fits s
 _CHUNK_SAFETY_CHARS_PER_TOKEN = 2 # used for chunk budget: worst-case German/BPE (2.0 c/t floor)
 _OVERLAP_RATIO = 0.05             # last 5% of previous chunk prepended to next
 
+# Apple summaries are deliberately limited to a single short-input call.
+# These UTF-8 byte limits are a conservative product scope, not token counts
+# or a guarantee of model accuracy. Never compact or truncate summary inputs.
+_APPLE_SUMMARY_MAX_CONTENT_BYTES = 2000
+_APPLE_SUMMARY_MAX_PROMPT_BYTES = 5000
+_APPLE_RESPONSE_RESERVE_CHARS = 2800
+_APPLE_QUERY_HEAD_RATIO = 0.6
+_APPLE_SUMMARY_TOO_LONG = (
+    "Apple Intelligence currently supports only short transcripts "
+    "(transcript, notes and template combined: up to 2,000 UTF-8 bytes). The input exceeds "
+    "its input limit. Shorten the input or choose another model in Settings "
+    "and retry. No model was switched automatically."
+)
+
+
+class AppleSummaryInputTooLong(ValueError):
+    """A summary exceeds the supported Apple short-input scope."""
+
+
+_APPLE_QUERY_TRUNCATION_MARKER = (
+    "\n...[middle of transcript omitted to fit Apple Intelligence context]...\n"
+)
+
 
 def resolve_num_ctx(model_name: str) -> int:
     """Context window (num_ctx) to request from Ollama for ``model_name``.
@@ -125,6 +148,9 @@ def resolve_num_ctx(model_name: str) -> int:
     canonicalize back to the GGUF id first so both runtime variants share the
     same window.
     """
+    from src.apple_lm import is_apple_system_model, APPLE_LM_NUM_CTX
+    if is_apple_system_model(model_name):
+        return APPLE_LM_NUM_CTX
     model_name = Config._MLX_TO_GGUF.get(model_name, model_name)
     base = _OLLAMA_MODEL_NUM_CTX.get(model_name, OLLAMA_NUM_CTX_DEFAULT)
     return max(OLLAMA_NUM_CTX_FLOOR, min(base, OLLAMA_NUM_CTX_CEILING))
@@ -225,6 +251,12 @@ class OllamaSummarizer:
             if model_name is None:
                 model_name = config.get_model()
                 logger.info(f"Using configured model: {model_name}")
+            from src.apple_lm import is_apple_system_model
+            if is_apple_system_model(model_name):
+                raise ValueError(
+                    "Apple Intelligence can only be used with the local AI provider. "
+                    "Select a model installed on the remote Ollama server."
+                )
             self.model_name = model_name
 
             if not self.remote_url:
@@ -234,10 +266,7 @@ class OllamaSummarizer:
             logger.info(f"Remote Ollama initialized: host={self.remote_url}, model={self.model_name}")
 
         else:
-            # Local mode: existing behavior
-            if not OLLAMA_AVAILABLE:
-                raise ImportError("Ollama is not installed. Please install ollama-python.")
-
+            # Local mode: existing behavior or Apple SystemLanguageModel
             if model_name is None:
                 try:
                     model_name = config.get_model()
@@ -246,10 +275,33 @@ class OllamaSummarizer:
                     logger.warning(f"Failed to load model from config: {e}, using default")
                     model_name = config.DEFAULT_MODEL
 
-            self.model_name = resolve_runtime_tag(model_name)
-            self._ensure_ollama_ready()
-            self.client = ollama.Client()
-    
+            from src.apple_lm import (
+                AppleLMClient,
+                apple_lm_status,
+                apple_lm_unavailable_message,
+                is_apple_system_model,
+            )
+            if is_apple_system_model(model_name):
+                status = apple_lm_status()
+                if status.get("available") is not True:
+                    # The user explicitly selected Apple. A silent provider or
+                    # model change would make provenance and privacy claims
+                    # false, so surface the fixed availability reason instead.
+                    raise RuntimeError(apple_lm_unavailable_message(status))
+                self.model_name = model_name
+                self.client = AppleLMClient()
+                logger.info("Apple System Language Model initialized")
+            else:
+                if not OLLAMA_AVAILABLE:
+                    raise ImportError("Ollama is not installed. Please install ollama-python.")
+                self.model_name = resolve_runtime_tag(model_name)
+                self._ensure_ollama_ready()
+                self.client = ollama.Client()
+
+    def _using_apple_lm(self) -> bool:
+        """True when local provider is routed through Apple SystemLanguageModel."""
+        from src.apple_lm import is_apple_system_model
+        return self.ai_provider == "local" and is_apple_system_model(self.model_name)
     def _is_ollama_running(self) -> bool:
         """Check if Ollama service is running."""
         return ollama_manager.is_ollama_running()
@@ -283,9 +335,10 @@ class OllamaSummarizer:
         content_tokens = num_ctx - MAP_PROMPT_OVERHEAD_TOKENS - MAP_OUTPUT_MAX_TOKENS
         return int(content_tokens * _CHUNK_SAFETY_CHARS_PER_TOKEN)
 
-    def _split_into_chunks(self, transcript: str) -> list[str]:
+    def _split_into_chunks(self, transcript: str, budget: Optional[int] = None) -> list[str]:
         """Split transcript into overlapping chunks that each fit within the model context."""
-        budget = self._chunk_budget_chars()
+        if budget is None:
+            budget = self._chunk_budget_chars()
         overlap_chars = int(budget * _OVERLAP_RATIO)
         content_budget = budget - overlap_chars
 
@@ -344,6 +397,10 @@ class OllamaSummarizer:
         without it, then re-raise the ORIGINAL error if the retry also fails so a
         genuine failure (OOM, model missing) isn't masked as a ``think`` problem.
         """
+        if self._using_apple_lm():
+            # ``think`` is an Ollama compatibility option. AppleLMClient ignores
+            # it, so the fallback would repeat the same on-device generation.
+            return client.chat(stream=False, **kwargs)
         try:
             return client.chat(stream=False, think=False, **kwargs)
         except Exception as original:
@@ -360,6 +417,11 @@ class OllamaSummarizer:
         guard the first token and, if it fails, restart the stream without
         ``think`` — done before yielding anything, so no token is duplicated.
         """
+        if self._using_apple_lm():
+            # See _chat_no_think: retrying without an ignored option would
+            # duplicate the same Apple request.
+            yield from client.chat(stream=True, **kwargs)
+            return
         try:
             stream = iter(client.chat(stream=True, think=False, **kwargs))
             first = next(stream)
@@ -387,7 +449,7 @@ class OllamaSummarizer:
         """Non-streaming Ollama call for one map chunk. Returns stripped text or raises."""
         import time
         prompt = self._create_map_prompt(chunk, chunk_num, total_chunks)
-        if self.ai_provider != "remote":
+        if self.ai_provider != "remote" and not self._using_apple_lm():
             self._ensure_ollama_ready()
         options = {**self._ollama_options(), "num_predict": MAP_OUTPUT_MAX_TOKENS}
         # think=False: thinking-capable models (gemma4:e2b-it-qat, gemma4:12b-it-qat,
@@ -540,7 +602,7 @@ class OllamaSummarizer:
             map_results = self._hierarchical_reduce(map_results, depth=1, progress_callback=progress_callback)
 
         reduce_prompt = self._create_reduce_prompt(map_results, language, notes)
-        if self.ai_provider != "remote":
+        if self.ai_provider != "remote" and not self._using_apple_lm():
             self._ensure_ollama_ready()
         # No try/except here: a reduce failure must propagate to the outer
         # handler in simple_recorder.reprocess (`except Exception as e:
@@ -568,6 +630,25 @@ class OllamaSummarizer:
         # STREAM_ERROR instead.
         if not ''.join(streamed_chunks).strip():
             raise ValueError("Reduce step returned empty result")
+
+    def _apple_input_budget_chars(self) -> int:
+        """Maximum Apple prompt size with room for a bounded response."""
+        window = resolve_num_ctx(self.model_name) * _CHUNK_SAFETY_CHARS_PER_TOKEN
+        return max(800, window - _APPLE_RESPONSE_RESERVE_CHARS)
+
+    def _validate_apple_summary_input(
+        self, transcript: str, prompt: str, notes: Optional[str] = None,
+        template_prompt: Optional[str] = None,
+    ) -> None:
+        """Fail before generation; preserve the full input and selected model."""
+        if (
+            sum(len(text.encode("utf-8")) for text in (
+                transcript, (notes or "").strip(), (template_prompt or "").strip(),
+            )) > _APPLE_SUMMARY_MAX_CONTENT_BYTES
+            or len(prompt.encode("utf-8")) > _APPLE_SUMMARY_MAX_PROMPT_BYTES
+            or len(prompt) > self._apple_input_budget_chars()
+        ):
+            raise AppleSummaryInputTooLong(_APPLE_SUMMARY_TOO_LONG)
 
     def _repair_json(self, json_text: str) -> Optional[str]:
         """
@@ -744,6 +825,8 @@ class OllamaSummarizer:
     
     def _ensure_ollama_ready(self) -> bool:
         """Ensure Ollama service is running and model is available."""
+        if self._using_apple_lm():
+            return True
         logger.info("Checking Ollama service...")
         
         # Step 1: Check if Ollama is running
@@ -1182,6 +1265,8 @@ Return ONLY the response in this exact JSON format:
                 )
             
             prompt = self._create_permissive_prompt(transcript, language, notes=notes)
+            if self._using_apple_lm():
+                self._validate_apple_summary_input(transcript, prompt, notes)
             logger.info(f"Sending transcript to {self.ai_provider} model: {self.model_name}")
             logger.info(f"Transcript length: {len(transcript)} characters")
 
@@ -1197,8 +1282,9 @@ Return ONLY the response in this exact JSON format:
             elif self.ai_provider == "cloud":
                 response_text = self._cloud_chat(prompt, timeout_seconds)
             else:
-                # Retry logic for Ollama API calls (local or remote)
-                max_retries = 3
+                # Apple short-input summaries use one direct generation only.
+                # Ollama keeps its existing compatibility/retry behavior.
+                max_retries = 1 if self._using_apple_lm() else 3
                 ollama_response = None
                 for attempt in range(max_retries):
                     try:
@@ -1206,7 +1292,7 @@ Return ONLY the response in this exact JSON format:
                             logger.info(f"Retry attempt {attempt + 1}/{max_retries}")
                             if self.ai_provider == "remote":
                                 self.client = ollama.Client(host=self.remote_url)
-                            else:
+                            elif not self._using_apple_lm():
                                 self._ensure_ollama_ready()
                                 self.client = ollama.Client()
 
@@ -1345,6 +1431,9 @@ Return ONLY the response in this exact JSON format:
                 logger.error(f"Error creating MeetingTranscript object: {e}")
                 return None
                 
+        except AppleSummaryInputTooLong:
+            # Preserve the actionable limit error for CLI/UI callers.
+            raise
         except Exception as e:
             logger.error(f"Ollama API call failed: {e}")
             logger.error(f"Model used: {self.model_name}")
@@ -1390,6 +1479,25 @@ Return ONLY the response in this exact JSON format:
         notes_context = ""
         if notes and notes.strip():
             notes_context = f"USER NOTES (written during the meeting):\n{notes.strip()}\n\n"
+
+        if getattr(self, "model_name", None) == "apple:system" and getattr(self, "ai_provider", None) == "local":
+            # A compact instruction-only schema avoids the small model copying
+            # example placeholders into the user's note. Other providers keep
+            # the established prompt and its contracts unchanged.
+            return (
+                f"{diarisation_note}{notes_context}Write factual meeting notes as markdown. "
+                "Output only the notes, starting with ## Summary. Use these exact "
+                "English section headers: ## Summary, ## Key Topics, ## Key Points, "
+                "## Action Items. Write a brief overview in Summary, actual topic "
+                "headings in Key Topics, and factual bullets in the last two sections. "
+                "Preserve explicitly stated project names, locations, current dates, "
+                "decisions, and every task with its owner and status. When a date or "
+                "decision changes, report the latest value. Pending tasks stay pending; "
+                "do not describe them as completed. Put these facts in Key Points and "
+                "Action Items even if the overview is brief. Do not invent missing facts, "
+                "owners or deadlines. Never output example placeholders."
+                f"{language_instruction}\n\nTRANSCRIPT:\n{transcript}"
+            )
 
         return f"""{diarisation_note}{notes_context}Summarise this meeting transcript as markdown. Output ONLY the markdown below with no preamble, commentary, or explanation. Start directly with ## Summary.
 
@@ -1444,16 +1552,13 @@ TRANSCRIPT:
 
     def _stream_direct(self, prompt: str):
         """Stream a single non-chunked completion for ``prompt`` via local/remote
-        Ollama, yielding content chunks. ``think=False`` so a thinking-capable
-        model emits answer text directly instead of spending tokens reasoning
-        into a separate channel before the first content token (see
-        _summarize_chunk for the full rationale).
-
-        Cloud/adapter providers keep their own inline streaming in
-        ``summarize_transcript_streaming`` and never reach here — this is the
-        minimal extraction of just the local/remote Ollama path, shared by the
-        markdown and free-form template routes.
+        Ollama or Apple Intelligence, yielding content chunks.
         """
+        if self._using_apple_lm():
+            from src.apple_lm import stream_complete
+            yield from stream_complete(prompt)
+            return
+
         if self.ai_provider != "remote":
             self._ensure_ollama_ready()
         # Via _chat_stream_no_think so a remote server that rejects `think`
@@ -1558,19 +1663,43 @@ TRANSCRIPT:
             str: Text chunks as they arrive from the LLM
         """
         transcript = _strip_leading_timestamps(transcript)
-        if template_prompt:
+        using_apple_lm = self._using_apple_lm()
+        apple_direct_prompt = None
+        if using_apple_lm:
+            apple_direct_prompt = (
+                self._create_template_report_prompt(
+                    transcript, template_prompt, language, notes
+                )
+                if template_prompt
+                else self._create_markdown_prompt(transcript, language, notes)
+            )
+
+        if using_apple_lm:
+            # Include notes, templates, language instructions and scaffolding in
+            # the check. Never enter snapshot/map-reduce or trim user content.
+            self._validate_apple_summary_input(transcript, apple_direct_prompt, notes, template_prompt)
+            inner = self._stream_completion(apple_direct_prompt)
+            empty_message = (
+                "Model returned an empty report" if template_prompt
+                else "Model returned an empty summary"
+            )
+        elif template_prompt:
             # Free-form template report: no chunking/map-reduce (those prompts are
             # summary-schema specific and don't apply here). Stream through the
             # ACTIVE provider — not straight to Ollama, which has no client and
             # would crash in cloud/adapter mode.
-            prompt = self._create_template_report_prompt(transcript, template_prompt, language, notes)
+            prompt = apple_direct_prompt or self._create_template_report_prompt(
+                transcript, template_prompt, language, notes
+            )
             inner = self._stream_completion(prompt)
             empty_message = "Model returned an empty report"
         elif self._needs_chunking(transcript, notes):
             inner = self._map_reduce_streaming(transcript, language, notes, progress_callback)
             empty_message = "Model returned an empty summary"
         else:
-            prompt = self._create_markdown_prompt(transcript, language, notes)
+            prompt = apple_direct_prompt or self._create_markdown_prompt(
+                transcript, language, notes
+            )
             inner = self._stream_completion(prompt)
             empty_message = "Model returned an empty summary"
 
@@ -1595,6 +1724,11 @@ TRANSCRIPT:
             True if connection is successful
         """
         try:
+            if self._using_apple_lm():
+                from src.apple_lm import apple_lm_status
+
+                return apple_lm_status().get("available") is True
+
             models = self.client.list()
             available_models = [model.model for model in models.models]
             
@@ -1632,28 +1766,74 @@ TRANSCRIPT:
         Returns:
             True if model is available and set successfully
         """
+        from src.apple_lm import (
+            APPLE_SYSTEM_MODEL,
+            AppleLMClient,
+            apple_lm_status,
+            is_apple_system_model,
+        )
+
+        if is_apple_system_model(model_name) and self.ai_provider != "local":
+            logger.error("Apple Intelligence can only be used with the local AI provider")
+            return False
+
+        if is_apple_system_model(model_name):
+            if apple_lm_status().get("available") is not True:
+                logger.error("Apple Intelligence is not available")
+                return False
+            self.model_name = APPLE_SYSTEM_MODEL
+            self.client = AppleLMClient()
+            logger.info("Model changed to Apple System Language Model")
+            return True
+
+        previous_model = self.model_name
+        previous_client = self.client
+        switching_from_apple = self.ai_provider == "local" and self._using_apple_lm()
+        candidate = resolve_runtime_tag(model_name) if switching_from_apple else model_name
+        if switching_from_apple:
+            if not OLLAMA_AVAILABLE:
+                logger.error("Ollama client is not available")
+                return False
+            self.model_name = candidate
+            try:
+                if not self._is_ollama_running() and not self._start_ollama_service():
+                    raise RuntimeError("Failed to start Ollama service")
+                self.client = ollama.Client()
+            except Exception as e:
+                self.model_name = previous_model
+                self.client = previous_client
+                logger.error(f"Error preparing Ollama model: {e}")
+                return False
+
         try:
             models = self.client.list()
             available_models = [model.model for model in models.models]
-            
-            if model_name in available_models:
-                self.model_name = model_name
+
+            if candidate in available_models:
+                self.model_name = candidate
                 logger.info(f"Model changed to: {model_name}")
                 return True
             else:
                 logger.error(f"Model {model_name} not available. Available models: {available_models}")
+                if switching_from_apple:
+                    self.model_name = previous_model
+                    self.client = previous_client
                 return False
-                
+
         except Exception as e:
+            if switching_from_apple:
+                self.model_name = previous_model
+                self.client = previous_client
             logger.error(f"Error setting model: {e}")
             return False
     
     def cleanup(self):
         """Clean up Ollama process if we started it."""
-        if self.ollama_process:
+        process = getattr(self, "ollama_process", None)
+        if process:
             try:
-                self.ollama_process.terminate()
-                self.ollama_process.wait(timeout=10)
+                process.terminate()
+                process.wait(timeout=10)
                 logger.info("Ollama service process terminated")
             except (subprocess.TimeoutExpired, ProcessLookupError, OSError) as e:
                 # terminate didn't take (or the process is already gone) —
@@ -1661,7 +1841,7 @@ TRANSCRIPT:
                 # try just means it died in the gap, which is fine.
                 logger.warning(f"Ollama terminate failed ({e}); escalating to kill")
                 try:
-                    self.ollama_process.kill()
+                    process.kill()
                     logger.info("Ollama service process killed")
                 except (ProcessLookupError, OSError):
                     pass
@@ -1723,6 +1903,9 @@ TITLE:"""
                 response_text = self._adapter_chat(prompt, 30)
             elif self.ai_provider == "cloud":
                 response_text = self._cloud_chat(prompt, 30)
+            elif self._using_apple_lm():
+                from src.apple_lm import complete
+                response_text = complete(prompt, timeout=90).strip()
             else:
                 # HTTP-level timeout must account for model cold-start (~10s Metal init)
                 title_client = ollama.Client(
@@ -1739,7 +1922,6 @@ TITLE:"""
                     options=self._ollama_options(),
                 )
                 response_text = ollama_response['message']['content'].strip()
-
             # Clean up the response. Reasoning models (e.g. deepseek-r1) can
             # ignore the "just the title" instruction and wrap the answer in a
             # <think> block, a "TITLE:" label on its own line, or markdown
@@ -1804,13 +1986,44 @@ TITLE:"""
             query_lang_instruction = ""
         return f"""Answer the following question based on the meeting content below (summary, key topics, and transcript).
 Be concise and direct. If the answer requires inference from what was discussed, that's fine.
-Only say you don't know if the topic truly wasn't discussed at all.{query_lang_instruction}
+Only say you don't know if the topic truly wasn't discussed at all.
+If the transcript below contains no speech, reply that there is no meeting content yet.{query_lang_instruction}
 
 QUESTION: {question}
 
+TRANSCRIPT:
 {transcript}
 
 ANSWER:"""
+
+    def _build_bounded_apple_query_prompt(
+        self, transcript: str, question: str, language: str = "en"
+    ) -> str:
+        """Build a query prompt that leaves room for Apple's response.
+
+        Meeting chat must stay responsive and deterministic, so an oversized
+        transcript keeps its beginning and newest tail rather than starting a
+        second model-driven summarisation pipeline before answering.
+        """
+        input_budget = self._apple_input_budget_chars()
+        empty_prompt = self._build_query_prompt("", question, language)
+        transcript_budget = input_budget - len(empty_prompt)
+        if transcript_budget <= len(_APPLE_QUERY_TRUNCATION_MARKER):
+            raise ValueError(
+                "Question is too long for Apple Intelligence. Shorten it and try again."
+            )
+        if len(transcript) <= transcript_budget:
+            return self._build_query_prompt(transcript, question, language)
+
+        content_budget = transcript_budget - len(_APPLE_QUERY_TRUNCATION_MARKER)
+        head = int(content_budget * _APPLE_QUERY_HEAD_RATIO)
+        tail = content_budget - head
+        bounded = (
+            transcript[:head]
+            + _APPLE_QUERY_TRUNCATION_MARKER
+            + transcript[-tail:]
+        )
+        return self._build_query_prompt(bounded, question, language)
 
     def query_transcript_streaming(self, transcript: str, question: str, language: str = "en"):
         """Generator that yields text chunks from the LLM for a transcript query."""
@@ -1821,7 +2034,11 @@ ANSWER:"""
             yield "Please provide a question."
             return
 
-        prompt = self._build_query_prompt(transcript, question, language)
+        prompt = (
+            self._build_bounded_apple_query_prompt(transcript, question, language)
+            if self._using_apple_lm()
+            else self._build_query_prompt(transcript, question, language)
+        )
 
         try:
             if self.ai_provider == "adapter":
@@ -1861,6 +2078,9 @@ ANSWER:"""
                         content = chunk.choices[0].delta.content
                         if content:
                             yield content
+            elif self._using_apple_lm():
+                from src.apple_lm import stream_complete
+                yield from stream_complete(prompt, timeout=300)
             else:
                 if self.ai_provider == "remote":
                     self.client = ollama.Client(host=self.remote_url)
@@ -1900,7 +2120,11 @@ ANSWER:"""
             if not question or question.strip() == "":
                 return "Please provide a question."
 
-            prompt = self._build_query_prompt(transcript, question, language)
+            prompt = (
+                self._build_bounded_apple_query_prompt(transcript, question, language)
+                if self._using_apple_lm()
+                else self._build_query_prompt(transcript, question, language)
+            )
 
             logger.info(f"Querying transcript with question ({len(question)} chars)")
 
@@ -1908,6 +2132,9 @@ ANSWER:"""
                 response_text = self._adapter_chat(prompt, 120)
             elif self.ai_provider == "cloud":
                 response_text = self._cloud_chat(prompt, 120)
+            elif self._using_apple_lm():
+                from src.apple_lm import complete
+                response_text = complete(prompt, timeout=120)
             else:
                 # Retry logic for Ollama API calls (local or remote)
                 max_retries = 2

@@ -202,6 +202,51 @@ jobs:
       - name: Run backend unit tests
         run: python -m unittest discover tests
 
+  # The maintainer's development Mac may run a newer beta. This job keeps the
+  # helper's deployment floor honest on GitHub's stable macOS 26 image. The
+  # smoke copy is deliberately re-signed without App Sandbox because public PR
+  # runners do not have the project's Apple signing identity; release builds
+  # verify the production sandbox entitlement after Developer ID signing.
+  apple-lm-helper-macos26:
+    name: Apple LM helper (macOS 26)
+    runs-on: xcode-27
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Verify stable runtime and LaunchServices transport
+        run: |
+          test "$(sw_vers -productVersion | cut -d. -f1)" = "26"
+          OPEN_HELP="$(/usr/bin/open --help 2>&1 || true)"
+          grep -q -- '--stdin' <<< "$OPEN_HELP"
+          grep -q -- '--stdout' <<< "$OPEN_HELP"
+          grep -q -- '--stderr' <<< "$OPEN_HELP"
+          grep -q -- '--env' <<< "$OPEN_HELP"
+
+      - name: Build and launch Apple LM helper
+        run: |
+          chmod +x scripts/build-apple-lm-sidecar.sh
+          ./scripts/build-apple-lm-sidecar.sh arm64
+          mkdir -p build/apple-lm-smoke
+          ditto "bin/Steno Apple LM.app" "build/apple-lm-smoke/Steno Apple LM.app"
+          codesign --force --deep --sign - --options runtime "build/apple-lm-smoke/Steno Apple LM.app"
+          export STENOAI_DISABLE_APPLE_LM=0
+          export STENOAI_ENABLE_EXPERIMENTAL_APPLE_LM=1
+          export STENOAI_USER_DATA_DIR="$(mktemp -d)"
+          export STENOAI_E2E=1
+          export STENOAI_APPLE_LM_BIN="$PWD/build/apple-lm-smoke/Steno Apple LM.app/Contents/MacOS/steno-apple-lm"
+          python3 - <<'PY'
+          from src.apple_lm import apple_lm_status
+
+          status = apple_lm_status()
+          assert isinstance(status.get("available"), bool), status
+          assert status.get("reason") not in {
+              "sidecar_error", "sidecar_missing", "experimental_disabled",
+              "disabled", "unsupported_os",
+          }, status
+          print(status)
+          PY
+
   # tsc --noEmit over the renderer (the typecheck:renderer script already exists;
   # CI just never called it). Mirrors the lint-renderer job's node bootstrap.
   typecheck-renderer:

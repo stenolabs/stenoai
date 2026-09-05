@@ -171,13 +171,13 @@ Have questions or suggestions? [Join our Discord](https://discord.gg/DZ6vcQnxxu)
 - `Parakeet TDT v3` (572 MB): Highest quality, supports live transcription, 25 European languages (English, Spanish, French, German, Italian, Portuguese, Dutch, Russian, Polish, Czech, and 15 others). Apple Silicon only via MLX. **(default on fresh installs)**
 - `Whisper Large V3 Turbo` (1.6 GB): Best-accuracy Whisper engine for the languages Parakeet can't speak (Chinese, Japanese, Korean, Arabic, Hindi, and 94 others). Post-stop only.
 
-**Summarization Models** (Ollama):
-- `gemma4:e2b-it-qat` (4.3GB): Lightest Gemma 4, quantization-aware, with a real 128K context **(default)**
+**Summarization Models:**
+- `Apple Intelligence (SystemLanguageModel)`: Optional built-in on-device System Language Model on macOS 26 or later. The OS manages the model. Steno never switches to it automatically.
+- `gemma4:e2b-it-qat` (4.3GB): Lightest Gemma 4 via Ollama, quantization-aware, with a real 128K context **(default)**
 - `gemma4:e4b-it-qat` (6.1GB): Quantization-aware E4B — higher quality than E2B at a modest footprint
 - `qwen3.5:9b` (6.6GB): Excellent at structured output and action items
 - `gemma4:12b-it-qat` (7.2GB): Gemma 4 (quantization-aware) with a 256K context — best for long meetings
 - `gpt-oss:20b` (14GB): OpenAI open-weight model with reasoning capabilities
-
 ## Future Roadmap
 
 ### Enhanced Features

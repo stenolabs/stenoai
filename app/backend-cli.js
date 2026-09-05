@@ -19,6 +19,23 @@
 const path = require('path');
 const { spawn: _spawnRaw } = require('child_process');
 
+// Recover a graceful {success:false,error:...} result that a CLI command
+// printed before exiting non-zero. Some commands emit diagnostics first, so
+// prefer the complete stdout but also accept its last standalone JSON line.
+function parsePythonFailureJson(error) {
+  const stdout = String(error?.stdout || '').trim();
+  const candidates = stdout ? [stdout, ...stdout.split(/\r?\n/).reverse()] : [];
+  for (const candidate of candidates) {
+    try {
+      const parsed = JSON.parse(candidate);
+      if (parsed && typeof parsed === 'object' && parsed.success === false) return parsed;
+    } catch (_) {
+      // Keep scanning in case a CLI prefix preceded a single-line JSON result.
+    }
+  }
+  return { success: false, error: error.message };
+}
+
 // Wrap spawn so every backend / ollama launch defaults to windowsHide:true
 // AND PYTHONUNBUFFERED:1.
 // The PyInstaller backend (stenoai.exe) and bundled ollama.exe are console
@@ -177,7 +194,7 @@ function createBackendCli({
           resolve(stdout);
         } else {
           const err = new Error(`Python script failed with code ${code}: ${stderr}`);
-          // Callers (see parsePythonFailureJson in main.js) recover a graceful
+          // Callers use parsePythonFailureJson to recover a graceful
           // {"success": false, "error": ...} a CLI command printed to stdout
           // right before exiting non-zero -- without these, that message is
           // unreachable and every failure looks like a generic crash.
@@ -197,4 +214,4 @@ function createBackendCli({
   return { getBackendPath, getBackendCwd, runPythonScript };
 }
 
-module.exports = { spawn, killProcessTree, createBackendCli };
+module.exports = { spawn, killProcessTree, createBackendCli, parsePythonFailureJson };

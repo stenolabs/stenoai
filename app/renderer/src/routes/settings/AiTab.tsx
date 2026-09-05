@@ -59,7 +59,14 @@ import {
 } from '@/hooks/useSettings';
 import { useOrgSession } from '@/hooks/useOrg';
 import { COMPACT_BTN, COMPACT_INPUT, COMPACT_TRIGGER, SectionHeading, SettingRow } from './primitives';
-import { ModelCard, formatModelSize, isDefaultModel, parsePullPercent } from './model-card';
+import {
+  ModelCard,
+  formatModelSize,
+  isDefaultModel,
+  modelDisplayName,
+  modelNote,
+  parsePullPercent,
+} from './model-card';
 import { modelMayExceedMemory } from './model-memory';
 import { LANGUAGES_PARAKEET, LANGUAGES_WHISPER } from './languages';
 
@@ -950,15 +957,13 @@ function ModelList() {
     const downloadProgress = isDownloading ? pull.progress[pullTarget] : undefined;
     const isDefault = !isRemote && isDefaultModel(m.description);
 
-    let note: string | undefined;
-    if (isRemote && m.description) {
-      note = m.description;
-    } else if (!isRemote) {
-      const parts: string[] = [];
-      if (m.speed) parts.push(`${m.speed} speed`);
-      if (m.quality) parts.push(`${m.quality} quality`);
-      note = parts.length ? parts.join(' · ') : undefined;
-    }
+    const note = modelNote({
+      isRemote,
+      managed: m.managed,
+      description: m.description,
+      speed: m.speed,
+      quality: m.quality,
+    });
 
     // The NVFP4 blob is a different (often larger) download than the GGUF
     // entry's own size -- show it instead whenever NVFP4 is what's actually
@@ -976,7 +981,7 @@ function ModelList() {
     const onSelect = () => {
       if (m.installed) {
         setCurrent.mutate(m.name);
-      } else {
+      } else if (m.downloadable !== false) {
         pull.mutate({ name: m.name, pullTarget });
       }
     };
@@ -1003,7 +1008,7 @@ function ModelList() {
       <ModelCard
         key={m.name}
         icon={getOllamaModelIcon(m.name)}
-        name={m.name}
+        name={m.managed ? modelDisplayName(m.name, m.displayName) : m.name}
         sizeLabel={sizeLabel}
         note={note}
         isCurrent={isCurrent}
@@ -1014,9 +1019,10 @@ function ModelList() {
         downloadProgress={downloadProgress}
         downloadBytesPerSecond={pull.bytesPerSecond[pullTarget]}
         onSelect={onSelect}
+        selectDisabled={m.selectable === false}
         onCancelDownload={() => pull.cancel(pullTarget)}
         isInstalled={Boolean(m.installed)}
-        onDeleteModel={onDeleteModel}
+        onDeleteModel={m.deletable === false ? undefined : onDeleteModel}
         ggufInstalled={Boolean(m.ggufInstalled)}
         fasterBuildTag={m.installed ? m.mlxTag : undefined}
         fasterBuildInstalled={Boolean(m.mlxInstalled)}

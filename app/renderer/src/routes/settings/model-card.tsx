@@ -18,6 +18,31 @@ export function isDefaultModel(description: string | undefined): boolean {
   return /\((default|recommended)\)/i.test(description ?? '');
 }
 
+export function modelDisplayName(name: string, displayName?: string): string {
+  return displayName?.trim() || name;
+}
+
+export function modelNote({
+  isRemote,
+  managed,
+  description,
+  speed,
+  quality,
+}: {
+  isRemote: boolean;
+  managed?: boolean;
+  description?: string;
+  speed?: string;
+  quality?: string;
+}): string | undefined {
+  if ((isRemote || managed) && description) return description;
+  if (isRemote) return undefined;
+  const parts: string[] = [];
+  if (speed) parts.push(`${speed} speed`);
+  if (quality) parts.push(`${quality} quality`);
+  return parts.length ? parts.join(' · ') : undefined;
+}
+
 export function parsePullPercent(progress: string | undefined): number | null {
   const match = progress?.match(/(\d{1,3})%/);
   if (!match) return null;
@@ -135,6 +160,7 @@ interface ModelCardProps {
   downloadProgress?: string;
   downloadBytesPerSecond?: number;
   onSelect: () => void;
+  selectDisabled?: boolean;
   // Lets a user on a slow connection (or a misclick on a large model) back
   // out of a download in progress instead of being stuck waiting for it.
   onCancelDownload?: () => void;
@@ -182,6 +208,7 @@ export function ModelCard({
   downloadProgress,
   downloadBytesPerSecond,
   onSelect,
+  selectDisabled = false,
   onCancelDownload,
   isInstalled = false,
   onDeleteModel,
@@ -342,7 +369,7 @@ export function ModelCard({
             // Whisper/Parakeet share this component but don't wire cancel
             // support -- without the `onCancelDownload` check, this showed
             // an active-looking "Cancel" for them that did nothing on click.
-            disabled={isDownloading && !onCancelDownload}
+            disabled={selectDisabled || (isDownloading && !onCancelDownload)}
             onClick={isDownloading ? onCancelDownload : onSelect}
           >
             {isDownloading ? (

@@ -96,7 +96,7 @@ class ResolveSetupModelPullTargetTests(unittest.TestCase):
 
         runner = CliRunner()
         fake_response = mock.Mock(models=[])
-        with mock.patch("src.ollama_manager.start_ollama_server", return_value=True), \
+        with mock.patch("src.ollama_manager.start_ollama_server") as start_ollama, \
              mock.patch("src.config.is_apple_silicon", return_value=True), \
              mock.patch("ollama.list", return_value=fake_response):
             result = runner.invoke(cli, ["resolve-setup-model"])
@@ -105,13 +105,14 @@ class ResolveSetupModelPullTargetTests(unittest.TestCase):
         data = json.loads(result.output)
         self.assertEqual(data["pull_target"], "gemma4:e2b-nvfp4")
         self.assertIsNone(data["installed"])
+        start_ollama.assert_not_called()
 
     def test_pull_target_is_gguf_default_off_apple_silicon(self):
         from simple_recorder import cli
 
         runner = CliRunner()
         fake_response = mock.Mock(models=[])
-        with mock.patch("src.ollama_manager.start_ollama_server", return_value=True), \
+        with mock.patch("src.ollama_manager.start_ollama_server") as start_ollama, \
              mock.patch("src.config.is_apple_silicon", return_value=False), \
              mock.patch("ollama.list", return_value=fake_response):
             result = runner.invoke(cli, ["resolve-setup-model"])
@@ -119,6 +120,7 @@ class ResolveSetupModelPullTargetTests(unittest.TestCase):
         self.assertEqual(result.exit_code, 0, result.output)
         data = json.loads(result.output)
         self.assertEqual(data["pull_target"], "gemma4:e2b-it-qat")
+        start_ollama.assert_not_called()
 
     def test_existing_nvfp4_install_is_recognised_as_supported(self):
         from simple_recorder import cli
@@ -128,7 +130,7 @@ class ResolveSetupModelPullTargetTests(unittest.TestCase):
         # pick_installed_supported_model must canonicalize it back to the
         # GGUF id to recognise "a supported model is already present".
         fake_response = mock.Mock(models=[mock.Mock(model="gemma4:e2b-nvfp4")])
-        with mock.patch("src.ollama_manager.start_ollama_server", return_value=True), \
+        with mock.patch("src.ollama_manager.start_ollama_server") as start_ollama, \
              mock.patch("src.config.is_apple_silicon", return_value=True), \
              mock.patch("ollama.list", return_value=fake_response):
             result = runner.invoke(cli, ["resolve-setup-model"])
@@ -136,6 +138,7 @@ class ResolveSetupModelPullTargetTests(unittest.TestCase):
         self.assertEqual(result.exit_code, 0, result.output)
         data = json.loads(result.output)
         self.assertEqual(data["installed"], "gemma4:e2b-it-qat")
+        start_ollama.assert_not_called()
 
     def test_nvfp4_install_with_extra_tag_detail_is_recognised(self):
         """Ollama can append extra detail after a tag (the same pattern
@@ -147,7 +150,7 @@ class ResolveSetupModelPullTargetTests(unittest.TestCase):
 
         runner = CliRunner()
         fake_response = mock.Mock(models=[mock.Mock(model="gemma4:e2b-nvfp4-extra-detail")])
-        with mock.patch("src.ollama_manager.start_ollama_server", return_value=True), \
+        with mock.patch("src.ollama_manager.start_ollama_server") as start_ollama, \
              mock.patch("src.config.is_apple_silicon", return_value=True), \
              mock.patch("ollama.list", return_value=fake_response):
             result = runner.invoke(cli, ["resolve-setup-model"])
@@ -155,6 +158,7 @@ class ResolveSetupModelPullTargetTests(unittest.TestCase):
         self.assertEqual(result.exit_code, 0, result.output)
         data = json.loads(result.output)
         self.assertEqual(data["installed"], "gemma4:e2b-it-qat")
+        start_ollama.assert_not_called()
 
 
 class VerifyModelCommandTests(unittest.TestCase):

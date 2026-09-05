@@ -96,6 +96,11 @@ export interface ListedModel {
   displayName?: string;
   size_gb?: number;
   installed: boolean;
+  available?: boolean;
+  managed?: boolean;
+  selectable?: boolean;
+  downloadable?: boolean;
+  deletable?: boolean;
   current?: boolean;
   deprecated?: boolean;
   description?: string;
@@ -643,6 +648,11 @@ export interface RawSupportedModel {
   quality?: string;
   deprecated?: boolean;
   installed?: boolean;
+  available?: boolean;
+  managed?: boolean;
+  selectable?: boolean;
+  downloadable?: boolean;
+  deletable?: boolean;
   // Distinct from `installed`, which is also true when only the NVFP4
   // sibling is present (see mlx_installed) -- this is specifically whether
   // the GGUF id itself was pulled, needed by anything that must not act on

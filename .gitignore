@@ -15,6 +15,7 @@ build/
 !app/build/
 app/build/*
 !app/build/entitlements.mac.plist
+!app/build/entitlements.apple-lm.plist
 !app/build/icon.icns
 !app/build/icon-dragonfly.icns
 !app/build/icon.ico

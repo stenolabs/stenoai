@@ -301,7 +301,8 @@ function captureSanitizedException(posthogClient, err, distinctId) {
 // User-entered model names, fine-tuned ids, local paths, and self-pulled tags
 // can carry customer/project names, so they collapse to the fixed "custom".
 const ANALYTICS_MODEL_ALLOWLIST = new Set([
-  // Curated local registry (SUPPORTED_MODELS in src/config.py) + MLX tags
+  // Curated local registry (SUPPORTED_MODELS in src/config.py) + Apple + MLX tags
+  'apple:system',
   'gemma4:e2b-it-qat',
   'gemma4:e4b-it-qat',
   'gemma4:12b-it-qat',
