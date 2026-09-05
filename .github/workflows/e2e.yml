@@ -828,6 +828,9 @@ jobs:
       - name: Build backend with PyInstaller
         run: pyinstaller stenoai.spec --noconfirm
 
+      - name: Verify bundled Ollama GPU backends
+        run: python scripts/verify_ollama_gpu_bundle.py bin dist/stenoai
+
       - name: Upload backend bundle
         uses: actions/upload-artifact@v4
         with:

@@ -37,6 +37,7 @@ if SPECPATH not in sys.path:
     sys.path.insert(0, SPECPATH)
 
 from scripts.diarize_bundle_guard import require_diarize_sidecar
+from scripts.verify_ollama_gpu_bundle import should_prune_ollama_gpu_path
 
 # Apple Silicon uses parakeet-mlx for ASR; Windows / Linux use onnx-asr via
 # ONNX Runtime. The two backends live in src/_parakeet_{mlx,onnx}.py and
@@ -213,22 +214,21 @@ for pkg in _DYLIB_PKGS:
     except Exception:
         pass
 
-# Bundle Ollama binary and libraries.
+# Bundle Ollama binary and libraries. Linux keeps GPU backends, Windows prunes
+# them for installer limits, and macOS uses its separate Metal runner layout.
 # Walk bin/ recursively — Ollama for Windows ships its runner libs under
 # lib/ollama/ that must be preserved relative to ollama.exe.
 # Ollama's Windows bundle ships GPU runner libs under lib/ollama/. As of
-# v0.30.8 that's lib/ollama/{cuda_v12,cuda_v13,vulkan} (rocm is no longer
-# shipped). They're NVIDIA-/discrete-GPU-only and add multiple GB
+# v0.31.1 that's lib/ollama/{cuda_v12,cuda_v13,vulkan} (rocm is a separate
+# archive). They're NVIDIA-/discrete-GPU-only and add multiple GB
 # (each cuda_v*/ggml-cuda.dll is ~1.6 GB) — dead weight on the CPU-only path:
 # transcription is ONNX-CPU, and the bundled Ollama summarises on the CPU
 # runner (ggml-cpu-*.dll / ggml-base.dll, which we keep). Skipping them keeps
 # the Windows bundle small enough for the NSIS installer to build (makensis
 # can't mmap a multi-GB app .7z). GPU acceleration for NVIDIA users is a
-# tracked follow-up (separate build/pack). The substring markers match any
-# cuda_vNN dir; rocm is kept as a defensive marker in case a future Ollama
-# re-adds it. No-op on macOS — these dirs don't exist there (Metal is built
-# into the darwin binary + its mlx_metal_v3/ runner, which we keep).
-_OLLAMA_GPU_MARKERS = ('lib/ollama/cuda', 'lib/ollama/rocm', 'lib/ollama/vulkan')
+# tracked follow-up (separate build/pack). Linux must retain these libraries:
+# its standard Ollama archive uses them for GPU inference. macOS remains a
+# no-op because Metal is built into its binary + mlx_metal_v3/ runner.
 
 # On darwin, Ollama's runner tree is routed into a COLLECT-stage DATA TOC
 # (`ollama_datas`) instead of `Analysis.binaries`. This is load-bearing, not a
@@ -262,8 +262,8 @@ if os.path.exists(ollama_bin_dir):
             filepath = os.path.join(root, filename)
             rel = os.path.relpath(filepath, ollama_bin_dir)
             rel_fs = rel.replace(os.sep, '/').lower()
-            if any(marker in rel_fs for marker in _OLLAMA_GPU_MARKERS):
-                continue  # skip GPU runner libs (CUDA/ROCm/Vulkan)
+            if should_prune_ollama_gpu_path(rel_fs, platform=sys.platform):
+                continue  # Windows only: skip GPU runner libs
             rel_dir = os.path.dirname(rel)
             base = os.path.basename(filename).lower()
             if base in ('ffmpeg', 'ffmpeg.exe'):
