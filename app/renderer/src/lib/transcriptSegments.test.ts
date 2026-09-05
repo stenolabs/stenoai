@@ -26,6 +26,13 @@ describe('parseTranscript — diarised', () => {
     expect(segs[0].text).toBe('Still going');
   });
 
+  test('preserves fractional seconds when present', () => {
+    const segs = parseTranscript('[00:02.5] [You] Exact gap boundary', true);
+    expect(segs).toEqual([
+      { speaker: 'You', text: 'Exact gap boundary', timestamp: '00:02.5' },
+    ]);
+  });
+
   test('parses timestamp-less transcripts (saved before this feature)', () => {
     const segs = parseTranscript('[You] Hello\n\n[Others] Hi', true);
     expect(segs).toEqual([
@@ -39,6 +46,18 @@ describe('parseTranscript — diarised', () => {
     expect(segs[0].text).toContain('line one');
     expect(segs[0].text).toContain('line two');
     expect(segs[1].timestamp).toBe('00:05');
+  });
+
+  test('parses acoustically-diarized "Speaker N" labels alongside You/Others', () => {
+    const segs = parseTranscript(
+      '[00:00] [You] Hello\n\n[00:05] [Speaker 2] Hi there\n\n[00:10] [Others] Welcome',
+      true,
+    );
+    expect(segs).toEqual([
+      { speaker: 'You', text: 'Hello', timestamp: '00:00' },
+      { speaker: 'Speaker 2', text: 'Hi there', timestamp: '00:05' },
+      { speaker: 'Others', text: 'Welcome', timestamp: '00:10' },
+    ]);
   });
 });
 

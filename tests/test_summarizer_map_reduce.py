@@ -8,6 +8,13 @@ from src.summarizer import OllamaSummarizer, MAP_PROMPT_OVERHEAD_TOKENS, MAP_OUT
 
 
 def _make_summarizer(model_name="llama3.2:3b"):
+    # __init__ calls _ensure_ollama_ready() for the local provider -- without
+    # mocking it, construction hits the REAL local Ollama server and, if the
+    # model isn't installed, triggers a REAL multi-GB `ollama pull` (this was
+    # a live bug: every test in this file did exactly that on any machine
+    # with Ollama actually running, e.g. via ollama.list()/.pull() in
+    # src.summarizer._ensure_model_available). Mirrors the correct pattern
+    # already used in test_summarizer_template.py's _s() helper.
     cfg = Config()
     # Patch out the Ollama readiness/start check during construction — these are
     # unit tests for pure helpers (chunk budget, split, prompt build) and must

@@ -26,6 +26,10 @@ export const settingsKeys = {
   // factory like every other setting rather than two hand-written arrays.
   keepRecordings: () => [...settingsKeys.all, 'keepRecordings'] as const,
   autoSummarize: () => [...settingsKeys.all, 'autoSummarize'] as const,
+  identityMatching: () => [...settingsKeys.all, 'identityMatchingEnabled'] as const,
+  obsidianSync: () => [...settingsKeys.all, 'obsidianSync'] as const,
+  obsidianVaultPath: () => [...settingsKeys.all, 'obsidianVaultPath'] as const,
+  obsidianConflicts: () => [...settingsKeys.all, 'obsidianConflicts'] as const,
 };
 
 /**
@@ -402,6 +406,20 @@ export function useSetAutoInstallWhenIdle() {
   });
 }
 
+export function useIdentityMatchingEnabledSetting() {
+  return useQuery({
+    queryKey: settingsKeys.identityMatching(),
+    queryFn: async () =>
+      unwrap(await ipc().settings.getIdentityMatchingEnabled()).identity_matching_enabled,
+  });
+}
+
+export function useSetIdentityMatchingEnabled() {
+  return useToggleSetting(settingsKeys.identityMatching(), async (v) =>
+    unwrap(await ipc().settings.setIdentityMatchingEnabled(v)),
+  );
+}
+
 export function useAutoSummarizeSetting() {
   return useQuery({
     queryKey: settingsKeys.autoSummarize(),
@@ -413,6 +431,59 @@ export function useSetAutoSummarize() {
   return useToggleSetting(settingsKeys.autoSummarize(), async (v) =>
     unwrap(await ipc().settings.setAutoSummarize(v)),
   );
+}
+
+/** Obsidian vault sync (#413): a toggle, a vault-folder path + picker, and a
+ * read of any external-edit conflicts to surface in the Integrations tab. */
+export function useObsidianSyncSetting() {
+  return useQuery({
+    queryKey: settingsKeys.obsidianSync(),
+    queryFn: async () => unwrap(await ipc().settings.getObsidianSync()).obsidian_sync_enabled,
+  });
+}
+
+export function useSetObsidianSync() {
+  // Conflicts discovered by the (fire-and-forget) backfill surface via the
+  // polling refetch on useObsidianConflicts, so both mutate and mutateAsync
+  // stay consistent without a per-call invalidation wrapper.
+  return useToggleSetting(settingsKeys.obsidianSync(), async (v) =>
+    unwrap(await ipc().settings.setObsidianSync(v)),
+  );
+}
+
+export function useObsidianVaultPath() {
+  return useQuery({
+    queryKey: settingsKeys.obsidianVaultPath(),
+    queryFn: async () => unwrap(await ipc().settings.getObsidianVaultPath()).obsidian_vault_path,
+  });
+}
+
+export function useSetObsidianVaultPath() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (path: string) => unwrap(await ipc().settings.setObsidianVaultPath(path)),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: settingsKeys.obsidianVaultPath() });
+      qc.invalidateQueries({ queryKey: settingsKeys.obsidianConflicts() });
+    },
+  });
+}
+
+export function usePickObsidianVaultFolder() {
+  return useMutation({
+    mutationFn: async () => unwrap(await ipc().settings.pickObsidianVaultFolder()).folderPath,
+  });
+}
+
+export function useObsidianConflicts() {
+  return useQuery({
+    queryKey: settingsKeys.obsidianConflicts(),
+    queryFn: async () => unwrap(await ipc().settings.getObsidianConflicts()).conflicts,
+    // The backfill/sync that records conflicts runs async in main (fire-and-
+    // forget), so poll while the Integrations tab is mounted to surface a
+    // freshly-recorded conflict rather than showing a stale count.
+    refetchInterval: 4000,
+  });
 }
 
 /** Toggle + duration for the renderer-side silence detector. Defaults

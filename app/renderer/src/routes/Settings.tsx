@@ -10,8 +10,10 @@ import { SettingsNav, SETTINGS_TAB_LABELS, type SettingsTabId } from './settings
 import { GeneralTab } from './settings/GeneralTab';
 import { AiTab } from './settings/AiTab';
 import { TemplatesTab } from './settings/TemplatesTab';
+import { PeopleTab } from './settings/PeopleTab';
 import { OrganisationTab } from './settings/OrganisationTab';
 import { AdvancedTab } from './settings/AdvancedTab';
+import { IntegrationsTab } from './settings/IntegrationsTab';
 import { DeveloperTab } from './settings/DeveloperTab';
 import { AboutTab } from './settings/AboutTab';
 
@@ -38,10 +40,12 @@ const SETTINGS_TAB_DESCRIPTIONS: Partial<Record<SettingsTabId, React.ReactNode>>
       </button>
     </>
   ),
+  people:
+    'Local voice profiles Steno can use to suggest people across meetings. Deleting a profile stops future matching but does not delete recordings or transcripts.',
   organisation: 'Connect to Steno Enterprise for your organisation.',
 };
 
-// Deep-linkable tab ids: the 7 SettingsTabId nav destinations, plus
+// Deep-linkable tab ids: the 8 SettingsTabId nav destinations, plus
 // 'transcription' as a legacy alias that resolves onto 'ai' (its content
 // moved into AiTab's Transcription section, which renders first on that
 // page) — keeps `/settings?tab=transcription` links working unmodified.
@@ -50,7 +54,9 @@ const DEEP_LINK_IDS = [
   'transcription',
   'ai',
   'templates',
+  'people',
   'organisation',
+  'integrations',
   'advanced',
   'developer',
   'about',
@@ -226,7 +232,9 @@ export function Settings() {
             {tab === 'general' && <GeneralTab />}
             {tab === 'ai' && <AiTab />}
             {tab === 'templates' && <TemplatesTab onEditingChange={setTemplateEditorOpen} />}
+            {tab === 'people' && <PeopleTab />}
             {tab === 'organisation' && <OrganisationTab />}
+            {tab === 'integrations' && <IntegrationsTab />}
             {tab === 'advanced' && <AdvancedTab />}
             {tab === 'developer' && <DeveloperTab />}
             {tab === 'about' && <AboutTab />}

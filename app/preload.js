@@ -10,6 +10,11 @@
 const { contextBridge, ipcRenderer, webUtils } = require('electron');
 
 const VERSION = 1;
+const rendererPlatformOverride =
+  process.env.STENOAI_E2E === '1'
+  && ['darwin', 'linux', 'win32'].includes(process.env.STENOAI_E2E_RENDERER_PLATFORM)
+    ? process.env.STENOAI_E2E_RENDERER_PLATFORM
+    : null;
 
 const invoke = (channel, ...args) => ipcRenderer.invoke(channel, ...args);
 const send = (channel, ...args) => ipcRenderer.send(channel, ...args);
@@ -57,6 +62,7 @@ const stenoai = {
   version: VERSION,
 
   app: {
+    platform: rendererPlatformOverride || process.platform,
     getVersion: () => invoke('get-app-version'),
   },
 
@@ -86,6 +92,8 @@ const stenoai = {
     check: () => invoke('startup-setup-check'),
     ollamaAndModel: () => invoke('setup-ollama-and-model'),
     parakeet: () => invoke('setup-parakeet'),
+    speakerModelsStatus: () => invoke('speaker-model-status'),
+    speakerModels: () => invoke('setup-speaker-models'),
     test: () => invoke('setup-test'),
     triggerWizard: () => invoke('trigger-setup-wizard'),
   },
@@ -113,7 +121,12 @@ const stenoai = {
     openSystemAudioFile: (name) => invoke('open-system-audio-file', name),
     appendSystemAudioChunk: (bytes) => invoke('append-system-audio-chunk', bytes),
     closeSystemAudioFile: () => invoke('close-system-audio-file'),
-    reportCaptureError: (message) => send('recording-capture-error', message),
+    // Linux-only loopback path (see app/linux-loopback.js) — starts a
+    // pw-record subprocess in main and streams PCM back via
+    // on.linuxLoopbackChunk instead of going through getDisplayMedia.
+    startLinuxLoopback: () => invoke('start-linux-loopback'),
+    stopLinuxLoopback: () => invoke('stop-linux-loopback'),
+    reportCaptureError: (message, name, phase) => send('recording-capture-error', message, name, phase),
     processSystemAudio: (filePath, name) => invoke('process-system-audio-recording', filePath, name),
     processFile: (filePath, name) => invoke('process-recording', filePath, name),
     pickAudioFile: () => invoke('select-audio-file'),
@@ -199,6 +212,28 @@ const stenoai = {
     reset: (id) => invoke('reset-template', id),
   },
 
+  speakers: {
+    listProfiles: () => invoke('list-person-profiles'),
+    suggestForMeeting: (meetingStem) => invoke('suggest-speakers', meetingStem),
+    confirm: (params) => invoke('confirm-speaker', params),
+    createProfile: (displayName) => invoke('create-person-profile', displayName),
+    renameProfile: (id, displayName) => invoke('rename-person-profile', id, displayName),
+    deleteProfile: (id) => invoke('delete-person-profile', id),
+    getSampleAudio: (meetingStem, channel, diarizationSpeakerId, expectedRunId, segmentIndex) =>
+      invoke(
+        'get-speaker-sample-audio',
+        meetingStem,
+        channel,
+        diarizationSpeakerId,
+        expectedRunId,
+        segmentIndex,
+      ),
+    getPersonSampleAudio: (id) => invoke('get-person-sample-audio', id),
+    markCluster: (params) => invoke('mark-speaker-cluster', params),
+    setClusterReviewState: (params) => invoke('set-cluster-review-state', params),
+    namingStatus: (meetingStem) => invoke('speaker-naming-status', meetingStem),
+  },
+
   models: {
     checkOllama: () => invoke('check-ollama-installed'),
     list: () => invoke('list-models'),
@@ -257,6 +292,8 @@ const stenoai = {
     setAutoSummarize: (v) => invoke('set-auto-summarize', v),
     getAutoInstallWhenIdle: () => invoke('get-auto-install-when-idle'),
     setAutoInstallWhenIdle: (v) => invoke('set-auto-install-when-idle', v),
+    getIdentityMatchingEnabled: () => invoke('get-identity-matching-enabled'),
+    setIdentityMatchingEnabled: (v) => invoke('set-identity-matching-enabled', v),
     getSilenceAutoStop: () => invoke('get-silence-auto-stop'),
     setSilenceAutoStopEnabled: (v) => invoke('set-silence-auto-stop-enabled', v),
     setSilenceAutoStopMinutes: (v) => invoke('set-silence-auto-stop-minutes', v),
@@ -276,6 +313,12 @@ const stenoai = {
     getStoragePath: () => invoke('get-storage-path'),
     setStoragePath: (p) => invoke('set-storage-path', p),
     pickStorageFolder: () => invoke('select-storage-folder'),
+    getObsidianSync: () => invoke('get-obsidian-sync'),
+    setObsidianSync: (v) => invoke('set-obsidian-sync', v),
+    getObsidianVaultPath: () => invoke('get-obsidian-vault-path'),
+    setObsidianVaultPath: (p) => invoke('set-obsidian-vault-path', p),
+    pickObsidianVaultFolder: () => invoke('select-obsidian-vault-folder'),
+    getObsidianConflicts: () => invoke('get-obsidian-conflicts'),
     getAiPrompts: () => invoke('get-ai-prompts'),
     saveDiagnostics: (defaultFilename, content) =>
       invoke('save-diagnostics', defaultFilename, content),
@@ -378,6 +421,8 @@ const stenoai = {
     liveTranscriptReady: (cb) => subscribe('live-transcript-ready', cb),
     liveTranscriptChunk: (cb) => subscribe('live-transcript-chunk', cb),
     liveTranscriptError: (cb) => subscribe('live-transcript-error', cb),
+    linuxLoopbackChunk: (cb) => subscribe('linux-loopback-chunk', cb),
+    linuxLoopbackEnded: (cb) => subscribe('linux-loopback-ended', cb),
     updateAvailable: (cb) => subscribe('update-available', cb),
     updateDownloadProgress: (cb) => subscribe('update-download-progress', cb),
     updateDownloaded: (cb) => subscribe('update-downloaded', cb),

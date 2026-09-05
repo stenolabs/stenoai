@@ -19,18 +19,42 @@
 const path = require('path');
 const { spawn: _spawnRaw } = require('child_process');
 
-// Wrap spawn so every backend / ollama launch defaults to windowsHide:true.
+// Wrap spawn so every backend / ollama launch defaults to windowsHide:true
+// AND PYTHONUNBUFFERED:1.
 // The PyInstaller backend (stenoai.exe) and bundled ollama.exe are console
-// subsystem binaries; without this Electron pops a visible console window on
-// Windows for every recording, live-transcribe, query, and the long-lived
-// `ollama serve` keeps one open for the whole session. No-op on macOS/Linux.
-// Callers can still override by passing an explicit windowsHide.
+// subsystem binaries; without windowsHide, Electron pops a visible console
+// window on Windows for every recording, live-transcribe, query, and the
+// long-lived `ollama serve` keeps one open for the whole session. No-op on
+// macOS/Linux.
+// PYTHONUNBUFFERED matters because stdout/stderr are piped (not a TTY) here,
+// so Python defaults to block-buffering them -- a logger.info() call can sit
+// unflushed for many minutes on a long operation (a multi-hour recording's
+// ffmpeg preprocessing/diarization/transcription), making the pipeline look
+// hung even while it's genuinely working, and starving the inactivity
+// watchdog (TRANSCRIBE_INACTIVITY_MS) of the HEARTBEAT:/log lines it needs to
+// tell real silence from buffered-but-alive. Harmless for non-Python
+// binaries (ollama/ffmpeg) -- just an unused env var.
+// Callers can still override either by passing an explicit windowsHide/env.
 function spawn(command, args, options) {
+  const unbufferedEnv = (existingEnv) => ({
+    ...require('process').env,
+    PYTHONUNBUFFERED: '1',
+    ...(existingEnv || {}),
+  });
   if (Array.isArray(args) || args === undefined || args === null) {
-    return _spawnRaw(command, args, { windowsHide: true, ...(options || {}) });
+    const opts = options || {};
+    return _spawnRaw(command, args, {
+      windowsHide: true,
+      ...opts,
+      env: unbufferedEnv(opts.env),
+    });
   }
-  // 2-arg form: spawn(command, options)
-  return _spawnRaw(command, { windowsHide: true, ...args });
+  // 2-arg form: spawn(command, options) -- `args` IS the options object here.
+  return _spawnRaw(command, {
+    windowsHide: true,
+    ...args,
+    env: unbufferedEnv(args.env),
+  });
 }
 
 // Terminate a process AND its child processes. On Windows `process.kill(pid)`
@@ -152,7 +176,14 @@ function createBackendCli({
         if (code === 0) {
           resolve(stdout);
         } else {
-          reject(new Error(`Python script failed with code ${code}: ${stderr}`));
+          const err = new Error(`Python script failed with code ${code}: ${stderr}`);
+          // Callers (see parsePythonFailureJson in main.js) recover a graceful
+          // {"success": false, "error": ...} a CLI command printed to stdout
+          // right before exiting non-zero -- without these, that message is
+          // unreachable and every failure looks like a generic crash.
+          err.stdout = stdout;
+          err.stderr = stderr;
+          reject(err);
         }
       });
 

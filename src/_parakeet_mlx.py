@@ -145,9 +145,19 @@ def _load_model(model_id: str):
         try:
             from parakeet_mlx import from_pretrained
         except ImportError as e:
+            # Do NOT report this as "not installed" without saying what actually
+            # failed. `import parakeet_mlx` pulls in mlx, which dlopens libmlx
+            # and loads its Metal shader library; when THAT fails the ImportError
+            # lands here too, and a bare "run pip install" message sends the
+            # reader after a package that is already present and correctly
+            # bundled. Carry the real error in the message so the failing layer
+            # is named. (This is not hypothetical: an unpinned mlx upgrade broke
+            # the bundle with "Failed to load the default metallib".)
             raise ImportError(
-                "parakeet-mlx is not installed. Run `pip install parakeet-mlx` "
-                "in the venv (dev) or rebuild the PyInstaller bundle (prod)."
+                f"Could not import parakeet-mlx: {e}. If parakeet-mlx itself is "
+                "missing, run `pip install parakeet-mlx` in the venv (dev) or "
+                "rebuild the PyInstaller bundle (prod); if the message above "
+                "names mlx or its metallib, the bundled mlx build is at fault."
             ) from e
         logger.info("Loading Parakeet model: %s", model_id)
         model = from_pretrained(model_id)
@@ -294,6 +304,22 @@ def _result_to_dict(result, language: Optional[str]) -> dict:
             "text": (getattr(s, "text", "") or "").strip(),
             "start": float(getattr(s, "start", 0.0) or 0.0),
             "end": float(getattr(s, "end", 0.0) or 0.0),
+            # Word-level timing, kept alongside the sentence text so the
+            # diarised path can split an abnormally long run-on sentence
+            # (Parakeet sometimes fails to break long unpunctuated speech
+            # into multiple sentences) across several diarizer turns
+            # instead of forcing the whole thing onto one speaker. Token
+            # text already carries its own leading-space markers —
+            # "".join(t["text"] for t in tokens) reconstructs the sentence
+            # exactly, no separator needed.
+            "tokens": [
+                {
+                    "text": getattr(t, "text", "") or "",
+                    "start": float(getattr(t, "start", 0.0) or 0.0),
+                    "end": float(getattr(t, "end", 0.0) or 0.0),
+                }
+                for t in (getattr(s, "tokens", None) or [])
+            ],
         }
         for s in sentences
         if (getattr(s, "text", "") or "").strip()

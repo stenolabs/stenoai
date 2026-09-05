@@ -15,7 +15,7 @@ import type { Page } from '@playwright/test';
  * app/e2e-mock-ipc.js) so the picker renders enabled on first paint.
  */
 
-const EUROPEAN = ['English', 'Spanish', 'French', 'German', 'Dutch', 'Portuguese'];
+const EUROPEAN = ['English', 'Spanish', 'French', 'German', 'Dutch', 'Portuguese', 'Russian'];
 // Non-European: Whisper-only, must NOT appear on Parakeet (it can't transcribe them).
 const NON_EUROPEAN = ['Japanese', 'Chinese', 'Korean', 'Hindi', 'Arabic'];
 
@@ -38,7 +38,7 @@ test('Parakeet language picker offers European languages and hides non-European 
 
   await openTranscribeLanguagePicker(page);
 
-  // Auto + the six European languages are pinnable on Parakeet.
+  // Auto + the seven European languages are pinnable on Parakeet.
   await expect(page.getByRole('option', { name: 'Auto (detect)' })).toBeVisible();
   for (const lang of EUROPEAN) {
     await expect(page.getByRole('option', { name: lang, exact: true })).toBeVisible();

@@ -122,7 +122,9 @@ case "$(uname -s)" in
         OLLAMA_FILE="ollama-darwin.tgz"
         ;;
     Linux)
-        OLLAMA_FILE="ollama-linux-amd64.tgz"
+        # Ollama dropped the .tgz asset; releases now ship .tar.zst (and a
+        # separate -rocm variant we don't want).
+        OLLAMA_FILE="ollama-linux-amd64.tar.zst"
         ;;
     MINGW*|MSYS*|CYGWIN*)
         OLLAMA_FILE="ollama-windows-amd64.zip"
@@ -155,11 +157,24 @@ find . -maxdepth 3 -type f \( -name ollama -o -name ollama.exe \) -exec mv {} {}
 # Extract based on file type
 if [[ "$OLLAMA_FILE" == *.zip ]]; then
     unzip -o "$OLLAMA_FILE"
+elif [[ "$OLLAMA_FILE" == *.zst ]]; then
+    tar --zstd -xf "$OLLAMA_FILE"
 else
     tar -xzf "$OLLAMA_FILE"
 fi
 
 rm "$OLLAMA_FILE"
+
+# The new .tar.zst Linux release nests the binary under bin/ (with lib/ as a
+# sibling of that bin/, not of the binary itself) — unlike every other archive
+# here, which puts the binary and lib/ directly at the archive root as
+# siblings. src.ollama_manager.get_bundled_ollama_dir() and stenoai.spec both
+# assume that flat sibling layout (already relied on by the Windows zip), so
+# flatten bin/* up one level to match it exactly.
+if [ -d bin ] && [ -f bin/ollama ]; then
+    mv bin/* .
+    rmdir bin
+fi
 
 # The Ollama archives differ in layout between platforms (some nest the binary under
 # bin/), so locate it rather than assuming a path, and fail if the extract produced

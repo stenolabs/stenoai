@@ -10,11 +10,15 @@ To take notes in an in-person meeting on a Mac, use Steno with your microphone: 
 1. Install Steno and grant microphone permission (see [Installation](/getting-started/installation)).
 2. In Steno, make sure the **Record system audio** toggle is off (microphone recording is always on), then click **New note** to start.
 3. Place your Mac where its mic can hear the room clearly.
-4. When the meeting ends, click **Stop**. Steno transcribes the recording and generates notes automatically.
+4. When the meeting ends, click **Stop**; Steno transcribes the recording and lets you generate notes when you are ready, or you can enable automatic notes under **Settings → AI**.
 
 ## Speaker labels in person
 
-Speaker labels (`[You]` / `[Others]`) come from recording your microphone and system audio as separate channels. An in-person meeting is captured on the microphone only, so it does not produce speaker labels — the transcript is a single stream. See [Speaker labels](/features/speaker-labels).
+An in-person meeting is captured on the microphone only, so there is no separate `[Others]` system-audio channel.
+On macOS, Steno can still separate up to four voices within that microphone stream after processing.
+The main voice keeps `[You]`, while additional voices receive labels such as `Speaker 2` and `Speaker 3`.
+Review the groups in the note's **Speakers** section before relying on them.
+See [Speaker labels](/features/speaker-labels) for naming, privacy, and platform details.
 
 ## Getting a clean transcript
 
@@ -23,9 +27,32 @@ Room audio can be noisier than a call. For in-person recordings where accuracy m
 ---
 
 <Accordion title="Can Steno tell individual people apart in the room?">
-Not today. In-person audio is a single microphone stream, so it is transcribed as one channel. Multi-speaker diarisation (identifying individual speakers by voice) is on the roadmap.
+  Yes, on macOS.
+
+Anonymous speaker separation works without named voice profiles.
+
+It can distinguish up to four voices in the microphone channel.
+
+Review the result because short, overlapping, or noisy speech can be grouped incorrectly.
+
 </Accordion>
 
 <Accordion title="Is the recording uploaded anywhere?">
-No. In-person recordings are transcribed and summarized on your Mac. No meeting content is uploaded unless you have configured an optional cloud summarization model. The app does send anonymous usage analytics by default (no meeting content), which you can turn off in **Settings → Advanced**. See [How on-device processing works](/privacy/how-on-device-works).
+  No.
+
+The audio recording stays on your Mac.
+Transcription runs locally, but the transcript can be sent off-device through the optional features described below.
+
+Summarization runs on your Mac by default.
+
+If you configure a cloud model, private server, or organisation adapter, Steno sends the transcript and any notes you typed off-device for summarization, but never the audio.
+
+Configured organisation sharing features can also send transcripts and notes to your organisation.
+
+Steno sends anonymous usage analytics by default, without meeting content.
+
+Turn analytics off in **Settings → Advanced**.
+
+See [How on-device processing works](/privacy/how-on-device-works).
+
 </Accordion>

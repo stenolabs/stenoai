@@ -289,9 +289,9 @@ def _result_to_dict(result: Any, language: Optional[str]) -> dict:
     # None when the result came from a single non-windowed pass (onnx-asr's
     # own TimestampedResult, or a file shorter than one window) -- there is
     # no windowing there, so there is nothing that could have been lost.
-    total_s = float(getattr(result, "total_seconds", 0.0) or 0.0)
-    covered_s = float(getattr(result, "covered_seconds", 0.0) or 0.0)
-    coverage = min(1.0, covered_s / total_s) if total_s > 0 else None
+    total = float(getattr(result, "total_seconds", 0) or 0)
+    covered = float(getattr(result, "covered_seconds", 0) or 0)
+    coverage = min(1.0, covered / total) if total > 0 else None
 
     return {
         "text": text or None,
@@ -415,26 +415,18 @@ class _SimpleResult:
     ``timestamps`` — so a merged multi-window transcript flows through the
     exact same shaping path as a single-window TimestampedResult.
 
-    ``covered_seconds`` / ``total_seconds`` carry how much of the file
-    actually made it through. A window whose ``recognize`` raises is skipped
-    on purpose (one bad window shouldn't fail a whole meeting), but the
-    resulting transcript then covers less audio than the recording holds, and
-    nothing downstream could tell.
-
-    Measured in SECONDS OF AUDIO, not in windows. Windows are not
-    interchangeable: they overlap, and the last one is usually short. On 61 s
-    of audio the two windows are [0, 60) and [45, 61); losing the first one
-    leaves 16 seconds of a 61-second meeting, which counting windows would
-    report as half.
-
-    onnx-asr's own TimestampedResult has neither field, so every reader goes
-    through ``getattr`` with a default.
+    Coverage is the union of audio read by usable windows, not their count:
+    overlapping windows and a short final window have different weights.
+    Counters remain available for diagnostics. Native onnx-asr results have
+    no coverage fields, so readers use getattr with a default.
     """
     text: str
     tokens: list
     timestamps: list
-    covered_seconds: float = 0.0
+    windows_attempted: int = 0
+    windows_recognized: int = 0
     total_seconds: float = 0.0
+    covered_seconds: float = 0.0
 
 
 def _load_wav_16k_mono(audio_path: Path):
@@ -499,9 +491,6 @@ def _transcribe_windows(ts_model: Any, samples) -> _SimpleResult:
     last_end = -1.0
     windows_attempted = 0
     windows_recognized = 0
-    # Union of the audio the surviving windows actually contributed, tracked
-    # in samples. Windows overlap, so a plain sum would over-count; walking
-    # them in start order lets a single monotonic watermark do the union.
     covered_samples = 0
     covered_upto = 0
     last_error: Optional[Exception] = None
@@ -520,15 +509,9 @@ def _transcribe_windows(ts_model: Any, samples) -> _SimpleResult:
             if start + chunk_samples >= len(samples):
                 break
             continue
-        windows_recognized += 1
-        # Liveness signal for the Electron inactivity watchdog — a long
-        # meeting recognising window-by-window on CPU is alive, not hung.
-        # Failed windows emit nothing (they skip via `continue` above, and
-        # failing fast costs little liveness); emitting ``windows_attempted``
-        # means `done` jumps past them on the next success, so the counter
-        # still tracks position in the file rather than just successes.
+        # The model returned, so the backend is alive even if this payload is
+        # malformed and cannot count toward transcript coverage.
         _emit_heartbeat(windows_attempted, total_windows)
-
         tokens = list(getattr(result, "tokens", None) or [])
         timestamps = list(getattr(result, "timestamps", None) or [])
         if len(tokens) != len(timestamps):
@@ -542,15 +525,13 @@ def _transcribe_windows(ts_model: Any, samples) -> _SimpleResult:
                 break
             continue
 
-        # Only now has this window contributed anything. Counting it as
-        # covered right after recognize() would call a window whose tokens
-        # and timestamps disagree -- discarded a few lines up -- a success,
-        # and report full coverage for a file with a hole in it.
+        windows_recognized += 1
+        # Count the union only after payload validation. The watermark avoids
+        # counting overlap twice and excludes gaps left by skipped windows.
         window_end = min(start + chunk_samples, len(samples))
         if window_end > covered_upto:
             covered_samples += window_end - max(start, covered_upto)
             covered_upto = window_end
-
         for tok, ts in zip(tokens, timestamps):
             g_start = _ts_start(ts) + chunk_start_s
             g_end = _ts_end(ts) + chunk_start_s
@@ -582,16 +563,17 @@ def _transcribe_windows(ts_model: Any, samples) -> _SimpleResult:
     covered_seconds = covered_samples / _SAMPLE_RATE
     if covered_seconds < total_seconds:
         logger.warning(
-            "ONNX transcription read %.0fs of %.0fs (%d of %d windows usable) — "
+            "ONNX transcription read %.0fs of %.0fs (%d of %d windows usable); "
             "the transcript is missing roughly %.0fs of audio",
-            covered_seconds, total_seconds,
-            windows_recognized, windows_attempted,
+            covered_seconds, total_seconds, windows_recognized, windows_attempted,
             total_seconds - covered_seconds,
         )
     return _SimpleResult(
         text=text,
         tokens=merged_tokens,
         timestamps=merged_timestamps,
-        covered_seconds=covered_seconds,
+        windows_attempted=windows_attempted,
+        windows_recognized=windows_recognized,
         total_seconds=total_seconds,
+        covered_seconds=covered_seconds,
     )

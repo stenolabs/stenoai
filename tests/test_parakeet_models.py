@@ -1,8 +1,83 @@
 import os
+from pathlib import Path
+from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import patch
 
 from src import parakeet_models
+
+
+class IsInstalledTests(unittest.TestCase):
+    def setUp(self):
+        self._cache = TemporaryDirectory()
+        self._saved_hf_hub_cache = os.environ.get("HF_HUB_CACHE")
+        os.environ["HF_HUB_CACHE"] = self._cache.name
+
+    def tearDown(self):
+        if self._saved_hf_hub_cache is None:
+            os.environ.pop("HF_HUB_CACHE", None)
+        else:
+            os.environ["HF_HUB_CACHE"] = self._saved_hf_hub_cache
+        self._cache.cleanup()
+
+    def _snapshot(self, model_id: str) -> Path:
+        snapshot = (
+            parakeet_models._hf_cache_dir_for(model_id)
+            / "snapshots"
+            / "test-revision"
+        )
+        snapshot.mkdir(parents=True)
+        return snapshot
+
+    @staticmethod
+    def _write(snapshot: Path, *names: str) -> None:
+        for name in names:
+            (snapshot / name).write_bytes(b"present")
+
+    def test_mlx_snapshot_requires_nonempty_weights(self):
+        model_id = "mlx-community/parakeet-tdt-0.6b-v3"
+        snapshot = self._snapshot(model_id)
+        self._write(snapshot, "config.json")
+
+        self.assertFalse(parakeet_models.is_installed(model_id))
+        (snapshot / "model.safetensors").write_bytes(b"")
+        self.assertFalse(parakeet_models.is_installed(model_id))
+        self._write(snapshot, "model.safetensors")
+        self.assertTrue(parakeet_models.is_installed(model_id))
+
+    def test_onnx_snapshot_requires_every_runtime_file(self):
+        model_id = "istupakov/parakeet-tdt-0.6b-v3-onnx"
+        snapshot = self._snapshot(model_id)
+        self._write(
+            snapshot,
+            "config.json",
+            "encoder-model.int8.onnx",
+            "decoder_joint-model.int8.onnx",
+        )
+
+        self.assertFalse(parakeet_models.is_installed(model_id))
+        self._write(snapshot, "vocab.txt")
+        self.assertTrue(parakeet_models.is_installed(model_id))
+
+    def test_unknown_model_never_forces_offline_mode(self):
+        model_id = "example/future-model"
+        snapshot = self._snapshot(model_id)
+        self._write(snapshot, "config.json", "weights.bin")
+
+        with patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("HF_HUB_OFFLINE", None)
+            os.environ.pop("TRANSFORMERS_OFFLINE", None)
+            self.assertFalse(parakeet_models.is_installed(model_id))
+            self.assertFalse(parakeet_models.maybe_enable_offline(model_id))
+            self.assertNotIn("HF_HUB_OFFLINE", os.environ)
+            self.assertNotIn("TRANSFORMERS_OFFLINE", os.environ)
+
+    def test_unreadable_snapshots_directory_is_not_installed(self):
+        model_id = "mlx-community/parakeet-tdt-0.6b-v3"
+        self._snapshot(model_id)
+
+        with patch.object(Path, "iterdir", side_effect=PermissionError):
+            self.assertFalse(parakeet_models.is_installed(model_id))
 
 
 class MaybeEnableOfflineTests(unittest.TestCase):
@@ -81,7 +156,7 @@ class DownloadErrorSurfacingTests(unittest.TestCase):
         masking = FileNotFoundError(
             2, "No such file or directory", f"{model_id}/config.json"
         )
-        with patch("src.parakeet.ensure_loaded", side_effect=masking), \
+        with patch("src.parakeet_models.is_installed", return_value=True), patch("src.parakeet.ensure_loaded", side_effect=masking), \
                 self.assertLogs("src.parakeet_models", level="ERROR") as cm:
             ok = parakeet_models.download(model_id)
         self.assertFalse(ok)
@@ -90,13 +165,67 @@ class DownloadErrorSurfacingTests(unittest.TestCase):
         self.assertIn("401", joined)
 
     def test_unrelated_error_uses_plain_message(self):
-        with patch("src.parakeet.ensure_loaded", side_effect=RuntimeError("boom")), \
+        with patch("src.parakeet_models.is_installed", return_value=True), patch("src.parakeet.ensure_loaded", side_effect=RuntimeError("boom")), \
                 self.assertLogs("src.parakeet_models", level="ERROR") as cm:
             ok = parakeet_models.download(parakeet_models.DEFAULT_MODEL_ID)
         self.assertFalse(ok)
         joined = "\n".join(cm.output)
         self.assertIn("download/load failed", joined)
         self.assertNotIn("HF_TOKEN", joined)
+
+
+class DownloadProgressTests(unittest.TestCase):
+    def test_stages_and_failure(self):
+        for failure in (False, True):
+            events = []
+            def fetch(model, emit):
+                self.assertEqual(events[-1]["stage"], "preparing")
+                emit({"stage": "downloading"})
+                if failure:
+                    raise OSError("offline")
+            def load(model):
+                from huggingface_hub import constants
+                self.assertTrue(constants.HF_HUB_OFFLINE)
+                self.assertEqual(events[-1]["stage"], "loading")
+            with patch("src.parakeet_models.is_installed", return_value=False), patch("src.parakeet_models._download_snapshot", side_effect=fetch), patch("src.parakeet.ensure_loaded", side_effect=load) as loaded:
+                self.assertEqual(parakeet_models.download(progress_callback=events.append), not failure)
+            expected = ["preparing", "downloading"] + ([] if failure else ["loading", "complete"])
+            self.assertEqual([e["stage"] for e in events], expected)
+            self.assertEqual(loaded.call_count, 0 if failure else 1)
+
+    @patch.dict(os.environ)
+    def test_snapshot_progress_and_older_hub_fallback(self):
+        import types
+        import sys
+        for modern in (True, False):
+            events, calls = [], []
+            def old(repo, filename, revision=None, token=None):
+                calls.append((filename, revision, token))
+                return "/synthetic/snapshots/abc123/" + filename
+            def new(repo, filename, revision=None, token=None, tqdm_class=None):
+                with tqdm_class(total=100, initial=40, unit="B", mininterval=0, disable=None, name="download") as bar:
+                    bar.update(60)
+                return old(repo, filename, revision, token)
+            hub = types.ModuleType("huggingface_hub")
+            hub.hf_hub_download = new if modern else old
+            with patch.dict(sys.modules, {"huggingface_hub": hub}):
+                parakeet_models._download_snapshot(parakeet_models.DEFAULT_MODEL_ID, events.append)
+            self.assertIsNone(calls[0][1])
+            self.assertTrue(all(c[1] == "abc123" for c in calls[1:]))
+            self.assertTrue(all(c[2] is False for c in calls))
+            self.assertEqual(any(e.get("file_bytes") == 100 for e in events), modern)
+            self.assertEqual(events[-1]["completed_files"], len(calls))
+
+
+class OfflineLoadTests(unittest.TestCase):
+    def test_offline_sessions_restored_after_load_error(self):
+        from huggingface_hub import constants
+        from huggingface_hub.utils import _http
+        states = []
+        with patch("src.parakeet_models.is_installed", return_value=True), patch.object(constants, "HF_HUB_OFFLINE", False), patch.object(_http, "reset_sessions", side_effect=lambda: states.append(constants.HF_HUB_OFFLINE), create=True), patch("src.parakeet.ensure_loaded", side_effect=RuntimeError("synthetic load error")):
+            self.assertFalse(parakeet_models.download())
+            self.assertFalse(constants.HF_HUB_OFFLINE)
+        self.assertEqual(states, [True, False])
 
 
 if __name__ == "__main__":

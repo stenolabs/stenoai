@@ -1,0 +1,292 @@
+name: Build Linux installer
+
+# End-to-end Linux build: PyInstaller backend (onnx-asr Parakeet + whisper.cpp,
+# same CPU backend as Windows) + Electron .deb/AppImage. Mirrors
+# build-windows.yml's shape and trigger, including its release-attach step: on
+# a tag push this waits for build-release.yml to publish the release, then
+# uploads the .deb/AppImage alongside the macOS DMG. On pushes to main it stops
+# at CI artifacts.
+#
+# The install smoke test below is the reason this can publish at all: a .deb
+# that builds is not a .deb that installs, and the dependency list is the part
+# most likely to be wrong (see #526 — a bad `depends` would have produced a
+# package apt could not satisfy, and nothing here would have noticed).
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - 'website/**'
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-linux:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: app/package-lock.json
+
+      - name: Get version from package.json
+        id: package_version
+        working-directory: app
+        run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+
+      # sounddevice (used by setup-check to enumerate audio devices) loads
+      # PortAudio as a system shared lib at runtime — it isn't bundled by
+      # PyInstaller or vendored in the pip wheel like on macOS/Windows.
+      # Without this, setup-check crashes with "OSError: PortAudio library
+      # not found" (also declared as a runtime .deb dependency below).
+      - name: Install system audio deps (PortAudio)
+        run: sudo apt-get update && sudo apt-get install -y libportaudio2
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          # requirements.txt uses sys_platform markers — parakeet-mlx is darwin-only,
+          # onnx-asr installs here, same as Windows. pip resolves the right set.
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Download bundled binaries (Ollama Linux + ffmpeg)
+        run: |
+          chmod +x scripts/download-ollama.sh
+          ./scripts/download-ollama.sh
+
+      - name: List bin/ contents
+        run: find bin -maxdepth 3 -type f -exec ls -lh {} \;
+
+      - name: Build Python backend with PyInstaller
+        run: |
+          pyinstaller stenoai.spec --noconfirm
+          ls -lh dist/stenoai
+
+      - name: Smoke-test bundled CLI
+        run: |
+          ./dist/stenoai/stenoai --help
+          # setup-check exits non-zero when no model is pre-downloaded, expected
+          # on a fresh runner — this just confirms the bundle loads and runs to
+          # completion without an import/native-lib crash.
+          ./dist/stenoai/stenoai setup-check || echo "setup-check exited non-zero (expected when models not downloaded yet)"
+
+      - name: Verify Parakeet ONNX backend wires up
+        run: |
+          # On Linux (same as Windows) the dispatcher must resolve to the ONNX
+          # model id (istupakov/parakeet-tdt-0.6b-v3-onnx), not the mac-only MLX
+          # one. Doesn't download weights — is_installed() only checks the HF cache.
+          out=$(./dist/stenoai/stenoai parakeet-status)
+          echo "parakeet-status: $out"
+          echo "$out" | grep -q onnx || { echo "Expected ONNX-backed Parakeet model id, got: $out"; exit 1; }
+
+      - name: Verify ONNX Runtime native libs load + run
+        run: |
+          # parakeet-status only checks a model-id string and never builds an
+          # InferenceSession, so it can't catch a missing/broken onnxruntime
+          # native lib. onnx-selftest loads the bundled Silero VAD model and runs
+          # one real inference, proving the native session libs (shared with the
+          # onnx-asr Parakeet path) actually load and execute in the frozen
+          # bundle. No network / weight download required.
+          out=$(./dist/stenoai/stenoai onnx-selftest)
+          echo "onnx-selftest: $out"
+          echo "$out" | grep -q ONNX_SELFTEST_OK || { echo "ONNX Runtime self-test failed: $out"; exit 1; }
+
+      - name: Install Electron dependencies
+        working-directory: app
+        run: npm ci
+
+      - name: Build Electron installer (unsigned)
+        working-directory: app
+        run: |
+          npm run build:renderer
+          npx electron-builder --linux --publish=never
+
+      # Prove the package INSTALLS, not just that it builds. This is the check
+      # that would have caught a wrong `depends` list: apt resolves the
+      # declared dependencies against a real archive here, so a missing or
+      # misspelled one fails the job rather than a user's machine.
+      #
+      # Deliberately BEFORE the release-attach step below, so a package that
+      # cannot install can never be published.
+      - name: Install the built .deb and smoke-test it
+        run: |
+          set -euo pipefail
+          DEB=$(ls app/dist/*.deb | head -1)
+
+          # 1. The declared dependency list itself. fpm's customDepends REPLACES
+          # electron-builder's defaults rather than extending them, so the
+          # failure mode is a package that declares libportaudio2 and none of
+          # the Electron runtime libs (#526). Assert the whole set explicitly —
+          # installing on a runner that already has GTK would not notice.
+          DEPENDS=$(dpkg-deb -f "$DEB" Depends)
+          echo "Depends: $DEPENDS"
+          for dep in libgtk-3-0 libnotify4 libnss3 libxss1 libxtst6 xdg-utils \
+                     libatspi2.0-0 libuuid1 libsecret-1-0 libportaudio2; do
+            # ,name, for a plain dep and ,name( for a versioned one. A bare
+            # prefix match would let libnss3-tools satisfy a check for libnss3.
+            case ",${DEPENDS// /}," in
+              *",${dep},"*|*",${dep}("*) ;;
+              *) echo "::error::.deb does not declare $dep — electron-builder's defaults were likely replaced rather than extended"; exit 1 ;;
+            esac
+          done
+
+          # 2. That the chain actually RESOLVES. An earlier step installed
+          # libportaudio2 so the bundled CLI could run pre-packaging, which
+          # would let a package with a wrong dependency list install cleanly
+          # here. Remove it first so apt has to pull it back in via the .deb.
+          sudo apt-get remove -y libportaudio2
+          ! dpkg-query -W -f='${Status}' libportaudio2 2>/dev/null | grep -q '^install ok installed' \
+            || { echo "::error::libportaudio2 still installed after remove — the check below would prove nothing"; exit 1; }
+
+          echo "Installing $DEB"
+          # `apt-get install ./file.deb` (not `dpkg -i`) so declared
+          # dependencies are actually RESOLVED — dpkg would happily leave the
+          # package unconfigured on a missing dep.
+          sudo apt-get update
+          sudo apt-get install -y "./$DEB"
+
+          # The .deb, not the earlier step, is what put it back.
+          dpkg-query -W -f='${Status}' libportaudio2 | grep -q '^install ok installed' \
+            || { echo "::error::installing the .deb did not pull in libportaudio2"; exit 1; }
+
+          # Fails if the package is unpacked-but-unconfigured, which is how a
+          # broken dependency chain usually presents.
+          STATUS=$(dpkg-query -W -f='${Status}' stenoai)
+          echo "dpkg status: $STATUS"
+          [ "$STATUS" = "install ok installed" ] || { echo "::error::stenoai is not fully installed: $STATUS"; exit 1; }
+
+          # Desktop integration: the launcher and the icon this build ships.
+          test -f /usr/share/applications/stenoai.desktop
+          test -f /usr/share/icons/hicolor/512x512/apps/stenoai.png
+          test -x /opt/Steno/stenoai
+
+          # The bundled Python backend, run from where it actually lands after
+          # an install (extraResources -> resources/stenoai). Exercises the
+          # PyInstaller bundle against the system's real shared libraries,
+          # including the libportaudio2 that `depends` is there to guarantee —
+          # the crash that motivated adding it (#502) was exactly this.
+          BACKEND=/opt/Steno/resources/stenoai/stenoai
+          test -x "$BACKEND"
+          "$BACKEND" --help > /dev/null
+          # setup-check exits non-zero with no model downloaded, which is
+          # expected on a fresh runner; we only require that it runs to
+          # completion without an import or native-library crash.
+          "$BACKEND" setup-check --json > setup-check.txt 2>&1 || true
+          cat setup-check.txt
+          # Parse with app/setup-check-parse.js, the same module main.js uses,
+          # rather than json.load over the whole file. The checks import
+          # sounddevice/pywhispercpp/ollama, any of which can print to stdout
+          # ahead of the payload — that module exists precisely because the
+          # buffer is not guaranteed to be pure JSON, and it is unit tested.
+          # Redirecting stderr in too makes this strictly harsher than the
+          # earlier version, which only survived because Python logging happens
+          # to go to stderr.
+          node -e "
+            const fs = require('fs');
+            const { parseSetupCheckOutput } = require('./app/setup-check-parse');
+            let payload;
+            try {
+              payload = parseSetupCheckOutput(fs.readFileSync('setup-check.txt', 'utf8'));
+            } catch (error) {
+              console.error('::error::setup-check emitted an invalid payload — ' + error.message);
+              process.exit(1);
+            }
+            const failed = payload.checks.filter((c) => c.status === 'fail').map((c) => c.name);
+            console.log('setup-check parsed: allGood=' + payload.allGood + ', failing=' + (failed.join(',') || 'none'));
+            // sounddevice is the check libportaudio2 exists for (#502). A model
+            // not being downloaded is expected here; a broken native lib is not.
+            const sd = payload.checks.find((c) => c.name === 'sounddevice');
+            if (!sd || sd.status !== 'pass') {
+              console.error('::error::sounddevice check did not pass — the .deb dependency chain is not delivering PortAudio');
+              process.exit(1);
+            }
+          "
+
+      - name: Verify the AppImage is well-formed
+        run: |
+          set -euo pipefail
+          APPIMAGE=$(ls app/dist/*.AppImage | head -1)
+          chmod +x "$APPIMAGE"
+          # No FUSE on the runner, so extract rather than execute.
+          "$APPIMAGE" --appimage-extract > /dev/null
+          test -x squashfs-root/stenoai
+          test -x squashfs-root/resources/stenoai/stenoai
+          rm -rf squashfs-root
+
+      - name: Show built artifacts
+        if: always()
+        run: ls -lh app/dist
+
+      - name: Upload Linux artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stenoai-linux-${{ steps.package_version.outputs.version }}
+          path: |
+            app/dist/*.deb
+            app/dist/*.AppImage
+          retention-days: 14
+          if-no-files-found: warn
+
+      # Mirrors build-windows.yml's attach step. Linux publishes no
+      # latest-linux.yml: electron-builder emits one, but auto-update is not
+      # wired on Linux, so only the two user-facing installers go up.
+      - name: Attach Linux assets to the release (tags only)
+        # success() is explicit because supplying any `if:` drops the implicit
+        # one — without it this would run after a failed build or a failed
+        # install check and fail again on the missing .deb, burying the real
+        # error.
+        if: success() && startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          # Stable, versionless aliases for the README/website download links
+          # (mirrors the macOS DMG rename in build-release.yml and the Windows
+          # .exe rename in build-windows.yml). The versioned files ship too.
+          DEB=$(ls app/dist/*.deb | grep -v 'stenoAI-linux-amd64.deb' | head -1)
+          APPIMAGE=$(ls app/dist/*.AppImage | grep -v 'stenoAI-linux-x86_64.AppImage' | head -1)
+          cp "$DEB" "app/dist/stenoAI-linux-amd64.deb"
+          cp "$APPIMAGE" "app/dist/stenoAI-linux-x86_64.AppImage"
+          # Wait for build-release.yml to create the PUBLISHED release, then
+          # upload to it. Resolved via /releases/tags/:tag, which only ever
+          # returns the published (non-draft) release — the same draft-avoidance
+          # reasoning as build-windows.yml.
+          #
+          # 40 min, not the 30 build-windows.yml uses: v0.7.0's release
+          # published 29 min after the tag push, so 30 leaves almost no margin
+          # if notarization runs slow. Costs nothing when the release arrives on
+          # time — the loop exits on the first successful poll.
+          for i in $(seq 1 80); do
+            if gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${TAG}" >/dev/null 2>&1; then
+              echo "Published release $TAG exists — uploading Linux installers."
+              gh release upload "$TAG" \
+                app/dist/*.deb \
+                app/dist/*.AppImage \
+                --clobber
+              echo "Uploaded Linux assets to release $TAG."
+              exit 0
+            fi
+            echo "Published release $TAG not created yet (attempt $i/80) — waiting 30s…"
+            sleep 30
+          done
+          echo "Published release $TAG never appeared after ~40 min — failing so we notice."
+          exit 1

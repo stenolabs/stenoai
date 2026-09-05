@@ -1,5 +1,7 @@
+import { parakeetProgressLabel } from '@/lib/parakeetProgress';
+import type { ParakeetPullProgressEvent } from '@/lib/ipc';
 import * as React from 'react';
-import { Check, Cloud, HardDrive, Mic, MessageSquare, Zap, X } from 'lucide-react';
+import { AudioLines, Check, Cloud, HardDrive, Mic, MessageSquare, Zap, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
@@ -37,7 +39,7 @@ import { cn, isMac } from '@/lib/utils';
 type StepStatus = 'waiting' | 'running' | 'done' | 'failed';
 
 interface Step {
-  id: 'microphone' | 'transcription' | 'ollama';
+  id: 'microphone' | 'transcription' | 'speakers' | 'ollama';
   title: string;
   description: string;
   icon: React.ComponentType<{ className?: string }>;
@@ -78,12 +80,14 @@ function OllamaProgressBar({ status, pct }: { status: string; pct: number }) {
   );
 }
 
-/** Indeterminate bar for the transcription-model download. Parakeet only
- *  exposes coarse stages (no byte counts), so we signal activity without
- *  fabricating a percentage. */
-function IndeterminateBar({ label }: { label: string }) {
+/** Activity indicator with measured details in the label; no estimated percentage. */
+function IndeterminateBar({ label, kind = 'transcription' }: { label: string; kind?: 'transcription' | 'speakers' }) {
   return (
-    <div className="mt-2" data-setup-transcription-progress>
+    <div
+      className="mt-2"
+      data-setup-transcription-progress={kind === 'transcription' ? '' : undefined}
+      data-setup-speaker-progress={kind === 'speakers' ? '' : undefined}
+    >
       <div className="mb-1 text-[11px] text-muted-foreground">{label}</div>
       <div
         className="setup-indeterminate-bar relative h-1.5 overflow-hidden rounded-full"
@@ -147,11 +151,13 @@ export function Setup() {
   const [statuses, setStatuses] = React.useState<Record<Step['id'], StepStatus>>({
     microphone: 'waiting',
     transcription: 'waiting',
+    speakers: 'waiting',
     ollama: 'waiting',
   });
   const [details, setDetails] = React.useState<Record<Step['id'], string | undefined>>({
     microphone: undefined,
     transcription: undefined,
+    speakers: undefined,
     ollama: undefined,
   });
   const [running, setRunning] = React.useState(false);
@@ -159,8 +165,8 @@ export function Setup() {
   const [debugOpen, setDebugOpen] = React.useState(false);
   const [logs, setLogs] = React.useState<string[]>([]);
   // Live download progress surfaced on the step cards. Parakeet only exposes a
-  // coarse stage (indeterminate bar); Ollama streams byte-level percent.
-  const [parakeetStage, setParakeetStage] = React.useState<string | null>(null);
+  // measured file progress (indeterminate bar); Ollama streams byte-level percent.
+  const [parakeetStage, setParakeetStage] = React.useState<ParakeetPullProgressEvent | null>(null);
   const [ollamaProgress, setOllamaProgress] = React.useState<{
     status: string;
     pct: number;
@@ -181,14 +187,15 @@ export function Setup() {
   // events) emitted by main.js 'setup-parakeet' / 'setup-ollama-and-model'.
   React.useEffect(() => {
     if (typeof window === 'undefined' || !window.stenoai) return;
-    const offParakeet = ipc().on.parakeetPullProgress(({ model, stage }) => {
+    const offParakeet = ipc().on.parakeetPullProgress((progress) => {
+      const { model } = progress;
       // Both the setup-parakeet flow and the Settings model-management pull
       // emit on the shared 'parakeet-pull-progress' channel. Settings pulls
       // carry a `model` id; the setup handler emits only { stage }. Ignore
       // model-bearing events so the wizard bar can't reflect an unrelated
       // Settings pull.
       if (model != null) return;
-      setParakeetStage(stage);
+      setParakeetStage(progress);
     });
     const offOllama = ipc().on.setupOllamaProgress(({ status, pct }) => {
       setOllamaProgress({ status, pct });
@@ -202,11 +209,12 @@ export function Setup() {
   const checkMic = useCheckMicPermission();
   const requestMic = useRequestMicPermission();
   // Step 2 installs Parakeet TDT v3 by default — the active engine for fresh
-  // installs. Size differs by backend (MLX ~572 MB on mac, ONNX int8 ~670 MB
+  // installs. Size differs by backend (MLX ~2.5 GB on mac, ONNX int8 ~670 MB
   // on Windows/Linux). Existing Whisper users get skipped past this step in
   // runSetup() once we see their model is already on disk; see the
   // parakeet-status + list-whisper-models precheck below.
   const parakeetStep = useSetupStep('parakeet');
+  const speakerModelsStep = useSetupStep('speakerModels');
   const ollamaStep = useSetupStep('ollamaAndModel');
 
   // Telemetry choice surfaced here so users opt in/out during onboarding
@@ -354,10 +362,28 @@ export function Setup() {
         if (parakeetInstalled || anyWhisperInstalled) {
           setStatus('transcription', 'done', 'Transcription model ready');
         } else {
-          setStatus('transcription', 'running', `Downloading Parakeet TDT v3 (${isMac ? '~572 MB' : '~670 MB'})...`);
+          setStatus('transcription', 'running', `Downloading Parakeet TDT v3 (${isMac ? '~2.5 GB' : '~670 MB'})...`);
+          setParakeetStage({ stage: 'preparing' });
           await parakeetStep.mutateAsync();
           setParakeetStage(null);
           setStatus('transcription', 'done', 'Transcription model ready');
+        }
+      }
+
+      if (isMac && snapshot.speakers !== 'done') {
+        setStatus('speakers', 'running', 'Checking speaker diarization models...');
+        try {
+          const status = await ipc().setup.speakerModelsStatus();
+          if (!status.success) throw new Error(status.error);
+          if (status.ready) {
+            setStatus('speakers', 'done', 'Speaker diarization models ready');
+          } else {
+            setStatus('speakers', 'running', 'Downloading speaker diarization models...');
+            await speakerModelsStep.mutateAsync();
+            setStatus('speakers', 'done', 'Speaker diarization models ready');
+          }
+        } catch {
+          setStatus('speakers', 'failed', 'Optional setup failed. You can retry later.');
         }
       }
 
@@ -450,7 +476,7 @@ export function Setup() {
       detail: details.transcription,
       progressNode:
         statuses.transcription === 'running' && parakeetStage !== null ? (
-          <IndeterminateBar label="Downloading and preparing model..." />
+          <IndeterminateBar label={parakeetProgressLabel(parakeetStage)} />
         ) : undefined,
     },
     {
@@ -469,6 +495,21 @@ export function Setup() {
         ) : undefined,
     },
   ];
+
+  if (isMac) {
+    steps.splice(2, 0, {
+      id: 'speakers',
+      title: 'Speaker Diarization',
+      description: 'Separates individual speakers locally',
+      icon: AudioLines,
+      status: statuses.speakers,
+      detail: details.speakers,
+      progressNode:
+        statuses.speakers === 'running' && details.speakers?.startsWith('Downloading') ? (
+          <IndeterminateBar label="Downloading and preparing models..." kind="speakers" />
+        ) : undefined,
+    });
+  }
 
   // Show the Local/Cloud chooser before the third step has run AND after a
   // failure, so the user can correct a bad API key (or pick the other path
@@ -778,4 +819,3 @@ export function Setup() {
     </div>
   );
 }
-

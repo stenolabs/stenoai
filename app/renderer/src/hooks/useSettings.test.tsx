@@ -17,6 +17,8 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 const h = vi.hoisted(() => ({
   getNotifications: vi.fn(),
   setNotifications: vi.fn(),
+  getIdentityMatchingEnabled: vi.fn(),
+  setIdentityMatchingEnabled: vi.fn(),
 }));
 
 vi.mock('@/lib/ipc', () => ({
@@ -24,11 +26,18 @@ vi.mock('@/lib/ipc', () => ({
     settings: {
       getNotifications: h.getNotifications,
       setNotifications: h.setNotifications,
+      getIdentityMatchingEnabled: h.getIdentityMatchingEnabled,
+      setIdentityMatchingEnabled: h.setIdentityMatchingEnabled,
     },
   }),
 }));
 
-import { useNotificationsSetting, useSetNotifications } from './useSettings';
+import {
+  useIdentityMatchingEnabledSetting,
+  useNotificationsSetting,
+  useSetIdentityMatchingEnabled,
+  useSetNotifications,
+} from './useSettings';
 
 function wrapper() {
   const qc = new QueryClient({
@@ -132,5 +141,34 @@ describe('settings toggles write optimistically', () => {
 
     // Disk still holds `true`, so the switch must not claim otherwise.
     await waitFor(() => expect(result.current.value.data).toBe(true));
+  });
+});
+
+describe('speaker identification toggle', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    h.getIdentityMatchingEnabled.mockResolvedValue({
+      success: true,
+      identity_matching_enabled: false,
+    });
+    h.setIdentityMatchingEnabled.mockResolvedValue({ success: true });
+  });
+
+  test('updates its shared cache without a redundant backend read', async () => {
+    const { result } = renderHook(
+      () => ({
+        value: useIdentityMatchingEnabledSetting(),
+        setValue: useSetIdentityMatchingEnabled(),
+      }),
+      { wrapper: wrapper() },
+    );
+    await waitFor(() => expect(result.current.value.data).toBe(false));
+
+    await act(async () => {
+      await result.current.setValue.mutateAsync(true);
+    });
+
+    await waitFor(() => expect(result.current.value.data).toBe(true));
+    expect(h.getIdentityMatchingEnabled).toHaveBeenCalledTimes(1);
   });
 });

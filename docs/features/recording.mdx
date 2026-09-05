@@ -28,7 +28,7 @@ After this one-time setup, the toggle stays on for future recordings until you t
 
 ## Speaker labels
 
-When Steno captures system audio, it labels lines in the transcript as `[You]` (microphone audio) or `[Others]` (system audio). This makes it easier to follow who said what in a virtual meeting.
+Steno labels transcript lines by who's speaking. When system audio is on, lines are split into `[You]` (microphone audio) and `[Others]` (system audio) by channel. Within either channel, Steno also separates distinct voices acoustically, so an in-person meeting with several people sharing your Mac's microphone, or several remote participants on the system-audio side, get their own `[Speaker 2]`, `[Speaker 3]`, and so on. Each channel can distinguish up to four voices this way; additional speakers beyond that are merged into the four it detects.
 
 Speaker labels appear automatically -- no configuration is needed.
 

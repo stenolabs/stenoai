@@ -28,6 +28,9 @@ function registerFoldersIpc({
   getUserDataDir,
   validateMeetingFilePath,
   setCachedCustomStoragePath,
+  // Optional (#413): notified with the canonical summary path after a note's
+  // folder membership changes, so a downstream mirror (Obsidian sync) can react.
+  onNoteFoldersChanged = () => {},
 }) {
   // Storage path handlers
   ipcMain.handle('get-storage-path', async () => {
@@ -165,7 +168,9 @@ function registerFoldersIpc({
       }
       const result = await runPythonScript('simple_recorder.py', ['add-meeting-to-folder', validated.realPath, folderId]);
       const jsonMatch = result.match(/\{.*\}/s);
-      return jsonMatch ? JSON.parse(jsonMatch[0]) : { success: true };
+      const parsed = jsonMatch ? JSON.parse(jsonMatch[0]) : { success: true };
+      if (parsed.success !== false) onNoteFoldersChanged(validated.realPath);
+      return parsed;
     } catch (error) {
       return { success: false, error: error.message };
     }
@@ -181,7 +186,9 @@ function registerFoldersIpc({
       }
       const result = await runPythonScript('simple_recorder.py', ['remove-meeting-from-folder', validated.realPath, folderId]);
       const jsonMatch = result.match(/\{.*\}/s);
-      return jsonMatch ? JSON.parse(jsonMatch[0]) : { success: true };
+      const parsed = jsonMatch ? JSON.parse(jsonMatch[0]) : { success: true };
+      if (parsed.success !== false) onNoteFoldersChanged(validated.realPath);
+      return parsed;
     } catch (error) {
       return { success: false, error: error.message };
     }

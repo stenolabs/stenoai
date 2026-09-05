@@ -15,7 +15,7 @@ export function useSetupCheck() {
   });
 }
 
-export function useSetupStep(name: 'ollamaAndModel' | 'parakeet' | 'test') {
+export function useSetupStep(name: 'ollamaAndModel' | 'parakeet' | 'speakerModels' | 'test') {
   return useMutation({
     mutationFn: async () => {
       const res = await ipc().setup[name]();

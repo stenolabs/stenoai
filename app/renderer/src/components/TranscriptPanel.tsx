@@ -133,12 +133,19 @@ function TranscriptRow({ segment, highlight }: { segment: Segment; highlight: st
   // showing their content as un-bubbled plain text (or worse, on the
   // "Others" side) reads as wrong. Granola takes the same charitable
   // default — when in doubt, attribute to the mic owner. Explicit
-  // `Others` markers still render as grey/left.
-  const isYou = segment.speaker !== 'Others';
+  // `Others` markers and acoustically-diarized `Speaker N` markers
+  // (transcriber.py's _resolve_speaker_placeholders) both render as
+  // grey/left — only an exact "You" (or no marker at all) is "self".
+  const isYou = segment.speaker === 'You' || segment.speaker == null;
+  // Every acoustic speaker label carries information because several
+  // distinct speakers can share the grey/left lane. Keep only the channel-
+  // level "Others" marker implicit; show both confirmed names and Speaker N.
+  const speakerLabel = !isYou && segment.speaker !== 'Others' ? segment.speaker : null;
   return (
     <div className={cn('flex flex-col gap-0.5 px-1 py-0.5', isYou ? 'items-end' : 'items-start')}>
-      {segment.timestamp && (
-        <span className="px-1.5 text-[10.5px] tabular-nums" style={{ color: 'var(--fg-2)' }}>
+      {(segment.timestamp || speakerLabel) && (
+        <span className="flex items-center gap-1.5 px-1.5 text-[10.5px] tabular-nums" style={{ color: 'var(--fg-2)' }}>
+          {speakerLabel && <span className="font-medium">{speakerLabel}</span>}
           {segment.timestamp}
         </span>
       )}
@@ -183,5 +190,4 @@ function renderHighlighted(text: string, highlight: string): React.ReactNode {
   if (cursor < text.length) parts.push(text.slice(cursor));
   return parts;
 }
-
 

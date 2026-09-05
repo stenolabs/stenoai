@@ -21,6 +21,7 @@ import { pickInProgressEvent } from '@/lib/calendar';
 import { heroHeadline, heroSubtitle } from '@/lib/hero';
 import { searchNotes } from '@/lib/noteSearch';
 import { navigate } from '@/lib/router';
+import { UI_LOCALE } from '@/lib/locale';
 
 interface HomeProps {
   mode: 'home' | 'meetings';
@@ -468,7 +469,7 @@ export function Home({ mode }: HomeProps) {
   );
   const greeting = heroHeadline(heroState);
   const heroSub = heroSubtitle(heroState);
-  const dateStr = new Date().toLocaleDateString(undefined, {
+  const dateStr = new Date().toLocaleDateString(UI_LOCALE, {
     weekday: 'long',
     month: 'long',
     day: 'numeric',
@@ -638,8 +639,8 @@ export function Home({ mode }: HomeProps) {
                     const [y, m, d] = dateKey.split('-').map(Number);
                     const groupDate = new Date(y, m, d);
                     const day = groupDate.getDate();
-                    const month = groupDate.toLocaleDateString(undefined, { month: 'short' });
-                    const weekday = groupDate.toLocaleDateString(undefined, { weekday: 'short' });
+                    const month = groupDate.toLocaleDateString(UI_LOCALE, { month: 'short' });
+                    const weekday = groupDate.toLocaleDateString(UI_LOCALE, { weekday: 'short' });
                     
                     return (
                       <div 
@@ -897,7 +898,7 @@ function groupLabel(d: Date, now: Date): string {
   if (sameDay(d, yesterday)) return 'Yesterday';
   const age = now.getTime() - d.getTime();
   if (age < 7 * 24 * 60 * 60 * 1000) {
-    return d.toLocaleDateString(undefined, { weekday: 'long' });
+    return d.toLocaleDateString(UI_LOCALE, { weekday: 'long' });
   }
-  return d.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' });
+  return d.toLocaleDateString(UI_LOCALE, { weekday: 'short', day: 'numeric', month: 'short' });
 }

@@ -193,9 +193,37 @@ function describeUpdateError(
   };
 }
 
+/**
+ * Is this the "no update feed published for this release yet" 404?
+ *
+ * electron-updater fetches a per-platform feed manifest and errors if it is
+ * absent. During an alpha that is expected, not a fault: the platform's build
+ * job may not attach a feed at all. main.js swallows this case rather than
+ * showing an alarming banner for a non-problem.
+ *
+ * The feed name is platform- AND arch-specific — latest.yml (Windows),
+ * latest-mac.yml, latest-linux.yml, latest-linux-arm64.yml. An earlier version
+ * of this test was spelled /latest(-mac)?\.yml/, written when mac and Windows
+ * were the only targets; it silently stopped matching when Linux shipped (#502)
+ * and every Linux user would have seen an update-failure banner on launch,
+ * because Linux publishes no feed at all. Hence the open-ended suffix: a new
+ * platform or arch must not be able to reintroduce that.
+ *
+ * @param {string} message  the raw electron-updater error text
+ * @returns {boolean}
+ */
+const MISSING_FEED = /latest(-[a-z0-9]+)*\.yml/i;
+const MISSING_FEED_CAUSE = /(404|cannot find)/i;
+
+function isMissingUpdateFeedError(message) {
+  const msg = typeof message === 'string' ? message : String(message ?? '');
+  return MISSING_FEED.test(msg) && MISSING_FEED_CAUSE.test(msg);
+}
+
 module.exports = {
   describeUpdateError,
   updateErrorPhase,
+  isMissingUpdateFeedError,
   PHASE_CHECK,
   PHASE_DOWNLOAD,
   PHASE_INSTALL,

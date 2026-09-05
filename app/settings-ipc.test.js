@@ -36,6 +36,7 @@ const CHANNELS = [
   'get-keep-recordings', 'set-keep-recordings',
   'get-auto-summarize', 'set-auto-summarize',
   'get-auto-install-when-idle', 'set-auto-install-when-idle',
+  'get-identity-matching-enabled', 'set-identity-matching-enabled',
   'get-silence-auto-stop', 'set-silence-auto-stop-enabled', 'set-silence-auto-stop-minutes',
   'get-privacy-notice-seen', 'set-privacy-notice-seen',
   'get-system-audio', 'set-system-audio',
@@ -44,16 +45,17 @@ const CHANNELS = [
   'get-user-name', 'set-user-name',
 ];
 
-test('registers exactly the 19 settings-toggle handlers', () => {
+test('registers exactly the 21 settings-toggle handlers', () => {
   const { handlers } = harness();
   assert.deepStrictEqual(Object.keys(handlers).sort(), [...CHANNELS].sort());
 });
 
 // Every spread-getter reads its own subcommand SILENTLY and returns
-// { success:true, ...jsonData }. Covers all seven (privacy-notice-seen differs
+// { success:true, ...jsonData }. Covers all nine (privacy-notice-seen differs
 // and has its own test below).
 const SPREAD_GETTERS = [
   'get-keep-recordings', 'get-auto-summarize', 'get-auto-install-when-idle',
+  'get-identity-matching-enabled',
   'get-silence-auto-stop',
   'get-user-name', 'get-system-audio', 'get-language', 'get-microphone',
 ];
@@ -85,6 +87,11 @@ test('set-keep-recordings / set-auto-summarize / set-auto-install-when-idle stri
   const ri = await idle.handlers['set-auto-install-when-idle']({}, false);
   assert.deepStrictEqual(idle.calls.py[0].args, ['set-auto-install-when-idle', 'false']);
   assert.deepStrictEqual(ri, { success: true, auto_install_when_idle: false });
+
+  const identity = harness({ pyResult: '{"identity_matching_enabled": false}' });
+  const rid = await identity.handlers['set-identity-matching-enabled']({}, false);
+  assert.deepStrictEqual(identity.calls.py[0].args, ['set-identity-matching-enabled', 'false']);
+  assert.deepStrictEqual(rid, { success: true, identity_matching_enabled: false });
 });
 
 test('silence-auto-stop setters map to Python True/False and String(minutes), returning the raw result', async () => {
@@ -135,9 +142,9 @@ test('set-microphone inserts the `--` argv delimiter and coalesces null id/label
 
 test('set-user-name coerces nullish names to an empty string and trims the echoed fallback', async () => {
   const named = harness({ pyResult: 'noise' });
-  const r1 = await named.handlers['set-user-name']({}, '  Ben  ');
-  assert.deepStrictEqual(named.calls.py[0].args, ['set-user-name', '  Ben  ']);
-  assert.deepStrictEqual(r1, { success: true, user_name: 'Ben' });
+  const r1 = await named.handlers['set-user-name']({}, '  Casey Example  ');
+  assert.deepStrictEqual(named.calls.py[0].args, ['set-user-name', '  Casey Example  ']);
+  assert.deepStrictEqual(r1, { success: true, user_name: 'Casey Example' });
 
   const nullish = harness({ pyResult: 'noise' });
   const r2 = await nullish.handlers['set-user-name']({}, null);

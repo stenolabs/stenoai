@@ -8,7 +8,7 @@ import { meetingsKeys } from '@/hooks/meetingKeys';
 import { useUndoDeleteStore } from '@/hooks/undoDeleteStore';
 // #bug4 dedup helpers live in a dependency-light module so they're unit-testable
 // without this hook's import graph.
-import { LIVE_SUMMARY_PREFIX, liveRowRedundant } from '@/lib/liveMeetingRow';
+import { LIVE_SUMMARY_PREFIX, liveRowRedundant, shouldShowLiveRow } from '@/lib/liveMeetingRow';
 
 export { meetingsKeys };
 // Re-exported for existing consumers that import them from here.
@@ -68,7 +68,11 @@ export function useMeetings() {
             : m,
         )
       : query.data;
-    const live = recording.sessionName
+    // Gate on the STATUS, not on the name alone: main keeps the session name
+    // after a capture start that failed in the renderer, and without this a
+    // stale name renders a live row that nothing ever clears. See
+    // isLiveRowStatus for the full story.
+    const live = shouldShowLiveRow(recording.sessionName, recording.status)
       ? buildLiveMeeting(
           recording.sessionName,
           draft?.title,

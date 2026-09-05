@@ -9,7 +9,11 @@
  */
 
 // ---------- shared result envelope ----------
-export type Result<T> = ({ success: true } & T) | { success: false; error: string };
+export type Result<T> = ({ success: true } & T) | {
+  success: false;
+  error: string;
+  error_code?: string;
+};
 
 // ---------- domain types ----------
 export interface SessionInfo {
@@ -56,8 +60,17 @@ export interface Meeting {
   action_items?: unknown[];
   transcript?: string;
   is_diarised?: boolean;
+  /** Whether a per-meeting speaker sidecar exists. The detail view uses this
+   *  to avoid spawning two speaker backend reads for ordinary notes. */
+  has_speaker_sidecar?: boolean;
   diarised_text?: string | null;
   folders?: string[];
+  /** Whether the ORIGINAL recording is still on disk (list-meetings only —
+   *  derived from one directory listing, extension-agnostic). keep_recordings
+   *  defaults off, so this is false for most notes, and everything that needs
+   *  the audio (re-transcribe, speaker samples, any future re-diarization) is
+   *  quietly unavailable without it. */
+  has_audio?: boolean;
   /** User notes as persisted + returned by the backend (`_parse_meeting_markdown` -> `user_notes`). */
   user_notes?: string | null;
   /** Renderer-side notes for the in-progress / draft recording (live + processing views). */
@@ -319,6 +332,12 @@ export type SetupCheckResponse = Result<{
   allGood: boolean;
   checks: SetupCheckItem[];
 }>;
+export type SpeakerModelStatusResponse = Result<{
+  ready: boolean;
+  cache_directory: string;
+  required_models: string[];
+  missing_models: string[];
+}>;
 
 export type MicPermissionResponse = Result<{ status: MicPermissionStatus }>;
 export type MicPermissionGrantResponse = Result<{ granted: boolean }>;
@@ -425,6 +444,186 @@ export type ListTemplatesResponse = Result<{
   default_template_id: string;
 }>;
 export type SaveTemplateResponse = Result<{ template: Template }>;
+
+export interface PersonProfile {
+  person_id: string;
+  display_name: string;
+  prototype_counts: Record<string, number>;
+  hard_negative_counts: Record<string, number>;
+  sample_available: boolean;
+  updated_at: number;
+}
+export type ListPersonProfilesResponse = Result<{ person_profiles: PersonProfile[] }>;
+export type CreatePersonProfileResponse = Result<{ person_id: string; display_name: string }>;
+
+export interface SpeakerCandidate {
+  person_id: string;
+  display_name: string;
+  distance: number;
+  hard_negative_conflict: boolean;
+  /** Distance to this person's nearest stored hard-negative, or null when
+   *  they have none -- explains hard_negative_conflict (suppression is
+   *  relative: negative evidence must rival the positive to suppress). */
+  negative_distance: number | null;
+}
+export interface SpeakerSample {
+  start: number;
+  end: number;
+  text: string | null;
+}
+export interface SpeakerSuggestion {
+  status: 'confirmed' | 'possible' | 'none';
+  suggested_person_id: string | null;
+  suggested_name: string | null;
+  merged_from: string[];
+  candidates: SpeakerCandidate[];
+  reasons: string[];
+  // Identification anchors -- without these, "Unidentified speaker" gives a
+  // human nothing to go on to figure out who it actually is.
+  speech_duration_seconds: number;
+  segment_count: number;
+  /** "MM:SS" / "H:MM:SS" of this cluster's earliest segment, or null if the
+   *  sidecar has no segment timestamps (a pre-this-feature sidecar). */
+  first_timestamp: string | null;
+  /** Quoted excerpt of what this cluster said, at its longest (most
+   *  trustworthy) segment -- null if no saved transcript overlaps it. */
+  sample_text: string | null;
+  /** Several excerpts, chronological, each independently playable. Index i
+   *  here is exactly what `getSampleAudio(..., i)` plays -- both sides
+   *  derive the list from the shared `sample_segments`, so the clip always
+   *  matches the text beside it. `text` is null for a segment no transcript
+   *  line covers; the entry stays, because its audio is still playable and
+   *  dropping it would shift every later index. */
+  samples: SpeakerSample[];
+  /** A human marked this cluster as holding more than one person. Never
+   *  derived -- no measurable property of a blended centroid distinguishes
+   *  one voice from two (0.8270 to the contaminating speaker in the real
+   *  case this exists for). True takes the cluster out of naming entirely:
+   *  no suggestion, no candidates, and confirm-speaker refuses it. */
+  contains_multiple_speakers: boolean;
+  /** True when duration/segment-count shape matches the real-data-validated
+   *  echo/crosstalk artifact pattern (SUGGESTION_MIN_AVG_TURN_SECONDS) --
+   *  a UI hint only, never excludes the cluster from confirm-speaker. */
+  is_likely_artifact: boolean;
+  /** Display name of the person this exact cluster was already confirmed
+   *  as, from a real SpeakerPrototype in config.json -- null if never
+   *  confirmed. Persists across navigation/reload unlike the panel's
+   *  transient post-click feedback, which is plain component state. */
+  confirmed_by_user: string | null;
+  /** The same confirmation's person_id. Display names are not identity -- a
+   *  rename can leave two profiles reading alike -- so anything deciding
+   *  WHICH person a cluster went to compares this, not the name. Optional:
+   *  a payload predating this field simply carries no id. */
+  confirmed_person_id?: string | null;
+  /** How far a human got reviewing this cluster. `"generic"` means they
+   *  looked at it and chose to leave it unnamed -- the one review outcome
+   *  that leaves no other trace, so it is read from here rather than from
+   *  component state and survives a remount by construction. Absent on a
+   *  payload predating the field, and on every unreviewed row. Never
+   *  affects the suggestion: it records progress, not evidence. */
+  review_state?: string | null;
+}
+export type SuggestSpeakersResponse = Result<{
+  schema_version: 1;
+  diarization_run_id: string | null;
+  meeting_id: string;
+  /** Whether the source recording still exists on disk (keep_recordings
+   *  defaults off, so this is false for most older backfilled meetings) --
+   *  checked once per meeting; gates whether a play button can render. */
+  recording_available: boolean;
+  /** Clusters, plus one extra for each cluster marked as holding more than
+   *  one person. Surfaced because the ceiling is real and invisible in the
+   *  output: Sortformer's four-slot architecture returns a five-person
+   *  channel as four clusters with nothing indicating anything was lost.
+   *  Nothing consumes this number today -- Sortformer takes no speaker-count
+   *  hint, so there is no re-diarization call to feed it into. */
+  minimum_speaker_count: number;
+  /** People whose confirmation in this meeting was made against a
+   *  diarization run that no longer describes the clusters below, because
+   *  the meeting was re-diarized since. Their voice evidence is untouched
+   *  and keeps scoring candidates everywhere; what is lost is the link to a
+   *  cluster, and only re-confirming restores it. Absent or empty is the
+   *  normal case, including on every library that was never re-diarized. */
+  stale_assignments?: StaleAssignment[];
+  channels: Record<string, Record<string, SpeakerSuggestion>>;
+}>;
+
+export interface StaleAssignment {
+  person_id: string;
+  display_name: string;
+}
+
+export interface MarkSpeakerClusterParams {
+  meetingStem: string;
+  channel: string;
+  diarizationSpeakerId: string;
+  expectedRunId: string;
+  containsMultipleSpeakers: boolean;
+}
+
+export interface SetClusterReviewStateParams {
+  meetingStem: string;
+  channel: string;
+  diarizationSpeakerId: string;
+  expectedRunId: string;
+  /** True records "a human reviewed this and left it unnamed"; false
+   *  removes that marking, which is the undo. */
+  generic: boolean;
+}
+export type SetClusterReviewStateResponse = Result<{
+  resolved_diarization_speaker_id: string;
+  /** Every raw cluster id the marked row covers. The panel shows merged
+   *  rows, so one click can reach several ids. */
+  fragment_ids: string[];
+  review_state: string | null;
+}>;
+export type MarkSpeakerClusterResponse = Result<{
+  resolved_diarization_speaker_id: string;
+  contains_multiple_speakers: boolean;
+  /** Display names whose confirmation of THIS cluster the marking withdrew.
+   *  Marking implies the name was wrong, so the prototype (a blended
+   *  two-voice embedding) and the hard negatives it created are removed
+   *  rather than left enrolled. */
+  cleared_confirmation_from: string[];
+  minimum_speaker_count: number;
+}>;
+
+/** Feeds the one sentence shown before a delete. `has_sidecar: false` means
+ *  this meeting was never diarized -- nothing is at risk, no warning. */
+export type SpeakerNamingStatusResponse = Result<{
+  meeting_id: string;
+  has_sidecar: boolean;
+  total_clusters: number;
+  named_clusters: number;
+  unnamed_clusters: number;
+}>;
+
+export interface ConfirmSpeakerParams {
+  meetingStem: string;
+  channel: string;
+  diarizationSpeakerId: string;
+  expectedRunId: string;
+  personId?: string;
+  newPersonName?: string;
+}
+export type ConfirmSpeakerResponse = Result<{
+  person_id: string;
+  display_name: string;
+  prototype_id: string;
+  resolved_diarization_speaker_id: string;
+  merged_from: string[];
+  hard_negatives_added_against: string[];
+  /** Display names of people whose previous confirmation of this SAME
+   *  cluster was superseded by this confirm (the "Change" flow) -- their
+   *  stale prototype and derived hard negatives were removed. */
+  reassigned_from: string[];
+  relabeled_lines: number;
+}>;
+
+// audio_base64 (a WAV clip), not a filesystem path: the renderer's CSP
+// (media-src 'self' blob:) has no file: allowance, so a raw path could
+// never actually play -- the renderer builds a blob: URL from these bytes.
+export type GetSpeakerSampleAudioResponse = Result<{ audio_base64: string }>;
 
 export interface Report {
   id: string;
@@ -535,6 +734,8 @@ export type GetAutoSummarizeResponse = Result<{ auto_summarize_enabled: boolean 
 
 export type GetAutoInstallWhenIdleResponse = Result<{ auto_install_when_idle: boolean }>;
 
+export type GetIdentityMatchingEnabledResponse = Result<{ identity_matching_enabled: boolean }>;
+
 export type GetSilenceAutoStopResponse = Result<{
   silence_auto_stop_enabled: boolean;
   silence_auto_stop_minutes: number;
@@ -555,6 +756,10 @@ export type StoragePathResponse = Result<{
   default_path: string;
 }>;
 export type PickStorageFolderResponse = Result<{ folderPath: string }>;
+export type GetObsidianSyncResponse = Result<{ obsidian_sync_enabled: boolean }>;
+export type GetObsidianVaultPathResponse = Result<{ obsidian_vault_path: string }>;
+export type ObsidianConflict = { vaultRelPath: string; detectedAt: string; reason: string };
+export type GetObsidianConflictsResponse = Result<{ conflicts: Record<string, ObsidianConflict> }>;
 export type GetAiPromptsResponse = Result<{ summarization: string }>;
 
 export type GetAiProviderResponse = Result<{
@@ -699,7 +904,10 @@ export interface ParakeetPullProgressEvent {
   /** Present on pull-parakeet-model invocations; omitted on
    *  setup-parakeet (which downloads the default model with no id arg). */
   model?: string | null;
-  stage: 'downloading' | 'loading' | string;
+  stage: 'preparing' | 'downloading' | 'loading' | 'complete' | string;
+  completed_files?: number;
+  total_files?: number;
+  file_bytes?: number;
 }
 export interface ParakeetPullCompleteEvent {
   model?: string | null;
@@ -791,6 +999,7 @@ export interface StenoaiBridge {
   version: number;
 
   app: {
+    platform: 'darwin' | 'linux' | 'win32';
     getVersion: RequestFn<[], AppVersionResponse>;
   };
 
@@ -816,6 +1025,8 @@ export interface StenoaiBridge {
     check: RequestFn<[], SetupCheckResponse>;
     ollamaAndModel: RequestFn<[], Result<Record<string, unknown>>>;
     parakeet: RequestFn<[], Result<Record<string, unknown>>>;
+    speakerModelsStatus: RequestFn<[], SpeakerModelStatusResponse>;
+    speakerModels: RequestFn<[], SpeakerModelStatusResponse>;
     test: RequestFn<[], Result<Record<string, unknown>>>;
     triggerWizard: RequestFn<[], Result<Record<string, unknown>>>;
   };
@@ -862,9 +1073,14 @@ export interface StenoaiBridge {
     openSystemAudioFile: RequestFn<[name: string], Result<{ filePath: string }>>;
     appendSystemAudioChunk: RequestFn<[bytes: Uint8Array], Result<Record<string, never>>>;
     closeSystemAudioFile: RequestFn<[], Result<{ filePath: string }>>;
+    /** Linux-only: starts a pw-record subprocess in main capturing the default
+     *  sink's monitor (see app/linux-loopback.js). PCM arrives via
+     *  on.linuxLoopbackChunk, not through getDisplayMedia. */
+    startLinuxLoopback: RequestFn<[], Result<{ sampleRate: number; channels: number }>>;
+    stopLinuxLoopback: RequestFn<[], Result<Record<string, never>>>;
     /** Report a renderer-side capture failure so main can surface a native
      *  notification (a failed start would otherwise be silent). Fire-and-forget. */
-    reportCaptureError: SendFn<[message: string]>;
+    reportCaptureError: SendFn<[message: string, name?: string, phase?: 'start' | 'ongoing' | 'stop']>;
     processSystemAudio: RequestFn<[filePath: string, name: string], Result<{ message: string }>>;
     // Fire-and-forget: the handler copies the file into recordings/ and queues
     // it (addToProcessingQueue), then resolves immediately with no payload —
@@ -957,6 +1173,32 @@ export interface StenoaiBridge {
     reset: RequestFn<[id: string], Result<Record<string, never>>>;
   };
 
+  speakers: {
+    listProfiles: RequestFn<[], ListPersonProfilesResponse>;
+    suggestForMeeting: RequestFn<[meetingStem: string], SuggestSpeakersResponse>;
+    confirm: RequestFn<[params: ConfirmSpeakerParams], ConfirmSpeakerResponse>;
+    createProfile: RequestFn<[displayName: string], CreatePersonProfileResponse>;
+    renameProfile: RequestFn<[id: string, displayName: string], Result<Record<string, never>>>;
+    deleteProfile: RequestFn<[id: string], Result<Record<string, never>>>;
+    getSampleAudio: RequestFn<
+      [
+        meetingStem: string,
+        channel: string,
+        diarizationSpeakerId: string,
+        expectedRunId: string,
+        segmentIndex?: number,
+      ],
+      GetSpeakerSampleAudioResponse
+    >;
+    getPersonSampleAudio: RequestFn<[id: string], GetSpeakerSampleAudioResponse>;
+    markCluster: RequestFn<[params: MarkSpeakerClusterParams], MarkSpeakerClusterResponse>;
+    setClusterReviewState: RequestFn<
+      [params: SetClusterReviewStateParams],
+      SetClusterReviewStateResponse
+    >;
+    namingStatus: RequestFn<[meetingStem: string], SpeakerNamingStatusResponse>;
+  };
+
   models: {
     checkOllama: RequestFn<[], CheckOllamaResponse>;
     list: RequestFn<[], ListModelsResponse>;
@@ -1018,6 +1260,8 @@ export interface StenoaiBridge {
     setAutoSummarize: RequestFn<[v: boolean], Result<Record<string, never>>>;
     getAutoInstallWhenIdle: RequestFn<[], GetAutoInstallWhenIdleResponse>;
     setAutoInstallWhenIdle: RequestFn<[v: boolean], Result<Record<string, never>>>;
+    getIdentityMatchingEnabled: RequestFn<[], GetIdentityMatchingEnabledResponse>;
+    setIdentityMatchingEnabled: RequestFn<[v: boolean], Result<Record<string, never>>>;
     getSilenceAutoStop: RequestFn<[], GetSilenceAutoStopResponse>;
     setSilenceAutoStopEnabled: RequestFn<[v: boolean], SetSilenceAutoStopEnabledResponse>;
     setSilenceAutoStopMinutes: RequestFn<[v: number], SetSilenceAutoStopMinutesResponse>;
@@ -1068,6 +1312,12 @@ export interface StenoaiBridge {
     getStoragePath: RequestFn<[], StoragePathResponse>;
     setStoragePath: RequestFn<[p: string], Result<Record<string, never>>>;
     pickStorageFolder: RequestFn<[], PickStorageFolderResponse>;
+    getObsidianSync: RequestFn<[], GetObsidianSyncResponse>;
+    setObsidianSync: RequestFn<[v: boolean], Result<Record<string, never>>>;
+    getObsidianVaultPath: RequestFn<[], GetObsidianVaultPathResponse>;
+    setObsidianVaultPath: RequestFn<[p: string], Result<Record<string, never>>>;
+    pickObsidianVaultFolder: RequestFn<[], PickStorageFolderResponse>;
+    getObsidianConflicts: RequestFn<[], GetObsidianConflictsResponse>;
     getAiPrompts: RequestFn<[], GetAiPromptsResponse>;
     saveDiagnostics: RequestFn<
       [defaultFilename: string, content: string],
@@ -1137,6 +1387,13 @@ export interface StenoaiBridge {
     liveTranscriptReady: Subscribe<LiveTranscriptReadyEvent>;
     liveTranscriptChunk: Subscribe<LiveTranscriptChunkEvent>;
     liveTranscriptError: Subscribe<LiveTranscriptErrorEvent>;
+    /** Raw interleaved s16 PCM from the Linux loopback capture — see
+     *  recording.startLinuxLoopback. Electron serialises the main-side Buffer
+     *  as a Uint8Array on this side of the bridge. */
+    linuxLoopbackChunk: Subscribe<Uint8Array>;
+    /** pw-record died on its own (crash, PipeWire restart) — no more chunks
+     *  are coming. Not emitted on a normal stopLinuxLoopback(). */
+    linuxLoopbackEnded: Subscribe<{ code: number | null; signal: string | null }>;
     updateAvailable: Subscribe<UpdateAvailableEvent>;
     updateDownloadProgress: Subscribe<UpdateProgressEvent>;
     updateDownloaded: Subscribe<UpdateDownloadedEvent>;

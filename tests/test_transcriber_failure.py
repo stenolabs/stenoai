@@ -291,7 +291,7 @@ class TranscribeDiarisedFailureTests(unittest.TestCase):
             "detected_language": None,
         }
 
-        def fake_transcribe(path, language="en", _preprocessed=False):
+        def fake_transcribe(path, language="en", _preprocessed=False, **_preprocess_options):
             return failed if path == mic else ok
 
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -583,9 +583,9 @@ class LiveTranscriptFallbackTests(unittest.TestCase):
         self.assertIsNotNone(reason("", True, None))  # crash
 
     def test_a_batch_missing_most_of_the_file_loses_to_the_live_transcript(self):
-        """A batch that read only part of the audio is neither a crash nor
-        silence, so it used to pass the gate and replace a complete live
-        transcript with a full-of-holes one."""
+        """A batch that skipped most of its transcription windows is neither
+        a crash nor silence, so it used to pass the gate and replace a
+        complete live transcript with a full-of-holes one."""
         import simple_recorder
         reason = simple_recorder._unusable_batch_reason
         self.assertIsNotNone(reason("Some words.", False, 0.2))

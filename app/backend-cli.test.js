@@ -49,28 +49,42 @@ function recordingDeps(extra = {}) {
 
 // ---- spawn wrapper -------------------------------------------------------
 
-test('spawn defaults windowsHide:true for the (command, args[]) form', () => {
+test('spawn defaults windowsHide:true and PYTHONUNBUFFERED:1 for the (command, args[]) form', () => {
   spawn('backend', ['a', 'b']);
   assert.deepStrictEqual(spawnCalls[0][0], 'backend');
   assert.deepStrictEqual(spawnCalls[0][1], ['a', 'b']);
-  assert.deepStrictEqual(spawnCalls[0][2], { windowsHide: true });
+  assert.strictEqual(spawnCalls[0][2].windowsHide, true);
+  assert.strictEqual(spawnCalls[0][2].env.PYTHONUNBUFFERED, '1');
 });
 
-test('spawn lets a caller override windowsHide', () => {
-  spawn('backend', ['a'], { windowsHide: false, cwd: '/x' });
-  assert.deepStrictEqual(spawnCalls[0][2], { windowsHide: false, cwd: '/x' });
+test('spawn lets a caller override windowsHide, and merges (not replaces) env', () => {
+  spawn('backend', ['a'], { windowsHide: false, cwd: '/x', env: { FOO: 'bar' } });
+  const opts = spawnCalls[0][2];
+  assert.strictEqual(opts.windowsHide, false);
+  assert.strictEqual(opts.cwd, '/x');
+  assert.strictEqual(opts.env.FOO, 'bar');
+  assert.strictEqual(opts.env.PYTHONUNBUFFERED, '1');
+});
+
+test('spawn lets a caller override PYTHONUNBUFFERED itself', () => {
+  spawn('backend', ['a'], { env: { PYTHONUNBUFFERED: '0' } });
+  assert.strictEqual(spawnCalls[0][2].env.PYTHONUNBUFFERED, '0');
 });
 
 test('spawn handles the 2-arg (command, options) form', () => {
   spawn('backend', { cwd: '/y' });
   // Collapsed to the options-object overload; windowsHide defaulted in.
-  assert.deepStrictEqual(spawnCalls[0][1], { windowsHide: true, cwd: '/y' });
+  const opts = spawnCalls[0][1];
+  assert.strictEqual(opts.windowsHide, true);
+  assert.strictEqual(opts.cwd, '/y');
+  assert.strictEqual(opts.env.PYTHONUNBUFFERED, '1');
 });
 
 test('spawn defaults options when args is null/undefined', () => {
   spawn('backend');
   assert.deepStrictEqual(spawnCalls[0][1], undefined);
-  assert.deepStrictEqual(spawnCalls[0][2], { windowsHide: true });
+  assert.strictEqual(spawnCalls[0][2].windowsHide, true);
+  assert.strictEqual(spawnCalls[0][2].env.PYTHONUNBUFFERED, '1');
 });
 
 // ---- killProcessTree -----------------------------------------------------
@@ -147,8 +161,8 @@ test('runPythonScript (non-silent) sanitizes the echoed argv and streams output'
   // The spawned argv is untouched; only the LOGGED echo is sanitized.
   assert.deepStrictEqual(spawnCalls[0][1], ['create-folder', 'secret']);
   assert.ok(rec.debug.includes('$ stenoai SANITIZED'));
-  // No extraEnv -> env is left undefined (inherit parent).
-  assert.strictEqual(spawnCalls[0][2].env, undefined);
+  // No extraEnv -> spawn()'s own PYTHONUNBUFFERED default is all that's set.
+  assert.strictEqual(spawnCalls[0][2].env.PYTHONUNBUFFERED, '1');
 
   stubChild.emit('stdout', 'data', Buffer.from('one\ntwo'));
   assert.deepStrictEqual(rec.forwarded, [

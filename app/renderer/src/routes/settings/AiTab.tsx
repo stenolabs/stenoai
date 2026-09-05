@@ -1,3 +1,4 @@
+import { parakeetProgressLabel } from '@/lib/parakeetProgress';
 import * as React from 'react';
 import { Building2, Check, ChevronDown, ChevronRight, Cloud, Laptop, Loader2, Server, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -18,7 +19,7 @@ import { NvidiaIcon } from '@/components/ui/nvidia-icon';
 import { GoogleIcon } from '@/components/ui/google-icon';
 import { MetaIcon } from '@/components/ui/meta-icon';
 import { QwenIcon } from '@/components/ui/qwen-icon';
-import { cn } from '@/lib/utils';
+import { cn, isMac } from '@/lib/utils';
 import type { AiProvider, CloudProvider } from '@/lib/ipc';
 import {
   useAiProvider,
@@ -49,9 +50,11 @@ import {
 } from '@/hooks/useModels';
 import {
   useAutoSummarizeSetting,
+  useIdentityMatchingEnabledSetting,
   useKeepRecordingsSetting,
   useLanguageSetting,
   useSetAutoSummarize,
+  useSetIdentityMatchingEnabled,
   useSetKeepRecordings,
   useSetLanguage,
 } from '@/hooks/useSettings';
@@ -146,8 +149,32 @@ function TranscriptionSection() {
         />
       </SettingRow>
 
+      {isMac && (
+        <SpeakerIdentificationSetting />
+      )}
+
       <TranscriptionModelList />
     </div>
+  );
+}
+
+export function SpeakerIdentificationSetting() {
+  const enabled = useIdentityMatchingEnabledSetting();
+  const setEnabled = useSetIdentityMatchingEnabled();
+  return (
+    <SettingRow
+      label="Speaker identification"
+      description="Optional and off by default."
+      descriptionId="speaker-identification-description"
+    >
+      <Switch
+        aria-label="Speaker identification"
+        aria-describedby="speaker-identification-description"
+        checked={enabled.data ?? false}
+        onCheckedChange={(value) => setEnabled.mutate(value)}
+        disabled={enabled.data === undefined}
+      />
+    </SettingRow>
   );
 }
 
@@ -305,6 +332,12 @@ function TranscriptionModelList() {
           ))}
         </SelectContent>
       </Select>
+      {parakeetDownloading && (
+        <p role="status" className="mt-2 max-w-[240px] text-xs text-muted-foreground">
+          {parakeetProgressLabel(pullParakeet.progress[parakeetModel.name])}
+        </p>
+      )}
+      {pullParakeet.isError && <p role="alert">{String(pullParakeet.error.message)}</p>}
     </SettingRow>
   );
 }

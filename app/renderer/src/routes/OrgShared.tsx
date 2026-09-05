@@ -17,13 +17,14 @@ import {
   useOrgSession,
   useUnshareOrgMeeting,
 } from '@/hooks/useOrg';
+import { UI_LOCALE } from '@/lib/locale';
 
 function formatDate(epoch: number): string {
   const d = new Date(epoch * 1000);
   const now = new Date();
   const sameDay = d.toDateString() === now.toDateString();
   if (sameDay) return 'today, ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+  return d.toLocaleDateString(UI_LOCALE, { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
 function NotSignedIn() {

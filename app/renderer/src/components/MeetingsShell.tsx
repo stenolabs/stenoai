@@ -33,6 +33,7 @@ import {
 import { useRecording } from '@/hooks/useRecording';
 import { navigate, useRoute } from '@/lib/router';
 import type { Meeting } from '@/lib/ipc';
+import { UI_LOCALE } from '@/lib/locale';
 
 interface MeetingsShellProps {
   activeSummaryFile: string | null;
@@ -78,6 +79,9 @@ export function MeetingsShell({
 
   const [newFolderOpen, setNewFolderOpen] = React.useState(false);
   const [newFolderName, setNewFolderName] = React.useState('');
+  const creatingFolder = React.useRef(false);
+  const [folderError, setFolderError] = React.useState<string | null>(null);
+  const createFolderLabel = createFolder.isPending ? 'Creating folder…' : 'Create folder';
   const [renameTarget, setRenameTarget] = React.useState<
     { type: 'folder' | 'meeting'; id: string; current: string; itemRect: DOMRectReadOnly } | null
   >(null);
@@ -134,10 +138,18 @@ export function MeetingsShell({
 
   const handleCreateFolder = async () => {
     const name = newFolderName.trim();
-    if (!name) return;
-    await createFolder.mutateAsync({ name });
-    setNewFolderName('');
-    setNewFolderOpen(false);
+    if (!name || creatingFolder.current) return;
+    creatingFolder.current = true;
+    setFolderError(null);
+    try {
+      await createFolder.mutateAsync({ name });
+      setNewFolderName('');
+      setNewFolderOpen(false);
+    } catch {
+      setFolderError('Could not create folder. Please try again.');
+    } finally {
+      creatingFolder.current = false;
+    }
   };
 
   const openRename = (
@@ -263,8 +275,13 @@ export function MeetingsShell({
         isPending={deleteFolder.isPending}
       />
 
-      <Dialog open={newFolderOpen} onOpenChange={setNewFolderOpen}>
-        <DialogContent>
+      <Dialog open={newFolderOpen} onOpenChange={(open) => {
+        if (!creatingFolder.current) {
+          setNewFolderOpen(open);
+          setFolderError(null);
+        }
+      }}>
+        <DialogContent closeDisabled={createFolder.isPending}>
           <DialogHeader>
             <DialogTitle>New folder</DialogTitle>
             <DialogDescription>
@@ -272,6 +289,7 @@ export function MeetingsShell({
             </DialogDescription>
           </DialogHeader>
           <Input
+            disabled={createFolder.isPending}
             value={newFolderName}
             onChange={(e) => setNewFolderName(e.target.value)}
             placeholder="e.g. Acme Corp"
@@ -280,11 +298,14 @@ export function MeetingsShell({
               if (e.key === 'Enter') void handleCreateFolder();
             }}
           />
+          {folderError && <p role="alert">{folderError}</p>}
           <DialogFooter>
             <DialogClose asChild>
-              <Button variant="outline">Cancel</Button>
+              <Button variant="outline" disabled={createFolder.isPending}>Cancel</Button>
             </DialogClose>
-            <Button onClick={() => void handleCreateFolder()}>Create folder</Button>
+            <Button disabled={createFolder.isPending || !newFolderName.trim()} aria-busy={createFolder.isPending} onClick={() => void handleCreateFolder()}>
+              {createFolderLabel}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -507,7 +528,7 @@ export function formatDateLabel(info: Meeting['session_info']): string | undefin
     d.getDate() === yesterday.getDate();
   if (wasYesterday) return 'Yesterday';
   if (now.getTime() - d.getTime() < 7 * 24 * 60 * 60 * 1000) {
-    return d.toLocaleDateString(undefined, { weekday: 'short' });
+    return d.toLocaleDateString(UI_LOCALE, { weekday: 'short' });
   }
-  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  return d.toLocaleDateString(UI_LOCALE, { month: 'short', day: 'numeric' });
 }

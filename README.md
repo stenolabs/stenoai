@@ -1,7 +1,7 @@
 <div align="center">
   <img src="website/public/dragonfly-logo-512.png" alt="Steno Logo" width="120" height="120">
 
-  # Steno
+  # StenoAI
 
   *Your private stenographer*
 </div>
@@ -16,7 +16,7 @@
   <a href="#sponsors"><img src="https://img.shields.io/badge/Sponsors-%E2%9D%A4-EA4AAA?style=for-the-badge" alt="Sponsors"></a>
 </p>
 
-<p align="center">Steno is the privacy-first AI notepad for all your confidential conversations. No cloud, no usage limits and your private data never leaves your premises. Record, transcribe, summarize, and query your meetings using local AI models. Perfect for government, defence and C-suite professionals with confidential data needs.</p>
+<p align="center">StenoAI is the privacy-first AI notepad for all your confidential conversations. No cloud, no usage limits and your private data never leaves your premises. Record, summarize, and query your meetings using local AI models. Perfect for government, defence and C-suite professionals with confidential data needs.</p>
 
 <p align="center"><sub>Trusted by teams at <b>AWS</b>, <b>Deliveroo</b>, <b>Tesco</b>, <b>Hashicorp</b>, <b>Rutgers</b> & <b>European Union</b>.</sub></p>
 
@@ -42,16 +42,17 @@
 If you're looking for a hosted desktop recording API, consider checking out [Recall.ai](https://www.recall.ai/product/desktop-recording-sdk?utm_source=github&utm_medium=sponsorship&utm_campaign=ruzin-stenoai), an API that records Zoom, Google Meet, Microsoft Teams, in-person meetings, and more.
 
 ## 📢 What's New
-- **2026-08-03** 🔔 One-tap meeting notes — "Take Notes" starts recording instantly, meetings auto-stop when they end, and a single "Summarise?" tap opens the note and generates it. Recordings are transcript-first now — turn on auto-summarise in Settings → AI for automatic notes.
-- **2026-07-26** 🎙️ System audio without Screen Recording — record both sides of a call with no Screen Recording permission. Now requires macOS 14.4 or later.
-- **2026-07-26** ⬇️ Automatic updates — Steno installs a downloaded update while you're idle and relaunches, never mid-recording. Turn it off in Settings to keep the manual prompt.
-- **2026-07-26** ↩️ Undo delete + re-transcribe — restore a note right after deleting it, and re-transcribe an existing recording from its detail view.
+- **2026-08-31** 🗣️ Individual speaker labels — Steno now tells apart the voices sharing one side of a call, so a three-person meeting reads as `Speaker 2` / `Speaker 3` instead of one merged `[Others]`. macOS only.
+- **2026-08-31** 👤 Name a speaker once — confirm who someone is and Steno suggests them in later meetings. Off by default: turn on Speaker identification in Settings → AI, and manage or delete profiles in Settings → People.
+- **2026-08-31** 📄 Readable transcript export — exported transcripts open with a clean conversation view, with the original timestamped transcript kept below it.
+- **2026-08-31** 🇷🇺 Russian — pick Russian in Settings → Transcribe and summaries, titles and chat come back in Russian instead of English.
 
 
 ## Features
 
 - **Privacy-first** — 100% on-device; your recordings, transcripts, and summaries never leave your Mac.
-- **Live transcription with speaker labels** — Real-time on-screen text as you speak via Parakeet TDT v3 on Apple Silicon (MLX). Granola-style chat-bubble view with `[You]` vs `[Others]` attribution live during the recording and on the final transcript.
+- **Live speaker labels** — Real-time on-screen text as you speak via Parakeet TDT v3 on Apple Silicon (MLX). Granola-style chat-bubble view with `[You]` vs `[Others]` attribution live during the recording.
+- **Individual speakers (macOS)** — Once the recording stops, Steno separates the voices sharing each channel, so the saved transcript reads `Speaker 2` / `Speaker 3` rather than one merged `[Others]`. Name a speaker once and Steno can suggest them in later meetings — that part is off by default, and the voice profiles never leave your Mac.
 - **Auto start/stop meetings** — Steno notices when a meeting starts and offers to take notes, then offers to summarise when it ends. Granola-style frictionless capture.
 - **System audio capture** — Record both sides of virtual meetings, headphones on, no extra setup or virtual cable. Native Core Audio Tap on macOS 14.4+, with selectable microphone input.
 - **Recording that coexists** — A compact transcription pill docks beside the app instead of taking over; Stop lands you on the note instantly and you can resume recording into an existing note (it appends and re-generates on demand).
@@ -180,9 +181,6 @@ Have questions or suggestions? [Join our Discord](https://discord.gg/DZ6vcQnxxu)
 ## Future Roadmap
 
 ### Enhanced Features
-- Live transcription during recording
-- NVIDIA Parakeet as a transcription engine option
-- Editing notes after processing
 - Windows: GA hardening (alpha already ships on Windows 10/11 x64)
 
 ## Installation
@@ -222,6 +220,31 @@ Known alpha limitations:
 - **CPU-only summarisation** — the bundled Ollama runs on CPU (the NVIDIA GPU libraries are excluded to keep the download small); a separate GPU build is a follow-up. Transcription is CPU on every platform regardless.
 - **Auto-update** is wired (NSIS + `latest.yml`) but updates are unsigned until code signing is in place.
 - **Transcription** runs through `onnx-asr` (ONNX Runtime) instead of MLX, with the same Parakeet model and behaviour as macOS. Whisper is also available as an engine option.
+
+### Linux (Debian/Ubuntu, alpha)
+
+Verified on Ubuntu 26.04 LTS (GNOME/Wayland, PipeWire), including system-audio loopback capture with `[You]`/`[Others]` diarisation.
+
+**Install (`.deb`, recommended):** download [`stenoAI-linux-amd64.deb`](https://github.com/stenolabs/stenoai/releases/latest/download/stenoAI-linux-amd64.deb) from the [latest release](https://github.com/stenolabs/stenoai/releases/latest) and install it with `sudo apt install ./stenoAI-linux-amd64.deb` — apt pulls in the required system libraries automatically.
+
+**AppImage:** download [`stenoAI-linux-x86_64.AppImage`](https://github.com/stenolabs/stenoai/releases/latest/download/stenoAI-linux-x86_64.AppImage), `chmod +x` it, and run it. An AppImage carries no package metadata, so **you must install PortAudio yourself** or the setup check fails with `OSError: PortAudio library not found`:
+
+```bash
+sudo apt install libportaudio2
+```
+
+> Before the first tagged Linux release lands, grab the packages from the
+> [Linux build workflow](https://github.com/stenolabs/stenoai/actions/workflows/build-linux.yml):
+> sign in to GitHub, open the latest green run, and download the
+> `stenoai-linux-<version>` artifact.
+
+Known alpha limitations:
+
+- **Unsigned**, same as the Windows alpha.
+- **CPU-only summarisation** and `onnx-asr` transcription, same as Windows.
+- **System audio requires PipeWire** (Ubuntu's default since 22.10). The toggle reports unsupported on a PulseAudio-only or headless install, and recording falls back to mic-only.
+- **No speaker diarization sidecar** — per-channel `[You]`/`[Others]` labelling works, but the acoustic multi-speaker split is macOS-only.
+- **No auto-update.** `.deb` installs update by downloading a new package; AppImage self-update is a follow-up.
 
 Issues + feedback welcome on the GitHub issues tracker.
 

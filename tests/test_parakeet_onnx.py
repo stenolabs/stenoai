@@ -239,46 +239,62 @@ class TranscribeWindowsMergeTests(unittest.TestCase):
         # covers less audio than the recording holds. Downstream has to be
         # able to see that -- silently handing back a short transcript is how
         # a half-read file used to beat a complete live transcript.
-        # 80 s of audio, 60 s windows stepping 45 s: [0,60) and [45,80).
-        # Losing the second one costs only the 20 s it alone reached.
         model = _FakeTsModel([
             (["Hello", " world."], [(0.0, 0.5), (1.0, 1.5)]),
             RuntimeError("onnx blew up on this window"),
         ])
         merged = onnx_backend._transcribe_windows(model, self._eighty_seconds())
-        self.assertAlmostEqual(merged.covered_seconds, 60.0)
-        self.assertAlmostEqual(merged.total_seconds, 80.0)
+        self.assertEqual(merged.windows_attempted, 2)
+        self.assertEqual(merged.windows_recognized, 1)
+        self.assertEqual(onnx_backend._result_to_dict(merged, language=None)["window_coverage"], 60 / 80)
+
+    def test_misaligned_tokens_and_timestamps_do_not_count_as_recognized(self):
+        model = _FakeTsModel([
+            (["broken", " window"], [(0.0, 0.5)]),
+            (["Valid."], [(20.0, 20.5)]),
+        ])
+
+        merged = onnx_backend._transcribe_windows(model, self._eighty_seconds())
+
+        self.assertEqual(merged.tokens, ["Valid."])
+        self.assertEqual(merged.windows_attempted, 2)
+        self.assertEqual(merged.windows_recognized, 1)
+        self.assertEqual(onnx_backend._result_to_dict(merged, language=None)["window_coverage"], 35 / 80)
+
+    def test_short_tail_does_not_weigh_as_much_as_first_window(self):
+        samples = np.zeros(61 * onnx_backend._SAMPLE_RATE, dtype=np.float32)
+        valid = (["Words."], [(0.0, 0.5)])
+        for responses, expected in [
+            ([RuntimeError("failed"), valid], 16 / 61),
+            ([valid, RuntimeError("failed")], 60 / 61),
+        ]:
+            with self.subTest(expected=expected):
+                merged = onnx_backend._transcribe_windows(_FakeTsModel(responses), samples)
+                coverage = onnx_backend._result_to_dict(merged, language=None)["window_coverage"]
+                self.assertAlmostEqual(coverage, expected)
+
+    def test_middle_gap_is_excluded_and_overlap_counted_once(self):
+        samples = np.zeros(180 * onnx_backend._SAMPLE_RATE, dtype=np.float32)
+        valid = (["Words."], [(0.0, 0.5)])
+        merged = onnx_backend._transcribe_windows(
+            _FakeTsModel([valid, RuntimeError("failed"), valid, valid]), samples,
+        )
+        self.assertEqual(merged.covered_seconds, 150)
         self.assertAlmostEqual(
-            onnx_backend._result_to_dict(merged, language=None)["window_coverage"], 0.75
+            onnx_backend._result_to_dict(merged, language=None)["window_coverage"], 150 / 180,
         )
 
-    def test_coverage_counts_audio_not_windows(self):
-        # Windows are not interchangeable: they overlap, and the last one is
-        # short. Losing the FIRST of these two costs 45 of 80 seconds, where
-        # counting windows would call either loss exactly half.
-        model = _FakeTsModel([
-            RuntimeError("onnx blew up on this window"),
-            ([" Bar."], [(20.0, 20.5)]),
-        ])
-        merged = onnx_backend._transcribe_windows(model, self._eighty_seconds())
-        self.assertAlmostEqual(merged.covered_seconds, 35.0)
-        self.assertAlmostEqual(
-            onnx_backend._result_to_dict(merged, language=None)["window_coverage"], 35.0 / 80.0
-        )
+    def test_all_malformed_windows_still_raise(self):
+        invalid = (["missing timestamp"], [])
+        with self.assertRaisesRegex(RuntimeError, "all 2 ONNX transcription windows failed"):
+            onnx_backend._transcribe_windows(_FakeTsModel([invalid, invalid]), self._eighty_seconds())
 
-    def test_a_window_dropped_for_bad_timing_is_not_counted_as_read(self):
-        # recognize() succeeded, but the window was discarded a few lines
-        # later for tokens and timestamps that disagree. Counting it at
-        # recognize() time reported full coverage for a file with a hole.
-        model = _FakeTsModel([
-            (["Hello", " world."], [(0.0, 0.5), (1.0, 1.5)]),
-            ([" Tail.", " Extra."], [(5.0, 5.5)]),  # 2 tokens, 1 timestamp
-        ])
-        merged = onnx_backend._transcribe_windows(model, self._eighty_seconds())
-        self.assertAlmostEqual(merged.covered_seconds, 60.0)
-        self.assertLess(
-            onnx_backend._result_to_dict(merged, language=None)["window_coverage"], 1.0
-        )
+    def test_warning_counts_only_usable_windows_and_uncovered_audio(self):
+        model = _FakeTsModel([(["broken"], []), (["Valid."], [(0.0, 0.5)])])
+        with self.assertLogs(onnx_backend.logger, level="WARNING") as logs:
+            onnx_backend._transcribe_windows(model, self._eighty_seconds())
+        self.assertIn("read 35s of 80s (1 of 2 windows usable)", logs.output[-1])
+        self.assertIn("missing roughly 45s", logs.output[-1])
 
     def test_a_clean_run_reports_full_coverage(self):
         model = _FakeTsModel([
@@ -286,7 +302,7 @@ class TranscribeWindowsMergeTests(unittest.TestCase):
             ([" Bar."], [(20.0, 20.5)]),
         ])
         merged = onnx_backend._transcribe_windows(model, self._eighty_seconds())
-        self.assertAlmostEqual(merged.covered_seconds, merged.total_seconds)
+        self.assertEqual(merged.windows_attempted, merged.windows_recognized)
         self.assertEqual(onnx_backend._result_to_dict(merged, language=None)["window_coverage"], 1.0)
 
     def test_a_result_that_never_windowed_reports_unknown_not_complete(self):
@@ -355,6 +371,14 @@ class TranscribeWindowsHeartbeatTests(unittest.TestCase):
         ])
         onnx_backend._transcribe_windows(model, self._eighty_seconds())
         self.assertEqual(self.beats, [(2, 2)])
+
+    def test_malformed_result_still_emits_liveness_heartbeat(self):
+        model = _FakeTsModel([
+            (["broken", "window"], [(0.0, 0.5)]),
+            (["Valid."], [(20.0, 20.5)]),
+        ])
+        onnx_backend._transcribe_windows(model, self._eighty_seconds())
+        self.assertEqual(self.beats, [(1, 2), (2, 2)])
 
 
 class LoadWav16kMonoTests(unittest.TestCase):

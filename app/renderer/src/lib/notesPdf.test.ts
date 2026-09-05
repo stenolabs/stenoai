@@ -17,8 +17,8 @@ const full: NotesPdfInput = {
     { title: 'Hiring' },
   ],
   keyPoints: ['Ship v2 in July'],
-  actionItems: ['Ben: draft the announcement'],
-  participants: ['Ben', 'Ruzin'],
+  actionItems: ['Casey Example: draft the announcement'],
+  participants: ['Casey Example', 'Morgan Example'],
 };
 
 describe('buildNotesHtml', () => {
@@ -37,9 +37,9 @@ describe('buildNotesHtml', () => {
     expect(html).toContain('>Key Points</h2>');
     expect(html).toContain('<li>Ship v2 in July</li>');
     expect(html).toContain('>Action Items</h2>');
-    expect(html).toContain('<li>Ben: draft the announcement</li>');
+    expect(html).toContain('<li>Casey Example: draft the announcement</li>');
     expect(html).toContain('>Participants</h2>');
-    expect(html).toContain('Ben, Ruzin');
+    expect(html).toContain('Casey Example, Morgan Example');
     // Brand chrome: embedded font + logo, footer tagline + site.
     expect(html).toContain('@font-face');
     expect(html).toContain('data:image/svg+xml;base64,');
@@ -148,7 +148,7 @@ describe('buildNotesHtml with an open template report', () => {
     // …and the Standard note's sections are NOT along for the ride.
     expect(html).not.toContain('>Key Topics</h2>');
     expect(html).not.toContain('Ship v2 in July');
-    expect(html).not.toContain('Ben: draft the announcement');
+    expect(html).not.toContain('Casey Example: draft the announcement');
   });
 
   test('keeps the brand chrome, title and meta line', () => {

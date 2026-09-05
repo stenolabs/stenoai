@@ -1,0 +1,67 @@
+{
+  "simple_recorder.py": {
+    "F401": {
+      "44546f7ba470795ced167b6825170b6613063d912caa14f09dbef6893cc275e2": 1,
+      "8a9491e9f6ad4647d32b0194a1224ebd293e33d0fa9a15215bff6ef599970f87": 1,
+      "92f26a6c167b82c2f5e7f2c2bae65a26f0b0c28e19001f6f38511708d5c086d9": 1,
+      "f7bd07837bfea61a821ed9a5555cd532532e109e9ccd3d9e5f3a815e4f754520": 1
+    },
+    "F541": {
+      "0d6463071d681443d35eb6dd299779bcc3c974ba370b6032fc035ef26c8edf30": 1,
+      "4a2f501e1a367af8b2571f0b599fc189c5252d8bc6659ee28edfc3e02ec2b380": 1,
+      "91945f3de2daed1a431c81aab97eb84931098b8ff6e1992a2d3f9a91f9c026fb": 1,
+      "c4f7aaf5a552373fc077db7b35d88d403dd7dd553d8b486202387435d52f4d01": 1,
+      "e908906eed88c88f8481d123d59d8ed63c437e09d5fd81259e7459c9834cdcf0": 1,
+      "f273c272b4195bc28f54115d891e9223e5569f3292d893566ce05747551217f9": 1
+    },
+    "F841": {
+      "300f3917a50470a80fd3084cae10156199315178a6e1b485784166d16bda9abc": 1,
+      "4470c6903b76bd18409fe5a4d9fa6893bc6953b8fc150c116b36deace2557d66": 1,
+      "567630fd005eb998c4fdc8d44f9c3277f8d915dc460a1f3d5158b1de6992811b": 1,
+      "7d301460114c232aff100d51968fa3355b17df0e50fc0388b0bd071c4fdd2302": 1,
+      "b809bdcf64bb4b2a7faa6dfb87e58abe248ec732aa85a6d1dfecf2945f06779c": 1,
+      "e03073ebbc2a8dcdb0af6320672a67a339a934d3bd595e2bbf5730deb800c16a": 1
+    }
+  },
+  "tests/test_default_template_report.py": {
+    "E401": {
+      "c6bebfc221eda61984bc7fd8c8e222bb36f949fbfced40898f962bbc41e29145": 1
+    },
+    "F401": {
+      "06315e80c86d5a34fe1bf5bbf028c2b6e2bca42f68e1a17f82870eeb46a69279": 1,
+      "31a1f4f77fa5553f89774b25386a4e30ea54e2a98c09e88b5292ddd57111e323": 1
+    }
+  },
+  "tests/test_report_store.py": {
+    "E401": {
+      "c6bebfc221eda61984bc7fd8c8e222bb36f949fbfced40898f962bbc41e29145": 1
+    }
+  },
+  "tests/test_report_versions_cli.py": {
+    "E401": {
+      "c6bebfc221eda61984bc7fd8c8e222bb36f949fbfced40898f962bbc41e29145": 1
+    },
+    "E741": {
+      "45d64186c6f0a0fb7218034d3722271315ccc27161ccbc9a4402db600a9f8f3c": 1
+    }
+  },
+  "tests/test_reports.py": {
+    "E401": {
+      "c6bebfc221eda61984bc7fd8c8e222bb36f949fbfced40898f962bbc41e29145": 1
+    },
+    "F401": {
+      "06315e80c86d5a34fe1bf5bbf028c2b6e2bca42f68e1a17f82870eeb46a69279": 1
+    }
+  },
+  "tests/test_summarizer_map_reduce.py": {
+    "F401": {
+      "2779100f70be16ae874f0da8ee48f94e65be90e7f2ea462cafb781117d0b4979": 1,
+      "5803c6c392a8e3f338ccc906b86034cedf6f7216136e0983626e18ef7ce37024": 1,
+      "7bf4c054368522c0f5aa45304591e541925088d5a8f03dfc03a16337497bb9d4": 1
+    },
+    "F841": {
+      "1494402c0ec229ef5a16c6c6afb0c5c8ce2a52717a93223a4f950d7f14e88757": 1,
+      "170d38edaa20a095e74486aac665b24a1b75884c80ac23ee31716d7f53d273b4": 1
+    }
+  }
+}

@@ -1,5 +1,7 @@
 import { test, expect } from '../fixtures/electron';
 import { realUserDataDir, fileSig } from '../fixtures/real-user-data';
+import { join } from 'node:path';
+import { existsSync } from 'node:fs';
 
 /**
  * T2 — startup setup check. The onboarding wizard polls setup.check() to decide
@@ -56,6 +58,10 @@ test('setup.check returns a coherent allGood + checks contract on a clean profil
   expect(python).toBeDefined();
   expect(python!.status).toBe('pass');
   expect(python!.ok).toBe(true);
+
+  // The speaker-model readiness probe is intentionally read-only. A clean
+  // profile must stay clean until the explicit setup action is invoked.
+  expect(existsSync(join(userDataDir, 'models', 'speaker-diarization'))).toBe(false);
 
   // setup.check is a read — it must not write into the real user-data dir.
   expect(fileSig(realUserDataDir())).toBe(realDirBefore);

@@ -56,6 +56,16 @@ echo "Building standalone executable..."
 echo "This may take several minutes..."
 echo ""
 
+if [ "$(uname -s)" = "Darwin" ]; then
+    echo "Building required speaker-diarization sidecar..."
+    "$SCRIPT_DIR/build-diarize-sidecar.sh" "$(uname -m)"
+    if [ ! -x bin/steno-diarize ]; then
+        echo "Error: speaker-diarization sidecar was not built at bin/steno-diarize" >&2
+        exit 1
+    fi
+    echo ""
+fi
+
 python3 -m PyInstaller stenoai.spec --noconfirm
 
 # Check if build succeeded

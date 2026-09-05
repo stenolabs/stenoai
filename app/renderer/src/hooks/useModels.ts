@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ipc, type ListedModel, type TranscriptionEngine } from '@/lib/ipc';
+import { ipc, type ListedModel, type TranscriptionEngine, type ParakeetPullProgressEvent } from '@/lib/ipc';
 import { unwrap } from '@/lib/result';
 import { PARAKEET_LANGUAGE_CODES } from '@/lib/transcription-languages';
 
@@ -484,16 +484,16 @@ export function usePullParakeetModel() {
   const qc = useQueryClient();
   // Parakeet only has the one model today, but keyed-by-id state still
   // matches the Whisper hook shape so the UI doesn't fork on engine.
-  const [progress, setProgress] = React.useState<Record<string, string>>({});
+  const [progress, setProgress] = React.useState<Record<string, ParakeetPullProgressEvent>>({});
   const [pendingSelect, setPendingSelect] = React.useState<string | null>(null);
 
   React.useEffect(() => {
-    const offProgress = ipc().on.parakeetPullProgress(({ model, stage }) => {
-      // Coarse staged progress ("downloading"/"loading") rather than a
-      // percentage — see src/parakeet_models.py for rationale. UI shows
-      // a localised label per stage.
-      const key = model ?? 'mlx-community/parakeet-tdt-0.6b-v3';
-      setProgress((prev) => ({ ...prev, [key]: stage }));
+    const offProgress = ipc().on.parakeetPullProgress((event) => {
+      const { model } = event;
+      // File/byte progress belongs to this pull; setup events have no model.
+      if (!model) return;
+      const key = model;
+      setProgress((prev) => ({ ...prev, [key]: event }));
     });
     const offComplete = ipc().on.parakeetPullComplete(async ({ model, success }) => {
       const key = model ?? 'mlx-community/parakeet-tdt-0.6b-v3';

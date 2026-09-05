@@ -7,6 +7,7 @@ Handles storing and loading user preferences like model selection.
 import copy
 import json
 import logging
+import math
 import os
 import platform
 import re
@@ -14,6 +15,7 @@ import shutil
 import sys
 import tempfile
 import time
+import unicodedata
 import uuid
 from pathlib import Path
 from typing import Optional, Dict, Any
@@ -22,6 +24,7 @@ import filelock
 
 from src.whisper_models import SUPPORTED_WHISPER_MODELS as _WHISPER_REGISTRY
 from src import templates as _templates
+from src.speaker_schema import validate_display_name, validate_embedding
 
 logger = logging.getLogger(__name__)
 
@@ -167,6 +170,25 @@ def is_apple_silicon() -> bool:
     return sys.platform == "darwin" and platform.machine() in ("arm64", "aarch64")
 
 
+class _AnyDiarizationRun:
+    """The "no run scope at all" default of `remove_speaker_evidence`.
+
+    A sentinel rather than `None`, because `None` is already a meaningful
+    scope on this axis: it is what a legacy sidecar with no `diarization_run`
+    block reports, and scoping to it must match only equally run-less
+    evidence. Sharing one value for "don't filter by run" and "filter by the
+    absence of a run" would either make every run-unaware caller start
+    filtering or make a legacy-sidecar caller delete run-stamped evidence it
+    cannot have produced.
+    """
+
+    def __repr__(self) -> str:
+        return "ANY_DIARIZATION_RUN"
+
+
+ANY_DIARIZATION_RUN = _AnyDiarizationRun()
+
+
 class Config:
     """Manages application configuration with file persistence."""
 
@@ -248,6 +270,7 @@ class Config:
         "de": "German",
         "nl": "Dutch",
         "pt": "Portuguese",
+        "ru": "Russian",
         "ja": "Japanese",
         "zh-Hans": "Chinese (Simplified)",
         "zh-Hant": "Chinese (Traditional)",
@@ -327,14 +350,23 @@ class Config:
         # back ONLY the keys this process actually changed, so a concurrent
         # writer's unrelated keys aren't clobbered (the lost-update fix).
         self._snapshot: Dict[str, Any] = copy.deepcopy(self._config)
+        # A confirm-speaker operation updates several related profile entries.
+        # Batch their otherwise-independent _save() calls into one atomic
+        # config write so a failed final save cannot leave half a reassignment
+        # on disk or relabel a transcript without the matching profile.
+        self._transaction_backup: Optional[tuple[Dict[str, Any], Dict[str, Any]]] = None
+        self._transaction_dirty = False
+        self._transaction_lock = None
         self._migrate_cloud_model_map()
         self._migrate_whisper_model()
         self._migrate_summary_model()
         self._migrate_transcription_engine()
         self._migrate_language_zh()
         self._migrate_privacy_notice_seen()
+        self._migrate_identity_matching_privacy_default()
         self._normalize_templates()
         self._seed_sample_template()
+        self._normalize_voiceprints()
 
     def _migrate_language_zh(self) -> None:
         """Migrate the legacy single ``"zh"`` language to Simplified (``zh-Hans``).
@@ -426,6 +458,76 @@ class Config:
             )
         except Exception as e:
             logger.error(f"Error persisting privacy notice migration: {e}")
+
+    IDENTITY_MATCHING_PRIVACY_DEFAULT_VERSION = 1
+
+    def _migrate_identity_matching_privacy_default(self) -> None:
+        """Disable the former implicit opt-in exactly once.
+
+        Older releases stored identity matching as enabled by default, so an
+        on-disk True value does not prove that the user chose biometric voice
+        profiles. Configurations without the version marker are moved to the
+        privacy-safe disabled state. Once marked, later user choices survive.
+        """
+        if self._load_failed:
+            return
+        if not self._existed_at_load:
+            return
+
+        current_version = self._config.get(
+            "identity_matching_privacy_default_version", 0
+        )
+        if not isinstance(current_version, int):
+            current_version = 0
+        if current_version >= self.IDENTITY_MATCHING_PRIVACY_DEFAULT_VERSION:
+            return
+
+        self._config["identity_matching_enabled"] = False
+        self._config[
+            "identity_matching_privacy_default_version"
+        ] = self.IDENTITY_MATCHING_PRIVACY_DEFAULT_VERSION
+        if self._persist_identity_matching_privacy_default_migration():
+            self._snapshot["identity_matching_enabled"] = self._config[
+                "identity_matching_enabled"
+            ]
+            self._snapshot[
+                "identity_matching_privacy_default_version"
+            ] = self._config["identity_matching_privacy_default_version"]
+
+    def _persist_identity_matching_privacy_default_migration(self) -> bool:
+        """Persist the one-time privacy default with a locked compare-and-set."""
+        lock_path = str(self.config_path) + ".lock"
+        try:
+            with filelock.FileLock(lock_path, timeout=self._SAVE_LOCK_TIMEOUT):
+                base = self._read_disk_for_merge()
+                if base is None:
+                    return False
+                version = base.get("identity_matching_privacy_default_version", 0)
+                if not isinstance(version, int):
+                    version = 0
+                if version >= self.IDENTITY_MATCHING_PRIVACY_DEFAULT_VERSION:
+                    adopted = base.get("identity_matching_enabled") is True
+                    self._config["identity_matching_enabled"] = adopted
+                    self._config["identity_matching_privacy_default_version"] = version
+                    return True
+                base["identity_matching_enabled"] = False
+                base[
+                    "identity_matching_privacy_default_version"
+                ] = self.IDENTITY_MATCHING_PRIVACY_DEFAULT_VERSION
+                _atomic_write_json(self.config_path, base)
+                return True
+        except filelock.Timeout:
+            logger.warning(
+                "Timed out acquiring config lock for speaker-identification "
+                "privacy migration; will retry on next load"
+            )
+            return False
+        except Exception as e:
+            logger.error(
+                "Error persisting speaker-identification privacy migration: "
+                f"{e}"
+            )
+            return False
 
     def _migrate_whisper_model(self) -> None:
         """Map any out-of-current-list whisper model to the supported one.
@@ -657,6 +759,10 @@ class Config:
         changed. On lock timeout, degrade to a plain unlocked atomic write of
         our own config — a stuck lock must never block saves or raise.
         """
+        if self._transaction_backup is not None:
+            self._transaction_dirty = True
+            return True
+
         lock_path = str(self.config_path) + ".lock"
         try:
             # filelock is NOT reentrant: _save() must never be called while
@@ -687,6 +793,64 @@ class Config:
         except Exception as e:
             logger.error(f"Error saving config: {e}")
             return False
+
+    def begin_transaction(self) -> bool:
+        """Reload and defer mutations while holding the config file lock."""
+        if self._transaction_backup is not None:
+            raise RuntimeError("Config transaction already active")
+        lock = filelock.FileLock(
+            str(self.config_path) + ".lock", timeout=self._SAVE_LOCK_TIMEOUT,
+        )
+        try:
+            lock.acquire()
+        except filelock.Timeout:
+            logger.error(f"Timed out acquiring config lock at {lock.lock_file}")
+            return False
+        fresh = self._read_disk_for_merge()
+        if fresh is not None:
+            self._config = fresh
+            self._snapshot = copy.deepcopy(fresh)
+        self._transaction_backup = (
+            copy.deepcopy(self._config),
+            copy.deepcopy(self._snapshot),
+        )
+        self._transaction_dirty = False
+        self._transaction_lock = lock
+        return True
+
+    def commit_transaction(self) -> bool:
+        """Commit a deferred batch, restoring in-memory state on failure."""
+        if self._transaction_backup is None:
+            raise RuntimeError("No Config transaction active")
+        old_config, old_snapshot = self._transaction_backup
+        dirty = self._transaction_dirty
+        try:
+            if dirty:
+                _atomic_write_json(self.config_path, self._config)
+                self._snapshot = copy.deepcopy(self._config)
+            return True
+        except Exception as error:
+            logger.error(f"Error saving config transaction: {error}")
+            self._config = old_config
+            self._snapshot = old_snapshot
+            return False
+        finally:
+            self._transaction_backup = None
+            self._transaction_dirty = False
+            if self._transaction_lock is not None:
+                self._transaction_lock.release()
+                self._transaction_lock = None
+
+    def rollback_transaction(self) -> None:
+        """Discard a deferred batch without touching the on-disk config."""
+        if self._transaction_backup is None:
+            return
+        self._config, self._snapshot = self._transaction_backup
+        self._transaction_backup = None
+        self._transaction_dirty = False
+        if self._transaction_lock is not None:
+            self._transaction_lock.release()
+            self._transaction_lock = None
 
     def _get_default_config(self) -> Dict[str, Any]:
         """Get default configuration."""
@@ -741,12 +905,30 @@ class Config:
             "storage_path": "",
             "keep_recordings": False,
             "auto_summarize_enabled": False,
+            # Obsidian vault sync (#413). Off by default — a note only ever
+            # leaves the app's own store when the user opts in and picks a
+            # vault folder. One-way (Steno -> vault); see app/obsidian-sync.js.
+            "obsidian_sync_enabled": False,
+            "obsidian_vault_path": "",
             # Default ON — when the app is idle and nothing is in flight, a
             # downloaded update installs itself and relaunches so the user
             # never has to click "Restart". The "update available/downloaded"
             # notification is unchanged; this only removes the manual click,
             # and main.js keeps autoInstallOnAppQuit as the safe fallback.
             "auto_install_when_idle": True,
+            # Default OFF: cross-recording speaker identification creates and
+            # stores biometric voice profiles. The user must enable it before
+            # Steno extracts or stores speaker embeddings.
+            #
+            # This is independent of diarization itself. When it is off,
+            # per-meeting speaker embeddings are not extracted, stored, or
+            # matched, but "Speaker N" splitting within a meeting is
+            # unaffected (it only depends on diarizer segments, not
+            # embeddings). See src.transcriber's allow_self_match/
+            # clusters_out gating.
+            "identity_matching_enabled": False,
+            "identity_matching_privacy_default_version":
+                self.IDENTITY_MATCHING_PRIVACY_DEFAULT_VERSION,
             "whisper_model": "large-v3-turbo",
             "transcription_engine": "parakeet",
             "version": "1.0"
@@ -931,6 +1113,663 @@ class Config:
             return True  # already at shipped default — no-op success
         del overrides[template_id]
         return self._save()
+
+    def _normalize_voiceprints(self) -> None:
+        """Coerce persisted voiceprint state into a list of dicts on every
+        load, mirroring `_normalize_templates` — a malformed-but-parseable
+        config must not crash later voiceprint reads/writes."""
+        if self._load_failed:
+            return
+        raw = self._config.get("voiceprints", [])
+        self._config["voiceprints"] = (
+            [v for v in raw if isinstance(v, dict) and "id" in v and "name" in v]
+            if isinstance(raw, list)
+            else []
+        )
+
+    def get_voiceprints(self) -> list:
+        """All stored voiceprints, each `{id, name, embeddings,
+        centroid, centroid_sample_count, updated_at, is_self}`.
+
+        Two matching anchors per voiceprint (ported from
+        StoredSpeaker/SpeakerMatcher, github.com/pasrom/meeting-transcriber):
+        `centroid` is the long-term running mean, the primary anchor;
+        `embeddings` is a small recent-samples FIFO that can rescue a
+        borderline centroid match. See src.transcriber._voiceprint_distance.
+        """
+        return list(self._config.get("voiceprints", []))
+
+    def get_voiceprint(self, name: str) -> Optional[dict]:
+        return next(
+            (v for v in self.get_voiceprints() if v.get("name") == name), None
+        )
+
+    # Minimum speaking time (seconds) for an embedding to be folded into a
+    # voiceprint's long-term centroid — short/noisy snippets are still kept
+    # in the recent-samples FIFO as a fallback anchor but don't pollute the
+    # running average. `duration=None` (manual CLI enrollment — a
+    # deliberate action, not an automatic per-meeting confirmation) always
+    # qualifies. Ported from SpeakerMatcher.minSpeakingTimeForCentroid.
+    VOICEPRINT_MIN_DURATION_FOR_CENTROID = 3.0
+    # Recent-samples FIFO cap. Ported from SpeakerMatcher.maxRecentSamples.
+    VOICEPRINT_MAX_RECENT_SAMPLES = 3
+
+    def save_voiceprint(
+        self, name: str, embedding: list, is_self: bool = False,
+        duration: Optional[float] = None,
+    ) -> Optional[dict]:
+        """Upsert a voiceprint by name.
+
+        `duration` is the speaking time (seconds) `embedding` was extracted
+        from. When it clears `VOICEPRINT_MIN_DURATION_FOR_CENTROID` (or is
+        omitted entirely), the embedding is folded into the long-term
+        running-mean `centroid` via `(centroid * count + embedding) /
+        (count + 1)`. Every embedding, regardless of duration, is appended
+        to the recent-samples FIFO (capped at `VOICEPRINT_MAX_RECENT_SAMPLES`,
+        oldest dropped first). At most one `is_self` entry exists — saving a
+        new one demotes any previous self voiceprint to a regular (named)
+        one. Ported from StoredSpeaker/SpeakerMatcher.applyConfirmation.
+        """
+        # Persistence is dimension-agnostic so profiles can be migrated to a
+        # future embedder. Current diarizer payloads are still pinned to 256
+        # at their ingestion boundary in src.transcriber.
+        embedding = validate_embedding(embedding, expected_dimension=None)
+        before = copy.deepcopy(self._config)
+        voiceprints = self._config.setdefault("voiceprints", [])
+        if is_self:
+            for v in voiceprints:
+                v["is_self"] = False
+
+        qualifies = duration is None or duration >= self.VOICEPRINT_MIN_DURATION_FOR_CENTROID
+
+        existing = next((v for v in voiceprints if v.get("name") == name), None)
+        if existing is not None:
+            samples = list(existing.get("embeddings") or [])
+            samples.append(list(embedding))
+            if len(samples) > self.VOICEPRINT_MAX_RECENT_SAMPLES:
+                samples = samples[-self.VOICEPRINT_MAX_RECENT_SAMPLES:]
+
+            centroid = existing.get("centroid")
+            centroid_count = existing.get("centroid_sample_count", 0) or 0
+            if qualifies:
+                if centroid and len(centroid) == len(embedding):
+                    new_count = centroid_count + 1
+                    centroid = [
+                        (o * centroid_count + n) / new_count
+                        for o, n in zip(centroid, embedding)
+                    ]
+                    centroid_count = new_count
+                else:
+                    centroid = list(embedding)
+                    centroid_count = 1
+
+            existing["embeddings"] = samples
+            existing["centroid"] = centroid
+            existing["centroid_sample_count"] = centroid_count
+            existing["updated_at"] = time.time()
+            existing["is_self"] = is_self
+            saved = dict(existing)
+        else:
+            saved = {
+                "id": str(uuid.uuid4()),
+                "name": name,
+                "embeddings": [list(embedding)],
+                "centroid": list(embedding) if qualifies else None,
+                "centroid_sample_count": 1 if qualifies else 0,
+                "updated_at": time.time(),
+                "is_self": is_self,
+            }
+            voiceprints.append(saved)
+        if not self._save():
+            self._config = before
+            return None
+        return dict(saved)
+
+    def delete_voiceprint(self, name: str) -> bool:
+        voiceprints = self._config.get("voiceprints", [])
+        remaining = [v for v in voiceprints if v.get("name") != name]
+        if len(remaining) == len(voiceprints):
+            return False  # no such voiceprint
+        self._config["voiceprints"] = remaining
+        return self._save()
+
+    # PersonProfile/SpeakerPrototype: the named (non-self) speaker-identity
+    # store, replacing the named-matching half of the old flat `voiceprints`
+    # schema (self-match "You" keeps using `voiceprints`/`save_voiceprint`
+    # unchanged — it never had the same-room confusable-pair problem this
+    # design targets). Unlike a single running-averaged embedding per person,
+    # each confirmation is kept as its own `SpeakerPrototype` — separated by
+    # `recording_type` since in-person/shared-mic audio and remote/per-device
+    # audio are genuinely different-shaped comparisons (see the plan doc for
+    # the AMI Meeting Corpus findings that motivated this) — plus a parallel
+    # `hard_negatives` list: when a meeting confirms multiple different real
+    # people, each one's profile records the others as confirmed-NOT-this-
+    # person evidence, not just an in-pass "already assigned" guard.
+    VALID_RECORDING_TYPES = {"in_person", "remote", "imported", "unknown"}
+    VALID_PROTOTYPE_SOURCES = {"user_confirmed", "user_corrected", "manual_enrollment"}
+    # Channels a prototype's cluster can come from -- mirrors the sidecar's
+    # per-channel structure (src.speaker_suggestions.write_speakers_sidecar).
+    VALID_PROTOTYPE_CHANNELS = {"mic", "system"}
+    MAX_PROTOTYPES_PER_CONTEXT = 24
+    MAX_HARD_NEGATIVES_PER_CONTEXT = 48
+
+    def get_person_profiles(self) -> list:
+        """All stored person profiles, each `{person_id, display_name,
+        created_at, updated_at, prototypes, hard_negatives}`. See
+        `add_speaker_prototype` for the `SpeakerPrototype` shape."""
+        profiles = []
+        raw = self._config.get("person_profiles", [])
+        if not isinstance(raw, list):
+            return []
+        for profile in raw:
+            if (
+                not isinstance(profile, dict)
+                or not isinstance(profile.get("person_id"), str)
+                or not profile.get("person_id")
+                or not isinstance(profile.get("display_name"), str)
+                or not profile.get("display_name").strip()
+            ):
+                continue
+            safe = dict(profile)
+            safe["prototypes"] = self._usable_speaker_evidence(
+                profile.get("prototypes")
+            )
+            safe["hard_negatives"] = self._usable_speaker_evidence(
+                profile.get("hard_negatives")
+            )
+            profiles.append(safe)
+        return profiles
+
+    @staticmethod
+    def _usable_speaker_evidence(value) -> list:
+        """Return safe copies without deleting malformed persisted evidence."""
+        if not isinstance(value, list):
+            return []
+        usable = []
+        for entry in value:
+            if not isinstance(entry, dict):
+                continue
+            embedding = entry.get("embedding_mean")
+            if not isinstance(embedding, list) or not embedding:
+                continue
+            try:
+                numbers = [float(item) for item in embedding]
+            except (TypeError, ValueError, OverflowError):
+                continue
+            if not all(math.isfinite(item) for item in numbers):
+                continue
+            clean = dict(entry)
+            clean["embedding_mean"] = numbers
+            usable.append(clean)
+        return usable
+
+    def _get_person_profile_mutable(self, person_id: str) -> Optional[dict]:
+        return next(
+            (
+                profile
+                for profile in (
+                    self._config.get("person_profiles", [])
+                    if isinstance(self._config.get("person_profiles", []), list)
+                    else []
+                )
+                if isinstance(profile, dict) and profile.get("person_id") == person_id
+            ),
+            None,
+        )
+
+    def get_person_profile(self, person_id: str) -> Optional[dict]:
+        return next(
+            (p for p in self.get_person_profiles() if p.get("person_id") == person_id),
+            None,
+        )
+
+    def _person_name_taken(self, display_name: str, *, exclude_person_id: Optional[str] = None) -> bool:
+        """Case/whitespace-insensitive collision check -- without this,
+        the "New person" flow (both the plain CLI and confirm-speaker
+        --new-person) can silently create a second profile for someone who
+        already has one, splitting their evidence across two person_ids."""
+        normalized = " ".join(
+            unicodedata.normalize("NFKC", display_name).split()
+        ).casefold()
+        return any(
+            p.get("person_id") != exclude_person_id
+            and " ".join(
+                unicodedata.normalize("NFKC", p.get("display_name") or "").split()
+            ).casefold() == normalized
+            for p in self.get_person_profiles()
+        )
+
+    def create_person_profile(self, display_name: str) -> dict:
+        """Create a new, empty person profile (no prototypes yet).
+
+        Raises ValueError if a person with this name (case/whitespace
+        insensitive) already exists -- names must stay unique so a
+        confirmed cluster always resolves to one real person's evidence.
+        """
+        display_name = validate_display_name(display_name)
+        owned_transaction = self._transaction_backup is None
+        if owned_transaction and not self.begin_transaction():
+            raise OSError("Could not lock the person profile store.")
+        try:
+            if self._person_name_taken(display_name):
+                raise ValueError(f"A person named {display_name!r} already exists")
+            profiles = self._config.setdefault("person_profiles", [])
+            if not isinstance(profiles, list):
+                raise ValueError("The person profile store is malformed and needs repair.")
+            now = time.time()
+            profile = {
+                "person_id": str(uuid.uuid4()),
+                "display_name": display_name,
+                "created_at": now,
+                "updated_at": now,
+                "prototypes": [],
+                "hard_negatives": [],
+            }
+            profiles.append(profile)
+            if not self._save():
+                raise OSError("Could not save the person profile.")
+            if owned_transaction and not self.commit_transaction():
+                raise OSError("Could not save the person profile.")
+            return dict(profile)
+        except Exception:
+            if owned_transaction and self._transaction_backup is not None:
+                self.rollback_transaction()
+            raise
+
+    def rename_person_profile(self, person_id: str, display_name: str) -> bool:
+        """Raises ValueError if another person already has this name (same
+        uniqueness invariant as create_person_profile)."""
+        display_name = validate_display_name(display_name)
+        owned_transaction = self._transaction_backup is None
+        if owned_transaction and not self.begin_transaction():
+            return False
+        try:
+            profile = self._get_person_profile_mutable(person_id)
+            if profile is None:
+                if owned_transaction:
+                    self.rollback_transaction()
+                return False
+            if self._person_name_taken(display_name, exclude_person_id=person_id):
+                raise ValueError(f"A person named {display_name!r} already exists")
+            profile["display_name"] = display_name
+            profile["updated_at"] = time.time()
+            if not self._save():
+                raise OSError("Could not save the person profile.")
+            return not owned_transaction or self.commit_transaction()
+        except Exception:
+            if owned_transaction and self._transaction_backup is not None:
+                self.rollback_transaction()
+            raise
+
+    def delete_person_profile(self, person_id: str) -> bool:
+        """Delete a person profile and, critically, the derived evidence of
+        them stored in EVERYONE ELSE's profiles.
+
+        `confirm-speaker` creates mutual hard negatives: confirming person A
+        next to person B writes a hard-negative entry into B's profile whose
+        embedding is literally A's own voice sample, tagged with the
+        meeting/channel/diarization_speaker_id A was confirmed under (see
+        that command's "Mutual hard negatives" section). Without this
+        cleanup, deleting A leaves that sample sitting in B's profile
+        indefinitely -- a deleted person's voice would outlive their own
+        profile.
+
+        Walks A's own (about-to-be-deleted) `prototypes` -- each already
+        carries the exact meeting/channel/sid tuple A was confirmed under --
+        and reuses `remove_speaker_evidence` (the same removal primitive the
+        correction path already relies on) to strip any hard-negative entry
+        in another profile derived from that specific confirmation.
+
+        Each prototype's OWN `diarization_run_id` is the run scope for its
+        cleanup, not the meeting's current one: the negatives it produced
+        were written by the same confirm and therefore carry the same run
+        id, while a later re-diarization's negatives about the same cluster
+        id describe a different voice and belong to whoever is still
+        confirmed there.
+        """
+        owned_transaction = self._transaction_backup is None
+        if owned_transaction and not self.begin_transaction():
+            return False
+        profiles = self._config.get("person_profiles", [])
+        if not isinstance(profiles, list):
+            if owned_transaction:
+                self.rollback_transaction()
+            return False
+        target = next(
+            (
+                profile
+                for profile in profiles
+                if isinstance(profile, dict) and profile.get("person_id") == person_id
+            ),
+            None,
+        )
+        if target is None:
+            if owned_transaction:
+                self.rollback_transaction()
+            return False
+
+        for proto in target.get("prototypes") or []:
+            meeting_id = proto.get("meeting_id")
+            sid = proto.get("diarization_speaker_id")
+            if not meeting_id or not sid:
+                continue
+            for other in profiles:
+                if not isinstance(other, dict) or other.get("person_id") == person_id:
+                    continue
+                self.remove_speaker_evidence(
+                    other["person_id"], meeting_id=meeting_id,
+                    channel=proto.get("channel"),
+                    channel_recording_type=proto.get("recording_type"),
+                    sids={sid}, negative=True,
+                    diarization_run_id=proto.get("diarization_run_id"),
+                )
+
+        remaining = [
+            profile
+            for profile in profiles
+            if not isinstance(profile, dict) or profile.get("person_id") != person_id
+        ]
+        self._config["person_profiles"] = remaining
+        if not self._save():
+            if owned_transaction:
+                self.rollback_transaction()
+            return False
+        return not owned_transaction or self.commit_transaction()
+
+    @staticmethod
+    def _prototype_quality_score(speech_duration_seconds: float, segment_count: int) -> float:
+        """Simple, documented heuristic: rewards clearing the same stability
+        bar the suggestion service gates suggestions on (>=20s speaking time,
+        >=3 agreeing segments) rather than an arbitrary scale."""
+        duration_component = min(1.0, speech_duration_seconds / 20.0)
+        segment_component = min(1.0, segment_count / 3.0)
+        return round(duration_component * segment_component, 4)
+
+    def add_speaker_prototype(
+        self,
+        person_id: str,
+        embedding: list,
+        *,
+        recording_type: str,
+        meeting_id: str,
+        diarization_speaker_id: str,
+        speech_duration_seconds: float,
+        segment_count: int,
+        created_from: str,
+        channel: Optional[str] = None,
+        negative: bool = False,
+        diarization_run_id: Optional[str] = None,
+    ) -> Optional[dict]:
+        """Append a `SpeakerPrototype` to a person's positive `prototypes`
+        (default) or `hard_negatives` (`negative=True`) list. Returns None
+        if `person_id` doesn't exist. Unlike `save_voiceprint`, this never
+        averages into a running centroid — each confirmation is kept as its
+        own context-tagged prototype so a same-room-contaminated in-person
+        sample never blends into a clean remote-audio sample for the same
+        person (see module comment above `VALID_RECORDING_TYPES`).
+
+        `channel` is which sidecar channel ("mic"/"system") the cluster came
+        from. It must be stored, not just known at confirm time: mic and
+        system channels number their diarizer clusters independently (a mic
+        "SPEAKER_0" and a system "SPEAKER_0" are unrelated), so a
+        `(meeting_id, diarization_speaker_id)` pair alone is ambiguous and
+        cross-channel id collisions once produced hard negatives derived
+        from the wrong channel's clusters. `None` is allowed only for
+        legacy/enrollment paths with no channel to record — matchers fall
+        back to `recording_type` as a channel proxy for those (see
+        src.speaker_suggestions.prototype_channel_matches).
+
+        `diarization_run_id` is the sidecar's `diarization_run.run_id` the
+        embedding was confirmed from. Same absent-means-legacy convention as
+        `channel`: it must be stored so a later run can tell "this evidence
+        is from the diarization output currently on disk" from "the
+        clusters have since been re-diarized and this entry's ids may not
+        mean what they used to" (src.speaker_suggestions.prototype_run_matches).
+        `None` for callers with no run to report, e.g. enrollment."""
+        if recording_type not in self.VALID_RECORDING_TYPES:
+            raise ValueError(f"Invalid recording_type: {recording_type}")
+        if created_from not in self.VALID_PROTOTYPE_SOURCES:
+            raise ValueError(f"Invalid created_from: {created_from}")
+        if channel is not None and channel not in self.VALID_PROTOTYPE_CHANNELS:
+            raise ValueError(f"Invalid channel: {channel}")
+        # See save_voiceprint: validate numeric/finite/non-zero here, while
+        # the active model's exact dimension is enforced at ingestion.
+        embedding = validate_embedding(embedding, expected_dimension=None)
+
+        owned_transaction = self._transaction_backup is None
+        if owned_transaction and not self.begin_transaction():
+            return None
+        profile = self._get_person_profile_mutable(person_id)
+        if profile is None:
+            if owned_transaction:
+                self.rollback_transaction()
+            return None
+
+        prototype = {
+            "prototype_id": str(uuid.uuid4()),
+            "person_id": person_id,
+            "embedding_mean": embedding,
+            "sample_count": 1,
+            "quality_score": self._prototype_quality_score(speech_duration_seconds, segment_count),
+            "recording_type": recording_type,
+            "meeting_id": meeting_id,
+            "diarization_speaker_id": diarization_speaker_id,
+            "speech_duration_seconds": speech_duration_seconds,
+            "segment_count": segment_count,
+            "created_from": created_from,
+            "created_at": time.time(),
+        }
+        if channel is not None:
+            prototype["channel"] = channel
+        if diarization_run_id is not None:
+            prototype["diarization_run_id"] = diarization_run_id
+        key = "hard_negatives" if negative else "prototypes"
+        profile.setdefault(key, []).append(prototype)
+        self._prune_speaker_evidence(
+            profile[key],
+            self.MAX_HARD_NEGATIVES_PER_CONTEXT if negative else self.MAX_PROTOTYPES_PER_CONTEXT,
+            preserve_prototype_id=prototype["prototype_id"],
+        )
+        profile["updated_at"] = time.time()
+        if not self._save():
+            if owned_transaction:
+                self.rollback_transaction()
+            return None
+        if owned_transaction and not self.commit_transaction():
+            return None
+        return dict(prototype)
+
+    @staticmethod
+    def _prune_speaker_evidence(
+        entries: list, cap: int, *, preserve_prototype_id: Optional[str] = None,
+    ) -> None:
+        """Bound retained evidence per recording context deterministically."""
+        preserved = next(
+            (
+                entry for entry in entries
+                if entry.get("prototype_id") == preserve_prototype_id
+            ),
+            None,
+        )
+        grouped = {}
+        for entry in entries:
+            context = (entry.get("recording_type"), entry.get("channel"))
+            grouped.setdefault(context, []).append(entry)
+        retained = []
+        for context_entries in grouped.values():
+            if len(context_entries) <= cap:
+                retained.extend(context_entries)
+                continue
+            by_meeting = {}
+            for entry in context_entries:
+                by_meeting.setdefault(entry.get("meeting_id"), []).append(entry)
+
+            def rank(entry):
+                def finite_number(value) -> float:
+                    try:
+                        number = float(value or 0.0)
+                    except (TypeError, ValueError, OverflowError):
+                        return float("-inf")
+                    return number if math.isfinite(number) else float("-inf")
+
+                return (
+                    finite_number(entry.get("quality_score")),
+                    finite_number(entry.get("created_at")),
+                    str(entry.get("prototype_id") or ""),
+                )
+
+            representatives = [max(values, key=rank) for values in by_meeting.values()]
+            representatives.sort(key=rank, reverse=True)
+            chosen = representatives[:cap]
+            chosen_ids = {id(entry) for entry in chosen}
+            remaining = [entry for entry in context_entries if id(entry) not in chosen_ids]
+            remaining.sort(key=rank, reverse=True)
+            chosen.extend(remaining[: max(0, cap - len(chosen))])
+            retained.extend(chosen)
+        if preserved is not None and all(
+            entry.get("prototype_id") != preserve_prototype_id for entry in retained
+        ):
+            context = (preserved.get("recording_type"), preserved.get("channel"))
+            context_retained = [
+                entry for entry in retained
+                if (entry.get("recording_type"), entry.get("channel")) == context
+            ]
+            if context_retained:
+                retained.remove(min(context_retained, key=rank))
+            retained.append(preserved)
+        entries[:] = retained
+
+    def remove_speaker_evidence(
+        self,
+        person_id: str,
+        *,
+        meeting_id: str,
+        channel: Optional[str],
+        channel_recording_type: Optional[str],
+        sids: Optional[set] = None,
+        negative: bool = False,
+        diarization_run_id=ANY_DIARIZATION_RUN,
+    ) -> int:
+        """Remove a person's positive prototypes (or hard negatives, with
+        `negative=True`) belonging to one meeting+channel, optionally
+        restricted to specific diarization_speaker_ids. Returns the number
+        of entries removed (0 when the person doesn't exist or nothing
+        matched; saves only when something was removed).
+
+        This is the mutation half of the correction path: confirming a
+        cluster that someone ELSE was previously confirmed as (the review
+        UI's "Change" flow re-confirms with a different person) must remove
+        the superseded evidence, or the wrong person keeps a prototype of a
+        voice that isn't theirs and min-distance matching stays poisoned
+        forever. Channel matching uses the same channel-or-recording_type
+        fallback rule as everything else
+        (src.speaker_suggestions.prototype_channel_matches), so legacy
+        entries without a channel field are covered too.
+
+        `diarization_run_id` narrows that correction to evidence from ONE
+        diarization run (src.speaker_suggestions.prototype_run_matches).
+        Callers working from a sidecar must pass its run id, because
+        `(meeting_id, channel, sid)` is not stable across runs: a
+        re-diarization numbers its clusters from SPEAKER_0 again with no
+        memory of who held that id before, so without this scope confirming
+        the new run's first cluster deletes the prototype an earlier run's
+        confirmation recorded against a genuinely different voice.
+        `ANY_DIARIZATION_RUN` (the default) removes regardless of run. Every
+        in-repo caller works from a sidecar and passes a scope today, so the
+        default carries no traffic; it exists so that a future caller with no
+        sidecar in hand gets today's semantics by not knowing about runs,
+        rather than silently filtering. Passing `None` is the distinct "the
+        sidecar reports no run" scope, not the absence of one.
+
+        The trade this scope accepts, and it is heavier than one stale
+        positive prototype: a confirmation made against a superseded run can
+        no longer be corrected by re-confirming the same cluster id, since
+        the two are no longer recognised as the same cluster. That freezes
+        the hard negatives the wrong confirmation minted as well, and those
+        can include one built from a person's OWN voice -- confirm-speaker
+        records each confirmed cluster as negative evidence against the other
+        people confirmed in that channel, so a confirm that got the owner
+        wrong hands somebody their own embedding as a reason to refuse a
+        match. Re-confirming used to clear it; now it survives every later
+        confirm, and self-suppression does not expire on its own. The escape
+        hatch is `repair-speaker-profiles`, which drops entries by
+        `prototype_id` via `remove_speaker_evidence_by_ids` and is unaffected
+        by run scope. Silently destroying genuine evidence is still the worse
+        failure of the two, and it is the one happening today.
+        """
+        from src.speaker_suggestions import prototype_channel_matches, prototype_run_matches
+
+        profile = self._get_person_profile_mutable(person_id)
+        if profile is None:
+            return 0
+        key = "hard_negatives" if negative else "prototypes"
+        entries = profile.get(key) or []
+        kept = [
+            entry for entry in entries
+            if not (
+                entry.get("meeting_id") == meeting_id
+                and prototype_channel_matches(entry, channel, channel_recording_type)
+                and (sids is None or entry.get("diarization_speaker_id") in sids)
+                and (
+                    diarization_run_id is ANY_DIARIZATION_RUN
+                    or prototype_run_matches(entry, diarization_run_id)
+                )
+            )
+        ]
+        removed = len(entries) - len(kept)
+        if removed:
+            profile[key] = kept
+            profile["updated_at"] = time.time()
+            self._save()
+        return removed
+
+    def remove_speaker_evidence_by_ids(
+        self, person_id: str, entry_ids: set, *, negative: bool = False,
+    ) -> int:
+        """Remove specific prototypes/hard-negatives by their
+        `prototype_id`. The precision counterpart to
+        `remove_speaker_evidence`'s meeting+channel matching -- used by the
+        repair CLI, which decides exactly which entries to drop during its
+        dry-run analysis and must then remove exactly those. Returns the
+        count removed; saves only when something was."""
+        profile = self._get_person_profile_mutable(person_id)
+        if profile is None or not entry_ids:
+            return 0
+        key = "hard_negatives" if negative else "prototypes"
+        entries = profile.get(key) or []
+        kept = [e for e in entries if e.get("prototype_id") not in entry_ids]
+        removed = len(entries) - len(kept)
+        if removed:
+            profile[key] = kept
+            profile["updated_at"] = time.time()
+            self._save()
+        return removed
+
+    def set_speaker_evidence_channels(
+        self, person_id: str, channels_by_entry_id: dict, *, negative: bool = False,
+    ) -> int:
+        """Backfill the `channel` field onto existing prototypes/hard-
+        negatives (`{prototype_id: "mic" | "system"}`) -- for entries
+        written before `add_speaker_prototype` recorded channels, whose
+        channel the repair CLI recovered from their meeting's sidecar.
+        Returns how many entries were updated; saves only when any were."""
+        profile = self._get_person_profile_mutable(person_id)
+        if profile is None or not channels_by_entry_id:
+            return 0
+        for channel in channels_by_entry_id.values():
+            if channel not in self.VALID_PROTOTYPE_CHANNELS:
+                raise ValueError(f"Invalid channel: {channel}")
+        key = "hard_negatives" if negative else "prototypes"
+        updated = 0
+        for entry in profile.get(key) or []:
+            channel = channels_by_entry_id.get(entry.get("prototype_id"))
+            if channel is not None and entry.get("channel") != channel:
+                entry["channel"] = channel
+                updated += 1
+        if updated:
+            profile["updated_at"] = time.time()
+            self._save()
+        return updated
 
     def get_model_info(self, model_name: str) -> Optional[Dict[str, str]]:
         """
@@ -1117,6 +1956,18 @@ class Config:
         self._config["auto_install_when_idle"] = enabled
         return self._save()
 
+    def get_identity_matching_enabled(self) -> bool:
+        """Get whether cross-recording speaker identification is enabled.
+        Default off. Independent of diarization itself -- see the module
+        comment above the default-config `identity_matching_enabled` entry
+        for what turning this off actually stops."""
+        return self._config.get("identity_matching_enabled") is True
+
+    def set_identity_matching_enabled(self, enabled: bool) -> bool:
+        """Set whether cross-recording speaker identification is enabled."""
+        self._config["identity_matching_enabled"] = enabled
+        return self._save()
+
     def get_auto_summarize_enabled(self) -> bool:
         """Get whether notes (summary/title/template report) are generated
         automatically after transcription. Default OFF — recordings stop at a
@@ -1129,6 +1980,45 @@ class Config:
     def set_auto_summarize_enabled(self, enabled: bool) -> bool:
         """Set whether notes are generated automatically after transcription."""
         self._config["auto_summarize_enabled"] = enabled
+        return self._save()
+
+    def get_obsidian_sync_enabled(self) -> bool:
+        """Whether notes are mirrored to an Obsidian vault folder (#413).
+        Default off — the mirror only runs when the user opts in AND has set
+        obsidian_vault_path. One-way, local; see app/obsidian-sync.js."""
+        return self._config.get("obsidian_sync_enabled", False)
+
+    def set_obsidian_sync_enabled(self, enabled: bool) -> bool:
+        """Enable/disable the Obsidian vault mirror."""
+        self._config["obsidian_sync_enabled"] = enabled
+        return self._save()
+
+    def get_obsidian_vault_path(self) -> str:
+        """Absolute path to the vault folder notes are mirrored into. Empty =
+        not configured (mirror stays inert even if the toggle is on)."""
+        return self._config.get("obsidian_vault_path", "")
+
+    def set_obsidian_vault_path(self, vault_path: str) -> bool:
+        """Set the Obsidian vault folder. Must be an absolute path (or empty to
+        clear). Mirrors set_storage_path's validation; the directory is created
+        if missing so the first sync has somewhere to write."""
+        if vault_path is None:
+            vault_path = ""
+        vault_path = vault_path.strip()
+
+        if vault_path:
+            vp = Path(vault_path)
+            if not vp.is_absolute():
+                logger.error(f"Obsidian vault path must be absolute: {vault_path}")
+                return False
+            # Ensure the target exists; on failure keep existing config unchanged.
+            try:
+                vp.mkdir(parents=True, exist_ok=True)
+            except Exception as e:
+                logger.error(f"Failed to initialize Obsidian vault path {vault_path}: {e}")
+                return False
+
+        self._config["obsidian_vault_path"] = vault_path
         return self._save()
 
     def get_silence_auto_stop_enabled(self) -> bool:

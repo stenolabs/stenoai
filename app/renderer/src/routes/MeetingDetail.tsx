@@ -27,7 +27,13 @@ import { Popover, PopoverAnchor, PopoverContent, PopoverTrigger } from '@/compon
 import { useQueryClient } from '@tanstack/react-query';
 import * as SelectPrimitive from '@radix-ui/react-select';
 import { MeetingsShell } from '@/components/MeetingsShell';
-import { Select, SelectContent, SelectItem, SelectSeparator } from '@/components/ui/select';
+import { SpeakerReviewPanel } from '@/components/SpeakerReviewPanel';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectSeparator,
+} from '@/components/ui/select';
 import {
   useMeeting,
   useReprocessMeeting,
@@ -47,6 +53,7 @@ import {
   useOrgBackupState,
   useUnshareFromOrgBySummary,
 } from '@/hooks/useOrg';
+import { UI_LOCALE, SYSTEM_HOUR12 } from '@/lib/locale';
 import {
   Dialog,
   DialogContent,
@@ -1283,6 +1290,12 @@ function DetailContent({
                   </div>
                 </section>
               )}
+
+              <SpeakerReviewPanel
+                summaryFile={summaryFile}
+                isDiarised={Boolean(meeting.is_diarised)}
+                hasSpeakerSidecar={Boolean(meeting.has_speaker_sidecar)}
+              />
             </div>
           )}
         </>
@@ -2072,13 +2085,17 @@ function formatDetailDate(info: {
   if (!raw) return undefined;
   const d = new Date(raw);
   if (Number.isNaN(d.getTime())) return undefined;
-  return d.toLocaleString(undefined, {
+  // The only formatter that mixes words with a clock: English weekday/month
+  // names, but the host's 12-vs-24-hour habit — see lib/locale.ts for why those
+  // two are separated.
+  return d.toLocaleString(UI_LOCALE, {
     weekday: 'short',
     month: 'short',
     day: 'numeric',
     year: 'numeric',
     hour: 'numeric',
     minute: '2-digit',
+    hour12: SYSTEM_HOUR12,
   });
 }
 
@@ -2088,7 +2105,7 @@ function formatReportDate(raw?: string): string | undefined {
   if (!raw) return undefined;
   const d = new Date(raw);
   if (Number.isNaN(d.getTime())) return undefined;
-  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  return d.toLocaleDateString(UI_LOCALE, { month: 'short', day: 'numeric' });
 }
 
 function formatDuration(seconds?: number): string | undefined {

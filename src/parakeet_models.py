@@ -9,7 +9,7 @@ between the MLX backend (mac) and the ONNX backend (Windows / Linux).
 The user-facing name and behaviour are the same on every platform;
 only the underlying HuggingFace repo (and thus the on-disk size +
 cache layout) differs. Sizes here reflect the int8-quantised ONNX
-encoder on Windows and the float16 MLX weights on mac.
+encoder on Windows and the published MLX snapshot on mac.
 """
 from __future__ import annotations
 
@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 SUPPORTED_PARAKEET_MODELS: dict[str, dict] = {
     DEFAULT_MODEL_ID: {
         "name": "Parakeet TDT v3",
-        "size": "670MB" if sys.platform != "darwin" else "572MB",
+        "size": "670MB" if sys.platform != "darwin" else "2.5GB",
         "description": (
             "Highest quality. Supports live transcription in English "
             "and 25 European languages — Spanish, French, German, "
@@ -38,6 +38,20 @@ SUPPORTED_PARAKEET_MODELS: dict[str, dict] = {
         "quality": "excellent",
     },
 }
+
+_REQUIRED_SNAPSHOT_FILES: dict[str, tuple[str, ...]] = {
+    "mlx-community/parakeet-tdt-0.6b-v3": (
+        "config.json",
+        "model.safetensors",
+    ),
+    "istupakov/parakeet-tdt-0.6b-v3-onnx": (
+        "config.json",
+        "encoder-model.int8.onnx",
+        "decoder_joint-model.int8.onnx",
+        "vocab.txt",
+    ),
+}
+
 
 
 def _hf_cache_dir_for(model_id: str) -> Path:
@@ -70,24 +84,40 @@ def _hf_cache_dir_for(model_id: str) -> Path:
 
 
 def is_installed(model_id: str = DEFAULT_MODEL_ID) -> bool:
-    """Return True iff the model has at least one downloaded snapshot on disk.
+    """Return True iff a complete runtime snapshot is present on disk.
 
-    Checks the HuggingFace cache directly so we don't import parakeet-mlx
-    (and trigger model loading) just to answer the question — Settings polls
-    this on tab load and the import cost would visibly stall the UI.
+    HuggingFace creates the snapshot directory and config symlink before a
+    large weight download finishes. Treating any non-empty snapshot as
+    installed makes the next backend process force ``HF_HUB_OFFLINE=1``, so it
+    can neither resume the partial download nor load the missing weights.
+    Require every file the selected runtime opens instead.
 
-    MUST stay free of any ``huggingface_hub`` import: ``maybe_enable_offline``
-    sets ``HF_HUB_OFFLINE`` and relies on the hub being import-deferred until
-    ``_load_model`` runs. Importing the hub here would snapshot the env too
-    early and silently defeat offline mode.
+    This stays free of ``huggingface_hub`` imports because
+    ``maybe_enable_offline`` must set its environment before the hub is first
+    imported.
     """
-    cache_dir = _hf_cache_dir_for(model_id)
-    snapshots = cache_dir / "snapshots"
+    required_files = _REQUIRED_SNAPSHOT_FILES.get(model_id)
+    if required_files is None:
+        return False
+
+    snapshots = _hf_cache_dir_for(model_id) / "snapshots"
     if not snapshots.is_dir():
         return False
-    for snap in snapshots.iterdir():
-        if snap.is_dir() and any(snap.iterdir()):
-            return True
+    try:
+        for snapshot in snapshots.iterdir():
+            if not snapshot.is_dir():
+                continue
+            try:
+                if all(
+                    (snapshot / name).is_file()
+                    and (snapshot / name).stat().st_size > 0
+                    for name in required_files
+                ):
+                    return True
+            except OSError:
+                continue
+    except OSError:
+        return False
     return False
 
 
@@ -101,13 +131,9 @@ def maybe_enable_offline(model_id: str = DEFAULT_MODEL_ID) -> bool:
     of ``_load_model``, immediately before importing parakeet-mlx / onnx-asr,
     which is the latest-safe and only symmetric point.
 
-    Gated on ``is_installed`` so a first-ever run (model absent) is left
-    online and ``download`` proceeds normally — offline-loading a
-    just-downloaded model is correct. Edge case: ``is_installed`` only checks
-    that a snapshot dir is non-empty, so a corrupt/partial snapshot would read
-    as installed and offline mode would then block a repair re-fetch. Low
-    probability and accepted — the existing code already trusts
-    ``is_installed``.
+    Gated on ``is_installed`` so a first-ever or interrupted download is left
+    online and can finish. Once every runtime-required file is present, loading
+    switches to fully offline resolution.
 
     ``setdefault`` so an operator who explicitly exported ``HF_HUB_OFFLINE=0``
     for debugging isn't overridden.
@@ -148,31 +174,41 @@ def disable_implicit_hf_token() -> None:
 
 def download(
     model_id: str = DEFAULT_MODEL_ID,
-    progress_callback: Optional[Callable[[str], None]] = None,
+    progress_callback: Optional[Callable[[dict], None]] = None,
 ) -> bool:
-    """Download (or no-op-load-from-cache) a Parakeet model snapshot.
+    """Fetch runtime files into the existing HF cache, then initialise the model.
 
-    ``progress_callback`` is invoked with stage strings — ``"downloading"``
-    at start and ``"loading"`` once the snapshot is on disk and we're
-    warming MLX weights. Returns True on success, False on any failure
-    (caller surfaces).
-
-    We delegate to ``src.parakeet.ensure_loaded`` so download caching and
-    HuggingFace hub interaction stay owned by the same module the live
-    pipeline imports — no risk of two divergent code paths fetching the
-    same snapshot.
+    Progress reports completed files and, where the installed hub API supports
+    it, bytes for the current file. Never estimates a total percentage or ETA.
     """
     if model_id not in SUPPORTED_PARAKEET_MODELS:
         logger.error("Unknown Parakeet model: %s", model_id)
         return False
 
     try:
-        if progress_callback is not None:
-            progress_callback("downloading")
+        emit = progress_callback or (lambda event: None)
+        emit({"stage": "preparing"})
+        if not is_installed(model_id):
+            _download_snapshot(model_id, emit)
+        emit({"stage": "loading"})
         from src.parakeet import ensure_loaded
-        if progress_callback is not None:
-            progress_callback("loading")
-        ensure_loaded(model_id)
+        # The hub was imported during download. Setting HF_HUB_OFFLINE in
+        # the loader's environment is now too late for its import-time flag.
+        # This CLI operation must load the completed cache, not resolve main
+        # online again while the UI says the download has finished.
+        from huggingface_hub import constants
+        from huggingface_hub.utils import _http
+        reset_sessions = getattr(_http, "reset_sessions", lambda: None)
+        was_offline = constants.HF_HUB_OFFLINE
+        constants.HF_HUB_OFFLINE = True
+        try:
+            # requests-based hub releases cache the adapter at session creation.
+            reset_sessions()
+            ensure_loaded(model_id)
+        finally:
+            constants.HF_HUB_OFFLINE = was_offline
+            reset_sessions()
+        emit({"stage": "complete"})
         return True
     except Exception as e:
         # parakeet-mlx / onnx-asr fall back to treating the repo id as a local
@@ -194,3 +230,45 @@ def download(
         else:
             logger.error("Parakeet model download/load failed: %s", e)
         return False
+
+
+def _download_snapshot(model_id: str, emit: Callable[[dict], None]) -> None:
+    """Use HF's cache/resume/locking APIs, never a second model cache.
+
+    Older hub releases lack per-file tqdm injection: they still report actual
+    completed files. Newer releases expose byte callbacks for HTTP and Xet.
+    """
+    import inspect
+    from tqdm.auto import tqdm
+
+    disable_implicit_hf_token()
+    from huggingface_hub import hf_hub_download
+
+    revision = None
+    files = _REQUIRED_SNAPSHOT_FILES[model_id]
+    supports_progress = "tqdm_class" in inspect.signature(hf_hub_download).parameters
+    for index, filename in enumerate(files):
+        base = {"stage": "downloading", "completed_files": index, "total_files": len(files)}
+        emit(base)
+
+        class DownloadProgress(tqdm):
+            def __init__(self, *args, **kwargs):
+                # Electron pipes stdout/stderr. Older hub versions otherwise
+                # disable tqdm (and its callbacks) when no terminal is attached.
+                kwargs.pop("name", None)
+                kwargs["disable"] = False
+                super().__init__(*args, **kwargs)
+
+            def display(self, *args, **kwargs):
+                # n includes resumed bytes; this is file progress, not network
+                # throughput. Avoid deriving speed or ETA from cached bytes.
+                if self.unit == "B":
+                    emit({**base, "file_bytes": self.n})
+
+        kwargs = {"tqdm_class": DownloadProgress} if supports_progress else {}
+        cached = hf_hub_download(model_id, filename, revision=revision, token=False, **kwargs)
+        # The first file resolves main and writes its cache ref. Pin subsequent
+        # files to that same snapshot so an upstream update cannot mix weights.
+        if revision is None:
+            revision = Path(cached).parent.name
+        emit({**base, "completed_files": index + 1})
