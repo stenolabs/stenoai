@@ -49,7 +49,7 @@ If you're looking for a hosted desktop recording API, consider checking out [Rec
 
 ## Features
 
-- **Privacy-first** — 100% on-device; your recordings, transcripts, and summaries never leave your Mac.
+- **Privacy-first**: local AI processes your recordings, transcripts, and summaries on your device. External AI providers are optional.
 - **Live speaker labels** — Real-time on-screen text as you speak via Parakeet TDT v3 on Apple Silicon (MLX). Granola-style chat-bubble view with `[You]` vs `[Others]` attribution live during the recording.
 - **Individual speakers (macOS)** — Once the recording stops, Steno separates the voices sharing each channel, so the saved transcript reads `Speaker 2` / `Speaker 3` rather than one merged `[Others]`. Name a speaker once and Steno can suggest them in later meetings — that part is off by default, and the voice profiles never leave your Mac.
 - **Auto start/stop meetings** — Steno notices when a meeting starts and offers to take notes, then offers to summarise when it ends. Granola-style frictionless capture.
