@@ -1,0 +1,90 @@
+[
+  {
+    "template": "product-demo",
+    "language": "en",
+    "transcript": "Maya (buyer): We need SSO and offline access. Leo (vendor): Here is the CSV export working in the demo. SSO is planned for December, not available today. Offline access is not supported. Maya: Then we cannot yet confirm it fits. Leo: List price is 20 euros per seat; a discount needs approval. Maya: Could you send security details next week? Leo: I need to check who can do that; no date agreed.",
+    "expectations": [
+      "CSV export demonstrated; SSO is a future plan",
+      "Offline unsupported and fit unconfirmed",
+      "20 euros is list price; discount not approved",
+      "Security follow-up requested but no accepted owner/deadline"
+    ]
+  },
+  {
+    "template": "product-demo",
+    "language": "de",
+    "transcript": "Mara (Kundin): Wir benötigen SSO und Offline-Zugriff. Leon (Anbieter): Hier sehen Sie den CSV-Export in der Demo. SSO ist für Dezember geplant, heute aber nicht verfügbar. Offline-Zugriff wird nicht unterstützt. Mara: Dann ist die Eignung noch offen. Leon: Der Listenpreis ist 20 Euro je Nutzer, Rabatt muss genehmigt werden. Mara: Könnten Sie nächste Woche Sicherheitsunterlagen schicken? Leon: Ich muss erst klären, wer das übernehmen kann. Einen Termin haben wir nicht vereinbart.",
+    "expectations": [
+      "CSV gezeigt; SSO nur geplant",
+      "Offline nicht unterstützt; Eignung offen",
+      "Listenpreis20Euro; Rabatt ungeklärt",
+      "Unterlagen nur angefragt, kein vereinbarter Verantwortlicher/Termin"
+    ]
+  },
+  {
+    "template": "sales-call",
+    "language": "en",
+    "transcript": "Ava (prospect): The manual export is our main problem. We are interested, but this is not a purchase commitment. I estimate a budget of 8000 euros; finance has not approved it. Ben (seller): Could we sign on Friday? Ava: No, legal must review first. I am not the final decision maker. We also use Atlas. Ben: I will email the security questionnaire tomorrow. Ava: Thanks, agreed. We have not agreed a signing date.",
+    "expectations": [
+      "Interest is not commitment",
+      "8000 estimated, not approved",
+      "Legal dependency, no signing deadline or inferred authority",
+      "Seller commits questionnaire tomorrow; competitor Atlas mentioned"
+    ]
+  },
+  {
+    "template": "sales-call",
+    "language": "de",
+    "transcript": "Eva (Interessentin): Unser Hauptproblem ist der manuelle Export. Wir sind interessiert, sagen aber keinen Kauf zu. Ich schätze das Budget auf 8000 Euro, die Finanzabteilung hat es nicht genehmigt. Tom (Vertrieb): Können wir Freitag unterschreiben? Eva: Nein, zuerst muss die Rechtsabteilung prüfen. Ich entscheide nicht abschließend. Wir nutzen auch Atlas. Tom: Ich schicke morgen den Sicherheitsfragebogen. Eva: Danke, einverstanden. Einen Termin für die Unterschrift haben wir nicht vereinbart.",
+    "expectations": [
+      "Interesse keine Kaufzusage",
+      "8000Euro geschätzt und nicht genehmigt",
+      "Rechtsprüfung offen; Freitag nicht vereinbart",
+      "Tom schickt morgen Fragebogen; Atlas erwähnt"
+    ]
+  },
+  {
+    "template": "one-on-one",
+    "language": "en",
+    "transcript": "Nora: The handover documentation is finished. I feel overloaded this week. Kai: I think priorities were clear. Nora: I disagree. Kai: Maybe we could reduce meetings next month. Nora: Let's discuss that later; no decision today. Kai: I will review the workload with you on Tuesday. Nora: Agreed. I would like mentoring, but we have not assigned a mentor or date.",
+    "expectations": [
+      "Documentation finished; overload attributed to Nora",
+      "Priority disagreement preserved, no performance judgment",
+      "Fewer meetings suggestion not decision",
+      "Kai workload review Tuesday agreed; mentoring request unassigned"
+    ]
+  },
+  {
+    "template": "one-on-one",
+    "language": "de",
+    "transcript": "Nora: Die Übergabedokumentation ist fertig. Ich fühle mich diese Woche überlastet. Kai: Ich finde, die Prioritäten waren klar. Nora: Da widerspreche ich. Kai: Vielleicht könnten wir nächsten Monat weniger Meetings machen. Nora: Das besprechen wir später, heute entscheiden wir das nicht. Kai: Ich schaue mir mit dir am Dienstag die Arbeitslast an. Nora: Einverstanden. Ich wünsche mir Mentoring, aber wir haben weder eine Person noch einen Termin festgelegt.",
+    "expectations": [
+      "Dokumentation fertig; Überlastung als Noras Aussage",
+      "Uneinigkeit erhalten, kein Leistungsurteil",
+      "Weniger Meetings nur Vorschlag",
+      "Kai Dienstag Arbeitslast vereinbart; Mentoring ohne Zuordnung"
+    ]
+  },
+  {
+    "template": "standup",
+    "language": "en",
+    "transcript": "Lee: The login fix is finished. The export is still in progress. I might test it tomorrow if the test server is ready. Sam: I was blocked by access yesterday, but that is resolved now. Today I plan to review the tests. Unidentified speaker: The migration still needs an owner. Lee: Can someone help with the export? Sam: I will pair with Lee after lunch.",
+    "expectations": [
+      "Login done, export ongoing",
+      "Testing tomorrow conditional",
+      "Sam access blocker resolved",
+      "Migration unassigned; Sam pairing after lunch agreed"
+    ]
+  },
+  {
+    "template": "standup",
+    "language": "de",
+    "transcript": "Lea: Der Login-Fix ist fertig. Am Export arbeite ich noch. Vielleicht teste ich ihn morgen, falls der Testserver bereit ist. Sam: Gestern fehlte mir der Zugriff, das ist inzwischen gelöst. Heute plane ich, die Tests zu prüfen. Unbekannte Person: Für die Migration fehlt noch ein Verantwortlicher. Lea: Kann mir jemand beim Export helfen? Sam: Ich unterstütze Lea nach dem Mittagessen.",
+    "expectations": [
+      "Login fertig, Export laufend",
+      "Test morgen bedingt",
+      "Sams Zugriffsproblem gelöst",
+      "Migration ohne Verantwortlichen; Sam hilft nach Mittag"
+    ]
+  }
+]

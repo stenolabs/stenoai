@@ -73,3 +73,31 @@ test('templates: locked Standard rejects an edit', async ({ launchApp }) => {
   expect(res.success).toBe(false);
   expect((res.error ?? '').toLowerCase()).toContain('locked');
 });
+
+for (const id of ['product-demo', 'sales-call', 'one-on-one', 'standup']) {
+  test(`templates: ${id} keeps user edits until explicitly reset`, async ({ launchApp, userDataDir }) => {
+    const { page } = await launchApp();
+    const original = await page.evaluate(async (id) => {
+      const api = (window as unknown as StenoWindow).stenoai.templates;
+      const listed = await api.list();
+      return listed.templates.find(t => t.id === id) as Tmpl & { prompt: string; language: string };
+    }, id);
+    expect(original.prompt.length).toBeGreaterThan(0);
+    const saved = await page.evaluate(async ({ id, name }) =>
+      (window as unknown as StenoWindow).stenoai.templates.save({
+        id, name, prompt: 'My explicit custom instructions.', language: 'de',
+      }), { id, name: original.name });
+    expect(saved.success).toBe(true);
+    expect((readUserConfig(userDataDir).template_overrides as Record<string, { prompt: string }>)[id].prompt)
+      .toBe('My explicit custom instructions.');
+    const edited = await page.evaluate(async (id) =>
+      ((await (window as unknown as StenoWindow).stenoai.templates.list()).templates
+        .find(t => t.id === id) as Tmpl & { prompt: string }).prompt, id);
+    expect(edited).toBe('My explicit custom instructions.');
+    await page.evaluate(id => (window as unknown as StenoWindow).stenoai.templates.reset(id), id);
+    const restored = await page.evaluate(async (id) =>
+      (await (window as unknown as StenoWindow).stenoai.templates.list()).templates.find(t => t.id === id), id);
+    expect(restored).toMatchObject({ prompt: original.prompt, language: original.language, locked: false });
+    expect(readUserConfig(userDataDir).template_overrides).not.toHaveProperty(id);
+  });
+}
