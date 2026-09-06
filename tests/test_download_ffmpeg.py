@@ -10,8 +10,8 @@ import unittest
 
 
 @unittest.skipUnless(
-    os.name == 'posix' and shutil.which('bash') and shutil.which('tar'),
-    'Linux download stage requires a POSIX shell and tar',
+    os.name == 'posix' and all(shutil.which(tool) for tool in ('bash', 'tar', 'xz')),
+    'Linux download stage requires a POSIX shell, tar and xz',
 )
 class LinuxFfmpegDownloadTests(unittest.TestCase):
     def run_download(self, mode):
