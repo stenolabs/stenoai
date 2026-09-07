@@ -55,6 +55,12 @@ import {
 } from '@/hooks/useOrg';
 import { UI_LOCALE, SYSTEM_HOUR12 } from '@/lib/locale';
 import {
+  keepNoteGenerationCause,
+  noteGenerationErrorFromResult,
+  noteGenerationErrorMessage,
+  type NoteGenerationErrorCode,
+} from '@/lib/noteGenerationError';
+import {
   Dialog,
   DialogContent,
   DialogHeader,
@@ -280,7 +286,8 @@ function DetailContent({
   const [chunkProgress, setChunkProgress] = React.useState<{ step: number; total: number } | null>(
     null
   );
-  const [reprocessFailed, setReprocessFailed] = React.useState(false);
+  const [reprocessError, setReprocessError] = React.useState<NoteGenerationErrorCode | null>(null);
+  const reprocessFailed = reprocessError !== null;
   const qc = useQueryClient();
 
   // Report switch: null = the structured Standard summary, otherwise the id of
@@ -336,11 +343,14 @@ function DetailContent({
           setStreamText('');
           streamCache.delete(summaryFile);
         } else {
-          setReprocessFailed(true);
+          setStreamText('');
+          streamCache.delete(summaryFile);
+          setReprocessError((previous) => keepNoteGenerationCause(previous, e.error_code));
         }
         return;
       }
       setStreamPhase('done');
+      if (!e.report) setReprocessError(null);
       // Report generation reuses the summary stream. On success, refetch this
       // meeting so reports[]/active_report refresh, then land on the new report
       // (the backend marks it active) once the fresh detail payload arrives.
@@ -380,7 +390,9 @@ function DetailContent({
           setStreamText('');
           streamCache.delete(summaryFile);
         } else {
-          setReprocessFailed(true);
+          setStreamText('');
+          streamCache.delete(summaryFile);
+          setReprocessError((previous) => keepNoteGenerationCause(previous, e.error_code));
         }
         return;
       }
@@ -419,7 +431,7 @@ function DetailContent({
     setStreamText('');
     setStreamPhase('analyzing');
     setChunkProgress(null);
-    setReprocessFailed(false);
+    setReprocessError(null);
     generatingReportRef.current = true;
     streamCache.set(summaryFile, { text: '', phase: 'analyzing' });
     generateReport.mutate(
@@ -459,7 +471,7 @@ function DetailContent({
     setStreamText('');
     setStreamPhase('analyzing');
     setChunkProgress(null);
-    setReprocessFailed(false);
+    setReprocessError(null);
     streamCache.set(summaryFile, { text: '', phase: 'analyzing' });
     reprocess.mutate(
       { summaryFile, regenTitle: false, name: info.name },
@@ -469,12 +481,12 @@ function DetailContent({
         // could fire to roll the UI back — without this the analyzing/streaming
         // state would be stuck forever with no way to retry (mirrors
         // onGenerateReport's onError below).
-        onError: () => {
+        onError: (error) => {
           setStreamPhase('idle');
           setStreamText('');
           setChunkProgress(null);
           streamCache.delete(summaryFile);
-          setReprocessFailed(true);
+          setReprocessError((previous) => keepNoteGenerationCause(previous, noteGenerationErrorFromResult(error)));
         },
       }
     );
@@ -500,7 +512,7 @@ function DetailContent({
     setStreamText('');
     setStreamPhase('analyzing');
     setChunkProgress(null);
-    setReprocessFailed(false);
+    setReprocessError(null);
     streamCache.set(summaryFile, { text: '', phase: 'analyzing' });
     retranscribe.mutate(
       { summaryFile, name: info.name },
@@ -508,12 +520,12 @@ function DetailContent({
         // A rejection means the IPC/backend failed (e.g. RETRANSCRIBE_NO_AUDIO,
         // or ASR crashed) BEFORE a summary-complete could roll the UI back —
         // surface the shared reprocess failure affordance. Same as startReprocess.
-        onError: () => {
+        onError: (error) => {
           setStreamPhase('idle');
           setStreamText('');
           setChunkProgress(null);
           streamCache.delete(summaryFile);
-          setReprocessFailed(true);
+          setReprocessError((previous) => keepNoteGenerationCause(previous, noteGenerationErrorFromResult(error)));
         },
       }
     );
@@ -1105,6 +1117,7 @@ function DetailContent({
                 border: '1px solid var(--border-subtle, var(--surface-raised))',
               }}
               data-testid="reprocess-retry"
+              role="alert"
             >
               <div className="text-[15px] font-medium" style={{ color: 'var(--fg-1)' }}>
                 Notes weren’t generated
@@ -1113,8 +1126,7 @@ function DetailContent({
                 className="text-[14px] leading-[1.6]"
                 style={{ color: 'var(--fg-2)', maxWidth: '64ch' }}
               >
-                That didn’t work this time — give it another go. If it keeps failing on a long
-                meeting, switch to a smaller model in Settings.
+                {noteGenerationErrorMessage(reprocessError ?? 'generation_failed')}
               </p>
               <Button
                 className="mt-1"

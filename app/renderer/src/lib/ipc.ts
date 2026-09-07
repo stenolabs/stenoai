@@ -832,6 +832,8 @@ export interface SummaryTitleEvent {
 }
 export interface SummaryCompleteEvent {
   success: boolean;
+  /** Fixed reprocess failure code; never raw backend diagnostics. */
+  error_code?: string;
   sessionName: string;
   summaryFile?: string;
   /** True when this completion belongs to a template report generation rather
@@ -841,6 +843,8 @@ export interface SummaryCompleteEvent {
 }
 export interface ProcessingCompleteEvent {
   success: boolean;
+  /** Fixed reprocess failure code; never raw backend diagnostics. */
+  error_code?: string;
   sessionName: string;
   message: string;
   meetingData?: Meeting;

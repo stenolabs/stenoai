@@ -482,6 +482,12 @@ function install({ ipcMain }) {
   // real ipcMain.handle callback. Mirror the real handlers' return shapes from
   // app/main.js (get-ai-provider ~5950, org-* ~7990).
   const MOCKS = {
+    'reprocess-meeting': async () => {
+      if (process.env.STENOAI_E2E_REPROCESS_PENDING !== '1') return { success: true };
+      const state = global.__reprocessTest || (global.__reprocessTest = { calls: 0 });
+      state.calls++;
+      return new Promise(resolve => { state.finish = resolve; });
+    },
     // The permissive default ({success:true}) would leave sampleRate/channels
     // undefined, making the renderer's bytesPerFrame NaN. Mirror the real
     // handler's shape (main.js start-linux-loopback) instead.

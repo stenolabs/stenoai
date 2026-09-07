@@ -74,6 +74,7 @@ const {
   buildCaptureErrorBody,
 } = require('./notification-copy');
 const { makeLineReader } = require('./backend-stream');
+const { classifyReprocessError } = require('./reprocess-error');
 // Pure deep-link (stenoai://) parsing/sanitizing lives in ./shortcut-url
 // (unit-tested). The stateful side — window creation, IPC dispatch,
 // notifications — stays here and calls parseShortcutUrl().
@@ -2951,6 +2952,11 @@ ipcMain.handle('clear-state', async () => {
 });
 
 ipcMain.handle('reprocess-meeting', async (event, summaryFile, regenerateTitle, sessionName, retranscribe) => {
+  let errorCode = 'generation_failed';
+  const rememberError = (error) => {
+    const classified = classifyReprocessError(error);
+    if (classified !== 'generation_failed') errorCode = classified;
+  };
   try {
     // Security: symlink-safe containment-check the renderer-supplied summary path
     // before it reaches the backend CLI, and pass the canonical realPath (not the
@@ -2958,7 +2964,8 @@ ipcMain.handle('reprocess-meeting', async (event, summaryFile, regenerateTitle, 
     // summaryFile — that's UI correlation the renderer matches on, not file access.
     const validated = await validateMeetingFilePath(summaryFile);
     if (validated.error) {
-      return { success: false, error: validated.error };
+      sendDebugLog(`Reprocess path validation failed: ${validated.error}`);
+      return { success: false, error: 'Note generation failed', error_code: errorCode };
     }
     const { realPath } = validated;
 
@@ -2998,6 +3005,7 @@ ipcMain.handle('reprocess-meeting', async (event, summaryFile, regenerateTitle, 
       // assume. Threaded into processing-complete so the renderer fires
       // "Note ready" only when notes exist (#bug2).
       let summarizationCompleted = false;
+      let streamFailed = false;
 
       // Liveness watchdog — see makeInactivityWatchdog. Summary CHUNK:
       // lines (and HEARTBEAT: lines if a retranscribe is ever added here)
@@ -3037,10 +3045,15 @@ ipcMain.handle('reprocess-meeting', async (event, summaryFile, regenerateTitle, 
             }
           } else if (line.startsWith('STREAM_ERROR:')) {
             const errMsg = line.slice('STREAM_ERROR:'.length);
+            streamFailed = true;
+            rememberError(errMsg);
             sendDebugLog(`❌ Reprocess stream error: ${errMsg}`);
             if (mainWindow && !mainWindow.isDestroyed()) {
-              mainWindow.webContents.send('summary-complete', { success: false, sessionName, summaryFile });
+              mainWindow.webContents.send('summary-complete', { success: false, sessionName, summaryFile, error_code: errorCode });
             }
+          } else if (line.startsWith('ERROR:')) {
+            rememberError(line.slice('ERROR:'.length));
+            forwardDiagnosticStdout(line, 'reprocess');
           } else {
             // Unclassified stdout: forward only diagnostic markers, drop content.
             forwardDiagnosticStdout(line, 'reprocess');
@@ -3059,7 +3072,7 @@ ipcMain.handle('reprocess-meeting', async (event, summaryFile, regenerateTitle, 
 
       proc.on('close', (code) => {
         watchdog.clear();
-        if (code === 0) {
+        if (code === 0 && !streamFailed) {
           console.log(`✅ Completed reprocessing: ${sessionName}`);
           // Reprocess / generate-notes / re-transcribe rewrote the note — mirror
           // it into the vault (#413) if sync is on. Use the canonical realPath
@@ -3103,12 +3116,16 @@ ipcMain.handle('reprocess-meeting', async (event, summaryFile, regenerateTitle, 
             })
             .finally(() => resolve());
         } else {
+          // A STREAM_ERROR is more specific than a generic exit or trailing
+          // diagnostic. Keep it through both terminal events and the result.
+          if (errorCode === 'generation_failed') rememberError(stderrBuf);
           if (mainWindow && !mainWindow.isDestroyed()) {
             mainWindow.webContents.send('processing-complete', {
               success: false,
               sessionName,
               summaryFile,
               message: `Reprocessing failed (exit ${code})`,
+              error_code: errorCode,
             });
           }
           reject(new Error(`reprocess exited with code ${code}: ${stderrBuf.slice(-500)}`));
@@ -3120,7 +3137,8 @@ ipcMain.handle('reprocess-meeting', async (event, summaryFile, regenerateTitle, 
     return { success: true };
   } catch (error) {
     sendDebugLog(`❌ Reprocessing failed: ${error.message}`);
-    return { success: false, error: error.message };
+    if (errorCode === 'generation_failed') rememberError(error);
+    return { success: false, error: 'Note generation failed', error_code: errorCode };
   } finally {
     activeReprocessJobs.delete(summaryFile);
   }
