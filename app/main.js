@@ -3072,7 +3072,7 @@ ipcMain.handle('reprocess-meeting', async (event, summaryFile, regenerateTitle, 
 
       proc.on('close', (code) => {
         watchdog.clear();
-        if (code === 0 && !streamFailed) {
+        if (code === 0 && !streamFailed && !watchdog.timedOut) {
           console.log(`✅ Completed reprocessing: ${sessionName}`);
           // Reprocess / generate-notes / re-transcribe rewrote the note — mirror
           // it into the vault (#413) if sync is on. Use the canonical realPath
@@ -3118,6 +3118,7 @@ ipcMain.handle('reprocess-meeting', async (event, summaryFile, regenerateTitle, 
         } else {
           // A STREAM_ERROR is more specific than a generic exit or trailing
           // diagnostic. Keep it through both terminal events and the result.
+          if (errorCode === 'generation_failed' && watchdog.timedOut) errorCode = 'generation_timeout';
           if (errorCode === 'generation_failed') rememberError(stderrBuf);
           if (mainWindow && !mainWindow.isDestroyed()) {
             mainWindow.webContents.send('processing-complete', {
@@ -5419,9 +5420,11 @@ let systemSuspendedForWatchdogs = false;
 
 function makeInactivityWatchdog(proc, ms, label) {
   let timer = null;
+  let timedOut = false;
   const arm = () => {
     timer = setTimeout(() => {
       timer = null;
+      timedOut = true;
       activeInactivityWatchdogs.delete(watchdog);
       console.error(`${label} produced no output for ${Math.round(ms / 60000)} minutes, killing`);
       sendDebugLog(`${label} inactive for ${Math.round(ms / 60000)} minutes — killing process`);
@@ -5429,6 +5432,8 @@ function makeInactivityWatchdog(proc, ms, label) {
     }, ms);
   };
   const watchdog = {
+    // Retain the cause after clear(): close handlers need it after cleanup.
+    get timedOut() { return timedOut; },
     // Any stdout/stderr activity proves liveness — push the deadline out.
     reset() {
       if (timer === null) return; // fired, cleared, or frozen — don't re-arm

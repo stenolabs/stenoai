@@ -39,6 +39,9 @@ const registration = file.statements.find(statement => {
     && ts.isStringLiteral(call.arguments[0]) && call.arguments[0].text === 'reprocess-meeting';
 });
 assert.ok(registration, 'reprocess IPC registration must exist');
+const watchdogDeclaration = file.statements.find(statement =>
+  ts.isFunctionDeclaration(statement) && statement.name?.text === 'makeInactivityWatchdog');
+assert.ok(watchdogDeclaration, 'real inactivity watchdog must exist');
 
 async function start(validationError) {
   let handler;
@@ -48,13 +51,19 @@ async function start(validationError) {
   proc.stdout = new EventEmitter();
   proc.stderr = new EventEmitter();
   let syncs = 0;
-  vm.runInNewContext(registration.getText(file), {
+  let nextTimer = 0;
+  const timers = new Map();
+  proc.kill = () => { proc.emit('close', null, 'SIGTERM'); return true; };
+  vm.runInNewContext(watchdogDeclaration.getText(file) + '\n' + registration.getText(file), {
     ipcMain: { handle: (_channel, fn) => { handler = fn; } },
     classifyReprocessError, makeLineReader, Buffer,
     validateMeetingFilePath: async () => validationError ? { error: validationError } : { realPath: '/synthetic/meeting.md' },
     activeReprocessJobs: jobs, getAiEnv: () => ({}),
     spawn: () => proc, getBackendPath: () => '/synthetic/backend', getBackendCwd: () => '/synthetic',
-    makeInactivityWatchdog: () => ({ reset() {}, clear() {} }), TRANSCRIBE_INACTIVITY_MS: 1000,
+    TRANSCRIBE_INACTIVITY_MS: 1000,
+    activeInactivityWatchdogs: new Set(), systemSuspendedForWatchdogs: false,
+    setTimeout: callback => { const id = ++nextTimer; timers.set(id, callback); return id; },
+    clearTimeout: id => timers.delete(id),
     sendDebugLog() {}, forwardDiagnosticStdout() {}, console: { log() {}, error() {} },
     mainWindow: { isDestroyed: () => false, webContents: { send: (name, data) => events.push({ name, ...data }) } },
     obsidianSync: { syncNoteBySummaryPath: () => { syncs++; } },
@@ -63,7 +72,12 @@ async function start(validationError) {
   const promise = handler({}, '/synthetic/meeting.md', false, 'Synthetic meeting');
   // validateMeetingFilePath is async; let it register the process listeners.
   await new Promise(resolve => setImmediate(resolve));
-  return { proc, events, jobs, promise, syncs: () => syncs };
+  return { proc, events, jobs, promise, syncs: () => syncs, expireWatchdog: () => {
+    assert.equal(timers.size, 1);
+    const callback = timers.values().next().value;
+    timers.clear();
+    callback();
+  } };
 }
 
 test('split stream failure survives generic exit and no raw diagnostics reach the renderer', async () => {
@@ -137,4 +151,27 @@ test('successful generation still completes and syncs the saved note', async () 
   assert.equal(events[1].notesGenerated, true);
   assert.equal(jobs.size, 0);
   assert.equal(syncs(), 1);
+});
+
+for (const partial of [false, true]) {
+  test(`real watchdog reports timeout after ${partial ? 'partial stream' : 'silent startup'}`, async () => {
+    const { proc, events, jobs, promise, syncs, expireWatchdog } = await start();
+    if (partial) proc.stdout.emit('data', Buffer.from('CHUNK:cGFydGlhbA==\n'));
+    expireWatchdog();
+    const result = await promise;
+    assert.equal(result.success, false);
+    assert.equal(result.error_code, 'generation_timeout');
+    const completion = events.find(e => e.name === 'processing-complete');
+    assert.equal(completion.success, false);
+    assert.equal(completion.error_code, 'generation_timeout');
+    assert.equal(jobs.size, 0);
+    assert.equal(syncs(), 0);
+  });
+}
+
+test('watchdog termination preserves a specific preceding stream failure', async () => {
+  const { proc, promise, expireWatchdog } = await start();
+  proc.stdout.emit('data', Buffer.from('STREAM_ERROR:model "synthetic" not found\n'));
+  expireWatchdog();
+  assert.equal((await promise).error_code, 'generation_model_unavailable');
 });
