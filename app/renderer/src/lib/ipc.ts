@@ -71,6 +71,7 @@ export interface Meeting {
    *  the audio (re-transcribe, speaker samples, any future re-diarization) is
    *  quietly unavailable without it. */
   has_audio?: boolean;
+  steno_transfer?: { sourceMeetingID: string };
   /** User notes as persisted + returned by the backend (`_parse_meeting_markdown` -> `user_notes`). */
   user_notes?: string | null;
   /** Renderer-side notes for the in-progress / draft recording (live + processing views). */

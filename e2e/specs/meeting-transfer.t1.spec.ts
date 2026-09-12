@@ -121,3 +121,41 @@ test("Share Steno package is disabled while the note is processing", async ({
     page.getByRole("button", { name: "Share Steno package…" }),
   ).toBeDisabled();
 });
+
+test("package actions are disabled while another meeting is processing", async ({ launchApp, userDataDir }) => {
+  const queue = path.join(userDataDir, "synthetic-queue.json");
+  writeFileSync(queue, JSON.stringify({ isProcessing: true, currentJob: "Another meeting" }));
+  const { page } = await launchApp({ mockIpc: true, env: {
+    ...TRANSFER_ENV, STENOAI_E2E_QUEUE_STATE_PATH: queue,
+  } });
+  await page.getByRole("button", { name: "Recording options" }).click();
+  await expect(page.getByRole("button", { name: "Import Steno package…" })).toBeDisabled();
+  await page.keyboard.press("Escape");
+  await page.evaluate(() => { window.location.hash = "#/meetings/imported-swift-note_summary.md"; });
+  await expect(page.getByTestId("meeting-detail")).toBeVisible();
+  await page.getByRole("button", { name: "More options" }).click();
+  await expect(page.getByRole("button", { name: "Share Steno package…" })).toBeDisabled();
+  writeFileSync(queue, JSON.stringify({ isProcessing: false }));
+  await expect(page.getByRole("button", { name: "Share Steno package…" })).toBeEnabled();
+});
+
+test("package actions wait for the initial recording status", async ({ launchApp, userDataDir }) => {
+  const queue = path.join(userDataDir, "held-queue.json");
+  writeFileSync(queue, JSON.stringify({ holdForTransferTest: true }));
+  const { app, page } = await launchApp({ mockIpc: true, env: {
+    ...TRANSFER_ENV, STENOAI_E2E_QUEUE_STATE_PATH: queue,
+  } });
+  await page.getByRole("button", { name: "Recording options" }).click();
+  await expect(page.getByRole("button", { name: "Import Steno package…" })).toBeDisabled();
+  await page.keyboard.press("Escape");
+  await page.evaluate(() => { window.location.hash = "#/meetings/imported-swift-note_summary.md"; });
+  await expect(page.getByTestId("meeting-detail")).toBeVisible();
+  await page.getByRole("button", { name: "More options" }).click();
+  await expect(page.getByRole("button", { name: "Share Steno package…" })).toBeDisabled();
+  await app.evaluate(() => {
+    for (const resolve of (globalThis as any).__pendingTransferQueue) {
+      resolve();
+    }
+  });
+  await expect(page.getByRole("button", { name: "Share Steno package…" })).toBeEnabled();
+});

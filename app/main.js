@@ -1497,7 +1497,10 @@ function commitPendingDelete(id) {
   for (const p of entry.ancillaryPaths) {
     // Recheck the private media ancestors after the undo window as well.
     if (entry.transferMediaDir && path.dirname(p) === entry.transferMediaDir
-      && transferMediaDirectory(path.dirname(entry.originalSummaryPath), path.basename(entry.transferMediaDir)) !== entry.transferMediaDir) continue;
+      && transferMediaDirectory(path.dirname(entry.originalSummaryPath), path.basename(entry.transferMediaDir)) !== entry.transferMediaDir) {
+      console.warn('Commit: retained transfer media after storage revalidation failed:', path.basename(entry.transferMediaDir));
+      continue;
+    }
     if (!unlinkBestEffort(p)) {
       console.warn(`Commit: orphaned ancillary file (could not remove): ${p}`);
     }
@@ -2951,7 +2954,7 @@ async function readMeetingForTransfer(summaryFile) {
     if (!before.isFile() || before.size > BigInt(STORE_DOCUMENT_LIMIT)) throw { code: 'unsafe_storage' };
     const bytes = await handle.readFile();
     const after = await handle.stat({ bigint: true });
-    if (before.size !== after.size || before.mtimeNs !== after.mtimeNs || before.ctimeNs !== after.ctimeNs) throw { code: 'busy' };
+    if (before.size !== after.size || before.mtimeNs !== after.mtimeNs || before.ctimeNs !== after.ctimeNs) throw { code: 'source_changed' };
     const content = bytes.toString('utf8');
     const meeting = validated.realPath.endsWith('.md')
       ? parseMeetingMarkdown(content, validated.realPath) : JSON.parse(content);
@@ -2961,17 +2964,7 @@ async function readMeetingForTransfer(summaryFile) {
 }
 
 async function findMeetingTransferAudio(summaryFile) {
-  // Use only the canonical meeting's own recordings sibling. Never honor an
-  // audio_file value from imported/user-editable JSON as filesystem authority.
-  const stem = path.basename(summaryFile).replace(/_summary\.(md|json)$/, '');
-  const dir = path.join(path.dirname(path.dirname(summaryFile)), 'recordings');
-  let entries;
-  try { entries = await fs.promises.readdir(dir, { withFileTypes: true }); }
-  catch (error) { if (error.code === 'ENOENT') return null; throw error; }
-  const matches = entries.filter(entry => entry.isFile() && !entry.isSymbolicLink()
-    && path.parse(entry.name).name === stem && IMPORT_AUDIO_EXTENSIONS.includes(path.extname(entry.name).slice(1).toLowerCase()));
-  if (matches.length !== 1) return null; // ambiguous recording provenance
-  return path.join(await fs.promises.realpath(dir), matches[0].name);
+  return require('./meeting-transfer-audio').findAudioSource(summaryFile, getAllowedBaseDirs(), IMPORT_AUDIO_EXTENSIONS);
 }
 
 async function prepareMeetingTransferAudio(sourcePath) {
@@ -2990,12 +2983,8 @@ async function prepareMeetingTransferAudio(sourcePath) {
       const binary = [path.join(backendDir, '_internal', 'ffmpeg'), path.join(backendDir, 'ffmpeg')]
         .find(candidate => fs.existsSync(candidate));
       if (!binary) throw { code: 'unsupported_audio' };
-      await new Promise((resolve, reject) => {
-        const proc = spawn(binary, ['-nostdin', '-v', 'error', '-n', '-i', input, '-vn', '-c:a', 'pcm_f32le', '-f', 'caf', target], { stdio: 'ignore' });
-        const timeout = setTimeout(() => { proc.kill(); reject({ code: 'transfer_failed' }); }, 120000);
-        proc.once('error', () => { clearTimeout(timeout); reject({ code: 'transfer_failed' }); });
-        proc.once('close', code => { clearTimeout(timeout); if (code === 0) resolve(); else reject({ code: 'unsupported_audio' }); });
-      });
+      await require('./meeting-transfer-audio').runAudioConverter(binary,
+        ['-nostdin', '-v', 'error', '-n', '-i', input, '-vn', '-c:a', 'pcm_f32le', '-f', 'caf', target]);
     }
     await fs.promises.chmod(target, 0o600);
     const metadata = { ...(await inspectCAF(target)), logicalTrackID: 'track-1', kind: 'imported' };

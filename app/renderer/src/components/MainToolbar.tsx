@@ -15,7 +15,7 @@ import {
   useSystemAudioSetting,
   useSystemAudioSupport,
 } from '@/hooks/useSettings';
-import type { RecordingStatus } from '@/hooks/useRecording';
+import { useRecording, type RecordingStatus } from '@/hooks/useRecording';
 import { useImportAudio } from '@/hooks/useImportAudio';
 import { useRoute, navigate } from '@/lib/router';
 import { cn, isMac } from '@/lib/utils';
@@ -195,6 +195,9 @@ function RecordingOptionsPopover({
   // not in this (now closed) popover.
   const [open, setOpen] = React.useState(false);
   const importMeeting = useImportMeetingPackage();
+  const recording = useRecording();
+  const transferBlocked = disabled || recording.isLoading || recording.status !== 'idle'
+    || recording.reprocessingSummaryFiles.size > 0;
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -273,7 +276,7 @@ function RecordingOptionsPopover({
           {isMac && (
             <button
               type="button"
-              disabled={disabled || importMeeting.isPending}
+              disabled={transferBlocked || importMeeting.isPending}
               onClick={() => {
                 setOpen(false);
                 importMeeting.mutate(undefined);
@@ -285,7 +288,7 @@ function RecordingOptionsPopover({
               <div className="flex-1 space-y-0.5">
                 <p className="text-sm font-medium">{MEETING_TRANSFER_COPY.importAction}</p>
                 <p className="text-xs text-muted-foreground">
-                  {disabled
+                  {transferBlocked
                     ? MEETING_TRANSFER_COPY.importBlocked
                     : MEETING_TRANSFER_COPY.importDescription}
                 </p>

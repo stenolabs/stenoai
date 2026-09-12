@@ -2980,6 +2980,33 @@ def _parse_meeting_markdown(md_path):
     }
 
 
+def _has_transfer_audio(summary_file, stem, receipt):
+    """Only report retained tracks in this meeting's own non-symlink media tree."""
+    if not isinstance(receipt, dict) or not re.fullmatch(
+        r"transfer_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", stem
+    ):
+        return False
+    tracks = receipt.get("audio")
+    if receipt.get("mediaDirectory") != stem or not isinstance(tracks, list) or len(tracks) > 15:
+        return False
+    try:
+        root = summary_file.parent.resolve() / ".meeting-transfer"
+        media = root / stem
+        for directory in (root, media):
+            if directory.is_symlink() or not directory.is_dir() or directory.resolve() != directory:
+                return False
+        for index, track in enumerate(tracks, 1):
+            name = f"track-{index}.caf"
+            if not isinstance(track, dict) or track.get("name") != name:
+                continue
+            candidate = media / name
+            if not candidate.is_symlink() and candidate.is_file() and candidate.stat().st_size > 0:
+                return True
+    except OSError:
+        pass
+    return False
+
+
 @cli.command()
 def list_meetings():
     """List all processed meetings - optimized for fast loading"""
@@ -3067,6 +3094,7 @@ def list_meetings():
     # Single-pass: read each file once, extract sort key and data together
     for summary_file, stem in summaries:
         try:
+            transfer_receipt = None
             if summary_file.suffix == '.md':
                 parsed = _parse_meeting_markdown(summary_file)
                 sort_key = parsed.get('session_info', {}).get('processed_at', '')
@@ -3081,6 +3109,7 @@ def list_meetings():
             else:
                 with open(summary_file, 'r', encoding='utf-8') as f:
                     data = json.load(f)
+                    transfer_receipt = data.get("steno_transfer")
                     sort_key = data.get('session_info', {}).get('processed_at', '')
                     essential_meeting = {
                         "session_info": data.get("session_info", {}),
@@ -3101,7 +3130,9 @@ def list_meetings():
             # future re-diarization) is silently unavailable without it,
             # with nothing in the list saying so until you open the note
             # and find the action missing.
-            essential_meeting['has_audio'] = stem in audio_stems
+            essential_meeting['has_audio'] = stem in audio_stems or _has_transfer_audio(
+                summary_file, stem, transfer_receipt
+            )
             meetings.append((sort_key, essential_meeting))
         except Exception as e:
             logger.warning(f"Failed to load {summary_file}: {e}")

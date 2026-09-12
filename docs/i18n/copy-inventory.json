@@ -1361,7 +1361,7 @@
         "Open a Steno note package from another device.",
         "Share Steno package…",
         "Steno package transfer failed",
-        "Stop the current recording to import a package."
+        "Wait until recording and processing have finished."
       ]
     },
     "renderer/src/hooks/useMeetings.ts": {

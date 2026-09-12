@@ -147,3 +147,30 @@ class ListMeetingsHasAudioTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class TransferAudioAvailabilityTests(unittest.TestCase):
+    def test_retained_audio_is_reported_without_trusting_receipt_paths(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            stem = "transfer_11111111-2222-4333-8444-555555555555"
+            output = Path(tmp) / "output"
+            media = output / ".meeting-transfer" / stem
+            media.mkdir(parents=True)
+            track = media / "track-1.caf"
+            track.write_bytes(b"synthetic")
+            receipt = {"mediaDirectory": stem, "audio": [{"name": "track-1.caf"}]}
+            summary = output / f"{stem}_summary.json"
+            summary.write_text(json.dumps({"session_info": {"name": "Imported"}, "steno_transfer": receipt}))
+            self.assertTrue(_run(tmp)[0]["has_audio"])
+            track.unlink()
+            self.assertFalse(_run(tmp)[0]["has_audio"])
+            outside = Path(tmp) / "outside.caf"
+            outside.write_bytes(b"outside")
+            track.symlink_to(outside)
+            self.assertFalse(_run(tmp)[0]["has_audio"])
+            track.unlink()
+            media.rmdir()
+            media.symlink_to(Path(tmp), target_is_directory=True)
+            self.assertFalse(_run(tmp)[0]["has_audio"])
+            receipt["mediaDirectory"] = "../../outside"
+            self.assertFalse(simple_recorder._has_transfer_audio(summary, stem, receipt))

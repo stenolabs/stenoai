@@ -90,7 +90,7 @@ function registerMeetingTransferIpc({ app, ipcMain, dialog, getMainWindow, expos
       const snapshot = await readMeeting(summaryFile);
       const hasImportedAudio = Array.isArray(snapshot.meeting.steno_transfer?.audio)
         && snapshot.meeting.steno_transfer.audio.length > 0;
-      const sourceAudio = hasImportedAudio ? null : await findAudioSource(snapshot.realPath);
+      const sourceAudio = hasImportedAudio ? null : await findAudioSource(snapshot.realPath).catch(() => null);
       const canIncludeAudio = hasImportedAudio || !!sourceAudio;
       const selection = await dialog.showMessageBox(win, {
         type: 'question', title: 'Export Steno package', message: snapshot.meeting.session_info.name || 'Meeting',
@@ -108,14 +108,17 @@ function registerMeetingTransferIpc({ app, ipcMain, dialog, getMainWindow, expos
       // Reject a changed source rather than sending a different snapshot from
       // the one whose title and inclusion choices the user confirmed.
       const fresh = await readMeeting(summaryFile);
-      if (snapshot.fingerprint !== fresh.fingerprint) throw { code: 'busy' };
+      if (snapshot.fingerprint !== fresh.fingerprint) throw { code: 'source_changed' };
       let audio = [];
-      if (canIncludeAudio && selection.checkboxChecked === true) {
+      if (selection.checkboxChecked === true) {
+        if (!canIncludeAudio) throw { code: 'unsafe_storage' };
         // Audio can be large or independently unavailable. Read and validate it
         // only after selection; a text-only export never depends on its bytes.
         if (hasImportedAudio) audio = await importedAudioSources(snapshot.meeting, snapshot.realPath);
         else {
-          prepared = await prepareAudio(sourceAudio);
+          const freshAudio = await findAudioSource(fresh.realPath);
+          if (freshAudio !== sourceAudio) throw { code: 'source_changed' };
+          prepared = await prepareAudio(freshAudio);
           audio = prepared.audio;
         }
       }
@@ -204,7 +207,7 @@ async function copyRegularFile(source, target) {
         position += bytesRead;
       }
       const after = await handle.stat({ bigint: true });
-      if (before.size !== after.size || before.mtimeNs !== after.mtimeNs || before.ctimeNs !== after.ctimeNs) throw { code: 'busy' };
+      if (before.size !== after.size || before.mtimeNs !== after.mtimeNs || before.ctimeNs !== after.ctimeNs) throw { code: 'source_changed' };
     } finally { await output.close(); }
   } finally { await handle.close(); }
 }

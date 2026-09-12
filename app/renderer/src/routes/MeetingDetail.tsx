@@ -743,7 +743,7 @@ function DetailContent({
   // state resets per meeting because DetailContent is keyed by summaryFile.
   const hasUserNotes = Boolean((meeting.user_notes ?? '').trim());
   const [tab, setTab] = React.useState<'summary' | 'notes'>(() =>
-    !summary && hasUserNotes ? 'notes' : 'summary'
+    meeting.steno_transfer && !summary && hasUserNotes ? 'notes' : 'summary'
   );
 
   return (
@@ -879,6 +879,8 @@ function DetailContent({
                     onClick={() => exportMeeting.mutate(info.summary_file)}
                     disabled={
                       exportMeeting.isPending ||
+                      recording.isLoading ||
+                      recording.reprocessingSummaryFiles.size > 0 ||
                       recording.status === 'recording' ||
                       recording.status === 'paused' ||
                       recording.status === 'processing' ||

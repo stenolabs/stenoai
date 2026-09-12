@@ -115,6 +115,7 @@ const PENDING_MEETING = {
 // should open directly on My notes. Opt-in to keep every existing T1 seed
 // unchanged.
 const TRANSFER_MEETING = {
+  steno_transfer: { sourceMeetingID: '11111111-2222-4333-8444-555555555555' },
   session_info: {
     name: 'Imported Swift note',
     summary_file: 'imported-swift-note_summary.md',
@@ -558,6 +559,11 @@ function install({ ipcMain }) {
       if (statePath) {
         try {
           const override = JSON.parse(fs.readFileSync(statePath, 'utf-8'));
+          if (override.holdForTransferTest) {
+            await new Promise(resolve => {
+              (global.__pendingTransferQueue ??= []).push(resolve);
+            });
+          }
           return {
             success: true,
             isProcessing: false,

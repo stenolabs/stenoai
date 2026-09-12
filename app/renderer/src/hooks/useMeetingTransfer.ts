@@ -7,7 +7,7 @@ import { navigate } from '@/lib/router';
 export const MEETING_TRANSFER_COPY = {
   importAction: 'Import Steno package…',
   importDescription: 'Open a Steno note package from another device.',
-  importBlocked: 'Stop the current recording to import a package.',
+  importBlocked: 'Wait until recording and processing have finished.',
   exportAction: 'Share Steno package…',
   drop: 'Drop audio or a Steno package to import',
   failed: 'Steno package transfer failed',

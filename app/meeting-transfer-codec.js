@@ -651,7 +651,8 @@ async function writePackage(destinationPath, content) {
     const transcript = content.transcript == null ? null : transcriptDocument(content.transcript);
     const notes = content.notes == null ? null : string(content.notes, LIMITS.notes);
     const audio = content.audio || [];
-    requireValue(Array.isArray(audio) && audio.length * 2 + 4 <= LIMITS.files, 'package_too_large');
+    requireValue(Array.isArray(audio) && audio.length * 2 + 2
+      + (notes !== null ? 1 : 0) + (transcript !== null ? 1 : 0) <= LIMITS.files, 'package_too_large');
     requireValue(notes !== null || transcript !== null || audio.length > 0);
     requireValue(audio.length === 0 || meeting.sourceStatus === 'ready');
     let sourceLocale = transcript ? locale(transcript.localeIdentifier, transcript.localeOrigin) : locale(null, 'absent');

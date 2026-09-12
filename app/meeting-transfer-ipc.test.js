@@ -8,7 +8,7 @@ const { EventEmitter } = require('node:events');
 const { writePackage, readPackage } = require('./meeting-transfer-codec');
 const { registerMeetingTransferIpc } = require('./meeting-transfer-ipc');
 const ID = '11111111-2222-4333-8444-555555555555';
-async function setup(t, { platform = 'darwin', busy = false } = {}) {
+async function setup(t, { platform = 'darwin', busy = false, findAudio, onSave, fingerprint } = {}) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'steno-transfer-ipc-'));
   t.after(() => fs.rm(root, { recursive: true, force: true }));
   const handlers = {};
@@ -32,13 +32,13 @@ async function setup(t, { platform = 'darwin', busy = false } = {}) {
     dialog: {
       showOpenDialog: async () => ({ canceled: false, filePaths: [file] }),
       showMessageBox: async () => ({ response, checkboxChecked: checkBox }),
-      showSaveDialog: async () => ({ canceled: false, filePath: destination }),
+      showSaveDialog: async () => { if (onSave) await onSave(); return { canceled: false, filePath: destination }; },
     },
     getMainWindow: () => win, exposeMainWindow() {}, isBusy: () => busy,
     getOutputDir: () => path.join(root, 'output'), getUserDataDir: () => root,
-    readMeeting: async () => ({ realPath: path.join(root, 'output', 'original_summary.json'), fingerprint: 'same',
+    readMeeting: async () => ({ realPath: path.join(root, 'output', 'original_summary.json'), fingerprint: fingerprint ? fingerprint() : 'same',
       meeting }),
-    findAudioSource: async () => source,
+    findAudioSource: findAudio || (async () => source),
     prepareAudio: async () => { throw new Error('Audio must not be read without selection'); },
     makeShareMenu: (items) => ({ popup: () => { shared = items; } }),
   });
@@ -119,8 +119,56 @@ test('text-only export succeeds when imported audio is unavailable; selecting it
   assert.equal((await ctx.invoke('export-meeting-package', 'synthetic')).success, true);
   const pkg = await readPackage(ctx.destination);
   try { assert.equal(pkg.audio.length, 0); } finally { await pkg.cleanup(); }
-  const before = await fs.readFile(ctx.destination);
+  await fs.rm(ctx.destination);
   ctx.includeAudio(true);
-  assert.equal((await ctx.invoke('export-meeting-package', 'synthetic')).success, false);
-  assert.deepEqual(await fs.readFile(ctx.destination), before);
+  assert.equal((await ctx.invoke('export-meeting-package', 'synthetic')).error_code, 'unsafe_storage');
+  await assert.rejects(fs.stat(ctx.destination), { code: 'ENOENT' });
+});
+
+test('a recording mutated during copy reports source_changed', async t => {
+  const { copyRegularFile } = require('./meeting-transfer-ipc');
+  const ctx = await setup(t);
+  const source = path.join(ctx.root, 'copy.wav');
+  await fs.writeFile(source, Buffer.alloc(100000));
+  const originalOpen = fs.open;
+  fs.open = async (...args) => {
+    const handle = await originalOpen(...args);
+    if (args[0] === source) {
+      const read = handle.read.bind(handle);
+      let changed = false;
+      handle.read = async (...readArgs) => {
+        const result = await read(...readArgs);
+        if (!changed) { changed = true; await fs.appendFile(source, 'mutation'); }
+        return result;
+      };
+    }
+    return handle;
+  };
+  try { await assert.rejects(copyRegularFile(source, path.join(ctx.root, 'copy.caf')), { code: 'source_changed' }); }
+  finally { fs.open = originalOpen; }
+});
+
+
+test('unavailable recording storage does not block a text-only export', async t => {
+  const ctx = await setup(t, { findAudio: async () => { throw { code: 'unsafe_storage' }; } });
+  assert.equal((await ctx.invoke('export-meeting-package', 'synthetic')).success, true);
+  const pkg = await readPackage(ctx.destination);
+  try { assert.equal(pkg.audio.length, 0); } finally { await pkg.cleanup(); }
+});
+
+test('audio storage is revalidated after the save dialog', async t => {
+  let replaced = false;
+  const ctx = await setup(t, {
+    findAudio: async () => { if (replaced) throw { code: 'unsafe_storage' }; return '/synthetic/recording.wav'; },
+    onSave: () => { replaced = true; },
+  });
+  ctx.includeAudio(true);
+  assert.equal((await ctx.invoke('export-meeting-package', 'synthetic')).error_code, 'unsafe_storage');
+  await assert.rejects(fs.stat(ctx.destination), { code: 'ENOENT' });
+});
+
+test('autosave during the dialog reports a changed source instead of busy', async t => {
+  let version = 'before';
+  const ctx = await setup(t, { fingerprint: () => version, onSave: () => { version = 'after'; } });
+  assert.equal((await ctx.invoke('export-meeting-package', 'synthetic')).error_code, 'source_changed');
 });

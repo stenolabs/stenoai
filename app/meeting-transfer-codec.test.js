@@ -432,3 +432,17 @@ test('AAC rejects corrupt cookies and contradictory or unbounded packet tables',
     });
   }
 });
+
+test('15 audio-only tracks fit the exact entry limit but optional text can exceed it', async t => {
+  const root = await workspace(t);
+  const sourcePath = path.join(root, 'source.caf');
+  await fs.writeFile(sourcePath, caf());
+  const actual = await inspectCAF(sourcePath);
+  const audio = Array.from({ length: 15 }, (_, i) => ({ sourcePath,
+    metadata: { ...actual, logicalTrackID: `track-${i + 1}`, kind: 'imported' } }));
+  const target = path.join(root, '15.stenomeeting');
+  await writePackage(target, { meeting, audio });
+  const imported = await readPackage(target);
+  try { assert.equal(imported.audio.length, 15); } finally { await imported.cleanup(); }
+  await assert.rejects(writePackage(path.join(root, 'too-many.stenomeeting'), { meeting, audio, notes: 'extra' }), { code: 'package_too_large' });
+});

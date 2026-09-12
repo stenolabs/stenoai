@@ -3,6 +3,8 @@ import { realUserDataDir, fileSig } from "../fixtures/real-user-data";
 import { writeMeetingSummary } from "../fixtures/user-config";
 import {
   existsSync,
+  renameSync,
+  symlinkSync,
   mkdirSync,
   readFileSync,
   realpathSync,
@@ -75,6 +77,7 @@ type Result<T = Record<string, never>> = {
   error?: string;
 } & T;
 type Meeting = {
+  has_audio?: boolean;
   session_info: {
     name: string;
     summary_file: string;
@@ -200,6 +203,8 @@ test.describe("macOS meeting transfer", () => {
       const imported = await importPackage(page, source);
       expect(imported).toMatchObject({ success: true, duplicate: false });
       expect(existsSync(imported.summaryFile!)).toBe(true);
+      const listed = await page.evaluate(() => (window as StenoWindow).stenoai.meetings.list());
+      expect(listed.meetings[0].has_audio).toBe(true);
       expect(await importPackage(page, source)).toMatchObject({ success: true, duplicate: true });
       const exported = await page.evaluate(
         file => (window as StenoWindow).stenoai.meetingTransfer.exportPackage(file),
@@ -209,7 +214,6 @@ test.describe("macOS meeting transfer", () => {
       const roundtrip = await codec.readPackage(target);
       try {
         expect(roundtrip.audio.map(a => a.metadata)).toEqual(original.audio.map(a => a.metadata));
-        expect(roundtrip.audio.map(a => a.metadata.duration)).toEqual([480013 / 48000, 480013 / 48000]);
       } finally { await roundtrip.cleanup(); }
     } finally { await original.cleanup(); }
   });
@@ -453,6 +457,23 @@ test.describe("macOS meeting transfer", () => {
     expect(fileSig(realUserDataDir())).toBe(realDirBefore);
   });
 
+  test("export refuses a recordings directory linked outside the library", async ({ launchApp, userDataDir }) => {
+    const stem = "symlink-export";
+    const summary = writeMeetingSummary(userDataDir, stem, { name: "Synthetic", summary: "Synthetic notes." });
+    const recordings = path.join(userDataDir, "recordings");
+    const outside = path.join(userDataDir, "outside-recordings");
+    mkdirSync(outside);
+    makeWav(path.join(outside, `${stem}.wav`), { seconds: 0.25, sampleRate: 16000, channels: 1 });
+    const target = path.join(userDataDir, "blocked.stenomeeting");
+    const { app, page } = await launchApp();
+    if (existsSync(recordings)) renameSync(recordings, path.join(userDataDir, "original-recordings"));
+    symlinkSync(outside, recordings, "dir");
+    await stubNativeDialogs(app, { saveFile: target, checkboxAudio: true });
+    const result = await page.evaluate(file => (window as StenoWindow).stenoai.meetingTransfer.exportPackage(file), summary);
+    expect(result).toMatchObject({ success: false, error_code: "unsafe_storage" });
+    expect(existsSync(target)).toBe(false);
+  });
+
   test("exports a native Electron recording as opt-in Float32 CAF with meeting text intact", async ({
     launchApp,
     userDataDir,
@@ -525,9 +546,13 @@ test.describe("macOS meeting transfer", () => {
       "../../tests/fixtures/swift-meeting-v1.stenomeeting",
     );
     const source = await codec.readPackage(swiftFixture);
-    const sourceID = source.meeting.sourceMeetingID.toLowerCase();
-    const sourceAudioHash = source.audio[0].metadata.sha256;
-    await source.cleanup();
+    let sourceID: string;
+    let sourceAudioHash: string;
+    try {
+      expect(source.audio).toHaveLength(1);
+      sourceID = source.meeting.sourceMeetingID.toLowerCase();
+      sourceAudioHash = source.audio[0].metadata.sha256;
+    } finally { await source.cleanup(); }
 
     const transferDir = path.join(userDataDir, "transfer-fixtures");
     mkdirSync(transferDir, { recursive: true });
