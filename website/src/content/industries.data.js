@@ -36,7 +36,7 @@ const BREACH_INTRO_DEF =
   "The pattern is consistent: the compromise happens at a link in the chain that isn't yours. A contractor's system, a vendor's build server, a file that left the enclave and couldn't be recalled.";
 
 const CTA_MAILTO =
-  "mailto:chantelle@stenoai.co?subject=StenographAI%20demo%20request&body=Hi%20Steno%20team%2C%0A%0AWe%27d%20like%20to%20see%20a%20demo.%0A%0AOrganisation%3A%20%0ATeam%20size%3A%20%0AUse%20case%3A%20%0A%0AThanks%2C";
+  "mailto:chantelle@stenoai.co?subject=StenographAI%20demo%20request&body=Hi%20StenographAI%20team%2C%0A%0AWe%27d%20like%20to%20see%20a%20demo.%0A%0AOrganisation%3A%20%0ATeam%20size%3A%20%0AUse%20case%3A%20%0A%0AThanks%2C";
 
 export const government = {
   slug: "government",
