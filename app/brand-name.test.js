@@ -13,22 +13,27 @@ assert.ok(start >= 0 && end > start, 'userData initialization must be present');
 const initialization = source.slice(start, end);
 
 function userDataPath(isPackaged, override, paths, appData) {
-  let result;
+  let result = paths.join(appData, 'stenoai');
+  let name = 'stenoai';
   vm.runInNewContext(initialization, {
     path: paths,
     process: { env: { STENOAI_USER_DATA_DIR: override } },
     app: {
       isPackaged,
       getPath(key) {
-        assert.equal(key, 'appData');
-        return appData;
+        assert.equal(key, 'userData');
+        return result;
       },
       setPath(key, value) {
         assert.equal(key, 'userData');
         result = value;
       },
+      setName(value) {
+        name = value;
+      },
     },
   });
+  assert.equal(name, isPackaged ? 'StenoAI' : 'stenoai');
   return result;
 }
 
@@ -38,7 +43,7 @@ test('renamed packages retain Electron data on macOS, Windows, and Linux', () =>
     [path.win32, 'C:\\Users\\test\\AppData\\Roaming'],
     [path.posix, '/home/test/.config'],
   ]) {
-    assert.equal(userDataPath(true, undefined, paths, root), paths.join(root, 'Steno'));
+    assert.equal(userDataPath(true, undefined, paths, root), paths.join(root, 'stenoai'));
   }
 });
 
@@ -49,7 +54,7 @@ test('explicit isolation overrides the legacy packaged data path', () => {
 });
 
 test('development runs retain their existing default data directory', () => {
-  assert.equal(userDataPath(false, undefined, path.posix, '/unused'), undefined);
+  assert.equal(userDataPath(false, undefined, path.posix, '/unused'), '/unused/stenoai');
 });
 
 test('installed app and shortcuts use StenoAI while update identity stays stable', () => {

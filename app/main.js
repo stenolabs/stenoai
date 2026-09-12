@@ -124,9 +124,11 @@ const { autoUpdater } = require('electron-updater');
 //   STENOAI_E2E_HEADLESS=1 - keep the main window rendered but never visible/focused
 if (process.env.STENOAI_USER_DATA_DIR) {
   app.setPath('userData', process.env.STENOAI_USER_DATA_DIR);
-} else if (app.isPackaged) {
-  // Keep existing Electron sessions and chats when the product display name changes.
-  app.setPath('userData', path.join(app.getPath('appData'), 'Steno'));
+}
+if (app.isPackaged) {
+  // Resolve the existing package-name data path before changing the display name.
+  app.setPath('userData', app.getPath('userData'));
+  app.setName('StenoAI');
 }
 const IS_E2E = process.env.STENOAI_E2E === '1';
 const IS_E2E_MOCK_IPC = process.env.STENOAI_E2E_MOCK_IPC === '1';
