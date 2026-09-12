@@ -71,8 +71,8 @@ cover the UI and real application bridge, including audio, Undo and reimport.
 ```sh
 cd app
 node --test meeting-transfer-codec.test.js meeting-transfer-store.test.js meeting-transfer-ipc.test.js
-npm run test:e2e -- --project=t1 meeting-transfer
-npm run test:e2e -- --project=t2 meeting-transfer
+npm run test:e2e -- --project=t1 meeting-transfer.t1.spec.ts
+npm run test:e2e -- --project=t2 meeting-transfer.t2.spec.ts
 ```
 
 The T2 tests use isolated user data and the bundled backend. Native share-menu
