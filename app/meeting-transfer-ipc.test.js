@@ -65,11 +65,24 @@ test('cold open-file waits for subscribed renderer, reload waits for a fresh rea
   await ctx.invoke('meeting-transfer-ready');
   await until(() => ctx.events.length === 1);
   assert.equal(ctx.events[0].channel, 'meeting-transfer-imported');
-  ctx.webContents.emit('did-start-loading');
+  ctx.webContents.emit('did-start-navigation', { isMainFrame: true, isSameDocument: false });
   ctx.service.openFile(ctx.file);
   await new Promise(resolve => setTimeout(resolve, 30));
   assert.equal(ctx.events.length, 1);
   await ctx.invoke('meeting-transfer-ready');
+  await until(() => ctx.events.length === 2);
+  assert.equal(ctx.events[1].value.duplicate, true);
+});
+test('same-document meeting navigation and subframe loads keep the import listener ready', async t => {
+  const ctx = await setup(t);
+  await ctx.invoke('meeting-transfer-ready');
+  ctx.service.openFile(ctx.file);
+  await until(() => ctx.events.length === 1);
+  // Electron emits did-start-loading even for the React hash-route change.
+  ctx.webContents.emit('did-start-loading');
+  ctx.webContents.emit('did-start-navigation', { isMainFrame: true, isSameDocument: true });
+  ctx.webContents.emit('did-start-navigation', { isMainFrame: false, isSameDocument: false });
+  ctx.service.openFile(ctx.file);
   await until(() => ctx.events.length === 2);
   assert.equal(ctx.events[1].value.duplicate, true);
 });

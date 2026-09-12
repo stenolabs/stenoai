@@ -106,6 +106,11 @@ type StenoWindow = Window & {
       undoDelete: (id: string) => Promise<Result<{ meeting?: Meeting }>>;
       commitDelete: (id: string) => Promise<Result>;
     };
+    on: {
+      meetingTransferImported: (
+        callback: (event: { summaryFile: string; duplicate: boolean }) => void,
+      ) => () => void;
+    };
   };
 };
 
@@ -284,6 +289,69 @@ test.describe("macOS meeting transfer", () => {
       true,
     );
     expect(fileSig(realUserDataDir())).toBe(realDirBefore);
+  });
+
+  test("a warm open-file duplicate still emits imported after the first import navigates to its meeting", async ({
+    launchApp,
+    userDataDir,
+  }) => {
+    const fixtureDir = path.join(userDataDir, "transfer-fixtures");
+    mkdirSync(fixtureDir, { recursive: true });
+    const importFile = path.join(fixtureDir, "warm-duplicate.stenomeeting");
+    await codec.writePackage(importFile, payload());
+
+    const { app, page } = await launchApp();
+    await stubNativeDialogs(app, {});
+    const first = await importPackage(page, importFile);
+    expect(first).toMatchObject({ success: true, duplicate: false });
+    await expect
+      .poll(() => page.evaluate(() => window.location.hash))
+      .toBe(`#/meetings/${encodeURIComponent(first.summaryFile!)}`);
+
+    await page.evaluate(() => {
+      const target = globalThis as typeof globalThis & {
+        __warmTransferEvents?: Array<{
+          summaryFile: string;
+          duplicate: boolean;
+        }>;
+      };
+      target.__warmTransferEvents = [];
+      (window as StenoWindow).stenoai.on.meetingTransferImported((event) => {
+        target.__warmTransferEvents!.push(event);
+      });
+    });
+    const messagesBefore = await app.evaluate(
+      () =>
+        (globalThis as any).__meetingTransferDialogCalls.filter(
+          (call: { kind: string }) => call.kind === "message",
+        ).length,
+    );
+
+    await app.evaluate(({ app: electronApp }, file) => {
+      electronApp.emit("open-file", { preventDefault() {} } as any, file);
+    }, importFile);
+
+    await expect
+      .poll(() =>
+        app.evaluate(
+          () =>
+            (globalThis as any).__meetingTransferDialogCalls.filter(
+              (call: { kind: string }) => call.kind === "message",
+            ).length,
+        ),
+      )
+      .toBe(messagesBefore + 1);
+    await expect
+      .poll(() =>
+        page.evaluate(
+          () =>
+            (globalThis as any).__warmTransferEvents as Array<{
+              summaryFile: string;
+              duplicate: boolean;
+            }>,
+        ),
+      )
+      .toEqual([{ summaryFile: first.summaryFile, duplicate: true }]);
   });
 
   test("changed content from the same origin is rejected without creating another meeting", async ({

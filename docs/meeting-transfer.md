@@ -40,7 +40,9 @@ editor changes are not part of the export.
   does not invent speaker identities or word timings.
 - Optional audio supports interleaved, uncompressed PCM CAF. Existing local
   recordings are converted to Float32 CAF using the bundled ffmpeg. Compressed
-  CAF codecs are currently rejected with an unsupported-audio message.
+  CAF codecs are currently rejected with an unsupported-audio message. New
+  Swift/iOS recordings use supported PCM CAF. Legacy imported Opus CAF can be
+  excluded by exporting the package without audio in the sending app.
   Imported tracks are retained for package export; the maintenance command
   `full-reprocess` rejects imported meetings to protect their source media.
   Normal note generation from an imported transcript remains available.

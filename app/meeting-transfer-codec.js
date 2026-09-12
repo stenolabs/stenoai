@@ -33,7 +33,7 @@ class TransferError extends Error {
       insufficient_space: 'There is not enough free space to import or export this meeting.',
       unsafe_file: 'The selected file is not a regular file.',
       source_changed: 'The selected file changed while it was being read.',
-      unsupported_audio: 'This meeting package contains unsupported audio. Export uncompressed CAF audio and try again.',
+      unsupported_audio: 'This meeting package contains unsupported audio. Ask the sender to export it without audio.',
       destination_exists: 'A file already exists at the selected destination.',
       transfer_io: 'The meeting package could not be read or written.',
     };

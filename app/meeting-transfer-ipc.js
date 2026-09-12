@@ -14,7 +14,7 @@ const COPY = {
   unsafe_file: 'Select a regular Steno package file.',
   source_changed: 'The source changed while it was being read. Try again.',
   destination_exists: 'A file already exists at that location. Choose a new filename.',
-  unsupported_audio: 'This package contains an unsupported audio format.',
+  unsupported_audio: 'This package contains an unsupported audio format. Ask the sender to export it without audio.',
   transfer_conflict: 'A different version of this meeting has already been imported. The existing meeting was kept.',
   unsafe_storage: 'Steno could not safely access the meeting storage.',
   empty_package: 'This meeting has no notes, transcript, or selected audio to export.',
@@ -172,7 +172,11 @@ function registerMeetingTransferIpc({ app, ipcMain, dialog, getMainWindow, expos
     readyContents = event.sender;
     if (!observedContents.has(event.sender)) {
       observedContents.add(event.sender);
-      event.sender.on('did-start-loading', () => { if (readyContents === event.sender) readyContents = null; });
+      // Hash-route changes also emit did-start-loading, but keep the React
+      // subscriber mounted. Only a new main document needs a fresh handshake.
+      event.sender.on('did-start-navigation', details => {
+        if (details.isMainFrame && !details.isSameDocument && readyContents === event.sender) readyContents = null;
+      });
       event.sender.once('destroyed', () => { if (readyContents === event.sender) readyContents = null; });
     }
     drain();
