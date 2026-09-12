@@ -124,6 +124,9 @@ const { autoUpdater } = require('electron-updater');
 //   STENOAI_E2E_HEADLESS=1 - keep the main window rendered but never visible/focused
 if (process.env.STENOAI_USER_DATA_DIR) {
   app.setPath('userData', process.env.STENOAI_USER_DATA_DIR);
+} else if (app.isPackaged) {
+  // Keep existing Electron sessions and chats when the product display name changes.
+  app.setPath('userData', path.join(app.getPath('appData'), 'Steno'));
 }
 const IS_E2E = process.env.STENOAI_E2E === '1';
 const IS_E2E_MOCK_IPC = process.env.STENOAI_E2E_MOCK_IPC === '1';
@@ -1733,7 +1736,7 @@ function createTray() {
   const icon = nativeImage.createFromPath(getTrayIconPath(false));
   icon.setTemplateImage(true);
   tray = new Tray(icon);
-  tray.setToolTip('Steno');
+  tray.setToolTip('StenoAI');
 
   updateTrayMenu();
 }
@@ -1743,7 +1746,7 @@ function updateTrayIcon(recording) {
   const icon = nativeImage.createFromPath(getTrayIconPath(recording));
   icon.setTemplateImage(true);
   tray.setImage(icon);
-  tray.setToolTip(recording ? 'Steno - Recording' : 'Steno');
+  tray.setToolTip(recording ? 'StenoAI - Recording' : 'StenoAI');
   updateTrayMenu();
 }
 
@@ -1759,7 +1762,7 @@ function updateTrayMenu() {
 
   const contextMenu = Menu.buildFromTemplate([
     {
-      label: 'Open Steno',
+      label: 'Open StenoAI',
       click: showAndFocusWindow
     },
     {
@@ -1780,14 +1783,14 @@ function updateTrayMenu() {
       }
     },
     {
-      label: 'Hide Steno',
+      label: 'Hide StenoAI',
       click: () => {
         if (mainWindow) mainWindow.hide();
       }
     },
     { type: 'separator' },
     {
-      label: `Steno v${appVersion}`,
+      label: `StenoAI v${appVersion}`,
       enabled: false
     },
     {
@@ -1798,7 +1801,7 @@ function updateTrayMenu() {
     },
     { type: 'separator' },
     {
-      label: 'Quit Steno',
+      label: 'Quit StenoAI',
       click: () => {
         app.quit();
       }
@@ -9506,7 +9509,7 @@ function showRecordingFailedNotification(body) {
   try {
     if (!Notification.isSupported()) return;
     new Notification({
-      title: 'Steno',
+      title: 'StenoAI',
       body: body || "Recording couldn't start.",
       iconType: 'alert',
     }).show();

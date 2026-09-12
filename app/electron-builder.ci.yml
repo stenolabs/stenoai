@@ -28,4 +28,4 @@ mac:
   notarize: false
   # Keep in sync with build.mac.extendInfo in package.json.
   extendInfo:
-    NSLocalNetworkUsageDescription: "Steno needs local network access to reach Ollama or other AI services you host on your own network."
+    NSLocalNetworkUsageDescription: "StenoAI needs local network access to reach Ollama or other AI services you host on your own network."
