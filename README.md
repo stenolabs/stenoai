@@ -23,7 +23,7 @@
 <div align="center">
   <picture>
     <source srcset="website/public/demo.gif" type="image/gif">
-    <img src="website/public/readme.png" alt="StenographAI" width="800">
+    <img src="website/public/readme.png" alt="StenoAI" width="800">
   </picture>
 
   <br>
