@@ -181,6 +181,12 @@ const stenoai = {
       invoke('export-note-pdf', defaultFilename, html),
   },
 
+  meetingTransfer: {
+    importPackage: (filePath) => invoke('import-meeting-package', filePath),
+    exportPackage: (summaryFile) => invoke('export-meeting-package', summaryFile),
+    ready: () => invoke('meeting-transfer-ready'),
+  },
+
   query: {
     ask: (file, q) => invoke('query-transcript', file, q),
     askStream: (id, file, q) => send('query-transcript-stream', id, file, q),
@@ -444,6 +450,7 @@ const stenoai = {
     generateNotesRequested: (cb) => subscribe('generate-notes-requested', cb),
     navigateToMeeting: (cb) => subscribe('navigate-to-meeting', cb),
     trayOpenSettings: (cb) => subscribe('tray-open-settings', cb),
+    meetingTransferImported: (cb) => subscribe('meeting-transfer-imported', cb),
     showQuitDialog: (cb) => subscribe('show-quit-dialog', cb),
     showNotification: (cb) => subscribe('show-notification', cb),
   },

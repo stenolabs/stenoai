@@ -3364,10 +3364,10 @@ def reprocess(summary_file, regenerate_title, retranscribe):
         if summary_path.suffix == '.md':
             session_name = existing_data.get('session_info', {}).get('name', 'Reprocessed')
             md_lines = ['---']
-            # This rebuild intentionally omits notes_generated: reprocessing a
-            # transcript-only note (#258) generates the summary, so the rewritten
-            # frontmatter naturally flips the meeting out of the "no notes yet"
-            # state. The state-flip is intended, not an accidental key drop.
+            # This rebuild intentionally omits notes_generated and notes_stale:
+            # reprocessing generates a current summary, so the rewritten
+            # frontmatter naturally flips the meeting out of both "no notes yet"
+            # and "notes are stale" states.
             md_meta = {
                 'title': session_name,
                 'date': existing_data.get('session_info', {}).get('processed_at', datetime.now().isoformat()),
@@ -3424,13 +3424,13 @@ def reprocess(summary_file, regenerate_title, retranscribe):
                 "key_points": parsed.get("key_points", []) or [],
                 "action_items": parsed.get("action_items", []) or [],
             })
-            # The regenerated summary now covers the full (possibly appended)
-            # transcript — clear the continue-recording stale marker. The .md
-            # branch clears it implicitly by omitting it from the rebuilt
-            # frontmatter (see the intentional-omission note above).
-            existing_data.get("session_info", {}).pop("notes_stale", None)
-            with open(summary_path, 'w') as f:
-                json.dump(existing_data, f, indent=2)
+            # The regenerated summary now covers the full transcript. Clear both
+            # cues that tell the UI to offer Generate notes; the .md branch does
+            # the same by omitting them from its rebuilt frontmatter.
+            session_info = existing_data.get("session_info", {})
+            session_info.pop("notes_generated", None)
+            session_info.pop("notes_stale", None)
+            _atomic_write_text(summary_path, json.dumps(existing_data, indent=2))
 
         # Signal completion only AFTER the note file is fully written. The
         # renderer reads the note the instant it sees STREAM_COMPLETE, so
@@ -3533,6 +3533,17 @@ def full_reprocess(meeting_stem, audio_file_override):
         existing_data = _parse_meeting_markdown(md_path)
     else:
         print(json.dumps({"success": False, "error": f"No summary found for meeting {meeting_stem!r}"}))
+        sys.exit(1)
+
+    # This maintenance command rebuilds from an owned recording and may delete
+    # its source. Transfer tracks instead belong to an immutable import receipt;
+    # do not hand one to that pipeline or replace its metadata with a new note.
+    if existing_data.get("steno_transfer") is not None:
+        print(json.dumps({
+            "success": False,
+            "error": "full-reprocess is not supported for imported Steno packages. "
+                     "Use reprocess to regenerate notes from the saved transcript.",
+        }))
         sys.exit(1)
 
     if audio_file_override:

@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { FileAudio, MessageSquare, MoreHorizontal, Monitor, PanelLeftClose, PanelLeftOpen, Plus } from 'lucide-react';
+import { FileArchive, FileAudio, MessageSquare, MoreHorizontal, Monitor, PanelLeftClose, PanelLeftOpen, Plus } from 'lucide-react';
 import type { UseMutationResult } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
@@ -19,6 +19,7 @@ import type { RecordingStatus } from '@/hooks/useRecording';
 import { useImportAudio } from '@/hooks/useImportAudio';
 import { useRoute, navigate } from '@/lib/router';
 import { cn, isMac } from '@/lib/utils';
+import { MEETING_TRANSFER_COPY, useImportMeetingPackage } from '@/hooks/useMeetingTransfer';
 
 interface MainToolbarProps {
   recordingStatus: RecordingStatus;
@@ -193,6 +194,7 @@ function RecordingOptionsPopover({
   // import's progress then shows as a processing row in the meeting list,
   // not in this (now closed) popover.
   const [open, setOpen] = React.useState(false);
+  const importMeeting = useImportMeetingPackage();
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -268,6 +270,28 @@ function RecordingOptionsPopover({
               </p>
             </div>
           </button>
+          {isMac && (
+            <button
+              type="button"
+              disabled={disabled || importMeeting.isPending}
+              onClick={() => {
+                setOpen(false);
+                importMeeting.mutate(undefined);
+              }}
+              className="flex w-full items-start gap-3 rounded-md border p-3 text-left transition-colors hover:bg-[color:var(--surface-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+              style={{ borderColor: 'var(--border-subtle)' }}
+            >
+              <FileArchive className="mt-0.5 size-4 flex-shrink-0 text-muted-foreground" />
+              <div className="flex-1 space-y-0.5">
+                <p className="text-sm font-medium">{MEETING_TRANSFER_COPY.importAction}</p>
+                <p className="text-xs text-muted-foreground">
+                  {disabled
+                    ? MEETING_TRANSFER_COPY.importBlocked
+                    : MEETING_TRANSFER_COPY.importDescription}
+                </p>
+              </div>
+            </button>
+          )}
         </div>
       </PopoverContent>
     </Popover>

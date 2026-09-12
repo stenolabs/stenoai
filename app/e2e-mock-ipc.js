@@ -110,6 +110,26 @@ const PENDING_MEETING = {
   participants: [],
 };
 
+// A note imported from a .stenomeeting package. Swift-authored notes carry
+// their body as user_notes and have no generated summary, so the detail view
+// should open directly on My notes. Opt-in to keep every existing T1 seed
+// unchanged.
+const TRANSFER_MEETING = {
+  session_info: {
+    name: 'Imported Swift note',
+    summary_file: 'imported-swift-note_summary.md',
+    processed_at: '2026-09-12T04:00:00Z',
+    duration_seconds: 0,
+  },
+  transcript: '',
+  user_notes: 'Notes written on iPhone and transferred to this Mac.',
+  summary: '',
+  key_points: [],
+  action_items: [],
+  discussion_areas: [],
+  participants: [],
+};
+
 // A continued note (continue-recording appended a segment after notes were
 // generated → notes_stale:true): has a summary AND a stale marker. Drives the
 // "Regenerate notes" variant of the floating CTA. Seeded only when
@@ -658,6 +678,9 @@ function install({ ipcMain }) {
     // lives in MOCKS, which shadows DEFAULTS, so it is the single source for the
     // channel.
     'list-meetings': async () => {
+      if (process.env.STENOAI_E2E_MEETING_TRANSFER === '1') {
+        return { success: true, meetings: [TRANSFER_MEETING] };
+      }
       if (process.env.STENOAI_E2E_SEED_AUDIO_MEETINGS === '1') {
         return { success: true, meetings: AUDIO_SEED_MEETINGS };
       }
@@ -700,6 +723,12 @@ function install({ ipcMain }) {
     // by filtering list-meetings — answer it with the same seeded meeting so the
     // transcript-export detail route resolves and renders the transcript actions.
     'get-meeting': async (_event, summaryFile) => {
+      if (
+        process.env.STENOAI_E2E_MEETING_TRANSFER === '1' &&
+        summaryFile === TRANSFER_MEETING.session_info.summary_file
+      ) {
+        return { success: true, meeting: applyOverlay(TRANSFER_MEETING) };
+      }
       if (process.env.STENOAI_E2E_SEED_PENDING_NOTE === '1') {
         return { success: true, meeting: applyOverlay(PENDING_MEETING) };
       }
@@ -724,6 +753,20 @@ function install({ ipcMain }) {
         ? { success: true, meeting: applyOverlay(m) }
         : { success: false, error: 'meeting not found' };
     },
+
+    'meeting-transfer-ready': async () => ({ success: true }),
+    'import-meeting-package': async (event) => {
+      if (process.env.STENOAI_E2E_MEETING_TRANSFER !== '1') {
+        return { success: true, cancelled: true };
+      }
+      const payload = {
+        summaryFile: TRANSFER_MEETING.session_info.summary_file,
+        duplicate: false,
+      };
+      event.sender.send('meeting-transfer-imported', payload);
+      return { success: true, ...payload };
+    },
+    'export-meeting-package': async () => ({ success: true, cancelled: false }),
 
     // Soft-delete (#234). The permissive unknown-channel default would answer
     // `{success:true}` with no `id`, and useDeleteMeeting skips the Undo toast

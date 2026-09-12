@@ -56,6 +56,8 @@ const { createDebugLog } = require('./debug-log');
 const { createTeardownRegistry } = require('./teardown');
 const { registerFoldersIpc } = require('./folders-ipc');
 const { registerSettingsIpc } = require('./settings-ipc');
+const { registerMeetingTransferIpc, copyRegularFile } = require('./meeting-transfer-ipc');
+const { STORE_DOCUMENT_LIMIT } = require('./meeting-transfer-store');
 const { registerPersonSampleIpc } = require('./person-sample-ipc');
 const { registerSpeakerIpc } = require('./speaker-ipc');
 const { registerObsidianSync } = require('./obsidian-sync');
@@ -1268,7 +1270,7 @@ function validateSafeFilePath(filepath, allowedBaseDirs) {
 // Deleting a note HIDES only its summary file, by renaming it into a hidden
 // sibling dir (`output/.pending-delete/<id>/`). Every backend scan identifies a
 // note SOLELY by its summary glob (`list_meetings` / global chat glob
-// `output/*_summary.{json,md}`, non-recursive), so hiding the summary makes the
+// `output/<stem>_summary.{json,md}`, non-recursive), so hiding the summary makes the
 // note invisible to all of them via a SINGLE atomic same-filesystem rename — no
 // multi-file moves, no cross-volume copy, no manifest, no restore/purge/sweep.
 //
@@ -1397,6 +1399,20 @@ function isAllowedMeetingSource(src, allowedBaseDirs) {
   return leafDirs.includes(realParent);
 }
 
+// Transfer tracks belong only to the validated summary's immutable stem.
+// Neither a receipt nor the renderer can supply a different media directory.
+function transferMediaDirectory(outputDir, stem) {
+  if (!/^transfer_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(stem ?? '')) return null;
+  try {
+    const root = path.join(fs.realpathSync(outputDir), '.meeting-transfer');
+    const media = path.join(root, stem);
+    for (const directory of [root, media]) {
+      if (!fs.lstatSync(directory).isDirectory() || fs.realpathSync(directory) !== directory) return null;
+    }
+    return media;
+  } catch (_) { return null; }
+}
+
 // No-clobber occupancy test. Uses lstat (NOT existsSync) so a DANGLING symlink
 // at the path counts as occupied: existsSync follows the link and returns false
 // for a broken target, which would let a renameSync silently REPLACE the symlink
@@ -1479,9 +1495,17 @@ function commitPendingDelete(id) {
   // not the note itself: a rare permanently-locked orphan is accepted (fail-safe
   // direction — never risk the note over a stray file). Log any that survived.
   for (const p of entry.ancillaryPaths) {
+    // Recheck the private media ancestors after the undo window as well.
+    if (entry.transferMediaDir && path.dirname(p) === entry.transferMediaDir
+      && transferMediaDirectory(path.dirname(entry.originalSummaryPath), path.basename(entry.transferMediaDir)) !== entry.transferMediaDir) continue;
     if (!unlinkBestEffort(p)) {
       console.warn(`Commit: orphaned ancillary file (could not remove): ${p}`);
     }
+  }
+  if (entry.transferMediaDir
+    && transferMediaDirectory(path.dirname(entry.originalSummaryPath), path.basename(entry.transferMediaDir)) === entry.transferMediaDir) {
+    // Only an empty directory may go; a failed unlink preserves its contents.
+    try { fs.rmdirSync(entry.transferMediaDir); } catch (_) {}
   }
   removeHiddenScaffold(entry.hiddenDir);
   pendingDeletes.delete(id);
@@ -1857,8 +1881,24 @@ function rewarmParakeet(reason) {
 if (!gotSingleInstanceLock) {
   app.quit();
 } else {
+  const meetingTransfer = registerMeetingTransferIpc({
+    app, ipcMain, dialog, getMainWindow: () => mainWindow, exposeMainWindow,
+    getOutputDir, getUserDataDir,
+    isBusy: () => currentRecordingProcess !== null || systemAudioRecordingActive || isProcessing || activeReprocessJobs.size > 0,
+    readMeeting: readMeetingForTransfer,
+    findAudioSource: findMeetingTransferAudio,
+    prepareAudio: prepareMeetingTransferAudio,
+    makeShareMenu: items => new (require('electron').ShareMenu)(items),
+  });
+  if (process.platform === 'darwin') {
+    for (const arg of process.argv.slice(1)) meetingTransfer.openFile(arg);
+  }
+
   ipcMain.on('warmup-parakeet-hint', () => rewarmParakeet('renderer-hint'));
   app.on('second-instance', (event, argv) => {
+    if (process.platform === 'darwin') {
+      for (const arg of argv.slice(1)) meetingTransfer.openFile(arg);
+    }
     const shortcutUrl = extractShortcutUrlFromArgv(argv);
     if (shortcutUrl) {
       if (app.isReady()) {
@@ -2898,6 +2938,69 @@ async function validateMeetingFilePath(summaryFile) {
     return { error: 'Access denied' };
   }
   return { realPath, allowedOutputDirs };
+}
+
+// The transfer exporter reads a stable saved snapshot rather than trusting
+// renderer-supplied meeting content or an arbitrary audio path.
+async function readMeetingForTransfer(summaryFile) {
+  const validated = await validateMeetingFilePath(summaryFile);
+  if (validated.error) throw { code: 'unsafe_storage' };
+  const handle = await fs.promises.open(validated.realPath, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW | fs.constants.O_NONBLOCK);
+  try {
+    const before = await handle.stat({ bigint: true });
+    if (!before.isFile() || before.size > BigInt(STORE_DOCUMENT_LIMIT)) throw { code: 'unsafe_storage' };
+    const bytes = await handle.readFile();
+    const after = await handle.stat({ bigint: true });
+    if (before.size !== after.size || before.mtimeNs !== after.mtimeNs || before.ctimeNs !== after.ctimeNs) throw { code: 'busy' };
+    const content = bytes.toString('utf8');
+    const meeting = validated.realPath.endsWith('.md')
+      ? parseMeetingMarkdown(content, validated.realPath) : JSON.parse(content);
+    if (!meeting.session_info) throw { code: 'unsafe_storage' };
+    return { realPath: validated.realPath, meeting, fingerprint: require('crypto').createHash('sha256').update(bytes).digest('hex') };
+  } finally { await handle.close(); }
+}
+
+async function findMeetingTransferAudio(summaryFile) {
+  // Use only the canonical meeting's own recordings sibling. Never honor an
+  // audio_file value from imported/user-editable JSON as filesystem authority.
+  const stem = path.basename(summaryFile).replace(/_summary\.(md|json)$/, '');
+  const dir = path.join(path.dirname(path.dirname(summaryFile)), 'recordings');
+  let entries;
+  try { entries = await fs.promises.readdir(dir, { withFileTypes: true }); }
+  catch (error) { if (error.code === 'ENOENT') return null; throw error; }
+  const matches = entries.filter(entry => entry.isFile() && !entry.isSymbolicLink()
+    && path.parse(entry.name).name === stem && IMPORT_AUDIO_EXTENSIONS.includes(path.extname(entry.name).slice(1).toLowerCase()));
+  if (matches.length !== 1) return null; // ambiguous recording provenance
+  return path.join(await fs.promises.realpath(dir), matches[0].name);
+}
+
+async function prepareMeetingTransferAudio(sourcePath) {
+  const { inspectCAF } = require('./meeting-transfer-codec');
+  const { privateDirectory } = require('./meeting-transfer-store');
+  const root = await privateDirectory(getUserDataDir(), 'meeting-transfer');
+  const scratch = await fs.promises.mkdtemp(path.join(root, 'audio-'));
+  const cleanup = () => fs.promises.rm(scratch, { recursive: true, force: true });
+  try {
+    const input = path.join(scratch, 'source' + path.extname(sourcePath));
+    await copyRegularFile(sourcePath, input);
+    const target = path.join(scratch, 'track.caf');
+    if (path.extname(input).toLowerCase() === '.caf') await fs.promises.copyFile(input, target, fs.constants.COPYFILE_EXCL);
+    else {
+      const backendDir = path.dirname(getBackendPath());
+      const binary = [path.join(backendDir, '_internal', 'ffmpeg'), path.join(backendDir, 'ffmpeg')]
+        .find(candidate => fs.existsSync(candidate));
+      if (!binary) throw { code: 'unsupported_audio' };
+      await new Promise((resolve, reject) => {
+        const proc = spawn(binary, ['-nostdin', '-v', 'error', '-n', '-i', input, '-vn', '-c:a', 'pcm_f32le', '-f', 'caf', target], { stdio: 'ignore' });
+        const timeout = setTimeout(() => { proc.kill(); reject({ code: 'transfer_failed' }); }, 120000);
+        proc.once('error', () => { clearTimeout(timeout); reject({ code: 'transfer_failed' }); });
+        proc.once('close', code => { clearTimeout(timeout); if (code === 0) resolve(); else reject({ code: 'unsupported_audio' }); });
+      });
+    }
+    await fs.promises.chmod(target, 0o600);
+    const metadata = { ...(await inspectCAF(target)), logicalTrackID: 'track-1', kind: 'imported' };
+    return { audio: [{ metadata, sourcePath: target }], cleanup };
+  } catch (error) { await cleanup(); throw error; }
 }
 
 ipcMain.handle('get-meeting', async (_event, summaryFile) => {
@@ -4398,6 +4501,16 @@ ipcMain.handle('delete-meeting', async (event, meetingData) => {
     if (stem) {
       ancillaryCandidates.push(path.join(outputDir, `${stem}_speakers.json`));
     }
+    // Imported transfer audio is bound to the same immutable summary stem.
+    // Enumerate only canonical track files, never paths from meeting JSON.
+    const transferMediaDir = transferMediaDirectory(outputDir, stem);
+    if (transferMediaDir) {
+      try {
+        for (const name of fs.readdirSync(transferMediaDir)) {
+          if (/^track-[1-9][0-9]*\.caf$/.test(name)) ancillaryCandidates.push(path.join(transferMediaDir, name));
+        }
+      } catch (_) { /* text-only package */ }
+    }
     // Derive the transcript + recording from the summary stem (FACT A). A normal
     // .md note carries ONLY summary_file, so without this the transcript and the
     // RECORDING would be orphaned, defeating the whole point of #234 (protect the
@@ -4445,7 +4558,7 @@ ipcMain.handle('delete-meeting', async (event, meetingData) => {
     // --- Twin edge (ANOMALOUS, FAIL-SAFE): a note names EXACTLY ONE
     // summary_file, and we hide only that one. If a stem somehow has BOTH
     // <stem>_summary.json AND <stem>_summary.md, hiding the named one leaves the
-    // other, and the `output/*_summary.{json,md}` scan keeps the note VISIBLE —
+    // other, and the `output/<stem>_summary.{json,md}` scan keeps the note VISIBLE —
     // so the delete under-hides (note REAPPEARS), never over-deletes: nothing is
     // lost. This is accepted deliberately: the app's own writers only ever
     // produce <stem>_summary.md (JSON summaries are legacy, read-only; reprocess
@@ -4477,7 +4590,9 @@ ipcMain.handle('delete-meeting', async (event, meetingData) => {
         console.warn(`Skipping non-regular-file ancillary (not tracked): ${p}`);
         continue;
       }
-      if (!isAllowedMeetingSource(p, allowedBaseDirs)) {
+      const isTransferTrack = transferMediaDir && path.dirname(p) === transferMediaDir
+        && /^track-[1-9][0-9]*\.caf$/.test(path.basename(p));
+      if (!isTransferTrack && !isAllowedMeetingSource(p, allowedBaseDirs)) {
         console.warn(`Skipping ancillary outside allowed meeting folders (not tracked): ${p}`);
         continue;
       }
@@ -4549,6 +4664,7 @@ ipcMain.handle('delete-meeting', async (event, meetingData) => {
       hiddenSummaryPath,
       canonicalSummary,
       ancillaryPaths,
+      transferMediaDir,
       deadline,
       state: 'pending',
       timer: null,
