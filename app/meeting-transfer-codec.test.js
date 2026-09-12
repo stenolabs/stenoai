@@ -5,6 +5,7 @@ const fs = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
 const { createHash } = require('node:crypto');
+const { execFileSync } = require('node:child_process');
 const { readPackage, writePackage, inspectCAF, contentDigest, LIMITS } = require('./meeting-transfer-codec');
 
 const meeting = {
@@ -121,6 +122,95 @@ test('real Swift writer fixture imports transcript, notes, locale and AVAudioFil
   assert.equal(loaded.audio.length, 1);
   assert.equal(loaded.audio[0].metadata.duration, 0.01);
   assert.equal(loaded.audio[0].metadata.sampleRate, 8000);
+});
+
+for (const phase of ['opening', 'reading']) for (const continuous of [false, true]) {
+  test(`${continuous ? 'repeated source metadata changes stop after one full retry'
+    : 'one source metadata change retries with closed handles and cleaned staging'} during ${phase}`,
+  { skip: process.platform !== 'darwin' }, async (t) => {
+    const root = await workspace(t);
+    const source = path.join(root, 'Metadata.stenomeeting');
+    const bytes = await fs.readFile(path.join(__dirname, '..', 'tests', 'fixtures', 'swift-meeting-v1.stenomeeting'));
+    await fs.writeFile(source, bytes);
+    const handles = [];
+    const staging = [];
+    const originalOpen = fs.open.bind(fs);
+    const originalMkdtemp = fs.mkdtemp.bind(fs);
+    t.mock.method(fs, 'mkdtemp', async (...args) => {
+      const directory = await originalMkdtemp(...args);
+      if (path.basename(args[0]) === 'stenomeeting-') staging.push(directory);
+      return directory;
+    });
+    t.mock.method(fs, 'open', async (file, ...args) => {
+      if (file === source && handles.length) {
+        assert.equal(handles.at(-1).fd, -1, 'previous source handle must be closed');
+        for (const directory of staging) await assert.rejects(fs.stat(directory), { code: 'ENOENT' });
+      }
+      const handle = await originalOpen(file, ...args);
+      if (file === source) {
+        handles.push(handle);
+        const changeMetadata = async () => {
+          const before = await handle.stat({ bigint: true });
+          execFileSync('/usr/bin/xattr', ['-w', 'org.steno.synthetic-transfer-test', String(handles.length), source]);
+          const after = await handle.stat({ bigint: true });
+          assert.equal(after.mtimeNs, before.mtimeNs);
+          assert.notEqual(after.ctimeNs, before.ctimeNs);
+        };
+        if (phase === 'opening' && (continuous || handles.length === 1)) await changeMetadata();
+        let firstRead = true;
+        const read = handle.read.bind(handle);
+        handle.read = async (...readArgs) => {
+          const result = await read(...readArgs);
+          if (phase === 'reading' && firstRead && (continuous || handles.length === 1)) {
+            firstRead = false;
+            await changeMetadata();
+          }
+          return result;
+        };
+      }
+      return handle;
+    });
+    if (continuous) await assert.rejects(readPackage(source), { code: 'source_changed' });
+    else {
+      const loaded = await readPackage(source);
+      assert.equal(loaded.notes, '# Synthetic notes\n\nBeschluss ä 📋');
+      assert.equal(loaded.audio.length, 1);
+      await loaded.cleanup();
+    }
+    assert.equal(handles.length, 2);
+    assert.deepEqual(await fs.readFile(source), bytes);
+    for (const directory of staging) await assert.rejects(fs.stat(directory), { code: 'ENOENT' });
+  });
+}
+
+test('payload mutation during reading still fails integrity validation without retry', async (t) => {
+  const root = await workspace(t);
+  const source = path.join(root, 'Changing.stenomeeting');
+  const bytes = packageBytes();
+  await fs.writeFile(source, bytes);
+  const originalOpen = fs.open.bind(fs);
+  let opens = 0;
+  t.mock.method(fs, 'open', async (file, ...args) => {
+    const handle = await originalOpen(file, ...args);
+    if (file === source) {
+      opens += 1;
+      let firstRead = true;
+      const read = handle.read.bind(handle);
+      handle.read = async (...readArgs) => {
+        const result = await read(...readArgs);
+        if (firstRead) {
+          firstRead = false;
+          const changed = Buffer.from(bytes);
+          changed[changed.length - 1] ^= 1;
+          await fs.writeFile(source, changed);
+        }
+        return result;
+      };
+    }
+    return handle;
+  });
+  await assert.rejects(readPackage(source), { code: 'invalid_package' });
+  assert.equal(opens, 1);
 });
 
 test('identical content has stable digest across repeated exports', async (t) => {

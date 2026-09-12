@@ -294,7 +294,8 @@ async function openRegular(filePath, maximum) {
   try {
     handle = await fsp.open(filePath, FLAGS);
     const status = await handle.stat({ bigint: true });
-    requireValue(status.isFile() && sameFile(before, status), 'unsafe_file');
+    requireValue(status.isFile() && before.dev === status.dev && before.ino === status.ino, 'unsafe_file');
+    requireValue(sameFile(before, status), 'source_changed');
     requireValue(status.size <= BigInt(maximum), 'package_too_large');
     return { handle, status };
   } catch (error) {
@@ -452,7 +453,7 @@ async function inspectCAF(sourcePath) {
   } finally { if (handle) await handle.close(); }
 }
 
-async function readPackage(filePath) {
+async function readPackageOnce(filePath) {
   let handle;
   let temporary;
   try {
@@ -533,6 +534,18 @@ async function readPackage(filePath) {
   } finally {
     if (handle) await handle.close();
     if (temporary) await fsp.rm(temporary, { recursive: true, force: true });
+  }
+}
+
+async function readPackage(filePath) {
+  // LaunchServices can update a package's last-used xattr while it is being
+  // read, changing ctime without changing its bytes. Keep the strict snapshot
+  // check: retry one complete, independently validated read before showing
+  // the import confirmation. readPackageOnce removes its staging on failure.
+  try { return await readPackageOnce(filePath); }
+  catch (error) {
+    if (!(error instanceof TransferError) || error.code !== 'source_changed') throw error;
+    return readPackageOnce(filePath);
   }
 }
 
