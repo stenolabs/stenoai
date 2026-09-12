@@ -394,6 +394,8 @@ async function inspectCAFHandle(handle, byteCount) {
   let offset = 8;
   let description;
   let audioBytes;
+  let cookie;
+  let packetTable;
   let chunks = 0;
   while (offset < byteCount) {
     requireValue(offset + 12 <= byteCount && ++chunks <= 1024, 'unsupported_audio');
@@ -414,21 +416,111 @@ async function inspectCAFHandle(handle, byteCount) {
       const framesPerPacket = data.readUInt32BE(20);
       const channelCount = data.readUInt32BE(24);
       const bits = data.readUInt32BE(28);
-      requireValue(format === 'lpcm' && flags <= 3 && framesPerPacket === 1
-        && Number.isFinite(sampleRate) && sampleRate > 0 && channelCount > 0
+      requireValue(Number.isFinite(sampleRate) && sampleRate > 0 && channelCount > 0, 'unsupported_audio');
+      const pcm = format === 'lpcm' && flags <= 3 && framesPerPacket === 1
         && ((flags & 1) ? [32, 64].includes(bits) : [8, 16, 24, 32].includes(bits))
-        && bytesPerPacket === channelCount * (bits / 8), 'unsupported_audio');
-      description = { sampleRate, channelCount, bytesPerPacket };
+        && bytesPerPacket === channelCount * (bits / 8);
+      // CoreAudio writes AAC-LC with flags 0; the cookie supplies its object type.
+      const aac = format === 'aac ' && [0, 2].includes(flags) && framesPerPacket === 1024
+        && bytesPerPacket === 0 && bits === 0 && channelCount <= 2;
+      requireValue(pcm || aac, 'unsupported_audio');
+      description = { sampleRate, channelCount, bytesPerPacket, format };
+    } else if (type === 'kuki') {
+      requireValue(!cookie && size > 0 && size <= 4096, 'unsupported_audio');
+      cookie = await readExactly(handle, size, offset);
+    } else if (type === 'pakt') {
+      requireValue(!packetTable && size >= 24, 'unsupported_audio');
+      packetTable = { offset, size };
     } else if (type === 'data') {
       requireValue(description && audioBytes === undefined && size > 4, 'unsupported_audio');
       audioBytes = size - 4; // First four bytes are the CAF edit counter.
     }
     offset += size;
   }
-  requireValue(description && audioBytes > 0 && audioBytes % description.bytesPerPacket === 0, 'unsupported_audio');
-  const duration = (audioBytes / description.bytesPerPacket) / description.sampleRate;
+  requireValue(description && audioBytes > 0, 'unsupported_audio');
+  let frames;
+  if (description.format === 'aac ') {
+    validateAACCookie(cookie, description);
+    frames = await inspectAACPackets(handle, packetTable, audioBytes);
+  } else {
+    requireValue(audioBytes % description.bytesPerPacket === 0, 'unsupported_audio');
+    frames = audioBytes / description.bytesPerPacket;
+  }
+  const duration = frames / description.sampleRate;
   requireValue(Number.isFinite(duration) && duration > 0, 'unsupported_audio');
   return { sampleRate: description.sampleRate, channelCount: description.channelCount, duration };
+}
+// This is a deliberately narrow MPEG-4 ES descriptor / AAC-LC cookie reader.
+// Unknown AAC profiles and channel layouts remain unsupported, never PCM-cast.
+function validateAACCookie(cookie, description) {
+  requireValue(cookie, 'unsupported_audio');
+  function descriptor(offset, end, tag) {
+    requireValue(offset < end && cookie[offset++] === tag, 'unsupported_audio');
+    let length = 0;
+    let complete = false;
+    for (let i = 0; i < 4; i++) {
+      requireValue(offset < end, 'unsupported_audio');
+      const byte = cookie[offset++];
+      length = length * 128 + (byte & 127);
+      if (!(byte & 128)) { complete = true; break; }
+    }
+    requireValue(complete && length <= end - offset, 'unsupported_audio');
+    return { start: offset, end: offset + length };
+  }
+  const es = descriptor(0, cookie.length, 3);
+  requireValue(es.end === cookie.length && es.end - es.start >= 3
+    && cookie[es.start + 2] === 0, 'unsupported_audio');
+  const decoder = descriptor(es.start + 3, es.end, 4);
+  requireValue(decoder.end - decoder.start >= 13 && cookie[decoder.start] === 0x40
+    && (cookie[decoder.start + 1] & 0xfe) === 0x14, 'unsupported_audio');
+  const config = descriptor(decoder.start + 13, decoder.end, 5);
+  requireValue(config.end === decoder.end && config.end - config.start === 2, 'unsupported_audio');
+  const bits = cookie.readUInt16BE(config.start);
+  const rates = [96000, 88200, 64000, 48000, 44100, 32000, 24000, 22050, 16000, 12000, 11025, 8000, 7350];
+  requireValue(bits >>> 11 === 2 && rates[(bits >>> 7) & 15] === description.sampleRate
+    && ((bits >>> 3) & 15) === description.channelCount && (bits & 7) === 0, 'unsupported_audio');
+  const sl = descriptor(decoder.end, es.end, 6);
+  requireValue(sl.end === es.end && sl.end - sl.start === 1 && cookie[sl.start] === 2, 'unsupported_audio');
+}
+
+async function inspectAACPackets(handle, table, audioBytes) {
+  requireValue(table, 'unsupported_audio');
+  const header = await readExactly(handle, 24, table.offset);
+  const packets = header.readBigInt64BE(0);
+  const frames = header.readBigInt64BE(8);
+  const priming = header.readInt32BE(16);
+  const remainder = header.readInt32BE(20);
+  // Each packet needs at least one data byte and one table byte. Bound work by
+  // the actual input, not attacker-controlled counts. Integer arithmetic stays exact.
+  requireValue(packets > 0n && packets <= BigInt(audioBytes)
+    && packets <= BigInt(table.size - 24) && BigInt(table.size - 24) <= packets * 4n
+    && frames > 0n && frames <= BigInt(Number.MAX_SAFE_INTEGER)
+    && priming >= 0 && remainder >= 0
+    && frames + BigInt(priming) + BigInt(remainder) === packets * 1024n, 'unsupported_audio');
+  let cursor = table.offset + 24;
+  const end = table.offset + table.size;
+  let block = Buffer.alloc(0);
+  let index = 0;
+  let total = 0;
+  for (let packet = 0; packet < Number(packets); packet++) {
+    let size = 0;
+    let complete = false;
+    for (let i = 0; i < 4; i++) {
+      if (index === block.length) {
+        requireValue(cursor < end, 'unsupported_audio');
+        block = await readExactly(handle, Math.min(65536, end - cursor), cursor);
+        cursor += block.length;
+        index = 0;
+      }
+      const byte = block[index++];
+      size = size * 128 + (byte & 127);
+      if (!(byte & 128)) { complete = true; break; }
+    }
+    requireValue(complete && size > 0 && size <= audioBytes - total, 'unsupported_audio');
+    total += size;
+  }
+  requireValue(total === audioBytes && cursor === end && index === block.length, 'unsupported_audio');
+  return Number(frames);
 }
 function checkAudioMetadata(metadata, actual) {
   const tolerance = Math.max(0.000001, actual.sampleRate * 0.000001);

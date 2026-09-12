@@ -190,6 +190,30 @@ test.describe("macOS meeting transfer", () => {
     "The .stenomeeting format is a macOS Swift interop feature.",
   );
 
+  test("imports and re-exports native Swift AAC tracks byte-identically", async ({ launchApp, userDataDir }) => {
+    const source = path.resolve(__dirname, "../../tests/fixtures/swift-meeting-aac-v1.stenomeeting");
+    const target = path.join(userDataDir, "aac-roundtrip.stenomeeting");
+    const original = await codec.readPackage(source);
+    try {
+      const { app, page } = await launchApp();
+      await stubNativeDialogs(app, { saveFile: target, checkboxAudio: true });
+      const imported = await importPackage(page, source);
+      expect(imported).toMatchObject({ success: true, duplicate: false });
+      expect(existsSync(imported.summaryFile!)).toBe(true);
+      expect(await importPackage(page, source)).toMatchObject({ success: true, duplicate: true });
+      const exported = await page.evaluate(
+        file => (window as StenoWindow).stenoai.meetingTransfer.exportPackage(file),
+        imported.summaryFile!,
+      );
+      expect(exported).toMatchObject({ success: true, cancelled: false });
+      const roundtrip = await codec.readPackage(target);
+      try {
+        expect(roundtrip.audio.map(a => a.metadata)).toEqual(original.audio.map(a => a.metadata));
+        expect(roundtrip.audio.map(a => a.metadata.duration)).toEqual([480013 / 48000, 480013 / 48000]);
+      } finally { await roundtrip.cleanup(); }
+    } finally { await original.cleanup(); }
+  });
+
   test("imports through native dialogs, deduplicates the same archive, and exports intact text", async ({
     launchApp,
     userDataDir,

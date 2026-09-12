@@ -365,3 +365,70 @@ test('audio cannot be exported from an active recording', async (t) => {
   const root = await workspace(t);
   await assert.rejects(writePackage(path.join(root, 'Invalid.stenomeeting'), { meeting: { ...meeting, sourceStatus: 'recording' }, audio: [{}] }), { code: 'invalid_package' });
 });
+
+const aacFixture = path.join(__dirname, '..', 'tests', 'fixtures', 'swift-meeting-aac-v1.stenomeeting');
+test('native Swift AAC package preserves valid frames and both tracks on re-export', async t => {
+  const root = await workspace(t);
+  const loaded = await readPackage(aacFixture);
+  t.after(loaded.cleanup);
+  assert.equal(loaded.audio.length, 2);
+  assert.deepEqual(loaded.audio.map(a => a.metadata.channelCount), [1, 2]);
+  for (const audio of loaded.audio) assert.equal(audio.metadata.duration, 480013 / 48000);
+  const target = path.join(root, 'AAC.stenomeeting');
+  await writePackage(target, loaded);
+  const again = await readPackage(target);
+  t.after(again.cleanup);
+  assert.deepEqual(again.audio.map(a => a.metadata), loaded.audio.map(a => a.metadata));
+});
+
+function cafChunks(bytes) {
+  const chunks = new Map();
+  for (let offset = 8; offset < bytes.length;) {
+    const size = Number(bytes.readBigInt64BE(offset + 4));
+    chunks.set(bytes.toString('ascii', offset, offset + 4), { header: offset, start: offset + 12, size });
+    offset += 12 + size;
+  }
+  return chunks;
+}
+test('AAC rejects corrupt cookies and contradictory or unbounded packet tables', async t => {
+  const root = await workspace(t);
+  const loaded = await readPackage(aacFixture);
+  t.after(loaded.cleanup);
+  const original = await fs.readFile(loaded.audio[0].sourcePath);
+  const chunks = cafChunks(original);
+  const pakt = chunks.get('pakt').start;
+  const kuki = chunks.get('kuki').start;
+  const desc = chunks.get('desc').start;
+  const mutations = {
+    'missing cookie': b => b.write('free', kuki - 12),
+    'missing packet table': b => b.write('free', pakt - 12),
+    'cookie descriptor overflow': b => b.fill(255, kuki + 1, kuki + 5),
+    'wrong cookie profile': b => { b[kuki + 29] = 0x19; },
+    'wrong cookie channels': b => { b[kuki + 30] ^= 24; },
+    'description disagrees with cookie': b => b.writeDoubleBE(44100, desc),
+    'negative priming': b => b.writeInt32BE(-1, pakt + 16),
+    'incorrect remainder': b => b.writeInt32BE(0, pakt + 20),
+    'huge count': b => b.writeBigInt64BE(9223372036854775807n, pakt),
+    'negative valid frames': b => b.writeBigInt64BE(-1n, pakt + 8),
+    'zero packet': b => { b[pakt + 24] = 0; },
+    'endless packet varint': b => b.fill(255, pakt + 24, pakt + 28),
+    'wrong packet bytes': b => { b[pakt + 24]++; },
+  };
+  for (const [name, mutate] of Object.entries(mutations)) {
+    await t.test(name, async () => {
+      const bytes = Buffer.from(original);
+      mutate(bytes);
+      const target = path.join(root, 'bad.caf');
+      await fs.writeFile(target, bytes);
+      await assert.rejects(inspectCAF(target), { code: 'unsupported_audio' });
+    });
+  }
+  for (const type of ['desc', 'kuki', 'pakt', 'data']) {
+    await t.test(`duplicate ${type}`, async () => {
+      const chunk = chunks.get(type);
+      const target = path.join(root, 'duplicate.caf');
+      await fs.writeFile(target, Buffer.concat([original, original.subarray(chunk.header, chunk.start + chunk.size)]));
+      await assert.rejects(inspectCAF(target), { code: 'unsupported_audio' });
+    });
+  }
+});
