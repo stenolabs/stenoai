@@ -20,9 +20,30 @@ function userDataPath(isPackaged, override, paths, appData) {
     app: {
       isPackaged,
       getPath(key) {
-        assert.equal(key, 'userData');
-        return result;
+  function userDataPath(isPackaged, override, paths, appData) {
+    let result;
+    let name = 'stenoai';
+    vm.runInNewContext(initialization, {
+      path: paths,
+      process: { env: { STENOAI_USER_DATA_DIR: override } },
+      app: {
+        isPackaged,
+        getPath(key) {
+          assert.equal(key, 'userData');
+          return result === undefined ? paths.join(appData, name) : result;
+        },
+        setPath(key, value) {
+          assert.equal(key, 'userData');
+          result = value;
+        },
+        setName(value) {
+          name = value;
+        },
       },
+    });
+    assert.equal(name, isPackaged ? 'StenoAI' : 'stenoai');
+    return result;
+  }
       setPath(key, value) {
         assert.equal(key, 'userData');
         result = value;
