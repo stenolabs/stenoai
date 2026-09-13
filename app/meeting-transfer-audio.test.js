@@ -71,3 +71,24 @@ test('a source disappearing between discovery and stat reports source_changed', 
     await assert.rejects(findAudioSource(path.join(base, 'output', 'meeting_summary.json'), [base], ['wav']), { code: 'source_changed' });
   } finally { fs.lstat = lstat; }
 });
+
+test('a source replaced by a directory between discovery and stat reports source_changed', async t => {
+  const scratch = await fs.mkdtemp(path.join(os.tmpdir(), 'steno-replaced-audio-'));
+  t.after(() => fs.rm(scratch, { recursive: true, force: true }));
+  const base = await fs.realpath(scratch);
+  const dir = path.join(base, 'recordings');
+  await fs.mkdir(dir);
+  const source = path.join(dir, 'meeting.wav');
+  await fs.writeFile(source, 'synthetic');
+  const lstat = fs.lstat;
+  fs.lstat = async (file, ...args) => {
+    if (file === source) {
+      await fs.unlink(source);
+      await fs.mkdir(source);
+    }
+    return lstat(file, ...args);
+  };
+  try {
+    await assert.rejects(findAudioSource(path.join(base, 'output', 'meeting_summary.json'), [base], ['wav']), { code: 'source_changed' });
+  } finally { fs.lstat = lstat; }
+});

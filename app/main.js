@@ -186,8 +186,7 @@ if (IS_E2E_MOCK_IPC) {
   require('./e2e-mock-ipc').install({ ipcMain, BrowserWindow });
 }
 
-// Distinguish dev runs from the packaged "Steno" app in the dock, About menu,
-// and Cmd+Tab. Production keeps the productName from package.json untouched.
+// Give development runs a distinct dock, About menu, and Cmd+Tab name.
 if (!app.isPackaged) {
   app.setName('Steno Dev');
 }
@@ -1760,7 +1759,7 @@ function createTray() {
   const icon = nativeImage.createFromPath(getTrayIconPath(false));
   icon.setTemplateImage(true);
   tray = new Tray(icon);
-  tray.setToolTip('Steno');
+  tray.setToolTip('StenoAI');
 
   updateTrayMenu();
 }
@@ -1770,7 +1769,7 @@ function updateTrayIcon(recording) {
   const icon = nativeImage.createFromPath(getTrayIconPath(recording));
   icon.setTemplateImage(true);
   tray.setImage(icon);
-  tray.setToolTip(recording ? 'Steno - Recording' : 'Steno');
+  tray.setToolTip(recording ? 'StenoAI - Recording' : 'StenoAI');
   updateTrayMenu();
 }
 
@@ -1786,7 +1785,7 @@ function updateTrayMenu() {
 
   const contextMenu = Menu.buildFromTemplate([
     {
-      label: 'Open Steno',
+      label: 'Open StenoAI',
       click: showAndFocusWindow
     },
     {
@@ -1807,14 +1806,14 @@ function updateTrayMenu() {
       }
     },
     {
-      label: 'Hide Steno',
+      label: 'Hide StenoAI',
       click: () => {
         if (mainWindow) mainWindow.hide();
       }
     },
     { type: 'separator' },
     {
-      label: `Steno v${appVersion}`,
+      label: `StenoAI v${appVersion}`,
       enabled: false
     },
     {
@@ -1825,7 +1824,7 @@ function updateTrayMenu() {
     },
     { type: 'separator' },
     {
-      label: 'Quit Steno',
+      label: 'Quit StenoAI',
       click: () => {
         app.quit();
       }
@@ -9612,7 +9611,7 @@ function showRecordingFailedNotification(body) {
   try {
     if (!Notification.isSupported()) return;
     new Notification({
-      title: 'Steno',
+      title: 'StenoAI',
       body: body || "Recording couldn't start.",
       iconType: 'alert',
     }).show();

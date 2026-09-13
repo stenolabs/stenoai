@@ -60,7 +60,7 @@ function AppTitlebar() {
       <span style={{ width: 10, height: 10, borderRadius: "50%", background: "#FF5F57", display: "block" }} />
       <span style={{ width: 10, height: 10, borderRadius: "50%", background: "#FEBC2E", display: "block" }} />
       <span style={{ width: 10, height: 10, borderRadius: "50%", background: "#28C840", display: "block" }} />
-      <span style={{ marginLeft: 12, fontSize: 12, color: "var(--fg-2)", fontFamily: "var(--font-sans)" }}>Steno</span>
+      <span style={{ marginLeft: 12, fontSize: 12, color: "var(--fg-2)", fontFamily: "var(--font-sans)" }}>StenoAI</span>
     </div>
   );
 }

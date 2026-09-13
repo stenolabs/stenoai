@@ -33,7 +33,7 @@ async function findAudioSource(summaryFile, baseDirs, extensions) {
   let status;
   try { status = await fs.lstat(sourcePath, { bigint: true }); }
   catch (error) { if (error.code === 'ENOENT') throw { code: 'source_changed' }; throw error; }
-  if (!status.isFile()) throw { code: 'unsafe_file' };
+  if (!status.isFile()) throw { code: 'source_changed' };
   return { sourcePath, identity: Object.fromEntries(IDENTITY_FIELDS.map(key => [key, status[key]])) };
 }
 

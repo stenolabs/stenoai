@@ -175,14 +175,14 @@ jobs:
           # Desktop integration: the launcher and the icon this build ships.
           test -f /usr/share/applications/stenoai.desktop
           test -f /usr/share/icons/hicolor/512x512/apps/stenoai.png
-          test -x /opt/Steno/stenoai
+          test -x /opt/StenoAI/stenoai
 
           # The bundled Python backend, run from where it actually lands after
           # an install (extraResources -> resources/stenoai). Exercises the
           # PyInstaller bundle against the system's real shared libraries,
           # including the libportaudio2 that `depends` is there to guarantee —
           # the crash that motivated adding it (#502) was exactly this.
-          BACKEND=/opt/Steno/resources/stenoai/stenoai
+          BACKEND=/opt/StenoAI/resources/stenoai/stenoai
           test -x "$BACKEND"
           "$BACKEND" --help > /dev/null
           # setup-check exits non-zero with no model downloaded, which is
