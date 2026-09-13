@@ -3,6 +3,26 @@ title: "Changelog"
 description: "What's new in Steno -- recent releases and notable changes."
 ---
 
+<Update label="v0.7.1" description="September 5, 2026">
+**New**
+- **Linux alpha**: Debian/Ubuntu packages and an AppImage support microphone and PipeWire system-audio recording. Without PipeWire, recording uses the microphone only.
+
+**Improved**
+- Parakeet model downloads show actual progress and distinguish downloading from model preparation.
+- Weekday and month names match the English interface. Times keep the system's 12/24-hour clock preference.
+- The website and README use the StenoAI name, and the Government & Defence pages have been expanded.
+
+**Fixed**
+- Repeated folder-creation clicks no longer create duplicate sidebar folders, and failures are shown when a folder cannot be created.
+- A recording that fails to start no longer leaves a stuck "Recording" entry in the meetings list.
+- On Windows and Linux, the available live transcript replaces an ONNX batch transcript that successfully read less than half the recording.
+
+**Known Issues**
+- Linux packages are unsigned and require manual updates. AppImage users must install `libportaudio2` separately.
+- Bundled summaries are CPU-only on Linux, as in the Windows alpha. For GPU-accelerated summaries, run a separately installed Ollama with a supported GPU and driver, select **Settings → AI → Private Server**, enter `http://127.0.0.1:11434`, and choose a model installed on that server.
+- Acoustic multi-speaker identification remains macOS-only. Linux uses the existing `[You]` / `[Others]` channel labels.
+</Update>
+
 <Update label="v0.7.0" description="August 31, 2026">
 **New**
 - **Individual speaker labels (macOS)** — Steno now separates the voices that share one side of a call. A meeting with several remote participants reads as `Speaker 2`, `Speaker 3`, and so on, instead of collapsing everyone into a single `[Others]`. This runs on-device after the recording stops, and works whether the people are around one microphone or joining remotely.

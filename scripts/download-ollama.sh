@@ -83,9 +83,26 @@ case "$(uname -s)" in
         # Use static build for Linux
         FFMPEG_URL="https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz"
         mkdir -p "$BIN_DIR"
-        curl --fail --retry 3 --retry-delay 2 --retry-all-errors -L "$FFMPEG_URL" -o "$BIN_DIR/ffmpeg.tar.xz"
+        # Some upstream/proxy failures return HTTP 200 with an error page,
+        # which curl's HTTP retries cannot detect. Retry invalid archives too.
+        archive_ready=false
+        for attempt in 1 2 3; do
+            if curl --fail --retry 3 --retry-delay 2 --retry-all-errors -L "$FFMPEG_URL" -o "$BIN_DIR/ffmpeg.tar.xz" \
+                && tar -tJf "$BIN_DIR/ffmpeg.tar.xz" > "$BIN_DIR/ffmpeg-archive-contents.txt" 2>/dev/null \
+                && archive_member=$(grep -m 1 -E '^[^/]+/ffmpeg$' "$BIN_DIR/ffmpeg-archive-contents.txt"); then
+                archive_ready=true
+                break
+            fi
+            echo "Linux ffmpeg download attempt $attempt/3 failed or returned an invalid archive" >&2
+            if [ "$attempt" -lt 3 ]; then sleep 2; fi
+        done
+        rm -f "$BIN_DIR/ffmpeg-archive-contents.txt"
+        if [ "$archive_ready" != true ]; then
+            echo "Could not download a valid Linux ffmpeg archive after 3 attempts" >&2
+            exit 1
+        fi
         cd "$BIN_DIR"
-        tar -xf ffmpeg.tar.xz --strip-components=1 --wildcards '*/ffmpeg'
+        tar -xf ffmpeg.tar.xz --strip-components=1 "$archive_member"
         rm ffmpeg.tar.xz
         chmod +x ffmpeg
         assert_binary ffmpeg "$MIN_FFMPEG_BYTES"

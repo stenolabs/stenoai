@@ -145,5 +145,47 @@ class ListMeetingsHasAudioTests(unittest.TestCase):
             self.assertEqual(sum(1 for m in meetings if m["has_audio"]), 1)
 
 
+class TransferAudioAvailabilityTests(unittest.TestCase):
+    def _fixture(self, tmp):
+        stem = "transfer_11111111-2222-4333-8444-555555555555"
+        output = Path(tmp) / "output"
+        media = output / ".meeting-transfer" / stem
+        media.mkdir(parents=True)
+        track = media / "track-1.caf"
+        track.write_bytes(b"synthetic")
+        receipt = {"mediaDirectory": stem, "audio": [{"name": "track-1.caf"}]}
+        summary = output / f"{stem}_summary.json"
+        summary.write_text(json.dumps({"session_info": {"name": "Imported"}, "steno_transfer": receipt}))
+        return stem, media, track, receipt, summary
+
+    def test_retained_audio_and_untrusted_receipt_paths(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            stem, _, track, receipt, summary = self._fixture(tmp)
+            self.assertTrue(_run(tmp)[0]["has_audio"])
+            receipt["mediaDirectory"] = "../../outside"
+            self.assertFalse(simple_recorder._has_transfer_audio(summary, stem, receipt))
+            track.unlink()
+            self.assertFalse(_run(tmp)[0]["has_audio"])
+
+    def test_transfer_audio_symlinks_are_not_followed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            _, media, track, _, _ = self._fixture(tmp)
+            track.unlink()
+            outside = Path(tmp) / "outside.caf"
+            outside.write_bytes(b"outside")
+            try:
+                track.symlink_to(outside)
+            except (OSError, NotImplementedError) as error:
+                self.skipTest(f"Symlinks unavailable: {error}")
+            self.assertFalse(_run(tmp)[0]["has_audio"])
+            track.unlink()
+            media.rmdir()
+            try:
+                media.symlink_to(Path(tmp), target_is_directory=True)
+            except (OSError, NotImplementedError) as error:
+                self.skipTest(f"Directory symlinks unavailable: {error}")
+            self.assertFalse(_run(tmp)[0]["has_audio"])
+
+
 if __name__ == '__main__':
     unittest.main()

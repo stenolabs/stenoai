@@ -75,5 +75,62 @@ class TranscribeAudioFieldForwardingTests(unittest.TestCase):
             self.assertEqual(result["speaker_clusters"], {})
 
 
+class PartialCoverageStreamingTests(unittest.TestCase):
+    def test_partial_onnx_result_rescues_live_text_and_preserves_audio(self):
+        from click.testing import CliRunner
+        from types import SimpleNamespace
+        import numpy as np
+        import simple_recorder
+        from src import _parakeet_onnx as onnx
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            audio = root / "meeting.wav"
+            audio.write_bytes(b"synthetic audio fixture")
+            live = root / "live.txt"
+            live_text = "We reviewed the budget and agreed to deploy tomorrow."
+            live.write_text(live_text, encoding="utf-8")
+            model = mock.Mock()
+            model.recognize.side_effect = [
+                RuntimeError("synthetic first-window failure"),
+                SimpleNamespace(tokens=["Tomorrow."], timestamps=[(0.0, 0.5)]),
+            ]
+            batch = onnx._result_to_dict(onnx._transcribe_windows(
+                model, np.zeros(61 * onnx._SAMPLE_RATE, dtype=np.float32),
+            ), language="en")
+            batch["duration_seconds"] = 61
+            recorder = MeetingPipeline.__new__(MeetingPipeline)
+            recorder.output_dir = root
+            recorder.transcripts_dir = root / "transcripts"
+            recorder.transcripts_dir.mkdir()
+            recorder.transcriber = mock.Mock()
+            recorder.transcriber.transcribe_diarised.return_value = batch
+            config = mock.Mock()
+            config.get_language.return_value = "en"
+            config.get_auto_summarize_enabled.return_value = False
+            config.get_keep_recordings.return_value = False
+            with (
+                mock.patch.dict("os.environ", {"STENOAI_USER_DATA_DIR": tmp_dir}),
+                mock.patch("simple_recorder.MeetingPipeline", return_value=recorder),
+                mock.patch("src.config.get_config", return_value=config),
+                mock.patch(
+                    "simple_recorder._unusable_batch_reason",
+                    wraps=simple_recorder._unusable_batch_reason,
+                ) as reason,
+            ):
+                result = CliRunner().invoke(simple_recorder.process_streaming, [
+                    str(audio), "--name", "Synthetic coverage", "--live-transcript", str(live),
+                ])
+            self.assertEqual(result.exit_code, 0, result.output + repr(result.exception))
+            reason.assert_called_once_with("Tomorrow.", False, 16 / 61)
+            summary = (root / "meeting_summary.md").read_text(encoding="utf-8")
+            transcript = (recorder.transcripts_dir / "meeting_transcript.txt").read_text(encoding="utf-8")
+            self.assertIn("is_live_transcript: true", summary)
+            self.assertIn(live_text, summary)
+            self.assertIn(live_text, transcript)
+            self.assertNotIn("Tomorrow.", transcript)
+            self.assertEqual(audio.read_bytes(), b"synthetic audio fixture")
+
+
 if __name__ == "__main__":
     unittest.main()

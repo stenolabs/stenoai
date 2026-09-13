@@ -8,6 +8,8 @@ import {
   notifyImportFailed,
 } from '@/hooks/useImportAudio';
 import { useRecording } from '@/hooks/useRecording';
+import { importMeetingPackage, MEETING_TRANSFER_COPY } from '@/hooks/useMeetingTransfer';
+import { isMac } from '@/lib/utils';
 
 /**
  * Full-window drag-and-drop target for importing audio files. Mounted once at
@@ -73,9 +75,15 @@ export function ImportDropZone() {
       if (isRecordingRef.current) return;
       const files = Array.from(e.dataTransfer!.files);
       for (const file of files) {
-        if (!isAudioFile(file.name)) continue;
         const path = ipc().recording.getPathForFile(file);
         if (!path) continue;
+        if (isMac && file.name.toLowerCase().endsWith('.stenomeeting')) {
+          void importMeetingPackage(path).catch(() => {
+            // importMeetingPackage already surfaced the failure.
+          });
+          continue;
+        }
+        if (!isAudioFile(file.name)) continue;
         void importAudioFile(path).catch((err) => {
           // eslint-disable-next-line no-console
           console.error('[importDropZone] import failed', err);
@@ -129,7 +137,11 @@ export function ImportDropZone() {
           <FileAudio className="size-8 text-muted-foreground" />
         )}
         <p className="text-sm font-medium">
-          {isRecording ? 'Stop recording to import' : 'Drop audio to import'}
+          {isRecording
+            ? 'Stop recording to import'
+            : isMac
+              ? MEETING_TRANSFER_COPY.drop
+              : 'Drop audio to import'}
         </p>
       </div>
     </div>

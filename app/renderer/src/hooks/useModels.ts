@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ipc, type ListedModel, type TranscriptionEngine } from '@/lib/ipc';
+import { ipc, type ListedModel, type TranscriptionEngine, type ParakeetPullProgressEvent } from '@/lib/ipc';
 import { unwrap } from '@/lib/result';
 import { PARAKEET_LANGUAGE_CODES } from '@/lib/transcription-languages';
 
@@ -25,6 +25,11 @@ export const parakeetKeys = {
 export const transcriptionEngineKeys = {
   all: ['transcriptionEngine'] as const,
   current: () => [...transcriptionEngineKeys.all, 'current'] as const,
+};
+
+export const openaiAsrKeys = {
+  all: ['openaiAsrConfig'] as const,
+  config: () => [...openaiAsrKeys.all, 'config'] as const,
 };
 
 function parseSizeGb(size?: string): number | undefined {
@@ -484,16 +489,16 @@ export function usePullParakeetModel() {
   const qc = useQueryClient();
   // Parakeet only has the one model today, but keyed-by-id state still
   // matches the Whisper hook shape so the UI doesn't fork on engine.
-  const [progress, setProgress] = React.useState<Record<string, string>>({});
+  const [progress, setProgress] = React.useState<Record<string, ParakeetPullProgressEvent>>({});
   const [pendingSelect, setPendingSelect] = React.useState<string | null>(null);
 
   React.useEffect(() => {
-    const offProgress = ipc().on.parakeetPullProgress(({ model, stage }) => {
-      // Coarse staged progress ("downloading"/"loading") rather than a
-      // percentage — see src/parakeet_models.py for rationale. UI shows
-      // a localised label per stage.
-      const key = model ?? 'mlx-community/parakeet-tdt-0.6b-v3';
-      setProgress((prev) => ({ ...prev, [key]: stage }));
+    const offProgress = ipc().on.parakeetPullProgress((event) => {
+      const { model } = event;
+      // File/byte progress belongs to this pull; setup events have no model.
+      if (!model) return;
+      const key = model;
+      setProgress((prev) => ({ ...prev, [key]: event }));
     });
     const offComplete = ipc().on.parakeetPullComplete(async ({ model, success }) => {
       const key = model ?? 'mlx-community/parakeet-tdt-0.6b-v3';
@@ -607,5 +612,48 @@ export function useSetActiveTranscription() {
       // and the live dock toggle, both of which read from the same key.
       qc.invalidateQueries({ queryKey: ['settings', 'language'] });
     },
+  });
+}
+
+// ---------------------------------------------------------------------------
+// OpenAI-compatible ASR config
+//
+// The non-secret endpoint config (api_url, model) round-trips through the
+// backend config.json. `api_key_set` reflects the encrypted-on-disk key held
+// by the main process (safeStorage) - the key value itself is never returned.
+// ---------------------------------------------------------------------------
+
+/** Query for the current OpenAI ASR endpoint config (url, api_key_set, model). */
+export function useOpenAiAsrConfig() {
+  return useQuery({
+    queryKey: openaiAsrKeys.config(),
+    queryFn: async () => unwrap(await ipc().openaiAsr.getConfig()),
+  });
+}
+
+/**
+ * Mutation to save the non-secret OpenAI ASR config (url and/or model).
+ * Pass only the fields you want to change; others are left untouched. The
+ * API key is set separately via useSetOpenAiAsrKey (never through here).
+ */
+export function useSetOpenAiAsrConfig() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (cfg: { api_url?: string; model?: string }) =>
+      unwrap(await ipc().openaiAsr.setConfig(cfg)),
+    onSuccess: () => qc.invalidateQueries({ queryKey: openaiAsrKeys.all }),
+  });
+}
+
+/**
+ * Mutation to set (or clear, with an empty string) the OpenAI ASR API key.
+ * The key is stored encrypted by the main process; only `api_key_set` is
+ * ever surfaced back.
+ */
+export function useSetOpenAiAsrKey() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (key: string) => unwrap(await ipc().openaiAsr.setKey(key)),
+    onSuccess: () => qc.invalidateQueries({ queryKey: openaiAsrKeys.all }),
   });
 }

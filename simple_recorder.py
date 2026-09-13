@@ -657,7 +657,7 @@ Summary output language: {config.get_language_name(output_language)}
             "output_language": output_language,
             "speaker_clusters": speaker_clusters,
             "turn_manifest": turn_manifest,
-            # Fraction of transcription windows that came back usable, worst
+            # Fraction of audio read by usable transcription windows, worst
             # channel, or None where the backend does no windowing of its own.
             # None means "unknown", not "complete" -- see the live-transcript
             # fallback in process_streaming.
@@ -1017,7 +1017,7 @@ try:
 except ImportError:
     _SILENCE_SENTINEL = "No speech detected in audio"
 
-# Below this share of usable transcription windows a batch transcript stops
+# Below this share of audio read by usable windows, a batch transcript stops
 # being "the transcript" and the complete live transcript is the better
 # rescue. Deliberately low: a meeting that lost a window or two is still far
 # better than the streaming text, and swapping too eagerly is how the old
@@ -1035,7 +1035,7 @@ def _unusable_batch_reason(
     None when it can.
 
     Three ways it can't: the transcription crashed, it came back as exactly
-    the silence sentinel, or it lost more than half its transcription windows
+    the silence sentinel, or it lost more than half its audio
     (see _MIN_BATCH_WINDOW_COVERAGE). Deliberately NOT length -- a five-minute
     stand-up is allowed to be short, and an earlier length threshold here
     replaced correct transcripts because of it.
@@ -1051,7 +1051,7 @@ def _unusable_batch_reason(
     if batch_text.strip() == _SILENCE_SENTINEL:
         return "returned only silence"
     if window_coverage is not None and window_coverage < _MIN_BATCH_WINDOW_COVERAGE:
-        return f"covered only {window_coverage:.0%} of its transcription windows"
+        return f"read only {window_coverage:.0%} of the audio"
     return None
 
 
@@ -1258,7 +1258,7 @@ def process_streaming(audio_file, name, notes, live_transcript, append_to):
         # unusable (failed or silence sentinel). Any non-whitespace live content
         # is better than a silent failure — even a brief session deserves rescue.
         # Third case, added later: a batch that neither crashed nor returned
-        # silence, but lost most of its transcription windows. The onnx
+        # silence, but lost most of its audio. The onnx
         # backend skips a window whose recognize() raises on purpose, so one
         # bad window doesn't fail a meeting -- but the transcript then covers
         # less audio than the recording holds, and nothing said so. Such a
@@ -1709,6 +1709,99 @@ def parakeet_status_cmd():
     }))
 
 
+@cli.command(name='get-openai-asr-config')
+def get_openai_asr_config_cmd():
+    """Return the current OpenAI-compatible ASR endpoint config (non-secret)."""
+    from src.config import get_config
+    config = get_config()
+    print(json.dumps({
+        "success": True,
+        "api_url": config.get_openai_asr_api_url(),
+        # Never return the actual key. This reflects only whether the env-var
+        # key is present in THIS process; the Electron main process overrides
+        # it with its safeStorage-backed hasOpenAiAsrKey() check, which is the
+        # authoritative source of truth.
+        "api_key_set": bool(config.get_openai_asr_api_key()),
+        "model": config.get_openai_asr_model(),
+    }))
+
+
+@cli.command(name='set-openai-asr-config')
+@click.option('--api-url', default=None, help='Base URL of the OpenAI-compatible STT endpoint')
+@click.option('--model', default=None, help='Model name (e.g. whisper-1)')
+def set_openai_asr_config_cmd(api_url, model):
+    """Persist OpenAI-compatible ASR endpoint settings (url/model only).
+
+    The API key is intentionally NOT accepted here -- it is a credential and
+    is stored encrypted by the Electron main process (safeStorage), never
+    passed through argv or written to config.json. Omit an option to leave it
+    unchanged.
+    """
+    from src.config import get_config
+    config = get_config()
+    errors = []
+
+    # Every mutation needs an authoritative locked read. A model-only update
+    # must not turn an unreadable existing file into a defaults-based rewrite
+    # that drops a legacy key or unrelated settings.
+    if not config.begin_transaction(require_readable_disk=True):
+        errors.append("Failed to start config transaction")
+    else:
+        try:
+            if api_url is not None:
+                # This transaction has reloaded config.json while holding its
+                # cross-process lock. A legacy plaintext key added after the
+                # Electron migration must prevent an endpoint switch, because
+                # a later cleanup could otherwise bind it to the new origin.
+                if config.has_legacy_openai_asr_api_key():
+                    errors.append("Legacy ASR credential must be migrated before changing endpoint")
+                elif not config.set_openai_asr_api_url(api_url):
+                    errors.append("Failed to save api_url")
+            if model is not None:
+                if not config.set_openai_asr_model(model):
+                    errors.append("Failed to save model")
+
+            if errors:
+                config.rollback_transaction()
+            elif not config.commit_transaction():
+                errors.append("Failed to save config")
+        except Exception:
+            config.rollback_transaction()
+            raise
+
+    if errors:
+        print(json.dumps({"success": False, "error": "; ".join(errors)}))
+    else:
+        print(json.dumps({
+            "success": True,
+            "api_url": config.get_openai_asr_api_url(),
+            "api_key_set": bool(config.get_openai_asr_api_key()),
+            "model": config.get_openai_asr_model(),
+        }))
+
+
+@cli.command(name='remove-legacy-openai-asr-api-key')
+def remove_legacy_openai_asr_api_key_cmd():
+    """Remove a plaintext legacy ASR key after safeStorage migration.
+
+    The value is never accepted, printed, or logged by this CLI. Electron has
+    already encrypted and read it back before invoking this command. Its
+    SHA-256 snapshot digest reaches this command only through a targeted env
+    variable, so a concurrent replacement cannot be deleted by mistake.
+    """
+    import os
+
+    from src.config import get_config
+    config = get_config()
+    expected_snapshot_digest = os.environ.get(
+        "STENOAI_OAI_LEGACY_SNAPSHOT_DIGEST", ""
+    )
+    if config.remove_legacy_openai_asr_api_key(expected_snapshot_digest):
+        print(json.dumps({"success": True}))
+    else:
+        print(json.dumps({"success": False, "error": "Legacy ASR key changed or was not removed"}))
+
+
 @cli.command(name='onnx-selftest')
 def onnx_selftest_cmd():
     """Prove ONNX Runtime's native libraries load + run inside the bundle.
@@ -1805,15 +1898,7 @@ def warmup_parakeet_cmd():
 @cli.command(name='download-parakeet-model')
 @click.argument('model_id', required=False)
 def download_parakeet_model_cmd(model_id):
-    """Download a Parakeet snapshot from HuggingFace.
-
-    Emits ``PARAKEET_PULL_STAGE:<stage>`` lines (parsed by main.js into a
-    parakeet-pull-progress IPC event) before the final JSON result. Stages
-    are coarse (``downloading`` / ``loading``) because the snapshot is
-    multiple files and threading byte-level progress through
-    huggingface_hub's tqdm isn't worth the wire complexity for a one-time
-    ~600 MB download.
-    """
+    """Download a snapshot, emitting structured progress before the result."""
     from src.parakeet_models import (
         DEFAULT_MODEL_ID,
         SUPPORTED_PARAKEET_MODELS,
@@ -1828,8 +1913,8 @@ def download_parakeet_model_cmd(model_id):
         print(json.dumps({"success": True, "model": target, "already_installed": True}))
         return
 
-    def emit(stage: str):
-        print(f"PARAKEET_PULL_STAGE:{stage}", flush=True)
+    def emit(progress: dict):
+        print("PARAKEET_PULL_PROGRESS:" + json.dumps(progress), flush=True)
 
     ok = download(target, emit)
     if ok:
@@ -2988,6 +3073,33 @@ def _parse_meeting_markdown(md_path):
     }
 
 
+def _has_transfer_audio(summary_file, stem, receipt):
+    """Only report retained tracks in this meeting's own non-symlink media tree."""
+    if not isinstance(receipt, dict) or not re.fullmatch(
+        r"transfer_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", stem
+    ):
+        return False
+    tracks = receipt.get("audio")
+    if receipt.get("mediaDirectory") != stem or not isinstance(tracks, list) or len(tracks) > 15:
+        return False
+    try:
+        root = summary_file.parent.resolve() / ".meeting-transfer"
+        media = root / stem
+        for directory in (root, media):
+            if directory.is_symlink() or not directory.is_dir() or directory.resolve() != directory:
+                return False
+        for index, track in enumerate(tracks, 1):
+            name = f"track-{index}.caf"
+            if not isinstance(track, dict) or track.get("name") != name:
+                continue
+            candidate = media / name
+            if not candidate.is_symlink() and candidate.is_file() and candidate.stat().st_size > 0:
+                return True
+    except OSError:
+        pass
+    return False
+
+
 @cli.command()
 def list_meetings():
     """List all processed meetings - optimized for fast loading"""
@@ -3075,6 +3187,7 @@ def list_meetings():
     # Single-pass: read each file once, extract sort key and data together
     for summary_file, stem in summaries:
         try:
+            transfer_receipt = None
             if summary_file.suffix == '.md':
                 parsed = _parse_meeting_markdown(summary_file)
                 sort_key = parsed.get('session_info', {}).get('processed_at', '')
@@ -3089,6 +3202,7 @@ def list_meetings():
             else:
                 with open(summary_file, 'r', encoding='utf-8') as f:
                     data = json.load(f)
+                    transfer_receipt = data.get("steno_transfer")
                     sort_key = data.get('session_info', {}).get('processed_at', '')
                     essential_meeting = {
                         "session_info": data.get("session_info", {}),
@@ -3109,7 +3223,9 @@ def list_meetings():
             # future re-diarization) is silently unavailable without it,
             # with nothing in the list saying so until you open the note
             # and find the action missing.
-            essential_meeting['has_audio'] = stem in audio_stems
+            essential_meeting['has_audio'] = stem in audio_stems or _has_transfer_audio(
+                summary_file, stem, transfer_receipt
+            )
             meetings.append((sort_key, essential_meeting))
         except Exception as e:
             logger.warning(f"Failed to load {summary_file}: {e}")
@@ -3372,10 +3488,10 @@ def reprocess(summary_file, regenerate_title, retranscribe):
         if summary_path.suffix == '.md':
             session_name = existing_data.get('session_info', {}).get('name', 'Reprocessed')
             md_lines = ['---']
-            # This rebuild intentionally omits notes_generated: reprocessing a
-            # transcript-only note (#258) generates the summary, so the rewritten
-            # frontmatter naturally flips the meeting out of the "no notes yet"
-            # state. The state-flip is intended, not an accidental key drop.
+            # This rebuild intentionally omits notes_generated and notes_stale:
+            # reprocessing generates a current summary, so the rewritten
+            # frontmatter naturally flips the meeting out of both "no notes yet"
+            # and "notes are stale" states.
             md_meta = {
                 'title': session_name,
                 'date': existing_data.get('session_info', {}).get('processed_at', datetime.now().isoformat()),
@@ -3432,13 +3548,13 @@ def reprocess(summary_file, regenerate_title, retranscribe):
                 "key_points": parsed.get("key_points", []) or [],
                 "action_items": parsed.get("action_items", []) or [],
             })
-            # The regenerated summary now covers the full (possibly appended)
-            # transcript — clear the continue-recording stale marker. The .md
-            # branch clears it implicitly by omitting it from the rebuilt
-            # frontmatter (see the intentional-omission note above).
-            existing_data.get("session_info", {}).pop("notes_stale", None)
-            with open(summary_path, 'w') as f:
-                json.dump(existing_data, f, indent=2)
+            # The regenerated summary now covers the full transcript. Clear both
+            # cues that tell the UI to offer Generate notes; the .md branch does
+            # the same by omitting them from its rebuilt frontmatter.
+            session_info = existing_data.get("session_info", {})
+            session_info.pop("notes_generated", None)
+            session_info.pop("notes_stale", None)
+            _atomic_write_text(summary_path, json.dumps(existing_data, indent=2))
 
         # Signal completion only AFTER the note file is fully written. The
         # renderer reads the note the instant it sees STREAM_COMPLETE, so
@@ -3541,6 +3657,17 @@ def full_reprocess(meeting_stem, audio_file_override):
         existing_data = _parse_meeting_markdown(md_path)
     else:
         print(json.dumps({"success": False, "error": f"No summary found for meeting {meeting_stem!r}"}))
+        sys.exit(1)
+
+    # This maintenance command rebuilds from an owned recording and may delete
+    # its source. Transfer tracks instead belong to an immutable import receipt;
+    # do not hand one to that pipeline or replace its metadata with a new note.
+    if existing_data.get("steno_transfer") is not None:
+        print(json.dumps({
+            "success": False,
+            "error": "full-reprocess is not supported for imported Steno packages. "
+                     "Use reprocess to regenerate notes from the saved transcript.",
+        }))
         sys.exit(1)
 
     if audio_file_override:
