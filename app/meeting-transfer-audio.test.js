@@ -23,7 +23,7 @@ test('audio discovery rejects symlinked recordings even with a matching outside 
   await fs.mkdir(path.join(base, 'recordings'));
   const wav = path.join(base, 'recordings', 'meeting.wav');
   await fs.writeFile(wav, 'synthetic');
-  assert.equal(await findAudioSource(summary, [base], ['wav']), wav);
+  assert.equal((await findAudioSource(summary, [base], ['wav'])).sourcePath, wav);
 });
 
 test('converter timeout escalates and waits for close before allowing cleanup', async () => {
@@ -52,4 +52,22 @@ test('converter spawn error waits for close and successful close clears timers',
     if (fail) await assert.rejects(conversion, { code: 'transfer_failed' });
     else await conversion;
   }
+});
+
+test('a source disappearing between discovery and stat reports source_changed', async t => {
+  const scratch = await fs.mkdtemp(path.join(os.tmpdir(), 'steno-disappearing-audio-'));
+  t.after(() => fs.rm(scratch, { recursive: true, force: true }));
+  const base = await fs.realpath(scratch);
+  const dir = path.join(base, 'recordings');
+  await fs.mkdir(dir);
+  const source = path.join(dir, 'meeting.wav');
+  await fs.writeFile(source, 'synthetic');
+  const lstat = fs.lstat;
+  fs.lstat = async (file, ...args) => {
+    if (file === source) await fs.unlink(source);
+    return lstat(file, ...args);
+  };
+  try {
+    await assert.rejects(findAudioSource(path.join(base, 'output', 'meeting_summary.json'), [base], ['wav']), { code: 'source_changed' });
+  } finally { fs.lstat = lstat; }
 });

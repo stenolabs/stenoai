@@ -172,3 +172,47 @@ test('autosave during the dialog reports a changed source instead of busy', asyn
   const ctx = await setup(t, { fingerprint: () => version, onSave: () => { version = 'after'; } });
   assert.equal((await ctx.invoke('export-meeting-package', 'synthetic')).error_code, 'source_changed');
 });
+
+for (const replacement of ['overwrite', 'rename']) {
+  test(`a same-path recording ${replacement} during the dialog is rejected`, async t => {
+    const { findAudioSource } = require('./meeting-transfer-audio');
+    let summary, base, recording;
+    const ctx = await setup(t, {
+      findAudio: () => findAudioSource(summary, [base], ['wav']),
+      onSave: async () => {
+        if (replacement === 'overwrite') {
+          const before = await fs.stat(recording);
+          await fs.writeFile(recording, 'changed!!');
+          // Deterministic even on filesystems with coarse timestamp precision.
+          await fs.utimes(recording, before.atime, new Date(before.mtimeMs + 2000));
+        }
+        else {
+          const next = recording + '.new';
+          await fs.writeFile(next, 'changed!!');
+          await fs.rename(next, recording);
+        }
+      },
+    });
+    base = await fs.realpath(ctx.root);
+    summary = path.join(base, 'output', 'original_summary.json');
+    await fs.mkdir(path.join(base, 'recordings'));
+    recording = path.join(base, 'recordings', 'original.wav');
+    await fs.writeFile(recording, 'original!');
+    ctx.includeAudio(true);
+    assert.equal((await ctx.invoke('export-meeting-package', 'synthetic')).error_code, 'source_changed');
+    await assert.rejects(fs.stat(ctx.destination), { code: 'ENOENT' });
+  });
+}
+
+test('copy rechecks the opened file against the pre-dialog identity', async t => {
+  const { copyRegularFile } = require('./meeting-transfer-ipc');
+  const ctx = await setup(t);
+  const source = path.join(ctx.root, 'recording.wav');
+  const target = path.join(ctx.root, 'copy.caf');
+  await fs.writeFile(source, 'original!');
+  const identity = await fs.stat(source, { bigint: true });
+  await fs.writeFile(source + '.new', 'changed!!');
+  await fs.rename(source + '.new', source);
+  await assert.rejects(copyRegularFile(source, target, identity), { code: 'source_changed' });
+  await assert.rejects(fs.stat(target), { code: 'ENOENT' });
+});

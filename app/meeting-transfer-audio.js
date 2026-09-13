@@ -3,6 +3,16 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
 
+const IDENTITY_FIELDS = ['dev', 'ino', 'size', 'mtimeNs', 'ctimeNs'];
+function sameFileIdentity(expected, actual) {
+  return !!expected && !!actual && IDENTITY_FIELDS.every(key =>
+    typeof expected[key] === 'bigint' && expected[key] === actual[key]);
+}
+function sameAudioSource(expected, actual) {
+  return !!expected && !!actual && expected.sourcePath === actual.sourcePath
+    && sameFileIdentity(expected.identity, actual.identity);
+}
+
 async function findAudioSource(summaryFile, baseDirs, extensions) {
   const base = path.dirname(path.dirname(summaryFile));
   const allowed = await Promise.all(baseDirs.map(dir => fs.realpath(dir).catch(() => null)));
@@ -18,7 +28,13 @@ async function findAudioSource(summaryFile, baseDirs, extensions) {
   const stem = path.basename(summaryFile).replace(/_summary\.(md|json)$/, '');
   const matches = entries.filter(entry => entry.isFile() && !entry.isSymbolicLink()
     && path.parse(entry.name).name === stem && extensions.includes(path.extname(entry.name).slice(1).toLowerCase()));
-  return matches.length === 1 ? path.join(dir, matches[0].name) : null;
+  if (matches.length !== 1) return null;
+  const sourcePath = path.join(dir, matches[0].name);
+  let status;
+  try { status = await fs.lstat(sourcePath, { bigint: true }); }
+  catch (error) { if (error.code === 'ENOENT') throw { code: 'source_changed' }; throw error; }
+  if (!status.isFile()) throw { code: 'unsafe_file' };
+  return { sourcePath, identity: Object.fromEntries(IDENTITY_FIELDS.map(key => [key, status[key]])) };
 }
 
 function runAudioConverter(binary, args, { spawnProcess = spawn, timeoutMs = 120000, graceMs = 1000 } = {}) {
@@ -43,4 +59,4 @@ function runAudioConverter(binary, args, { spawnProcess = spawn, timeoutMs = 120
     });
   });
 }
-module.exports = { findAudioSource, runAudioConverter };
+module.exports = { findAudioSource, runAudioConverter, sameAudioSource, sameFileIdentity };

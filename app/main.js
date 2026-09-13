@@ -2967,7 +2967,8 @@ async function findMeetingTransferAudio(summaryFile) {
   return require('./meeting-transfer-audio').findAudioSource(summaryFile, getAllowedBaseDirs(), IMPORT_AUDIO_EXTENSIONS);
 }
 
-async function prepareMeetingTransferAudio(sourcePath) {
+async function prepareMeetingTransferAudio(source) {
+  const { sourcePath, identity } = source;
   const { inspectCAF } = require('./meeting-transfer-codec');
   const { privateDirectory } = require('./meeting-transfer-store');
   const root = await privateDirectory(getUserDataDir(), 'meeting-transfer');
@@ -2975,7 +2976,7 @@ async function prepareMeetingTransferAudio(sourcePath) {
   const cleanup = () => fs.promises.rm(scratch, { recursive: true, force: true });
   try {
     const input = path.join(scratch, 'source' + path.extname(sourcePath));
-    await copyRegularFile(sourcePath, input);
+    await copyRegularFile(sourcePath, input, identity);
     const target = path.join(scratch, 'track.caf');
     if (path.extname(input).toLowerCase() === '.caf') await fs.promises.copyFile(input, target, fs.constants.COPYFILE_EXCL);
     else {

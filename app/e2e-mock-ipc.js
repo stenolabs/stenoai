@@ -559,7 +559,7 @@ function install({ ipcMain }) {
       if (statePath) {
         try {
           const override = JSON.parse(fs.readFileSync(statePath, 'utf-8'));
-          if (override.holdForTransferTest) {
+          if (override.holdForTransferTest && !global.__transferQueueReleased) {
             await new Promise(resolve => {
               (global.__pendingTransferQueue ??= []).push(resolve);
             });

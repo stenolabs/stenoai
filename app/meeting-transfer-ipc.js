@@ -3,6 +3,7 @@
 const fs = require('node:fs/promises');
 const { constants } = require('node:fs');
 const path = require('node:path');
+const { sameAudioSource, sameFileIdentity } = require('./meeting-transfer-audio');
 const { readPackage, writePackage } = require('./meeting-transfer-codec');
 const { importIntoLibrary, makeExportContent, importedAudioSources } = require('./meeting-transfer-store');
 
@@ -117,7 +118,7 @@ function registerMeetingTransferIpc({ app, ipcMain, dialog, getMainWindow, expos
         if (hasImportedAudio) audio = await importedAudioSources(snapshot.meeting, snapshot.realPath);
         else {
           const freshAudio = await findAudioSource(fresh.realPath);
-          if (freshAudio !== sourceAudio) throw { code: 'source_changed' };
+          if (!sameAudioSource(sourceAudio, freshAudio)) throw { code: 'source_changed' };
           prepared = await prepareAudio(freshAudio);
           audio = prepared.audio;
         }
@@ -190,10 +191,11 @@ function registerMeetingTransferIpc({ app, ipcMain, dialog, getMainWindow, expos
 
 // Capture a fixed local source before decoding/converting it. Never pass a
 // renderer-supplied arbitrary file into ffmpeg through the export handler.
-async function copyRegularFile(source, target) {
+async function copyRegularFile(source, target, expectedIdentity) {
   const handle = await fs.open(source, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
   try {
     const before = await handle.stat({ bigint: true });
+    if (expectedIdentity && !sameFileIdentity(expectedIdentity, before)) throw { code: 'source_changed' };
     if (!before.isFile() || before.size > 16n * 1024n ** 3n) throw { code: 'unsupported_audio' };
     const output = await fs.open(target, 'wx', 0o600);
     try {

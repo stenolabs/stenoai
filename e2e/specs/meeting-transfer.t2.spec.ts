@@ -474,6 +474,37 @@ test.describe("macOS meeting transfer", () => {
     expect(existsSync(target)).toBe(false);
   });
 
+  for (const replacement of ["overwrite", "rename"]) {
+    test(`export rejects same-path audio ${replacement} during save dialog`, async ({ launchApp, userDataDir }) => {
+      const stem = "changed-recording";
+      const summary = writeMeetingSummary(userDataDir, stem, { name: "Synthetic source change", summary: "Synthetic notes." });
+      const recordings = path.join(userDataDir, "recordings");
+      mkdirSync(recordings, { recursive: true });
+      const recording = path.join(recordings, `${stem}.wav`);
+      makeWav(recording, { seconds: 0.25, sampleRate: 16000, channels: 1 });
+      const target = path.join(userDataDir, "must-not-exist.stenomeeting");
+      const { app, page } = await launchApp();
+      await stubNativeDialogs(app, { saveFile: target, checkboxAudio: true });
+      await app.evaluate(({ dialog }) => {
+        dialog.showSaveDialog = () => new Promise(resolve => {
+          (globalThis as any).__releaseChangedAudioSave = resolve;
+        });
+      });
+      const exporting = page.evaluate(file => (window as StenoWindow).stenoai.meetingTransfer.exportPackage(file), summary);
+      await expect.poll(() => app.evaluate(() => typeof (globalThis as any).__releaseChangedAudioSave)).toBe("function");
+      const bytes = readFileSync(recording);
+      bytes[bytes.length - 1] ^= 1;
+      if (replacement === "rename") {
+        writeFileSync(recording + ".new", bytes);
+        renameSync(recording + ".new", recording);
+      } else writeFileSync(recording, bytes);
+      await app.evaluate((_electron, file) => (globalThis as any).__releaseChangedAudioSave({ canceled: false, filePath: file }), target);
+      const result = await exporting;
+      expect(result).toMatchObject({ success: false, error_code: "source_changed" });
+      expect(existsSync(target)).toBe(false);
+    });
+  }
+
   test("exports a native Electron recording as opt-in Float32 CAF with meeting text intact", async ({
     launchApp,
     userDataDir,

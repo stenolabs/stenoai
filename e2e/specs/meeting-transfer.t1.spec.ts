@@ -152,10 +152,15 @@ test("package actions wait for the initial recording status", async ({ launchApp
   await expect(page.getByTestId("meeting-detail")).toBeVisible();
   await page.getByRole("button", { name: "More options" }).click();
   await expect(page.getByRole("button", { name: "Share Steno package…" })).toBeDisabled();
+  await expect.poll(() => app.evaluate(() => (globalThis as any).__pendingTransferQueue?.length ?? 0)).toBeGreaterThan(0);
+  writeFileSync(queue, JSON.stringify({ holdForTransferTest: false }));
   await app.evaluate(() => {
-    for (const resolve of (globalThis as any).__pendingTransferQueue) {
+    (globalThis as any).__transferQueueReleased = true;
+    for (const resolve of ((globalThis as any).__pendingTransferQueue ?? []).splice(0)) {
       resolve();
     }
   });
   await expect(page.getByRole("button", { name: "Share Steno package…" })).toBeEnabled();
+  expect((await page.evaluate(() => (window as any).stenoai.recording.getQueue())).success).toBe(true);
+  expect(await app.evaluate(() => ((globalThis as any).__pendingTransferQueue ?? []).length)).toBe(0);
 });
