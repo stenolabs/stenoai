@@ -75,6 +75,10 @@ const ARGS_ECHO_REDACTORS = {
   'set-remote-ollama-url': redactRest,
   'test-remote-ollama': redactRest,
   'set-cloud-api-url': redactRest,
+  // --api-url may embed credentials or a private org hostname (same class as
+  // set-cloud-api-url). The ASR key never travels via argv - it is held in
+  // safeStorage and injected through the environment.
+  'set-openai-asr-config': redactRest,
   // device_id + a user-assigned device label (e.g. "Conference AirPods") -
   // same PII class as set-user-name.
   'set-microphone': redactRest,

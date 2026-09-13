@@ -181,6 +181,12 @@ const stenoai = {
       invoke('export-note-pdf', defaultFilename, html),
   },
 
+  meetingTransfer: {
+    importPackage: (filePath) => invoke('import-meeting-package', filePath),
+    exportPackage: (summaryFile) => invoke('export-meeting-package', summaryFile),
+    ready: () => invoke('meeting-transfer-ready'),
+  },
+
   query: {
     ask: (file, q) => invoke('query-transcript', file, q),
     askStream: (id, file, q) => send('query-transcript-stream', id, file, q),
@@ -263,6 +269,15 @@ const stenoai = {
   transcriptionEngine: {
     get: () => invoke('get-transcription-engine'),
     set: (engine) => invoke('set-transcription-engine', engine),
+  },
+
+  openaiAsr: {
+    getConfig: () => invoke('get-openai-asr-config'),
+    // cfg may include any subset of { api_url, model } - the key is NOT set
+    // here; use setKey (safeStorage-backed) for the credential.
+    setConfig: (cfg) => invoke('set-openai-asr-config', cfg),
+    // Pass an empty string to clear the stored key.
+    setKey: (key) => invoke('set-openai-asr-key', key),
   },
 
   settings: {
@@ -444,6 +459,7 @@ const stenoai = {
     generateNotesRequested: (cb) => subscribe('generate-notes-requested', cb),
     navigateToMeeting: (cb) => subscribe('navigate-to-meeting', cb),
     trayOpenSettings: (cb) => subscribe('tray-open-settings', cb),
+    meetingTransferImported: (cb) => subscribe('meeting-transfer-imported', cb),
     showQuitDialog: (cb) => subscribe('show-quit-dialog', cb),
     showNotification: (cb) => subscribe('show-notification', cb),
   },

@@ -14,6 +14,7 @@ import {
   Download,
   FileDown,
   FileText,
+  PackageOpen,
   Folder as FolderIcon,
   Globe,
   MoreHorizontal,
@@ -91,6 +92,7 @@ import { pendingTitleRegens, streamCache, type StreamPhase } from '@/lib/meeting
 import { useReprocessBridge } from '@/hooks/reprocessBridgeStore';
 import { useRecording } from '@/hooks/useRecording';
 import { useAutoSummarizeSetting } from '@/hooks/useSettings';
+import { MEETING_TRANSFER_COPY, useExportMeetingPackage } from '@/hooks/useMeetingTransfer';
 
 const LAST_OPENED_KEY = 'steno-last-opened-meeting';
 
@@ -677,6 +679,7 @@ function DetailContent({
   // which collides for two default-"Note" notes); a recording on a *different*
   // note leaves this note's CTA untouched.
   const recording = useRecording();
+  const exportMeeting = useExportMeetingPackage();
   const isRecordingThisNote =
     recording.status !== 'idle' &&
     recording.status !== 'processing' &&
@@ -750,8 +753,10 @@ function DetailContent({
   // My notes tab: an always-available editable notes layer, independent of
   // the summary. Persists to the `## User Notes` section (autosave). Local
   // state resets per meeting because DetailContent is keyed by summaryFile.
-  const [tab, setTab] = React.useState<'summary' | 'notes'>('summary');
   const hasUserNotes = Boolean((meeting.user_notes ?? '').trim());
+  const [tab, setTab] = React.useState<'summary' | 'notes'>(() =>
+    meeting.steno_transfer && !summary && hasUserNotes ? 'notes' : 'summary'
+  );
 
   return (
     <article data-testid="meeting-detail" className="space-y-9">
@@ -878,6 +883,30 @@ function DetailContent({
                   <FileDown className="size-[13px] shrink-0" style={{ color: 'var(--fg-2)' }} />
                   Save notes as PDF…
                 </button>
+                {ipc().app.platform === 'darwin' && (
+                  <button
+                    type="button"
+                    className="flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-left text-sm transition-colors hover:bg-[color:var(--surface-hover)] disabled:opacity-50"
+                    style={{ color: 'var(--fg-1)' }}
+                    onClick={() => exportMeeting.mutate(info.summary_file)}
+                    disabled={
+                      exportMeeting.isPending ||
+                      recording.isLoading ||
+                      recording.reprocessingSummaryFiles.size > 0 ||
+                      recording.status === 'recording' ||
+                      recording.status === 'paused' ||
+                      recording.status === 'processing' ||
+                      isProcessing ||
+                      streamPhase !== 'idle'
+                    }
+                  >
+                    <PackageOpen
+                      className="size-[13px] shrink-0"
+                      style={{ color: 'var(--fg-2)' }}
+                    />
+                    {MEETING_TRANSFER_COPY.exportAction}
+                  </button>
+                )}
                 {/* Re-transcribe (#266): only when the source recording still
                     exists (keep-recordings was on). Disabled while a stream is on
                     screen or a recording is live on this note. */}

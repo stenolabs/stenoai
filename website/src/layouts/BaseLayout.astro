@@ -15,10 +15,10 @@ const isHome = Astro.url.pathname === '/'
 const softwareApplicationJsonLd = {
   '@context': 'https://schema.org',
   '@type': 'SoftwareApplication',
-  name: 'StenoAI',
+  name: 'StenographAI',
   url: 'https://stenoai.co/',
   description:
-    'StenoAI is the highly-secure AI notetaker for confidential conversations in government and defence. No cloud, no usage limits and your private data never leaves your premises.',
+    'StenographAI is the highly-secure AI notetaker for confidential conversations in government and defence. No cloud, no usage limits and your private data never leaves your premises.',
   applicationCategory: 'BusinessApplication',
   operatingSystem: 'macOS, Windows',
   offers: {
@@ -28,7 +28,14 @@ const softwareApplicationJsonLd = {
   },
 }
 
-const allStructuredData = isHome ? [softwareApplicationJsonLd, ...structuredData] : structuredData
+const websiteJsonLd = {
+  '@context': 'https://schema.org',
+  '@type': 'WebSite',
+  name: 'StenographAI',
+  url: 'https://stenoai.co/',
+}
+
+const allStructuredData = isHome ? [websiteJsonLd, softwareApplicationJsonLd, ...structuredData] : structuredData
 ---
 
 <!doctype html>
@@ -45,6 +52,7 @@ const allStructuredData = isHome ? [softwareApplicationJsonLd, ...structuredData
 
     <!-- Open Graph -->
     <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="StenographAI" />
     {canonical && <meta property="og:url" content={canonical} />}
     <meta property="og:title" content={title} />
     <meta property="og:description" content={description} />

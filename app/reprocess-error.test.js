@@ -59,6 +59,7 @@ async function start(validationError) {
     classifyReprocessError, makeLineReader, Buffer,
     validateMeetingFilePath: async () => validationError ? { error: validationError } : { realPath: '/synthetic/meeting.md' },
     activeReprocessJobs: jobs, getAiEnv: () => ({}),
+    getBackendEnv: () => ({}), getTranscriptionEnv: async () => ({}),
     spawn: () => proc, getBackendPath: () => '/synthetic/backend', getBackendCwd: () => '/synthetic',
     TRANSCRIBE_INACTIVITY_MS: 1000,
     activeInactivityWatchdogs: new Set(), systemSuspendedForWatchdogs: false,

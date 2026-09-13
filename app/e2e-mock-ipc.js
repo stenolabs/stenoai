@@ -110,6 +110,27 @@ const PENDING_MEETING = {
   participants: [],
 };
 
+// A note imported from a .stenomeeting package. Swift-authored notes carry
+// their body as user_notes and have no generated summary, so the detail view
+// should open directly on My notes. Opt-in to keep every existing T1 seed
+// unchanged.
+const TRANSFER_MEETING = {
+  steno_transfer: { sourceMeetingID: '11111111-2222-4333-8444-555555555555' },
+  session_info: {
+    name: 'Imported Swift note',
+    summary_file: 'imported-swift-note_summary.md',
+    processed_at: '2026-09-12T04:00:00Z',
+    duration_seconds: 0,
+  },
+  transcript: '',
+  user_notes: 'Notes written on iPhone and transferred to this Mac.',
+  summary: '',
+  key_points: [],
+  action_items: [],
+  discussion_areas: [],
+  participants: [],
+};
+
 // A continued note (continue-recording appended a segment after notes were
 // generated → notes_stale:true): has a summary AND a stale marker. Drives the
 // "Regenerate notes" variant of the floating CTA. Seeded only when
@@ -300,6 +321,10 @@ function install({ ipcMain }) {
     cloudModel: 'gpt-4o',
     remoteUrl: '', // remote Ollama URL (empty = not configured)
     autoInstallWhenIdle: true, // idle auto-install toggle (config default on)
+    transcriptionEngine: process.env.STENOAI_E2E_MOCK_ENGINE || 'parakeet',
+    openAiAsrUrl: 'https://api.openai.com/v1',
+    openAiAsrModel: 'whisper-1',
+    openAiAsrKeySet: process.env.STENOAI_E2E_OAI_ASR_KEY_SET === '1',
   };
 
   // In-memory recording state machine for the pill-dock T1: start/pause/
@@ -544,6 +569,11 @@ function install({ ipcMain }) {
       if (statePath) {
         try {
           const override = JSON.parse(fs.readFileSync(statePath, 'utf-8'));
+          if (override.holdForTransferTest && !global.__transferQueueReleased) {
+            await new Promise(resolve => {
+              (global.__pendingTransferQueue ??= []).push(resolve);
+            });
+          }
           return {
             success: true,
             isProcessing: false,
@@ -608,12 +638,46 @@ function install({ ipcMain }) {
       error: null,
     }),
 
-    // Engine is static per launch; STENOAI_E2E_MOCK_ENGINE lets the pill-dock
-    // T1 drive the Whisper variant (no live transcript, inline pause/resume).
     'get-transcription-engine': async () => ({
       success: true,
-      engine: process.env.STENOAI_E2E_MOCK_ENGINE || 'parakeet',
+      engine: state.transcriptionEngine,
     }),
+    'set-transcription-engine': async (_event, engine) => {
+      state.transcriptionEngine = engine;
+      return { success: true, engine };
+    },
+
+    // OpenAI-compatible ASR config. Shape-only for first paint; the real
+    // set/get round-trip + key storage is covered by cloud-asr-config.t2.
+    'get-openai-asr-config': async () => ({
+      success: true,
+      api_url: state.openAiAsrUrl,
+      api_key_set: state.openAiAsrKeySet,
+      model: state.openAiAsrModel,
+    }),
+    'set-openai-asr-config': async (_event, cfg) => {
+      if (process.env.STENOAI_E2E_OAI_ASR_SAVE_FAIL === '1') {
+        return { success: false, error: 'mock save rejected' };
+      }
+      if (cfg?.api_url !== undefined) state.openAiAsrUrl = cfg.api_url;
+      if (cfg?.model !== undefined) state.openAiAsrModel = cfg.model;
+      return {
+        success: true,
+        api_url: state.openAiAsrUrl,
+        api_key_set: state.openAiAsrKeySet,
+        model: state.openAiAsrModel,
+      };
+    },
+    'set-openai-asr-key': async (_event, key) => {
+      if (process.env.STENOAI_E2E_OAI_ASR_SAVE_FAIL === '1') {
+        return { success: false, error: 'mock save rejected' };
+      }
+      if (process.env.STENOAI_E2E_OAI_ASR_KEY_RACE === '1' && key) {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+      state.openAiAsrKeySet = Boolean(key);
+      return { success: true, api_key_set: state.openAiAsrKeySet };
+    },
 
     // Default not-installed keeps most T1 specs on their routes; the pill-dock
     // T1 sets STENOAI_E2E_MOCK_PARAKEET_INSTALLED=1 so App.tsx's first-run
@@ -664,6 +728,9 @@ function install({ ipcMain }) {
     // lives in MOCKS, which shadows DEFAULTS, so it is the single source for the
     // channel.
     'list-meetings': async () => {
+      if (process.env.STENOAI_E2E_MEETING_TRANSFER === '1') {
+        return { success: true, meetings: [TRANSFER_MEETING] };
+      }
       if (process.env.STENOAI_E2E_SEED_AUDIO_MEETINGS === '1') {
         return { success: true, meetings: AUDIO_SEED_MEETINGS };
       }
@@ -706,6 +773,12 @@ function install({ ipcMain }) {
     // by filtering list-meetings — answer it with the same seeded meeting so the
     // transcript-export detail route resolves and renders the transcript actions.
     'get-meeting': async (_event, summaryFile) => {
+      if (
+        process.env.STENOAI_E2E_MEETING_TRANSFER === '1' &&
+        summaryFile === TRANSFER_MEETING.session_info.summary_file
+      ) {
+        return { success: true, meeting: applyOverlay(TRANSFER_MEETING) };
+      }
       if (process.env.STENOAI_E2E_SEED_PENDING_NOTE === '1') {
         return { success: true, meeting: applyOverlay(PENDING_MEETING) };
       }
@@ -730,6 +803,20 @@ function install({ ipcMain }) {
         ? { success: true, meeting: applyOverlay(m) }
         : { success: false, error: 'meeting not found' };
     },
+
+    'meeting-transfer-ready': async () => ({ success: true }),
+    'import-meeting-package': async (event) => {
+      if (process.env.STENOAI_E2E_MEETING_TRANSFER !== '1') {
+        return { success: true, cancelled: true };
+      }
+      const payload = {
+        summaryFile: TRANSFER_MEETING.session_info.summary_file,
+        duplicate: false,
+      };
+      event.sender.send('meeting-transfer-imported', payload);
+      return { success: true, ...payload };
+    },
+    'export-meeting-package': async () => ({ success: true, cancelled: false }),
 
     // Soft-delete (#234). The permissive unknown-channel default would answer
     // `{success:true}` with no `id`, and useDeleteMeeting skips the Undo toast

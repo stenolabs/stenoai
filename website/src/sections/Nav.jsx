@@ -217,7 +217,7 @@ export function Nav({ subpage = false }) {
           <NavDropdown
             label="Product"
             hubHref={subpage ? "/#how" : "#how"}
-            ariaLabel="Steno product sections"
+            ariaLabel="StenographAI product sections"
             links={PRODUCT_LINKS.map(({ href, label }) => ({
               href: subpage ? `/${href}` : href,
               label,
@@ -228,7 +228,7 @@ export function Nav({ subpage = false }) {
             label="Enterprise"
             hubHref="/enterprise/"
             hubLabel="Enterprise overview"
-            ariaLabel="Steno for specific industries"
+            ariaLabel="StenographAI for specific industries"
             links={ENTERPRISE_LINKS}
           />
           {NAV_LINKS.map(({ href, label }) => (

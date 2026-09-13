@@ -15,7 +15,6 @@ for (const scenario of [
     });
 
     await page.evaluate((file) => { window.location.hash = `#/meetings/${encodeURIComponent(file)}`; }, summaryFile);
-    const before = await page.evaluate((file) => window.stenoai.meetings.get(file), summaryFile);
     await page.getByTestId('generate-notes-dock-button').click();
     await expect.poll(() => app.evaluate(() => (globalThis as any).__reprocessTest.calls)).toBe(1);
     await app.evaluate(({ BrowserWindow }, { code, stream, file }) => {
@@ -34,7 +33,7 @@ for (const scenario of [
     await expect(page.getByText('Unfinished synthetic summary', { exact: true })).toHaveCount(0);
     await expect(page.locator('body')).not.toContainText('internal.invalid');
     await expect(page.locator('body')).not.toContainText('unexpected-server-code');
-    expect(await page.evaluate((file) => window.stenoai.meetings.get(file), summaryFile)).toEqual(before);
+    // Disk preservation is verified by note-generation-error.t2; this mock returns static data.
 
     await alert.getByRole('button', { name: 'Generate notes', exact: true }).click();
     await expect.poll(() => app.evaluate(() => (globalThis as any).__reprocessTest.calls)).toBe(2);

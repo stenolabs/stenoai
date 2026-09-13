@@ -71,6 +71,7 @@ export interface Meeting {
    *  the audio (re-transcribe, speaker samples, any future re-diarization) is
    *  quietly unavailable without it. */
   has_audio?: boolean;
+  steno_transfer?: { sourceMeetingID: string };
   /** User notes as persisted + returned by the backend (`_parse_meeting_markdown` -> `user_notes`). */
   user_notes?: string | null;
   /** Renderer-side notes for the in-progress / draft recording (live + processing views). */
@@ -701,12 +702,26 @@ export type ParakeetStatusResponse = Result<{
   installed: boolean;
 }>;
 
-export type TranscriptionEngine = 'parakeet' | 'whisper';
+export type TranscriptionEngine = 'parakeet' | 'whisper' | 'openai-asr';
 
 export type GetTranscriptionEngineResponse = Result<{
   engine: TranscriptionEngine;
   valid_engines: TranscriptionEngine[];
 }>;
+
+export type GetOpenAiAsrConfigResponse = Result<{
+  api_url: string;
+  api_key_set: boolean;
+  model: string;
+}>;
+
+export type SetOpenAiAsrConfigResponse = Result<{
+  api_url: string;
+  api_key_set: boolean;
+  model: string;
+}>;
+
+export type SetOpenAiAsrKeyResponse = Result<{ api_key_set: boolean }>;
 
 export type GetNotificationsResponse = Result<{ notifications_enabled: boolean }>;
 // `enabled` is the persisted preference; `registered` is the live global-
@@ -994,6 +1009,11 @@ export interface ShortcutStartRecordingEvent {
   sessionName: string | null;
 }
 
+export interface MeetingTransferImportedEvent {
+  summaryFile: string;
+  duplicate: boolean;
+}
+
 // ---------- bridge shape ----------
 type RequestFn<Args extends unknown[], Res> = (...args: Args) => Promise<Res>;
 type SendFn<Args extends unknown[]> = (...args: Args) => void;
@@ -1143,6 +1163,15 @@ export interface StenoaiBridge {
     deleteReport: RequestFn<[summaryFile: string, reportId: string], Result<Record<string, never>>>;
   };
 
+  meetingTransfer: {
+    importPackage: RequestFn<
+      [filePath?: string],
+      Result<{ cancelled?: boolean; summaryFile?: string; duplicate?: boolean }>
+    >;
+    exportPackage: RequestFn<[summaryFile: string], Result<{ cancelled?: boolean }>>;
+    ready: RequestFn<[], Result<Record<string, never>>>;
+  };
+
   query: {
     ask: RequestFn<[file: string, q: string], QueryResponse>;
     askStream: SendFn<[id: string, file: string, q: string]>;
@@ -1232,6 +1261,15 @@ export interface StenoaiBridge {
   transcriptionEngine: {
     get: RequestFn<[], GetTranscriptionEngineResponse>;
     set: RequestFn<[engine: TranscriptionEngine], Result<{ engine: TranscriptionEngine }>>;
+  };
+
+  openaiAsr: {
+    getConfig: RequestFn<[], GetOpenAiAsrConfigResponse>;
+    setConfig: RequestFn<
+      [cfg: { api_url?: string; model?: string }],
+      SetOpenAiAsrConfigResponse
+    >;
+    setKey: RequestFn<[key: string], SetOpenAiAsrKeyResponse>;
   };
 
   settings: {
@@ -1419,6 +1457,7 @@ export interface StenoaiBridge {
     generateNotesRequested: Subscribe<{ summaryFile: string; name?: string | null }>;
     navigateToMeeting: Subscribe<{ summaryFile: string }>;
     trayOpenSettings: Subscribe<void>;
+    meetingTransferImported: Subscribe<MeetingTransferImportedEvent>;
     showQuitDialog: Subscribe<{ type: 'recording' | 'processing'; jobCount?: number }>;
     showNotification: Subscribe<{
       id?: string;

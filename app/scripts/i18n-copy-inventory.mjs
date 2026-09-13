@@ -25,11 +25,9 @@
 // Electron main process, or text the Python backend emits. Coverage is a floor, not a
 // proof of completeness.
 //
-// AFTER THE FOUNDATION LANDS: teach `collectFromSource` to also resolve `t('some.key')`
-// call sites against locales/en.json and emit the resolved English value. That keeps the
-// inventory comparable across the migration boundary, which is the whole point — before
-// the migration a file lists its literals, after it the same file lists the same English
-// words, now reached through keys.
+// Translation lookups are resolved against locales/en.json so the inventory stays
+// comparable across the migration boundary. Before migration a file lists its literals;
+// afterwards it lists the same English words, now reached through typed keys.
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -49,6 +47,7 @@ import {
 const APP_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const SRC_DIR = path.join(APP_DIR, 'renderer/src');
 const INVENTORY = path.resolve(APP_DIR, '../docs/i18n/copy-inventory.json');
+const ENGLISH_CATALOGUE = path.join(SRC_DIR, 'i18n/locales/en.json');
 const update = process.argv.includes('--update');
 
 function ignored(relPath) {
@@ -75,7 +74,7 @@ function sourceFiles(dir, acc = []) {
 // as `&`, so storing the entity would make untouched copy look edited during the migration.
 const normalize = (text) => decodeEntities(text.replace(/\s+/g, ' ').trim());
 
-export function collectFromSource(file) {
+export function collectFromSource(file, catalogue = {}) {
   const source = ts.createSourceFile(
     file,
     fs.readFileSync(file, 'utf8'),
@@ -83,6 +82,37 @@ export function collectFromSource(file) {
     /* setParentNodes */ true,
     ts.ScriptKind.TSX
   );
+
+  // An imported named `t` establishes a direct translation lookup even through a
+  // re-export. Namespace calls stay restricted to the canonical renderer i18n module,
+  // including explicit /index imports. A namespace `.t()` from another module fails
+  // closed instead of silently dropping its argument as a dotted technical key. The same
+  // applies to `.t()` reached through default imports, named objects, or props. Local
+  // functions named `t` remain ordinary code unless they are imported.
+  const translationCallees = new Set();
+  const translationNamespaces = new Set();
+  for (const statement of source.statements) {
+    if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier)) continue;
+    const moduleName = statement.moduleSpecifier.text;
+    const imports = statement.importClause?.namedBindings;
+    if (!imports) continue;
+    if (ts.isNamedImports(imports)) {
+      for (const element of imports.elements) {
+        if ((element.propertyName ?? element.name).text === 't') {
+          translationCallees.add(element.name.text);
+        }
+      }
+      continue;
+    }
+    const canonicalI18nModule = /^(?:@\/i18n|\.{1,2}\/(?:.*\/)?i18n)(?:\/index(?:\.[cm]?[jt]sx?)?)?$/.test(
+      moduleName
+    );
+    if (ts.isNamespaceImport(imports)) {
+      if (canonicalI18nModule) {
+        translationNamespaces.add(imports.name.text);
+      }
+    }
+  }
 
   // Two partitions, not two files: `copy` is the contract a migration diff must hold,
   // `uncertain` is the safety net. One diff for a reviewer to read, and an uncertain-only
@@ -96,6 +126,43 @@ export function collectFromSource(file) {
   const record = (text, certain) => {
     const bucket = certain || readsAsCopy(text) ? copy : uncertain;
     bucket.set(text, (bucket.get(text) ?? 0) + 1);
+  };
+
+  const addTranslation = (node, certain) => {
+    if (!ts.isCallExpression(node)) {
+      return false;
+    }
+    const directLookup =
+      ts.isIdentifier(node.expression) && translationCallees.has(node.expression.text);
+    const propertyLookup =
+      ts.isPropertyAccessExpression(node.expression) && node.expression.name.text === 't';
+    const namespaceLookup =
+      propertyLookup &&
+      ts.isIdentifier(node.expression.expression) &&
+      translationNamespaces.has(node.expression.expression.text);
+    if (propertyLookup && !namespaceLookup) {
+      throw new Error(
+        `${file}: ${node.expression.getText(source)}() cannot be verified as a translation lookup; ` +
+          'import a named t or the canonical i18n namespace'
+      );
+    }
+    if (!directLookup && !namespaceLookup) return false;
+
+    const [keyNode] = node.arguments;
+    if (!keyNode || (!ts.isStringLiteral(keyNode) && !ts.isNoSubstitutionTemplateLiteral(keyNode))) {
+      throw new Error(`${file}: translation keys must be static string literals`);
+    }
+    const value = catalogue[keyNode.text];
+    if (typeof value !== 'string') {
+      throw new Error(`${file}: missing English translation for ${JSON.stringify(keyNode.text)}`);
+    }
+
+    // Match the inventory's template-literal representation. Parameter names are an
+    // implementation detail, so i18n's {{name}} token becomes one stable placeholder.
+    const text = normalize(value.replace(/\{\{\s*[A-Za-z_][\w.-]*\s*\}\}/g, '{{…}}'));
+    const accept = certain ? isCopy : (candidate) => !definitelyNotCopy(candidate);
+    if (accept(text)) record(text, certain);
+    return true;
   };
 
   // Position settles most of it. These node types hold strings that are never rendered:
@@ -176,6 +243,7 @@ export function collectFromSource(file) {
   // callback recall used elsewhere without making their internals certain by position.
   const walkRenderedExpression = (node, certain, delegateFunctions = false) => {
     if (isStructural(node)) return;
+    if (addTranslation(node, certain)) return;
     if (
       (delegateFunctions && (ts.isArrowFunction(node) || ts.isFunctionExpression(node))) ||
       ts.isJsxElement(node) ||
@@ -194,6 +262,7 @@ export function collectFromSource(file) {
 
   const walk = (node) => {
     if (isStructural(node)) return;
+    if (addTranslation(node, false)) return;
 
     if (ts.isJsxText(node)) {
       const text = normalize(node.text);
@@ -282,9 +351,10 @@ export function collectFromSource(file) {
 // Only run as a CLI. Exporting `collectFromSource` lets the tests drive the real
 // extraction over a fixture file instead of asserting on the generated output.
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  const englishCatalogue = JSON.parse(fs.readFileSync(ENGLISH_CATALOGUE, 'utf8'));
   const inventory = {};
   for (const file of sourceFiles(SRC_DIR).sort()) {
-    const { copy, uncertain } = collectFromSource(file);
+    const { copy, uncertain } = collectFromSource(file, englishCatalogue);
     if (copy.length === 0 && uncertain.length === 0) continue;
     const entry = {};
     if (copy.length) entry.copy = copy;

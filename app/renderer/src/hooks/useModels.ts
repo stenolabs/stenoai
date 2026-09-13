@@ -27,6 +27,11 @@ export const transcriptionEngineKeys = {
   current: () => [...transcriptionEngineKeys.all, 'current'] as const,
 };
 
+export const openaiAsrKeys = {
+  all: ['openaiAsrConfig'] as const,
+  config: () => [...openaiAsrKeys.all, 'config'] as const,
+};
+
 function parseSizeGb(size?: string): number | undefined {
   if (!size) return undefined;
   const match = size.match(/^([\d.]+)\s*(GB|MB|KB|B)?$/i);
@@ -607,5 +612,48 @@ export function useSetActiveTranscription() {
       // and the live dock toggle, both of which read from the same key.
       qc.invalidateQueries({ queryKey: ['settings', 'language'] });
     },
+  });
+}
+
+// ---------------------------------------------------------------------------
+// OpenAI-compatible ASR config
+//
+// The non-secret endpoint config (api_url, model) round-trips through the
+// backend config.json. `api_key_set` reflects the encrypted-on-disk key held
+// by the main process (safeStorage) - the key value itself is never returned.
+// ---------------------------------------------------------------------------
+
+/** Query for the current OpenAI ASR endpoint config (url, api_key_set, model). */
+export function useOpenAiAsrConfig() {
+  return useQuery({
+    queryKey: openaiAsrKeys.config(),
+    queryFn: async () => unwrap(await ipc().openaiAsr.getConfig()),
+  });
+}
+
+/**
+ * Mutation to save the non-secret OpenAI ASR config (url and/or model).
+ * Pass only the fields you want to change; others are left untouched. The
+ * API key is set separately via useSetOpenAiAsrKey (never through here).
+ */
+export function useSetOpenAiAsrConfig() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (cfg: { api_url?: string; model?: string }) =>
+      unwrap(await ipc().openaiAsr.setConfig(cfg)),
+    onSuccess: () => qc.invalidateQueries({ queryKey: openaiAsrKeys.all }),
+  });
+}
+
+/**
+ * Mutation to set (or clear, with an empty string) the OpenAI ASR API key.
+ * The key is stored encrypted by the main process; only `api_key_set` is
+ * ever surfaced back.
+ */
+export function useSetOpenAiAsrKey() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (key: string) => unwrap(await ipc().openaiAsr.setKey(key)),
+    onSuccess: () => qc.invalidateQueries({ queryKey: openaiAsrKeys.all }),
   });
 }
