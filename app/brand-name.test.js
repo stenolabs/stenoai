@@ -14,7 +14,6 @@ const initialization = source.slice(start, end);
 
 function userDataPath(isPackaged, override, paths, appData) {
   let result = paths.join(appData, 'stenoai');
-  let name = 'stenoai';
   vm.runInNewContext(initialization, {
     path: paths,
     process: { env: { STENOAI_USER_DATA_DIR: override } },
@@ -28,12 +27,8 @@ function userDataPath(isPackaged, override, paths, appData) {
         assert.equal(key, 'userData');
         result = value;
       },
-      setName(value) {
-        name = value;
-      },
     },
   });
-  assert.equal(name, isPackaged ? 'StenoAI' : 'stenoai');
   return result;
 }
 
