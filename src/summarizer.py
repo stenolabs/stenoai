@@ -1802,7 +1802,7 @@ TITLE:"""
             query_lang_instruction = f"\nRespond in {language_name}." if language_name != "Unknown" else ""
         else:
             query_lang_instruction = ""
-        return f"""Answer the following question based on the meeting content below (summary, key topics, and transcript).
+        return f"""Answer the following question based on the meeting content below (summary, participants, key topics, key points, action items, and transcript).
 Be concise and direct. If the answer requires inference from what was discussed, that's fine.
 Only say you don't know if the topic truly wasn't discussed at all.{query_lang_instruction}
 

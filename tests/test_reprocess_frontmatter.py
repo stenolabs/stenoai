@@ -8,6 +8,7 @@ carry forward two fields that may have existed in the original file:
 Dropping either silently removes the meeting from all its folders / loses the
 live-transcript flag on every regenerate.
 """
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -129,6 +130,28 @@ class ReprocessFrontmatterTests(unittest.TestCase):
             reparsed = simple_recorder._parse_meeting_markdown(summary)
             self.assertIsNone(reparsed["session_info"]["configured_language"])
             self.assertIsNone(reparsed["session_info"]["detected_language"])
+
+    def test_writes_original_snapshot_on_regenerate(self):
+        """reprocess must snapshot the regenerated note into <stem>_original.json
+        so the note editor has a diff base and can warn before a future
+        regenerate discards the user's own edits. Deleting the call this test
+        guards (simple_recorder._write_original_snapshot in reprocess's .md
+        branch) must make this test fail, not silently pass."""
+        with tempfile.TemporaryDirectory() as tmp:
+            summary = _write_summary(tmp)
+            res = _run_reprocess(tmp, summary)
+            self.assertEqual(res.exit_code, 0, res.output)
+
+            snapshot_path = Path(tmp) / "meeting_original.json"
+            self.assertTrue(
+                snapshot_path.exists(),
+                "reprocess must write an <stem>_original.json sidecar",
+            )
+            snapshot = json.loads(snapshot_path.read_text())
+            self.assertEqual(snapshot["version"], 1)
+            self.assertEqual(snapshot["capture"], "generation")
+            self.assertEqual(snapshot["original"]["summary"], "Regenerated summary body")
+            self.assertEqual(snapshot["edited_fields"], [])
 
 
 if __name__ == "__main__":

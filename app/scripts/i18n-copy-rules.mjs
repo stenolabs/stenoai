@@ -35,6 +35,8 @@ export const COPY_ATTRIBUTES = [
   'aria-description',
   // This app's own copy-bearing component props
   'label',
+  'entryLabel',
+  'addLabel',
   'description',
   'hint',
   'heading',

@@ -123,7 +123,15 @@ export const test = base.extend<Fixtures>({
       // teardown times out. Race the close with a grace window, then force-kill
       // the whole process tree. macOS closes well within the window, so the
       // fallback never fires there.
-      const proc = app.process();
+      // A spec that proves persistence across a relaunch has to close its own
+      // app first; Playwright then throws from process() on the dead handle.
+      // Teardown must survive that rather than failing an otherwise-green test.
+      let proc: ReturnType<ElectronApplication['process']> | undefined;
+      try {
+        proc = app.process();
+      } catch {
+        continue;
+      }
       try {
         await Promise.race([
           app.close(),

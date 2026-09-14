@@ -55,11 +55,11 @@ type StenoWindow = Window & {
 };
 
 /**
- * Seed a note's on-disk files (a valid summary .json + reports sidecar in
- * output/, transcript in transcripts/, audio .wav in recordings/). The summary is
- * a parseable meeting so the real list-meetings surfaces it. session_info carries
- * ONLY summary_file (mirrors a real note) — the transcript + recording are
- * derived from the stem by the delete handler.
+ * Seed a note's on-disk files (a valid summary .json + the reports and original
+ * sidecars in output/, transcript in transcripts/, audio .wav in recordings/).
+ * The summary is a parseable meeting so the real list-meetings surfaces it.
+ * session_info carries ONLY summary_file (mirrors a real note) - the transcript,
+ * recording and both sidecars are derived from the stem by the delete handler.
  */
 function seedNote(userDataDir: string, stem: string, name: string) {
   const outputDir = path.join(userDataDir, 'output');
@@ -71,6 +71,7 @@ function seedNote(userDataDir: string, stem: string, name: string) {
 
   const summaryFile = path.join(outputDir, `${stem}_summary.json`);
   const reportsSidecar = path.join(outputDir, `${stem}_reports.json`);
+  const originalSidecar = path.join(outputDir, `${stem}_original.json`);
   const transcriptFile = path.join(transcriptsDir, `${stem}_transcript.txt`);
   const audioFile = path.join(recordingsDir, `${stem}.wav`);
 
@@ -82,6 +83,28 @@ function seedNote(userDataDir: string, stem: string, name: string) {
     }),
   );
   writeFileSync(reportsSidecar, JSON.stringify({ reports: [], active_report: null }));
+  // The note-snapshot sidecar every generated note now carries. It holds the
+  // model's own output for this meeting - summary, key points, action items,
+  // discussion areas and the ATTENDEE NAMES - and no UI ever shows it, so if a
+  // committed delete leaves it behind the meeting stays readable on disk
+  // forever. Same undo semantics as the rest: it must survive the window.
+  writeFileSync(
+    originalSidecar,
+    JSON.stringify({
+      version: 1,
+      captured_at: '2024-01-01T00:00:00Z',
+      capture: 'generation',
+      original: {
+        summary: `Confidential summary for ${name}`,
+        key_points: ['A sensitive key point'],
+        action_items: ['A sensitive action item'],
+        discussion_areas: [],
+        participants: ['Alice Example', 'Bob Example'],
+      },
+      edited_fields: [],
+      edited_at: null,
+    }),
+  );
   writeFileSync(transcriptFile, `transcript for ${name}`);
   // Minimal but non-empty "audio" payload — the handler never decodes it, so a
   // stub is enough to prove the recording survives the delete window.
@@ -89,7 +112,15 @@ function seedNote(userDataDir: string, stem: string, name: string) {
 
   // Mirrors a real .md/.json note: session_info carries ONLY summary_file.
   const meeting: Meeting = { session_info: { name, summary_file: summaryFile } };
-  return { meeting, summaryFile, reportsSidecar, transcriptFile, audioFile, outputDir };
+  return {
+    meeting,
+    summaryFile,
+    reportsSidecar,
+    originalSidecar,
+    transcriptFile,
+    audioFile,
+    outputDir,
+  };
 }
 
 /** Find the single hidden-summary path under output/.pending-delete/<id>/, if any. */
@@ -144,11 +175,13 @@ test('delete hides only the summary (note vanishes from the backend); transcript
   // ... so the backend scan no longer sees the note (the whole point of #234) ...
   expect(await listedFiles(page)).not.toContain(seed.summaryFile);
 
-  // ... but the transcript, recording AND reports sidecar are STILL on disk
-  // (unlinked only at commit — the audio is protected during the undo window).
+  // ... but the transcript, recording AND both sidecars are STILL on disk
+  // (unlinked only at commit - the audio is protected during the undo window,
+  // and an undo has to hand back a COMPLETE note, snapshot included).
   expect(existsSync(seed.transcriptFile)).toBe(true);
   expect(existsSync(seed.audioFile)).toBe(true);
   expect(existsSync(seed.reportsSidecar)).toBe(true);
+  expect(existsSync(seed.originalSidecar)).toBe(true);
 
   // main is the source of truth for the deadline: list-pending-deletes reports it.
   const pending = await page.evaluate(() =>
@@ -194,9 +227,12 @@ test('undo renames the summary back — the note reappears and the scaffold is c
   expect(await listedFiles(page)).toContain(seed.summaryFile);
   // The .pending-delete scaffold is cleaned up entirely.
   expect(existsSync(path.join(seed.outputDir, '.pending-delete'))).toBe(false);
-  // The ancillaries never moved, so they're all still present.
+  // The ancillaries never moved, so they're all still present - an undone
+  // delete gives back the whole note, snapshot sidecar included.
   expect(existsSync(seed.transcriptFile)).toBe(true);
   expect(existsSync(seed.audioFile)).toBe(true);
+  expect(existsSync(seed.reportsSidecar)).toBe(true);
+  expect(existsSync(seed.originalSidecar)).toBe(true);
 
   // Nothing left pending.
   const pending = await page.evaluate(() =>
@@ -260,13 +296,22 @@ test('undo REFUSES when the original path was re-occupied — tombstone kept, th
   expect(fileSig(realUserDataDir())).toBe(realDirBefore);
 });
 
-test('commit (explicit dismiss) permanently removes the summary + transcript + recording + sidecar', async ({
+test('commit (explicit dismiss) permanently removes the summary + transcript + recording + sidecars', async ({
   launchApp,
   userDataDir,
 }) => {
   const realDirBefore = fileSig(realUserDataDir());
   const seed = seedNote(userDataDir, 'undo-gamma', 'Undo Gamma');
-  const all = [seed.summaryFile, seed.transcriptFile, seed.audioFile, seed.reportsSidecar];
+  // The original-snapshot sidecar is in this list for a privacy reason, not a
+  // tidiness one: it holds the meeting's substance and its attendee names, so a
+  // "deleted" meeting whose sidecar survives is still readable on disk.
+  const all = [
+    seed.summaryFile,
+    seed.transcriptFile,
+    seed.audioFile,
+    seed.reportsSidecar,
+    seed.originalSidecar,
+  ];
 
   const { page } = await launchApp();
 

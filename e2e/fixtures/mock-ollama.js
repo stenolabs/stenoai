@@ -27,9 +27,10 @@ const OLLAMA_PORT = 11434;
  *   status and JSON body `{"error": message}` (the real Ollama 404 shape) instead of a reply. Off by
  *   default so existing specs are unaffected. chatCalls still increments so callers can assert it was hit.
  * @param {string[]} [opts.installedModels=['gemma4:e2b-it-qat','llama3.2:3b']] models /api/tags reports as installed.
+ * @param {number} [opts.port=11434] listen port; use 0 for an isolated ephemeral port.
  * @param {number} [opts.pullDelayMs=0] hold the /api/pull response open this long before completing it -- gives a
  *   cancel-mid-download test a real window to call cancel-pull before the mock would otherwise finish first.
- * @returns {Promise<{ close: () => Promise<void>, lastChatPrompt: () => string|null, chatCalls: () => number, pullCalls: () => number, remainingQueueLength: () => number, lastPulledModel: () => string|null, deleteCalls: () => number, lastDeletedModel: () => string|null }>}
+ * @returns {Promise<{ url: string, close: () => Promise<void>, lastChatPrompt: () => string|null, chatCalls: () => number, pullCalls: () => number, remainingQueueLength: () => number, lastPulledModel: () => string|null, deleteCalls: () => number, lastDeletedModel: () => string|null }>}
  */
 function startMockOllama(opts = {}) {
   const chatReply = opts.chatReply ?? 'ok';
@@ -165,8 +166,9 @@ function startMockOllama(opts = {}) {
     });
     // No EADDRINUSE swallow — a bind failure is a real signal (live Ollama up).
     server.on('error', reject);
-    server.listen(OLLAMA_PORT, '127.0.0.1', () => {
+    server.listen(opts.port ?? OLLAMA_PORT, '127.0.0.1', () => {
       resolve({
+        url: `http://127.0.0.1:${server.address().port}`,
         close: () => new Promise((r) => server.close(() => r())),
         lastChatPrompt: () => lastChatPrompt,
         chatCalls: () => chatCalls,

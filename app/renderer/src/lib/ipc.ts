@@ -78,6 +78,12 @@ export interface Meeting {
   notes?: string;
   reports?: Report[];
   active_report?: string;
+  /** Sections of this note the user has edited since it was generated, read by
+   *  main from the `_original.json` sidecar (`editedFieldNames`). Always an
+   *  array when it comes from `get-meeting`; optional because the renderer also
+   *  builds synthetic Meeting objects for the live recording. Drives the
+   *  confirm before a regenerate replaces those sections. */
+  edited_fields?: string[];
   /** Synthetic flag set by the renderer for the in-progress recording. Never sent by backend. */
   is_recording?: boolean;
   /** Synthetic flag set by the renderer when a recording is in the processing pipeline (post-stop, pre-summary). */
@@ -122,12 +128,20 @@ export interface CalendarEvent {
   color?: string;
 }
 
+/** A partial update for one meeting note. Every content field below is written
+ *  into its own `## ` section of the .md, leaving the rest of the file
+ *  (transcript included) byte-identical; main rejects any value carrying a
+ *  markdown heading, since that would forge a section boundary. */
 export interface UpdateMeetingPatch {
   name?: string;
   summary?: string;
+  /** Not editable on .md notes yet (the participants editor is a later build);
+   *  still honoured by the legacy .json format. */
   participants?: unknown[];
   key_points?: string[];
-  action_items?: unknown[];
+  action_items?: string[];
+  /** `## Key Topics`: one `### title` subsection per area, analysis below it. */
+  discussion_areas?: { title: string; analysis?: string }[];
   /** The user's own notes (My notes tab). Upserts the `## User Notes` body
    *  section of the .md (or the `user_notes` field of a legacy .json); an
    *  empty string removes the section. */
@@ -404,7 +418,13 @@ export type RecordingsDirResponse = Result<{ path: string }>;
 
 export type ListMeetingsResponse = Result<{ meetings: Meeting[] }>;
 export type GetMeetingResponse = Result<{ meeting: Meeting }>;
-export type UpdateMeetingResponse = Result<{ message: string; updatedData: Meeting }>;
+export type UpdateMeetingResponse = Result<{
+  message: string;
+  updatedData: Meeting;
+  /** Which generated sections the save rewrote. Markdown notes only: empty for
+   *  a title/notes-only save and for the legacy .json format. */
+  edited_fields?: string[];
+}>;
 // Soft-delete (#234): main hides only the summary and returns an `id` + a
 // MAIN-owned `deadline` (epoch ms) so the renderer can offer Undo. `message` is
 // set instead when there was nothing to delete (no summary / already gone).

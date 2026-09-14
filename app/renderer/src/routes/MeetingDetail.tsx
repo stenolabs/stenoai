@@ -1,3 +1,4 @@
+import { t } from '@/i18n';
 import * as React from 'react';
 // Serialises the report markdown to an HTML string for the branded PDF, using
 // the same react-markdown renderer the detail view renders on screen.
@@ -44,6 +45,7 @@ import {
   useGenerateReport,
   useSetActiveReport,
   useDeleteReport,
+  useUpdateMeeting,
   useUpdateUserNotes,
   meetingsKeys,
 } from '@/hooks/useMeetings';
@@ -80,7 +82,7 @@ import {
   useCreateFolder,
 } from '@/hooks/useFolders';
 import { useActiveMeeting } from '@/lib/askBarContext';
-import { ipc, type Meeting, type Report, type Template } from '@/lib/ipc';
+import { ipc, type Meeting, type Report, type Template, type UpdateMeetingPatch } from '@/lib/ipc';
 import { buildTranscriptBundle, defaultExportFilename } from '@/lib/transcriptBundle';
 import { buildNotesCopyText, type StructuredNoteSections } from '@/lib/notesCopy';
 import { buildNotesHtml, hasNotesContent } from '@/lib/notesPdf';
@@ -92,6 +94,8 @@ import { pendingTitleRegens, streamCache, type StreamPhase } from '@/lib/meeting
 import { useReprocessBridge } from '@/hooks/reprocessBridgeStore';
 import { useRecording } from '@/hooks/useRecording';
 import { useAutoSummarizeSetting } from '@/hooks/useSettings';
+import { NoteEditor, type NoteDraft } from './NoteEditor';
+
 import { MEETING_TRANSFER_COPY, useExportMeetingPackage } from '@/hooks/useMeetingTransfer';
 
 const LAST_OPENED_KEY = 'steno-last-opened-meeting';
@@ -103,6 +107,49 @@ const LAST_OPENED_KEY = 'steno-last-opened-meeting';
 // separately and can't require that CJS module, so the contract doc is the source
 // of truth that keeps them aligned.
 const EXPORT_CANCELED_ERROR = 'canceled';
+
+// The note-snapshot sidecar records which sections were edited by their storage
+// keys (`action_items`). A confirm dialog has to name them the way the note
+// editor does, in the order the note lays them out, so the user recognises what
+// is about to be replaced.
+const SECTION_LABELS: ReadonlyArray<readonly [string, string]> = [
+  ['summary', 'Summary'],
+  ['discussion_areas', 'Key topics'],
+  ['key_points', 'Key points'],
+  ['action_items', 'Action items'],
+  ['participants', 'Participants'],
+];
+
+/** `action_items` -> `Action items`, for a key this version has no label for.
+ *  A newer app version can record a section this one doesn't know about; naming
+ *  it readably is better than printing a raw key, and far better than declining
+ *  to warn at all. */
+function humaniseFieldKey(field: string): string {
+  const words = field.replace(/_/g, ' ').trim();
+  return words ? words[0].toUpperCase() + words.slice(1) : field;
+}
+
+/** The human names of the note sections the user has edited, in the order the
+ *  note shows them (not the order the sidecar accumulated them). Empty for
+ *  every "nothing was edited" shape (absent, null, empty, or not an array),
+ *  because a confirm on a note with no edits to lose is worse than none. */
+export function describeEditedSections(editedFields: string[] | undefined | null): string[] {
+  if (!Array.isArray(editedFields) || editedFields.length === 0) return [];
+  const known = SECTION_LABELS.filter(([key]) => editedFields.includes(key)).map(
+    ([, label]) => label
+  );
+  const knownKeys = new Set(SECTION_LABELS.map(([key]) => key));
+  const unknown = editedFields
+    .filter((f) => typeof f === 'string' && !knownKeys.has(f))
+    .map(humaniseFieldKey);
+  return [...known, ...[...new Set(unknown)]];
+}
+
+/** "Summary", "Summary and Action items", "Summary, Key points and Action items". */
+function formatSectionList(labels: string[]): string {
+  if (labels.length <= 1) return labels[0] ?? '';
+  return `${labels.slice(0, -1).join(', ')} and ${labels[labels.length - 1]}`;
+}
 
 interface MeetingDetailProps {
   summaryFile: string;
@@ -292,6 +339,24 @@ function DetailContent({
   const reprocessFailed = reprocessError !== null;
   const qc = useQueryClient();
 
+  // Note editing (D9): the generated note is a document until the user asks to
+  // edit it. Declared up here because the streaming listeners below have to see
+  // it; they're registered once per meeting, so they read it through a ref
+  // rather than re-subscribing on every keystroke's re-render.
+  const [editing, setEditing] = React.useState(false);
+  // Lifted out of the editor so the paths that would unmount it can ask whether
+  // there is anything to lose before they do.
+  const [noteDirty, setNoteDirty] = React.useState(false);
+  const [confirmLeaveEdit, setConfirmLeaveEdit] = React.useState(false);
+  const updateMeeting = useUpdateMeeting();
+  const editingRef = React.useRef(editing);
+  // Layout effect, not a render-time assignment: it still lands before the
+  // renderer yields to the next task, so no IPC chunk can observe a stale
+  // value, and it keeps the ref out of the render path.
+  React.useLayoutEffect(() => {
+    editingRef.current = editing;
+  }, [editing]);
+
   // Report switch: null = the structured Standard summary, otherwise the id of
   // a generated report in meeting.reports. Seeded from the meeting's persisted
   // active_report so reopening a note lands on whatever was last viewed.
@@ -323,6 +388,11 @@ function DetailContent({
     const sessionName = info.name;
     const offChunk = ipc().on.summaryChunk((e) => {
       if (e.summaryFile !== summaryFile) return;
+      // A regenerate that finishes while the user is editing must not swap the
+      // note out from under them. Holding the stream is the conservative choice:
+      // the regenerated note is still on disk and appears as soon as they leave
+      // edit mode.
+      if (editingRef.current) return;
       // Promote from idle too (not just analyzing): an instant-stop note's
       // first-ever summary streams in with no prior reprocess to seed
       // 'analyzing', so without idle→generating the StreamingView (gated on
@@ -453,23 +523,52 @@ function DetailContent({
     );
   };
 
-  const startReprocess = () => {
-    // Synchronous re-entrancy guard (#313 review): the floating dock button's
-    // disabled state arrives one commit late (published via effect to the
-    // reprocess bridge), so a fast double-click there could fire two
-    // overlapping `reprocess` jobs for the same file — main.js deliberately
-    // allows concurrent jobs across files and has no same-file dedupe.
-    // streamCache is a module-level Map written synchronously below, so it
-    // can't lag the way state/props can.
+  // Which sections of this note the user has edited since it was generated, as
+  // main read them from the `_original.json` sidecar. Every path that rebuilds
+  // the note replaces these, so each one asks first. Empty whenever there is
+  // nothing to lose (no sidecar, an unreadable one, or an unedited note), which
+  // is what keeps the confirm off notes it would only teach people to dismiss.
+  const editedSections = React.useMemo(
+    () => describeEditedSections(meeting.edited_fields),
+    [meeting.edited_fields]
+  );
+  const hasNoteEdits = editedSections.length > 0;
+  const editedSectionsText = formatSectionList(editedSections);
+  const [confirmRegenerate, setConfirmRegenerate] = React.useState(false);
+
+  // Synchronous re-entrancy guard (#313 review): the floating dock button's
+  // disabled state arrives one commit late (published via effect to the
+  // reprocess bridge), so a fast double-click there could fire two
+  // overlapping `reprocess` jobs for the same file - main.js deliberately
+  // allows concurrent jobs across files and has no same-file dedupe.
+  // streamCache is a module-level Map written synchronously by the starters
+  // below, so it can't lag the way state/props can.
+  //
+  // `editing` belongs here rather than on each click handler because the two
+  // rebuild paths that are NOT this component's own buttons (the floating
+  // GenerateNotesBar, which calls the published `start`, and the re-transcribe
+  // menu item) would otherwise slip through. With an open editor the stream is
+  // suppressed (editingRef), so a rebuild started here is invisible: Python
+  // rewrites the note, and the next Save patches the FRESH note with the
+  // PRE-regeneration draft, silently replacing content the user never saw. The
+  // #249 standard-backup does not rescue that - it holds the note as it was
+  // BEFORE the regenerate, not the generated text that was just overwritten.
+  const rebuildInFlight = () => {
     const cached = streamCache.get(summaryFile);
-    if (
+    return (
+      editing ||
       reprocess.isPending ||
       streamPhase !== 'idle' ||
       cached?.phase === 'analyzing' ||
       cached?.phase === 'generating'
-    ) {
-      return;
-    }
+    );
+  };
+
+  const runReprocess = () => {
+    // Re-checked here and not only at the entry points: the confirm dialog puts
+    // an arbitrary amount of user time between the click and this call, and a
+    // background job for this note can start in that window.
+    if (rebuildInFlight()) return;
     setStreamText('');
     setStreamPhase('analyzing');
     setChunkProgress(null);
@@ -494,23 +593,30 @@ function DetailContent({
     );
   };
 
+  // The single entry point for "rebuild this note from the transcript". The
+  // header icon, the retry banner and the floating GenerateNotesBar all come
+  // through here, so the guard lives here rather than on each click handler:
+  // one of those three is not even in this component's tree.
+  const startReprocess = () => {
+    if (rebuildInFlight()) return;
+    if (hasNoteEdits) {
+      setConfirmRegenerate(true);
+      return;
+    }
+    runReprocess();
+  };
+
   // Re-transcribe (#266): re-run ASR on the source recording with the current
   // settings, then re-summarise. Reuses the SAME streaming UI as reprocess —
   // the backend drives summary-chunk/-complete keyed by summaryFile — so we only
   // swap which mutation fires. Transcription is silent (no CHUNK), so the view
   // stays in "analyzing" until summarisation streams, matching reprocess's
   // pre-first-chunk state. Mirrors startReprocess's re-entrancy guard + onError.
+  // It rewrites the note too, so it discards edits exactly like a reprocess:
+  // its existing confirm below carries the warning instead of stacking a second
+  // dialog on top of it.
   const startRetranscribe = () => {
-    const cached = streamCache.get(summaryFile);
-    if (
-      retranscribe.isPending ||
-      reprocess.isPending ||
-      streamPhase !== 'idle' ||
-      cached?.phase === 'analyzing' ||
-      cached?.phase === 'generating'
-    ) {
-      return;
-    }
+    if (retranscribe.isPending || rebuildInFlight()) return;
     setStreamText('');
     setStreamPhase('analyzing');
     setChunkProgress(null);
@@ -656,6 +762,39 @@ function DetailContent({
   };
 
   const summary = meeting.summary?.trim();
+  // Seeded from what the read-only note actually shows, reasoning stripped.
+  // Editing the summary must not resurrect a <think> block the UI hides.
+  const noteDraft: NoteDraft = {
+    summary: summary ? stripReasoning(summary) : '',
+    keyPoints: meeting.key_points ?? [],
+    actionItems: asStringArray(meeting.action_items),
+    discussionAreas: asDiscussionAreas(meeting.discussion_areas),
+  };
+  const closeEditor = () => {
+    setEditing(false);
+    setNoteDirty(false);
+  };
+  // A rejected mutation (main refuses a forged heading, or the write fails)
+  // propagates to the editor, which keeps edit mode and the typing.
+  const saveNoteEdits = async (patch: UpdateMeetingPatch) => {
+    await updateMeeting.mutateAsync({ summaryFile, patch });
+    closeEditor();
+  };
+  // The in-view back button is the one exit from an open editor this view owns.
+  // The sidebar and the command palette still unmount it without asking; that
+  // needs a router-level unsaved-changes hook, tracked separately.
+  const leaveDetail = () => {
+    if (editing && noteDirty) {
+      setConfirmLeaveEdit(true);
+      return;
+    }
+    navigate('/');
+  };
+  // Same "is there a note here at all" test the PDF export uses, plus the two
+  // states that are about to rewrite the note anyway.
+  const canEditNote =
+    summaryFile.endsWith('_summary.md') &&
+    canExportNotesPdf && !activeReport && streamPhase === 'idle' && !reprocess.isPending;
   const participants = asStringArray(meeting.participants);
   const keyPoints = meeting.key_points ?? [];
   const actionItems = asStringArray(meeting.action_items);
@@ -767,7 +906,7 @@ function DetailContent({
         <div className="flex items-center justify-between gap-3">
           <button
             type="button"
-            onClick={() => navigate('/')}
+            onClick={leaveDetail}
             aria-label="Back to home"
             className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[12.5px] transition-colors hover:bg-[color:var(--surface-hover)] hover:text-[color:var(--fg-1)]"
             style={{ color: 'var(--fg-2)' }}
@@ -776,6 +915,23 @@ function DetailContent({
             Home
           </button>
           <div className="flex items-center gap-1">
+            {/* Edit the generated note (D9). Only for the Standard structured
+                note (a template report is generated output with no section
+                grammar to patch) and only while nothing else is rewriting it. */}
+            {tab === 'summary' && !editing && summaryFile.endsWith('_summary.md') && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <ActionIconButton
+                    label={t('noteEditor.edit')}
+                    onClick={() => setEditing(true)}
+                    disabled={!canEditNote}
+                  >
+                    <PencilLine className="size-[13px]" />
+                  </ActionIconButton>
+                </TooltipTrigger>
+                <TooltipContent side="bottom">{t('noteEditor.edit')}</TooltipContent>
+              </Tooltip>
+            )}
             <Tooltip>
               <TooltipTrigger asChild>
                 {/* Disabled while a summary/report stream is on screen — the
@@ -822,7 +978,14 @@ function DetailContent({
                     // Disable while a recording is live on THIS note — same
                     // reason the floating CTA hides: don't summarise a
                     // still-growing transcript out from under the recording.
-                    disabled={reprocess.isPending || streamPhase !== 'idle' || isRecordingThisNote}
+                    // Also off while the note editor is open: a regenerate
+                    // would discard the edit being typed.
+                    disabled={
+                      reprocess.isPending ||
+                      streamPhase !== 'idle' ||
+                      isRecordingThisNote ||
+                      editing
+                    }
                   >
                     <RefreshCw
                       className={cn(
@@ -921,7 +1084,14 @@ function DetailContent({
                       reprocess.isPending ||
                       retranscribe.isPending ||
                       streamPhase !== 'idle' ||
-                      isRecordingThisNote
+                      isRecordingThisNote ||
+                      // A re-transcribe rewrites the note exactly like a
+                      // regenerate, so it gets the same editing lock as the two
+                      // Generate-notes CTAs (startRetranscribe's own
+                      // rebuildInFlight check is the authority; this only stops
+                      // the confirm dialog from opening over an editor it can
+                      // no longer act on).
+                      editing
                     }
                   >
                     <Mic className="size-[13px] shrink-0" style={{ color: 'var(--fg-2)' }} />
@@ -1134,6 +1304,7 @@ function DetailContent({
         onDeleteReport={onDeleteReport}
         onGenerate={onGenerateReport}
         generating={generateReport.isPending}
+        disabled={editing}
       />
 
       {tab === 'summary' && (
@@ -1160,13 +1331,23 @@ function DetailContent({
               <Button
                 className="mt-1"
                 onClick={startReprocess}
-                disabled={reprocess.isPending || streamPhase !== 'idle'}
+                // This banner renders above the editor rather than being
+                // replaced by it, so it needs the same editing lock as the
+                // header's Generate-notes button.
+                disabled={reprocess.isPending || streamPhase !== 'idle' || editing}
               >
                 Generate notes
               </Button>
             </section>
           )}
-          {streamPhase !== 'idle' ? (
+          {editing ? (
+            <NoteEditor
+              value={noteDraft}
+              onSave={saveNoteEdits}
+              onCancel={closeEditor}
+              onDirtyChange={setNoteDirty}
+            />
+          ) : streamPhase !== 'idle' ? (
             <StreamingView text={streamText} phase={streamPhase} chunkProgress={chunkProgress} />
           ) : activeReport ? (
             <section
@@ -1381,12 +1562,67 @@ function DetailContent({
         open={retranscribeOpen}
         onOpenChange={setRetranscribeOpen}
         title="Re-transcribe this recording?"
-        description="This re-runs transcription with your current transcription settings, replacing the transcript and regenerating the summary."
+        description={
+          'This re-runs transcription with your current transcription settings, replacing the transcript and regenerating the summary.' +
+          // #249: reprocess (which --retranscribe runs through) snapshots the
+          // current note as a switchable report before overwriting it, so the
+          // edited version is one click away in the menu next to Summary
+          // rather than gone. Say so plainly - not "replaced, but kept" in
+          // the same breath - and name where it lands by what's on screen
+          // (the Summary switcher), not the data-testid.
+          (hasNoteEdits
+            ? ` You edited ${editedSectionsText}. Your edited version stays available as "Standard" with a timestamp, in the menu next to Summary.`
+            : '')
+        }
         confirmLabel="Re-transcribe"
+        destructive={hasNoteEdits}
         isPending={retranscribe.isPending}
         onConfirm={() => {
           setRetranscribeOpen(false);
           startRetranscribe();
+        }}
+      />
+
+      {/* Every rebuild path funnels through startReprocess, so this one dialog
+          covers the header CTA, the retry banner and the floating bar. */}
+      <ConfirmDialog
+        open={confirmRegenerate}
+        onOpenChange={setConfirmRegenerate}
+        title={t('noteEditor.regenerateTitle')}
+        // #249: reprocess snapshots the current note as a switchable report
+        // before overwriting it, so the edited version is one click away in
+        // the menu next to Summary rather than gone. Say so plainly - not
+        // "replaced, but kept" in the same breath - and name where it lands
+        // by what's on screen (the Summary/report switcher), not the
+        // data-testid.
+        description={
+          (hasNoteEdits ? t('noteEditor.editedPrefix', { sections: editedSectionsText }) : '') +
+          t('noteEditor.rewriteExplanation') +
+          (hasNoteEdits
+            ? t('noteEditor.savedStandard')
+            : '')
+        }
+        confirmLabel={t('noteEditor.regenerateAction')}
+        cancelLabel={t('noteEditor.keepEdits')}
+        destructive
+        onConfirm={() => {
+          setConfirmRegenerate(false);
+          runReprocess();
+        }}
+      />
+
+      <ConfirmDialog
+        open={confirmLeaveEdit}
+        onOpenChange={setConfirmLeaveEdit}
+        title={t('noteEditor.discardTitle')}
+        description={t('noteEditor.discardDescription')}
+        confirmLabel={t('noteEditor.discardAction')}
+        cancelLabel={t('noteEditor.keepEditing')}
+        destructive
+        onConfirm={() => {
+          setConfirmLeaveEdit(false);
+          closeEditor();
+          navigate('/');
         }}
       />
     </article>
@@ -1420,6 +1656,7 @@ function NoteViewToggle({
   onDeleteReport,
   onGenerate,
   generating,
+  disabled = false,
 }: {
   tab: 'summary' | 'notes';
   onTab: (t: 'summary' | 'notes') => void;
@@ -1431,6 +1668,9 @@ function NoteViewToggle({
   onDeleteReport: (reportId: string) => void;
   onGenerate: (templateId: string) => void;
   generating: boolean;
+  /** Locked while the note editor is open: every path out of this control
+   *  (switching view, generating a report) would drop unsaved edits. */
+  disabled?: boolean;
 }) {
   const [menuOpen, setMenuOpen] = React.useState(false);
   const [deleteTarget, setDeleteTarget] = React.useState<Report | null>(null);
@@ -1458,7 +1698,7 @@ function NoteViewToggle({
         role="tablist"
         aria-label="Note view"
         className="inline-flex items-stretch overflow-hidden rounded-full"
-        style={{ border: '1px solid var(--border-subtle)' }}
+        style={{ border: '1px solid var(--border-subtle)', opacity: disabled ? 0.5 : 1 }}
       >
         {/* Left — My notes */}
         <button
@@ -1467,6 +1707,7 @@ function NoteViewToggle({
           aria-selected={notesActive}
           data-testid="tab-notes"
           onClick={() => onTab('notes')}
+          disabled={disabled}
           className="inline-flex items-center gap-1.5 px-3 py-1 text-[13px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
           style={{
             background: notesActive ? 'var(--surface-active)' : 'transparent',
@@ -1501,6 +1742,7 @@ function NoteViewToggle({
                 aria-selected={summaryActive}
                 data-testid="tab-summary"
                 onClick={() => onTab('summary')}
+                disabled={disabled}
                 className="inline-flex items-center py-1 pl-3 pr-1.5 text-[13px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
                 style={{ color: summaryActive ? 'var(--fg-1)' : 'var(--fg-2)' }}
               >
@@ -1511,6 +1753,7 @@ function NoteViewToggle({
                   type="button"
                   aria-label="Choose view or template"
                   data-testid="note-view-menu-trigger"
+                  disabled={disabled}
                   className="inline-flex items-center py-1 pl-0.5 pr-2.5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring hover:text-[color:var(--fg-1)]"
                   style={{ color: 'var(--fg-2)' }}
                 >

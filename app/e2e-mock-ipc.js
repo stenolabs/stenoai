@@ -67,7 +67,7 @@ const MINIMAL_WAV_BASE64 = buildSilentWavBase64(SILENT_WAV_SECONDS, SILENT_WAV_S
 const SEED_MEETING = {
   session_info: {
     name: 'Epsilon Planning',
-    summary_file: 'epsilon_summary.json',
+    summary_file: process.env.STENOAI_E2E_EDIT_MARKDOWN === '1' ? 'epsilon_summary.md' : 'epsilon_summary.json',
     processed_at: '2026-06-19T12:00:00Z',
     duration_seconds: 1500,
     transcription_failed: false,
@@ -353,6 +353,20 @@ function install({ ipcMain }) {
   // tab in T1 (summaryFile → { user_notes }). The real handler persists to the
   // note file; the T1 seeds are consts, so we overlay here instead.
   const meetingOverlay = {};
+
+  // Every update-meeting call, verbatim, so a T1 spec can assert the bridge
+  // was invoked exactly once with exactly the fields it expects (note-edit.t1).
+  // Read via ElectronApplication.evaluate (the main process), not through
+  // window.stenoai in the page: contextBridge's exposed API is read-only from
+  // the renderer's world, so monkey-patching window.stenoai.meetings.update in
+  // page.evaluate silently no-ops instead of recording anything.
+  global.__stenoaiE2eUpdateMeetingCalls = [];
+
+  // Every reprocess-meeting call, same recording trick and the same reason. A
+  // spec that has to prove a rebuild did NOT start cannot assert on the UI
+  // (with the editor open the streaming view is suppressed on purpose), so the
+  // only honest evidence is that the IPC was never reached.
+  global.__stenoaiE2eReprocessCalls = [];
 
   // In-flight soft-deletes (#234), id → the deleted meeting. Mirrors main's
   // pendingDelete map just far enough for undo to hand the row back.
@@ -845,13 +859,43 @@ function install({ ipcMain }) {
     // permissive default hand the toast an undefined array to map over.
     'list-pending-deletes': async () => ({ success: true, pending: [] }),
 
-    // My notes autosave: persist the overlay so a follow-up get-meeting sees
-    // the edit (mirrors the real update-meeting body-section upsert).
+    // My notes autosave AND the note editor (D9) share this one handler, like
+    // the real update-meeting IPC. `user_notes` overlays the My notes tab; the
+    // four structural note fields overlay the Standard note AND accumulate
+    // into `edited_fields`, mirroring app/note-snapshot.js's markEdited so the
+    // regenerate guard (which reads meeting.edited_fields) sees the same shape
+    // under mock IPC that it would from the real sidecar.
+    // Recorded, then answered exactly the way the permissive unknown-channel
+    // default did (`{ success: true }`, no events): the renderer stays in its
+    // "analyzing" state, which is what the floating-bar T1 already relies on.
+    'reprocess-meeting': async (_event, summaryFile, regenerateTitle, sessionName) => {
+      global.__stenoaiE2eReprocessCalls.push({ summaryFile, regenerateTitle, sessionName });
+      return { success: true };
+    },
+
     'update-meeting': async (_event, summaryFile, patch) => {
+      global.__stenoaiE2eUpdateMeetingCalls.push({ summaryFile, patch });
       if (patch && typeof patch.user_notes === 'string') {
         meetingOverlay[summaryFile] = {
           ...(meetingOverlay[summaryFile] || {}),
           user_notes: patch.user_notes,
+        };
+      }
+      const changed = [];
+      for (const key of ['summary', 'key_points', 'action_items', 'discussion_areas']) {
+        if (patch && patch[key] !== undefined) {
+          meetingOverlay[summaryFile] = {
+            ...(meetingOverlay[summaryFile] || {}),
+            [key]: patch[key],
+          };
+          changed.push(key);
+        }
+      }
+      if (changed.length) {
+        const existing = meetingOverlay[summaryFile]?.edited_fields || [];
+        meetingOverlay[summaryFile] = {
+          ...(meetingOverlay[summaryFile] || {}),
+          edited_fields: [...new Set([...existing, ...changed])],
         };
       }
       return { success: true, message: 'ok' };

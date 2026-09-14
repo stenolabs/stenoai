@@ -84,6 +84,15 @@ const { isLinuxLoopbackSupported, startLoopbackCapture, createFrameAligner, crea
 const { sweepOrphanedLiveSnapshots } = require('./live-snapshot-sweep');
 const { userNotesFilePath } = require('./notes-file');
 const {
+  setSummary,
+  setKeyPoints,
+  setActionItems,
+  setDiscussionAreas,
+  containsStructuralLine,
+} = require('./note-sections');
+const { writeFileAtomicSync } = require('./atomic-write');
+const { readSnapshot, captureSnapshot, markEdited, editedFieldNames } = require('./note-snapshot');
+const {
   buildNoteReadyNotificationOptions,
   buildTranscriptReadyBody,
   buildCaptureErrorBody,
@@ -3043,11 +3052,17 @@ ipcMain.handle('get-meeting', async (_event, summaryFile) => {
       // TranscriptPanel), so we return everything parseMeetingMarkdown yields.
       const mdMeeting = parseMeetingMarkdown(content, realResolved);
       const mdSidecar = await readReportsSidecar(realResolved, allowedOutputDirs);
-      return { success: true, meeting: { ...mdMeeting, has_speaker_sidecar: hasSpeakerSidecar, reports: mdSidecar.reports, active_report: mdSidecar.active_report } };
+      // edited_fields comes LAST in every spread so it is always main's own
+      // reading of the sidecar, never a value that happened to be parsed out of
+      // the note file. It drives the regenerate guard, so a note that cannot
+      // supply one has to arrive as an empty list rather than as undefined -
+      // editedFieldNames guarantees that for a missing, corrupt or
+      // wrong-versioned sidecar alike.
+      return { success: true, meeting: { ...mdMeeting, has_speaker_sidecar: hasSpeakerSidecar, reports: mdSidecar.reports, active_report: mdSidecar.active_report, edited_fields: editedFieldNames(realResolved) } };
     }
     const jsonMeeting = JSON.parse(content);
     const jsonSidecar = await readReportsSidecar(realResolved, allowedOutputDirs);
-    return { success: true, meeting: { ...jsonMeeting, has_speaker_sidecar: hasSpeakerSidecar, reports: jsonSidecar.reports, active_report: jsonSidecar.active_report } };
+    return { success: true, meeting: { ...jsonMeeting, has_speaker_sidecar: hasSpeakerSidecar, reports: jsonSidecar.reports, active_report: jsonSidecar.active_report, edited_fields: editedFieldNames(realResolved) } };
   } catch (error) {
     return { success: false, error: error.message };
   }
@@ -4258,6 +4273,12 @@ function upsertUserNotesSection(body, notes) {
 }
 
 ipcMain.handle('update-meeting', async (event, summaryFilePath, updates) => {
+  // Which note content fields this call rewrote. Declared at handler scope, not
+  // inside the markdown branch, so the single write site further down can record
+  // the edit without guessing whether the variable exists. Only the markdown
+  // branch fills it: the legacy .json format has no snapshot sidecar and keeps
+  // its previous behaviour, so it always reports an empty list.
+  const changed = [];
   try {
     // Security: the renderer is untrusted, so containment-check the summary path
     // (symlink-safe, output/ only) and operate exclusively on the canonical
@@ -4267,6 +4288,94 @@ ipcMain.handle('update-meeting', async (event, summaryFilePath, updates) => {
       return { success: false, error: validated.error };
     }
     const { realPath } = validated;
+
+    if (!updates || typeof updates !== 'object') {
+      return { success: false, error: 'Invalid update payload' };
+    }
+
+    // Type-check the note content fields before anything is read or written.
+    // The section writers coerce with String(), so a wrong-typed value would
+    // not fail loudly - it would land in the note as "[object Object]", and a
+    // nested one would slip a forged heading past the structural scan below,
+    // which can only inspect strings: key_points: [['## Transcript']] holds no
+    // string to scan yet stringifies straight back into a heading. Rejecting
+    // the whole payload is both safer and kinder than writing a mangled note.
+    const isStringArray = (value) =>
+      Array.isArray(value) && value.every((item) => typeof item === 'string');
+    // `analysis` may be absent (or null, which is how an empty analysis can
+    // come back through a JSON round trip); a title is what makes a topic.
+    const isDiscussionAreaList = (value) =>
+      Array.isArray(value) &&
+      value.every(
+        (area) =>
+          area !== null &&
+          typeof area === 'object' &&
+          !Array.isArray(area) &&
+          typeof area.title === 'string' &&
+          (area.analysis === undefined || area.analysis === null || typeof area.analysis === 'string'),
+      );
+
+    // A bullet-list entry is ONE line by construction: renderBulletList writes
+    // "- <entry>", and both parsers keep only lines that start with "- "
+    // (app/main.js:2639/2647, and the Python mirror). A second line in an entry
+    // is therefore dropped on the next read, and the save after that rewrites
+    // the section from the parsed array and deletes it from the file too. The
+    // renderer is where such a string first becomes reachable, so refuse it
+    // here rather than joining or truncating it behind the user's back.
+    const LINE_BREAK = /[\r\n]/;
+
+    if (updates.summary !== undefined && typeof updates.summary !== 'string') {
+      return { success: false, error: 'summary must be a string.' };
+    }
+    if (updates.key_points !== undefined) {
+      if (!isStringArray(updates.key_points)) {
+        return { success: false, error: 'key_points must be an array of strings.' };
+      }
+      if (updates.key_points.some((item) => LINE_BREAK.test(item))) {
+        return { success: false, error: 'A key point may not contain a line break.' };
+      }
+    }
+    if (updates.action_items !== undefined) {
+      if (!isStringArray(updates.action_items)) {
+        return { success: false, error: 'action_items must be an array of strings.' };
+      }
+      if (updates.action_items.some((item) => LINE_BREAK.test(item))) {
+        return { success: false, error: 'An action item may not contain a line break.' };
+      }
+    }
+    if (updates.discussion_areas !== undefined && !isDiscussionAreaList(updates.discussion_areas)) {
+      return {
+        success: false,
+        error: 'discussion_areas must be an array of { title, analysis } objects.',
+      };
+    }
+
+    // The renderer is untrusted: a field containing a '## ' line would forge a
+    // section boundary and silently rewrite the note's structure for every
+    // consumer (both parsers, the clipboard export, the PDF export, org share).
+    //
+    // Scan the NORMALIZED text, because that is the grammar the parsers
+    // actually split on: both of them run normalizeMarkdownForParsing (and its
+    // Python mirror) BEFORE the '## ' split, which breaks a reasoning close-tag
+    // away from a heading glued to it - so "b</think>## Summary" is a legal
+    // mid-line string at write time and a real heading at read time. Anchoring
+    // on '^' alone would let that through, and the forged heading would then
+    // win the parser's last-occurrence rule and blank the real section. This is
+    // not only an attack: the normalizer exists precisely because models emit
+    // that shape, so a user pasting model output hits it by accident. Tying the
+    // gate to the parser's own normalizer keeps the two from drifting apart.
+    // Reject, never strip: silently rewriting the user's text is worse.
+    const textCandidates = [
+      updates.summary,
+      ...(Array.isArray(updates.key_points) ? updates.key_points : []),
+      ...(Array.isArray(updates.action_items) ? updates.action_items : []),
+      ...(Array.isArray(updates.discussion_areas)
+        ? updates.discussion_areas.flatMap((area) => [area && area.title, area && area.analysis])
+        : []),
+    ].filter((value) => typeof value === 'string');
+    if (textCandidates.some((value) => containsStructuralLine(normalizeMarkdownForParsing(value)))) {
+      return { success: false, error: 'A note field may not contain a markdown heading.' };
+    }
 
     // Read existing data
     if (!fs.existsSync(realPath)) {
@@ -4305,6 +4414,24 @@ ipcMain.handle('update-meeting', async (event, summaryFilePath, updates) => {
       let body = raw;
       let updatedRaw = raw;
 
+      // Does this call touch the note's generated content (as opposed to only
+      // its title or the user's own notes)? Drives the snapshot capture below.
+      const structural =
+        updates.summary !== undefined ||
+        updates.key_points !== undefined ||
+        updates.action_items !== undefined ||
+        updates.discussion_areas !== undefined;
+
+      // Does it touch the note BODY at all? Every body writer - the generated
+      // sections AND the user's own notes - lives inside the frontmatter branch
+      // below, so this is what the missing-frontmatter guard has to key off.
+      // `structural` alone would leave the My-notes autosave (which records no
+      // edited field) reporting success over a file it never changed.
+      const bodyEdit = structural || updates.user_notes !== undefined;
+      // Set only where the body is actually reachable. A note whose frontmatter
+      // is missing or never closed leaves this false, and the guard fires.
+      let frontmatterParsed = false;
+
       if (raw.startsWith('---')) {
         // Split with NO limit and rejoin the tail: split('---', 3) DISCARDS any
         // '---' in the body (markdown thematic breaks in summaries, and the
@@ -4314,6 +4441,7 @@ ipcMain.handle('update-meeting', async (event, summaryFilePath, updates) => {
         // clearNoteProcessingFlag / parseMeetingMarkdown's split/slice(2).join.
         const parts = raw.split('---');
         if (parts.length >= 3) {
+          frontmatterParsed = true;
           const fmText = parts[1];
           body = parts.slice(2).join('---');
           const lines = fmText.split('\n');
@@ -4357,11 +4485,83 @@ ipcMain.handle('update-meeting', async (event, summaryFilePath, updates) => {
           if (updates.user_notes !== undefined) {
             body = upsertUserNotesSection(body, updates.user_notes);
           }
+
+          // Snapshot BEFORE the first structural edit. For a note that predates
+          // this feature the current content is the model's own output, because
+          // the note has never been editable - so a lazy capture here is still
+          // an accurate original.
+          if (structural && !readSnapshot(realPath)) {
+            try {
+              const before = parseMeetingMarkdown(raw, realPath);
+              captureSnapshot(
+                realPath,
+                {
+                  summary: before.summary,
+                  key_points: before.key_points,
+                  action_items: before.action_items,
+                  discussion_areas: before.discussion_areas,
+                  participants: before.participants,
+                },
+                'first_edit',
+              );
+            } catch (snapshotError) {
+              // note-snapshot's writes throw by design (a path it cannot derive
+              // a sidecar from must not be written to). That contract protects
+              // the note, and it must not also cost the user their edit: the
+              // sidecar is a diff base for later learning, the edit is the
+              // product. Log it and save anyway. The cost is that this note has
+              // no original to compare against, so a later regenerate cannot
+              // warn that it is about to discard edits (see the regenerate
+              // guard) - worth surfacing in the log, not worth refusing a save
+              // that would otherwise succeed.
+              console.error('Note snapshot capture failed (saving anyway):', snapshotError);
+            }
+          }
+
+          if (updates.summary !== undefined) {
+            body = setSummary(body, updates.summary);
+            changed.push('summary');
+          }
+          if (updates.discussion_areas !== undefined) {
+            body = setDiscussionAreas(body, updates.discussion_areas);
+            changed.push('discussion_areas');
+          }
+          if (updates.key_points !== undefined) {
+            body = setKeyPoints(body, updates.key_points);
+            changed.push('key_points');
+          }
+          if (updates.action_items !== undefined) {
+            body = setActionItems(body, updates.action_items);
+            changed.push('action_items');
+          }
+
           updatedRaw = `---${newLines.join('\n')}---${body}`;
         }
       }
 
-      fs.writeFileSync(realPath, updatedRaw, 'utf8');
+      // A content edit only reaches `body` inside the frontmatter block above.
+      // If we get here having been asked for one while that block was skipped,
+      // the note had no parsable frontmatter and the edit was silently dropped
+      // - report that instead of returning success over a file we did not
+      // change. This covers My notes as well as the generated sections: it is
+      // the autosaving editor, so it is the one that loses text unprompted.
+      if (bodyEdit && !frontmatterParsed) {
+        return { success: false, error: 'Note has no readable frontmatter; refusing to edit it.' };
+      }
+
+      // Atomic: a crash or a full disk mid-write must not leave a truncated
+      // note behind, and this write can now carry the summary itself.
+      writeFileAtomicSync(realPath, updatedRaw);
+      if (changed.length) {
+        try {
+          markEdited(realPath, changed);
+        } catch (snapshotError) {
+          // Same trade as the capture above: the note is already saved, so a
+          // sidecar bookkeeping failure must not turn a successful save into a
+          // reported failure.
+          console.error('Note snapshot update failed (note was saved):', snapshotError);
+        }
+      }
 
       // Title/notes edits fire no processing-complete, so mirror explicitly
       // (#413). A title change here drives the vault-file rename via the index.
@@ -4404,7 +4604,10 @@ ipcMain.handle('update-meeting', async (event, summaryFilePath, updates) => {
 
     return {
       success: true,
-      message: 'Meeting updated successfully'
+      message: 'Meeting updated successfully',
+      // Markdown notes only: which generated sections this call rewrote. Empty
+      // for a title/notes-only save and for the legacy .json format.
+      edited_fields: changed,
     };
   } catch (error) {
     console.error('Update meeting error:', error);
@@ -4489,8 +4692,9 @@ ipcMain.handle('delete-meeting', async (event, meetingData) => {
 
     // --- Enumerate the ANCILLARY file set (unlinked only at commit), bound to
     // this note's STEM ONLY (never the renderer-supplied transcript_file /
-    // audio_file): the <stem>_reports.json sidecar and the stem-derived
-    // transcript + recording(s). Only the SUMMARY file itself is hidden.
+    // audio_file): the <stem>_reports.json and <stem>_original.json sidecars and
+    // the stem-derived transcript + recording(s). Only the SUMMARY file itself
+    // is hidden.
     //
     // Deliberately EXCLUDED: `<safeName>_notes.txt`. That draft-notes file is
     // named from the renderer-controlled session title, NOT the stem, so two
@@ -4498,18 +4702,27 @@ ipcMain.handle('delete-meeting', async (event, meetingData) => {
     // permanently unlink another note's draft. It isn't safely bindable to this
     // note's identity, so we leave it orphaned (the fail-safe direction).
     const ancillaryCandidates = [];
-    // Reports sidecar: <stem>_summary.{md,json} -> <stem>_reports.json.
-    {
+    // Stem-derived sidecars: <stem>_summary.{md,json} -> <stem>_<suffix>.
+    //   _reports.json  - generated template reports (#249 backups included).
+    //   _original.json - the model's own output for this note (app/note-snapshot.js
+    //     and simple_recorder.py's _write_original_snapshot). It holds summary,
+    //     key_points, action_items, discussion_areas AND participants, i.e. the
+    //     substance of the meeting and who was in it. Leaving it behind would
+    //     mean a committed delete still leaves a readable copy of the meeting on
+    //     disk, with no UI that ever shows it - a privacy regression against the
+    //     local-first promise, not just untidiness. Same "unlinked only at
+    //     commit" semantics as the rest: an undo must restore a COMPLETE note.
+    for (const sidecarSuffix of ['_reports.json', '_original.json']) {
       let sidecarBase = null;
       for (const suf of ['_summary.md', '_summary.json']) {
         if (summaryBase.endsWith(suf)) {
-          sidecarBase = summaryBase.slice(0, -suf.length) + '_reports.json';
+          sidecarBase = summaryBase.slice(0, -suf.length) + sidecarSuffix;
           break;
         }
       }
       if (!sidecarBase) {
         const ext = path.extname(summaryBase);
-        sidecarBase = summaryBase.slice(0, summaryBase.length - ext.length) + '_reports.json';
+        sidecarBase = summaryBase.slice(0, summaryBase.length - ext.length) + sidecarSuffix;
       }
       ancillaryCandidates.push(path.join(outputDir, sidecarBase));
     }

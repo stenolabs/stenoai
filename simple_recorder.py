@@ -893,9 +893,6 @@ Summary output language: {config.get_language_name(output_language)}
                 print(f"TITLE:{session_name}", flush=True)
                 print(f"Auto-generated title: {session_name}")
 
-        # Step 4: Parse streamed markdown into structured JSON
-        parsed = self._parse_streamed_markdown(streamed_md)
-
         # Step 5: Save as .md (primary format for new meetings)
         summary_path = self.output_dir / f"{audio_path.stem}_summary.md"
         processed_at = datetime.now().isoformat()
@@ -921,6 +918,7 @@ Summary output language: {config.get_language_name(output_language)}
             md_lines.append('')
             md_lines.append(notes_text)
         _atomic_write_text(summary_path, '\n'.join(md_lines))
+        _write_original_snapshot(summary_path)
 
         # Persist the raw diarization clusters/embeddings this run already
         # computed (zero extra diarization cost -- see
@@ -957,6 +955,74 @@ Summary output language: {config.get_language_name(output_language)}
                 "summary_file": str(summary_path),
             }
         }
+
+
+def _write_original_snapshot(summary_path) -> None:
+    """Persist the model's own output next to a freshly written note.
+
+    The note file is rebuilt from scratch by reprocess, so the snapshot cannot
+    live inside it. It is the diff base the note editor needs in order to warn
+    before a regenerate discards user corrections, and it is best-effort: a
+    failure here must never fail a pipeline run that produced a good note.
+
+    This writer OVERWRITES an existing sidecar unconditionally, while the JS
+    writer (app/note-snapshot.js captureSnapshot) never does. That is one rule,
+    not two conventions: only the writer that just (re)generated the note's
+    content may replace its snapshot. The rule, the reasoning and its accepted
+    downgrade consequence are written down once, in the "WHO MAY OVERWRITE"
+    block at the top of app/note-snapshot.js.
+
+    Reads the note back from disk and parses it with `_parse_meeting_markdown`
+    (the mirror of app/main.js's parseMeetingMarkdown) rather than reusing a
+    streamed-markdown parse: `_parse_streamed_markdown` collapses whitespace
+    differently (joins the summary with spaces, strips each topic line), so
+    snapshotting its output would disagree with what the note editor itself
+    reads back from this same file - a spurious diff on every unedited note.
+    Parsing the just-written file is what makes the two agree by construction.
+    """
+    try:
+        summary_path = Path(summary_path)
+        str_path = str(summary_path)
+        suffix = '_summary.md'
+        # Anchored on the end of the path, matching app/note-snapshot.js's
+        # noteSnapshotPath. An unanchored str.replace() would silently derive
+        # the wrong sidecar path for a summary file that doesn't end in
+        # "_summary.md" (e.g. reprocess called on a bare ".md" file) and the
+        # write below would then land on - and destroy - the note itself
+        # instead of a sidecar next to it. Raise here instead: the except
+        # below turns it into a logged warning, never a note-destroying write.
+        if not str_path.endswith(suffix):
+            raise ValueError(
+                f"expected a path ending in '{suffix}', got: {str_path}"
+            )
+        snapshot_path = Path(str_path[: -len(suffix)] + '_original.json')
+        parsed = _parse_meeting_markdown(summary_path)
+        payload = {
+            'version': 1,
+            'captured_at': datetime.now().isoformat(),
+            'capture': 'generation',
+            'original': {
+                'summary': parsed.get('summary', ''),
+                'key_points': parsed.get('key_points', []),
+                'action_items': parsed.get('action_items', []),
+                'discussion_areas': parsed.get('discussion_areas', []),
+                'participants': parsed.get('participants', []),
+            },
+            # A regenerated note starts clean: its corrections were either
+            # confirmed as discarded by the user or never existed.
+            'edited_fields': [],
+            'edited_at': None,
+        }
+        # Atomic write (tempfile + os.replace): a plain write_text() truncates
+        # first, and a crash mid-write leaves a torn JSON file. That's worse
+        # than a transient bad read here - readSnapshot (app/note-snapshot.js)
+        # treats unparseable JSON as "absent", but captureSnapshot refuses to
+        # overwrite a FILE that already exists, so a torn sidecar permanently
+        # loses this note's diff base and silences the regenerate warning for
+        # it forever.
+        _atomic_write_json(snapshot_path, payload)
+    except Exception as exc:
+        logger.warning(f"Could not write original snapshot for {summary_path}: {exc}")
 
 
 def generate_default_template_report(summary_path, transcript, notes, language,
@@ -1513,9 +1579,6 @@ def process_streaming(audio_file, name, notes, live_transcript, append_to):
         audio_path = Path(audio_file)
         summary_path = recorder.output_dir / f"{audio_path.stem}_summary.md"
 
-        # Parse the streamed markdown for title generation
-        parsed = MeetingPipeline._parse_streamed_markdown(streamed_md)
-
         # Save as .md only (primary format for new meetings)
         summary_path = summary_path.with_suffix('.md')
         processed_at = datetime.now().isoformat()
@@ -1549,6 +1612,7 @@ def process_streaming(audio_file, name, notes, live_transcript, append_to):
             md_lines.append('')
             md_lines.append(notes_text)
         _atomic_write_text(summary_path, '\n'.join(md_lines))
+        _write_original_snapshot(summary_path)
 
         # Persist the raw diarization clusters/embeddings this run already
         # computed (zero extra diarization cost -- see
@@ -3073,6 +3137,48 @@ def _parse_meeting_markdown(md_path):
     }
 
 
+def _single_line(text: str) -> str:
+    """Collapse any run of whitespace (including newlines/carriage returns) in
+    a single participant name or action item down to one space, so one entry
+    can only ever render as one `- ` line. Without this, a value containing
+    its own blank line and text (e.g. "Alice\\n\\nACTION ITEMS:\\n- ...")
+    would land in the assembled context looking like a second, forged section
+    header rather than one list entry.
+    """
+    return ' '.join(text.split())
+
+
+def _build_meeting_chat_context_parts(meeting_data: dict) -> list[str]:
+    """Assemble the labelled sections sent to the model for single-meeting
+    chat (the `query` / `query-streaming` commands), in the same order the
+    note itself lays them out: summary, participants, key topics, key
+    points, action items, transcript. Editing any of these sections in the
+    note editor changes what the chat sees, because both read from the same
+    parsed meeting_data dict.
+
+    A section with nothing to say is omitted entirely rather than emitting
+    an empty heading - that would waste context on a local model's small
+    window and invite it to invent content to fill the gap.
+    """
+    parts = []
+    if meeting_data.get('summary'):
+        parts.append(f"SUMMARY:\n{meeting_data['summary']}")
+    if meeting_data.get('participants'):
+        names = '\n'.join(f"- {_single_line(p)}" for p in meeting_data['participants'])
+        parts.append(f"PARTICIPANTS:\n{names}")
+    if meeting_data.get('discussion_areas'):
+        topics = '\n'.join(f"- {d['title']}: {d['analysis']}" for d in meeting_data['discussion_areas'])
+        parts.append(f"KEY TOPICS:\n{topics}")
+    if meeting_data.get('key_points'):
+        points = '\n'.join(f"- {p}" for p in meeting_data['key_points'])
+        parts.append(f"KEY POINTS:\n{points}")
+    if meeting_data.get('action_items'):
+        items = '\n'.join(f"- {_single_line(a)}" for a in meeting_data['action_items'])
+        parts.append(f"ACTION ITEMS:\n{items}")
+    if meeting_data.get('transcript'):
+        parts.append(f"TRANSCRIPT:\n{meeting_data['transcript']}")
+    return parts
+
 def _has_transfer_audio(summary_file, stem, receipt):
     """Only report retained tracks in this meeting's own non-symlink media tree."""
     if not isinstance(receipt, dict) or not re.fullmatch(
@@ -3538,6 +3644,7 @@ def reprocess(summary_file, regenerate_title, retranscribe):
                 md_lines.append('')
                 md_lines.append(notes_text)
             _atomic_write_text(summary_path, '\n'.join(md_lines))
+            _write_original_snapshot(summary_path)
         else:
             # JSON format: parse streamed markdown into structured fields
             parsed = recorder._parse_streamed_markdown(streamed_md)
@@ -4012,19 +4119,10 @@ def query(transcript_file, question):
         try:
             meeting_data = _parse_meeting_markdown(transcript_path)
             raw_transcript = meeting_data.get('transcript', '')
-            # Build rich context: summary + key points + transcript
-            parts = []
-            if meeting_data.get('summary'):
-                parts.append(f"SUMMARY:\n{meeting_data['summary']}")
-            if meeting_data.get('discussion_areas'):
-                topics = '\n'.join(f"- {d['title']}: {d['analysis']}" for d in meeting_data['discussion_areas'])
-                parts.append(f"KEY TOPICS:\n{topics}")
-            if meeting_data.get('key_points'):
-                points = '\n'.join(f"- {p}" for p in meeting_data['key_points'])
-                parts.append(f"KEY POINTS:\n{points}")
-            if raw_transcript:
-                parts.append(f"TRANSCRIPT:\n{raw_transcript}")
-            transcript_text = '\n\n'.join(parts)
+            # Build rich context: summary + participants + key topics + key
+            # points + action items + transcript (see
+            # _build_meeting_chat_context_parts for the shared assembly logic).
+            transcript_text = '\n\n'.join(_build_meeting_chat_context_parts(meeting_data))
             detect_text = raw_transcript
             session_info = meeting_data.get("session_info", {})
         except Exception as e:
@@ -4110,18 +4208,10 @@ def query_streaming(transcript_file, question):
             return
         try:
             meeting_data = _parse_meeting_markdown(transcript_path)
-            parts = []
-            if meeting_data.get('summary'):
-                parts.append(f"SUMMARY:\n{meeting_data['summary']}")
-            if meeting_data.get('discussion_areas'):
-                topics = '\n'.join(f"- {d['title']}: {d['analysis']}" for d in meeting_data['discussion_areas'])
-                parts.append(f"KEY TOPICS:\n{topics}")
-            if meeting_data.get('key_points'):
-                points = '\n'.join(f"- {p}" for p in meeting_data['key_points'])
-                parts.append(f"KEY POINTS:\n{points}")
-            if meeting_data.get('transcript'):
-                parts.append(f"TRANSCRIPT:\n{meeting_data['transcript']}")
-            transcript_text = '\n\n'.join(parts)
+            # Same shared assembly as `query` (see
+            # _build_meeting_chat_context_parts): summary + participants + key
+            # topics + key points + action items + transcript.
+            transcript_text = '\n\n'.join(_build_meeting_chat_context_parts(meeting_data))
             detect_text = meeting_data.get('transcript', '')
             session_info = meeting_data.get("session_info", {})
         except Exception as e:
@@ -4178,9 +4268,9 @@ def _chat_corpus_char_budget(ai_provider: str, model: str) -> int:
 @click.option('--question', '-q', required=True, help='Question to ask across notes')
 @click.option('--folder', '-f', default=None, help='Folder ID to scope the corpus to (default: all notes)')
 def chat_global_streaming(question, folder):
-    """Cross-note chat: gather meeting title + summary + key points, feed as
-    context to the configured LLM, stream the answer. Optionally scope to a
-    single folder; default queries every note.
+    """Cross-note chat: gather meeting title + summary + participants + key
+    points + action items, feed as context to the configured LLM, stream the
+    answer. Optionally scope to a single folder; default queries every note.
 
     Works with every provider — cloud / org adapter / local / remote Ollama.
     The assembled corpus is capped to the active model's context window
@@ -4191,6 +4281,7 @@ def chat_global_streaming(question, folder):
     import base64
     from pathlib import Path
     from src.config import get_config, get_data_dirs
+    from src.reports import _item_text
 
     config = get_config()
     dirs = get_data_dirs()
@@ -4235,8 +4326,9 @@ def chat_global_streaming(question, folder):
         return
 
     # Most-recent first so the model weights newer context higher when token
-    # budget is tight. Each block is kept compact (title + summary + key
-    # points + action items) — full transcripts would blow even a 200k window.
+    # budget is tight. Each block is kept compact (title + summary +
+    # participants + key points + action items) - full transcripts would blow
+    # even a 200k window.
     def sort_key(item):
         _, data = item
         return data.get("session_info", {}).get("processed_at") or ""
@@ -4256,15 +4348,37 @@ def chat_global_streaming(question, folder):
         name = info.get("name") or "Untitled"
         date = (info.get("processed_at") or "")[:10]
         summary = (data.get("summary") or "").strip()
+        participants = data.get("participants") or []
         key_points = data.get("key_points") or []
         action_items = data.get("action_items") or []
         block = [f"## {name}" + (f" — {date}" if date else "")]
         if summary:
             block.append(summary)
+        # _item_text before _single_line on every list entry. Legacy `.json`
+        # notes are read here with a raw json.load, so an entry can be a dict
+        # ({'name': ...}, {'decision': ...}, {'description': ..., 'owner': ...})
+        # rather than a string - the same shapes src/reports.py and the note
+        # view already normalise. _item_text renders the dict's text (and
+        # str()s anything else), so _single_line always receives a str.
+        #
+        # _single_line then collapses embedded newlines: an entry carrying its
+        # own newlines would otherwise render as several lines here, and one of
+        # them can look like a forged "Action items:" label or a "## " block
+        # header for the NEXT meeting. The single-meeting builder
+        # (_build_meeting_chat_context_parts) does the same for participants
+        # and action items; it does not collapse key points, which only matters
+        # in this corpus because blocks here are separated by "## " headings.
+        # The entries are editable in the note editor, so this is reachable
+        # without any adversary.
+        if participants:
+            block.append("Participants:\n" + "\n".join(
+                f"- {_single_line(_item_text(p, 'name', 'text'))}" for p in participants))
         if key_points:
-            block.append("Key points:\n" + "\n".join(f"- {p}" for p in key_points))
+            block.append("Key points:\n" + "\n".join(
+                f"- {_single_line(_item_text(p, 'decision', 'point', 'text'))}" for p in key_points))
         if action_items:
-            block.append("Action items:\n" + "\n".join(f"- {a}" for a in action_items))
+            block.append("Action items:\n" + "\n".join(
+                f"- {_single_line(_item_text(a, 'description', 'text'))}" for a in action_items))
         block_text = "\n".join(block)
         # +5 accounts for the "\n\n---\n\n" separator added later.
         if used_chars + len(block_text) + 5 > CORPUS_CHAR_BUDGET:
