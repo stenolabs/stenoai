@@ -88,8 +88,8 @@ public enum TransferAudioConverter {
         let context = Context(fd)
         try withExtendedLifetime(context) {
             var file: AudioFileID?
-            func checked(_ status: OSStatus) throws {
-                guard status == noErr else { throw CAFEncoder.Failure.audio(status, line: #line) }
+            func checked(_ status: OSStatus, line: UInt = #line) throws {
+                guard status == noErr else { throw CAFEncoder.Failure.audio(status, line: line) }
             }
             try checked(AudioFileOpenWithCallbacks(Unmanaged.passUnretained(context).toOpaque(),
                 readAudio, nil, audioSize, nil, kAudioFileCAFType, &file))

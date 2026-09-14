@@ -705,7 +705,7 @@ extension WebMOpusReader {
                     guard !block.hasUnsupportedTiming else { throw WebMOpusReaderError.unsupportedTiming("Unsupported block metadata") }
                     guard block.lacing == .none else { throw WebMOpusReaderError.unsupportedLacing(block.lacing) }
                     guard remainder == 0 else { throw WebMOpusReaderError.unsupportedTiming("DiscardPadding is not final") }
-                    guard packets < 1_000_000, let count = OpusCAFWriter.opusFrameCount(block.payload) else {
+                    guard let count = OpusCAFWriter.opusFrameCount(block.payload) else {
                         throw WebMOpusReaderError.resourceLimit
                     }
                     let ticks = Double(clusterTime) + Double(block.relativeTimecode)

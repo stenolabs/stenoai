@@ -540,7 +540,7 @@ async function inspectOpusPackets(handle, table, audioBytes, audioOffset, cookie
   const frames = header.readBigInt64BE(8);
   const priming = header.readInt32BE(16);
   const remainder = header.readInt32BE(20);
-  requireValue(packets > 0n && packets <= 1000000n && packets <= BigInt(audioBytes)
+  requireValue(packets > 0n && packets <= BigInt(audioBytes)
     && BigInt(table.size - 24) >= packets * 2n && BigInt(table.size - 24) <= packets * 8n
     && frames > 0n && frames <= BigInt(Number.MAX_SAFE_INTEGER)
     && priming === cookie.readUInt16LE(10) && remainder >= 0, 'unsupported_audio');

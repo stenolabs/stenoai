@@ -9,9 +9,11 @@ python3 - "$ROOT" <<'PY'
 import hashlib, json, pathlib, sys
 root = pathlib.Path(sys.argv[1]) / 'native-audio-helper'
 manifest = json.loads((root / 'upstream.json').read_text())
-assert set(p.name for p in (root / 'Sources').glob('*.swift')) == set(manifest['files'])
+if set(p.name for p in (root / 'Sources').glob('*.swift')) != set(manifest['files']):
+    sys.exit('Native audio helper source file set does not match upstream.json')
 for name, entry in manifest['files'].items():
-    assert hashlib.sha256((root / 'Sources' / name).read_bytes()).hexdigest() == entry['sha256'], name
+    if hashlib.sha256((root / 'Sources' / name).read_bytes()).hexdigest() != entry['sha256']:
+        sys.exit(f'Native audio helper source digest mismatch: {name}')
 PY
 mkdir -p "$ROOT/bin" "$ROOT/build/native-audio-helper/module-cache"
 xcrun swiftc -swift-version 6 -O -whole-module-optimization \

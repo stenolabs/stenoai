@@ -36,6 +36,7 @@ test('converter timeout escalates and waits for close before allowing cleanup', 
   const conversion = runAudioConverter('synthetic', [], { spawnProcess: () => child, timeoutMs: 5, graceMs: 5 });
   conversion.then(() => { settled = true; }, () => { settled = true; });
   await killed;
+  await new Promise(resolve => setImmediate(resolve));
   assert.deepEqual(signals, ['SIGTERM', 'SIGKILL']);
   assert.equal(settled, false);
   child.emit('close', null);
@@ -131,6 +132,7 @@ test('native converter output flood terminates then waits for close before clean
   promise.catch(() => { settled = true; });
   child.stderr.write('too much output');
   await escalated;
+  await new Promise(resolve => setImmediate(resolve));
   assert.equal(settled, false); assert.deepEqual(signals, ['SIGTERM', 'SIGKILL']);
   child.emit('close', null);
   await assert.rejects(promise, { code: 'transfer_failed' });
@@ -233,8 +235,12 @@ test('native converter timeout waits for termination and does not accept late su
   let killed;
   const escalated = new Promise(resolve => { killed = resolve; });
   child.kill = signal => { if (signal === 'SIGKILL') killed(); };
+  let settled = false;
   const promise = runNativeAudioConverter('helper', 3, 4, { spawnProcess: () => child, timeoutMs: 2, graceMs: 2 });
+  promise.then(() => { settled = true; }, () => { settled = true; });
   await escalated;
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(settled, false);
   child.stdout.write('{}'); child.emit('close', 0);
   await assert.rejects(promise, { code: 'transfer_failed' });
 });
@@ -250,4 +256,38 @@ test('multichannel WAV retains the existing PCM export path', nativeOnly, async 
   assert.equal(metadata.format, 'lpcm'); assert.equal(metadata.channelCount, 4);
   assert.equal(Math.round(metadata.duration * 48000), 4800);
   assert.deepEqual(await fs.readFile(input), original);
+});
+
+// Synthetic 20 ms Opus silence, just beyond the old packet-count limit.
+test('Opus CAF accepts long recordings and still rejects inconsistent packet counts', async t => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'steno-long-opus-'));
+  t.after(() => fs.rm(root, { recursive: true, force: true }));
+  const count = 1000001;
+  const chunk = (name, bytes) => {
+    const header = Buffer.alloc(12);
+    header.write(name); header.writeBigInt64BE(BigInt(bytes.length), 4);
+    return Buffer.concat([header, bytes]);
+  };
+  const desc = Buffer.alloc(32);
+  desc.writeDoubleBE(48000); desc.write('opus', 8); desc.writeUInt32BE(2, 24);
+  const cookie = Buffer.from('4f707573486561640102380180bb0000000000', 'hex');
+  const table = Buffer.alloc(24 + count * 3), data = Buffer.alloc(4 + count * 3);
+  table.writeBigInt64BE(BigInt(count)); table.writeBigInt64BE(BigInt(count * 960 - 312), 8);
+  table.writeInt32BE(312, 16);
+  for (let i = 0; i < count; i++) {
+    table.set([3, 0x87, 0x40], 24 + i * 3);
+    data.set([0xf8, 0xff, 0xfe], 4 + i * 3);
+  }
+  const bytes = () => Buffer.concat([Buffer.from('6361666600010000', 'hex'),
+    chunk('desc', desc), chunk('kuki', cookie), chunk('pakt', table), chunk('data', data)]);
+  const target = path.join(root, 'long.caf');
+  await fs.writeFile(target, bytes());
+  const result = await inspectCAF(target, { includeFormat: true });
+  assert.equal(result.format, 'opus');
+  assert.equal(Math.round(result.duration * 48000), count * 960 - 312);
+  for (const declared of [count - 1, count + 1]) {
+    table.writeBigInt64BE(BigInt(declared));
+    await fs.writeFile(target, bytes());
+    await assert.rejects(inspectCAF(target), { code: 'unsupported_audio' });
+  }
 });

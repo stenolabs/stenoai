@@ -1,6 +1,6 @@
 {
   "repository": "https://github.com/stenolabs/stenoai-swift",
-  "commit": "be2825869bdb9b677aa97d822ad3dc188e8adad6",
+  "commit": "8267fcfaf31ea55e6f9f7dbdb17b12d4d8db6173",
   "files": {
     "AudioFileDescriptor.swift": {
       "source": "StenoKit/Sources/StenoAudioEncoding/AudioFileDescriptor.swift",
@@ -16,11 +16,11 @@
     },
     "TransferAudioConverter.swift": {
       "source": "StenoKit/Sources/StenoAudioEncoding/TransferAudioConverter.swift",
-      "sha256": "60bce8e594c6e439f55cd2c79d92adcc07be44e782685c32013dcd604c506b09"
+      "sha256": "56dac0a810de74a7b44cd39c4c67466944f1d25a0abfb567c9a23aaae3dd83aa"
     },
     "WebMOpusReader.swift": {
       "source": "StenoKit/Sources/StenoAudioEncoding/WebMOpusReader.swift",
-      "sha256": "7b6abb94b87c4234cc03fe66f0fd3ad82d23a482d71dce7a3068827f29a4a950"
+      "sha256": "b60792bc6c9fb3fd856016bc3970c9d0157e1c303a6295aa83a8d393f6681f99"
     },
     "main.swift": {
       "source": "StenoKit/Sources/steno-audio-encode/main.swift",
