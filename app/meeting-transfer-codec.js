@@ -394,6 +394,7 @@ async function inspectCAFHandle(handle, byteCount) {
   let offset = 8;
   let description;
   let audioBytes;
+  let audioOffset;
   let cookie;
   let packetTable;
   let chunks = 0;
@@ -423,7 +424,9 @@ async function inspectCAFHandle(handle, byteCount) {
       // CoreAudio writes AAC-LC with flags 0; the cookie supplies its object type.
       const aac = format === 'aac ' && [0, 2].includes(flags) && framesPerPacket === 1024
         && bytesPerPacket === 0 && bits === 0 && channelCount <= 2;
-      requireValue(pcm || aac, 'unsupported_audio');
+      const opus = format === 'opus' && flags === 0 && framesPerPacket === 0
+        && bytesPerPacket === 0 && bits === 0 && sampleRate === 48000 && channelCount <= 2;
+      requireValue(pcm || aac || opus, 'unsupported_audio');
       description = { sampleRate, channelCount, bytesPerPacket, format };
     } else if (type === 'kuki') {
       requireValue(!cookie && size > 0 && size <= 4096, 'unsupported_audio');
@@ -434,6 +437,7 @@ async function inspectCAFHandle(handle, byteCount) {
     } else if (type === 'data') {
       requireValue(description && audioBytes === undefined && size > 4, 'unsupported_audio');
       audioBytes = size - 4; // First four bytes are the CAF edit counter.
+      audioOffset = offset + 4;
     }
     offset += size;
   }
@@ -442,13 +446,15 @@ async function inspectCAFHandle(handle, byteCount) {
   if (description.format === 'aac ') {
     validateAACCookie(cookie, description);
     frames = await inspectAACPackets(handle, packetTable, audioBytes);
+  } else if (description.format === 'opus') {
+    frames = await inspectOpusPackets(handle, packetTable, audioBytes, audioOffset, cookie, description);
   } else {
     requireValue(audioBytes % description.bytesPerPacket === 0, 'unsupported_audio');
     frames = audioBytes / description.bytesPerPacket;
   }
   const duration = frames / description.sampleRate;
   requireValue(Number.isFinite(duration) && duration > 0, 'unsupported_audio');
-  return { sampleRate: description.sampleRate, channelCount: description.channelCount, duration };
+  return { sampleRate: description.sampleRate, channelCount: description.channelCount, duration, format: description.format };
 }
 // This is a deliberately narrow MPEG-4 ES descriptor / AAC-LC cookie reader.
 // Unknown AAC profiles and channel layouts remain unsupported, never PCM-cast.
@@ -522,6 +528,70 @@ async function inspectAACPackets(handle, table, audioBytes) {
   requireValue(total === audioBytes && cursor === end && index === block.length, 'unsupported_audio');
   return Number(frames);
 }
+// Opus uses both variable packet sizes and variable frame counts in CAF pakt.
+// Validate the declared duration against packet TOCs without decoding meeting data.
+async function inspectOpusPackets(handle, table, audioBytes, audioOffset, cookie, description) {
+  requireValue(cookie && cookie.length === 19 && cookie.subarray(0, 8).equals(Buffer.from('OpusHead'))
+    && cookie[8] === 1 && cookie[9] === description.channelCount
+    && [0, 48000].includes(cookie.readUInt32LE(12)) && cookie.readInt16LE(16) === 0
+    && cookie[18] === 0 && table, 'unsupported_audio');
+  const header = await readExactly(handle, 24, table.offset);
+  const packets = header.readBigInt64BE(0);
+  const frames = header.readBigInt64BE(8);
+  const priming = header.readInt32BE(16);
+  const remainder = header.readInt32BE(20);
+  requireValue(packets > 0n && packets <= 1000000n && packets <= BigInt(audioBytes)
+    && BigInt(table.size - 24) >= packets * 2n && BigInt(table.size - 24) <= packets * 8n
+    && frames > 0n && frames <= BigInt(Number.MAX_SAFE_INTEGER)
+    && priming === cookie.readUInt16LE(10) && remainder >= 0, 'unsupported_audio');
+  let cursor = table.offset + 24;
+  const end = table.offset + table.size;
+  let block = Buffer.alloc(0), index = 0;
+  async function variableInteger() {
+    let value = 0;
+    for (let i = 0; i < 4; i++) {
+      if (index === block.length) {
+        requireValue(cursor < end, 'unsupported_audio');
+        block = await readExactly(handle, Math.min(65536, end - cursor), cursor);
+        cursor += block.length;
+        index = 0;
+      }
+      const byte = block[index++];
+      value = value * 128 + (byte & 127);
+      if (!(byte & 128)) return value;
+    }
+    requireValue(false, 'unsupported_audio');
+  }
+  let totalBytes = 0, totalFrames = 0, lastFrames = 0;
+  let dataBlock = Buffer.alloc(0), dataStart = -1;
+  for (let packet = 0; packet < Number(packets); packet++) {
+    const size = await variableInteger();
+    const count = await variableInteger();
+    requireValue(size > 0 && size <= 1048576 && size <= audioBytes - totalBytes
+      && count > 0 && count <= 5760, 'unsupported_audio');
+    const position = audioOffset + totalBytes;
+    const prefixSize = Math.min(2, size);
+    if (position < dataStart || position + prefixSize > dataStart + dataBlock.length) {
+      dataStart = position;
+      dataBlock = await readExactly(handle, Math.min(65536, audioBytes - totalBytes), position);
+    }
+    const toc = dataBlock[position - dataStart];
+    const config = toc >>> 3;
+    const perFrame = config < 12 ? [480, 960, 1920, 2880][config % 4]
+      : config < 16 ? [480, 960][config % 2] : [120, 240, 480, 960][config % 4];
+    const code = toc & 3;
+    requireValue(code !== 3 || size >= 2, 'unsupported_audio');
+    const frameCount = code === 0 ? 1 : code < 3 ? 2 : dataBlock[position - dataStart + 1] & 63;
+    requireValue(frameCount > 0 && frameCount * perFrame === count, 'unsupported_audio');
+    totalBytes += size;
+    totalFrames += count;
+    lastFrames = count;
+  }
+  requireValue(totalBytes === audioBytes && cursor === end && index === block.length
+    && remainder <= lastFrames && BigInt(totalFrames) === frames + BigInt(priming) + BigInt(remainder), 'unsupported_audio');
+  return Number(frames);
+}
+
 function checkAudioMetadata(metadata, actual) {
   const tolerance = Math.max(0.000001, actual.sampleRate * 0.000001);
   requireValue(metadata.byteCount === actual.byteCount && metadata.sha256 === actual.sha256
@@ -529,16 +599,16 @@ function checkAudioMetadata(metadata, actual) {
     && Math.abs(metadata.sampleRate - actual.sampleRate) <= tolerance
     && Math.abs(metadata.duration - actual.duration) <= Math.max(0.001, 1 / actual.sampleRate));
 }
-async function inspectCAF(sourcePath) {
+async function inspectCAF(sourcePath, { includeFormat = false } = {}) {
   let handle;
   try {
     const opened = await openRegular(sourcePath, LIMITS.audio);
     handle = opened.handle;
     const byteCount = Number(opened.status.size);
-    const values = await inspectCAFHandle(handle, byteCount);
+    const { format, ...values } = await inspectCAFHandle(handle, byteCount);
     const sha256 = await hashRegion(handle, 0, byteCount);
     requireValue(sameFile(opened.status, await handle.stat({ bigint: true })), 'source_changed');
-    return { ...values, byteCount, sha256 };
+    return { ...values, byteCount, sha256, ...(includeFormat ? { format } : {}) };
   } catch (error) {
     if (error instanceof TransferError) throw error;
     throw new TransferError('transfer_io');

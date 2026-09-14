@@ -259,6 +259,9 @@ jobs:
           chmod +x scripts/download-ollama.sh
           ./scripts/download-ollama.sh
 
+      - name: Build native transfer audio helper
+        run: scripts/build-audio-helper.sh
+
       - name: Build speaker-diarization sidecar (Swift/Core ML)
         run: |
           chmod +x scripts/build-diarize-sidecar.sh
@@ -268,6 +271,7 @@ jobs:
       - name: Build backend with PyInstaller
         run: |
           pyinstaller stenoai.spec --noconfirm
+          test -x dist/stenoai/_internal/steno-audio-encode
           test -x dist/stenoai/_internal/steno-diarize
 
       # Guards the Ollama/pip-mlx libmlx.dylib ABI collision (see
@@ -311,9 +315,10 @@ jobs:
       # to PyInstaller's internal layout (e.g. the _internal/ contents dir).
       - name: Restore exec bits on bundled binaries
         run: |
-          find dist/stenoai -type f \( -name stenoai -o -name ffmpeg -o -name ollama -o -name steno-diarize \) \
+          find dist/stenoai -type f \( -name stenoai -o -name ffmpeg -o -name ollama -o -name steno-diarize -o -name steno-audio-encode \) \
             -exec chmod +x {} +
           test -x dist/stenoai/stenoai  # fail loud if the launcher didn't get +x
+          test -x dist/stenoai/_internal/steno-audio-encode
           test -x dist/stenoai/_internal/steno-diarize
 
       # The app probes 11434 and skips its own `ollama serve` on a 200, so a real
@@ -377,9 +382,10 @@ jobs:
 
       - name: Restore exec bits on bundled binaries
         run: |
-          find dist/stenoai -type f \( -name stenoai -o -name ffmpeg -o -name ollama -o -name steno-diarize \) \
+          find dist/stenoai -type f \( -name stenoai -o -name ffmpeg -o -name ollama -o -name steno-diarize -o -name steno-audio-encode \) \
             -exec chmod +x {} +
           test -x dist/stenoai/stenoai
+          test -x dist/stenoai/_internal/steno-audio-encode
           test -x dist/stenoai/_internal/steno-diarize
 
       - name: Ensure no stray Ollama

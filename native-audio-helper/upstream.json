@@ -1,0 +1,30 @@
+{
+  "repository": "https://github.com/stenolabs/stenoai-swift",
+  "commit": "be2825869bdb9b677aa97d822ad3dc188e8adad6",
+  "files": {
+    "AudioFileDescriptor.swift": {
+      "source": "StenoKit/Sources/StenoAudioEncoding/AudioFileDescriptor.swift",
+      "sha256": "b9287f0af0baaecb0dbc8fa82e6bcad4aa7ec556b46697ff228fcece10dcd4ca"
+    },
+    "CAFEncoder.swift": {
+      "source": "StenoKit/Sources/StenoAudioEncoding/CAFEncoder.swift",
+      "sha256": "4600a9a571c812c176bae5e7f801505ef59fd01327c7b696a1e1d6f8c158de1c"
+    },
+    "OpusCAFWriter.swift": {
+      "source": "StenoKit/Sources/StenoAudioEncoding/OpusCAFWriter.swift",
+      "sha256": "2a9eb13e682f4cabe81646e8f6a1eca0840c1f975043bfe17c27cd410a148ef9"
+    },
+    "TransferAudioConverter.swift": {
+      "source": "StenoKit/Sources/StenoAudioEncoding/TransferAudioConverter.swift",
+      "sha256": "60bce8e594c6e439f55cd2c79d92adcc07be44e782685c32013dcd604c506b09"
+    },
+    "WebMOpusReader.swift": {
+      "source": "StenoKit/Sources/StenoAudioEncoding/WebMOpusReader.swift",
+      "sha256": "7b6abb94b87c4234cc03fe66f0fd3ad82d23a482d71dce7a3068827f29a4a950"
+    },
+    "main.swift": {
+      "source": "StenoKit/Sources/steno-audio-encode/main.swift",
+      "sha256": "fe8942ad6e579f9ab0b0825e59175b35d4883b94b18a58daa04ef027495fc74f"
+    }
+  }
+}

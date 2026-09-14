@@ -89,9 +89,11 @@ export const test = base.extend<Fixtures>({
       let lastErr: unknown;
       for (let attempt = 0; attempt < 2; attempt++) {
         try {
+          const executablePath = process.env.STENOAI_E2E_APP_PATH;
           app = await electron.launch({
+            ...(executablePath ? { executablePath } : {}),
             args: [
-              '.',
+              ...(executablePath ? [] : ['.']),
               ...(opts.fakeAudio
                 ? ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream']
                 : []),

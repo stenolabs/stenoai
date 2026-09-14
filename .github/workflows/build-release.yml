@@ -139,6 +139,9 @@ jobs:
         # ship users a Rosetta'd helper.
         file bin/mic-monitor | grep -q "arm64"
 
+    - name: Build native transfer audio helper
+      run: scripts/build-audio-helper.sh
+
     - name: Build speaker-diarization sidecar (Swift/Core ML)
       run: |
         chmod +x scripts/build-diarize-sidecar.sh
@@ -153,6 +156,7 @@ jobs:
         # Verify build and architecture
         ls -la dist/stenoai/
         file dist/stenoai/stenoai
+        test -x dist/stenoai/_internal/steno-audio-encode
         test -x dist/stenoai/_internal/steno-diarize
         file dist/stenoai/_internal/steno-diarize | grep -q "arm64"
         echo "Expected arch: ${{ matrix.arch }}"

@@ -256,6 +256,11 @@ required_diarize_sidecar = require_diarize_sidecar(
     Path(ollama_bin_dir) / 'steno-diarize',
     platform=sys.platform,
 )
+if _IS_DARWIN and not (
+    os.path.isfile(os.path.join(ollama_bin_dir, 'steno-audio-encode'))
+    and os.access(os.path.join(ollama_bin_dir, 'steno-audio-encode'), os.X_OK)
+):
+    raise SystemExit('Build the native transfer helper with scripts/build-audio-helper.sh first.')
 if os.path.exists(ollama_bin_dir):
     for root, _dirs, files in os.walk(ollama_bin_dir):
         for filename in files:
@@ -266,6 +271,10 @@ if os.path.exists(ollama_bin_dir):
                 continue  # skip GPU runner libs (CUDA/ROCm/Vulkan)
             rel_dir = os.path.dirname(rel)
             base = os.path.basename(filename).lower()
+            if base == 'steno-audio-encode':
+                if _IS_DARWIN:
+                    binaries.append((filepath, '.'))
+                continue
             if base in ('ffmpeg', 'ffmpeg.exe'):
                 # Put ffmpeg at the root of the bundle for easy PATH access
                 binaries.append((filepath, '.'))

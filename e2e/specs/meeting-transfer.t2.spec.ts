@@ -8,6 +8,7 @@ import {
   mkdirSync,
   readFileSync,
   realpathSync,
+  statSync,
   readdirSync,
   writeFileSync,
 } from "fs";
@@ -116,6 +117,8 @@ type StenoWindow = Window & {
     };
   };
 };
+
+const { makeWebMOpus } = require("../fixtures/make-webm-opus.js") as { makeWebMOpus: (options?: { gap?: number }) => Buffer };
 
 const UUID = "018f4a12-3456-789a-bcde-f0123456789a";
 const CREATED_AT = 780_000_000;
@@ -505,67 +508,87 @@ test.describe("macOS meeting transfer", () => {
     });
   }
 
-  test("exports a native Electron recording as opt-in Float32 CAF with meeting text intact", async ({
-    launchApp,
-    userDataDir,
-  }) => {
-    const realDirBefore = fileSig(realUserDataDir());
-    const stem = "native-electron-audio";
-    const summaryFile = writeMeetingSummary(userDataDir, stem, {
-      name: "Native Electron audio",
-      summary: "Synthetic native meeting summary.",
-      transcript: "Synthetic native meeting transcript.",
-    });
-    const recordingsDir = path.join(userDataDir, "recordings");
-    mkdirSync(recordingsDir, { recursive: true });
-    const wavFile = path.join(recordingsDir, `${stem}.wav`);
-    makeWav(wavFile, { seconds: 0.25, sampleRate: 16_000, channels: 1 });
-
-    const transferDir = path.join(userDataDir, "transfer-fixtures");
-    mkdirSync(transferDir, { recursive: true });
-    const destination = path.join(transferDir, "native-audio.stenomeeting");
-    const { app, page } = await launchApp();
-    await stubNativeDialogs(app, {
-      saveFile: destination,
-      checkboxAudio: true,
-    });
-
-    const exported = await page.evaluate(
-      (file) =>
-        (window as StenoWindow).stenoai.meetingTransfer.exportPackage(file),
-      summaryFile,
-    );
-    expect(exported).toMatchObject({ success: true, cancelled: false });
-    expect(existsSync(destination)).toBe(true);
-
-    const pkg = await codec.readPackage(destination);
-    try {
-      expect(pkg.audio).toHaveLength(1);
-      expect(pkg.audio[0].metadata).toMatchObject({
-        logicalTrackID: "track-1",
-        kind: "imported",
-        sampleRate: 16_000,
-        channelCount: 1,
+  for (const container of ["wav", "webm", "webm-gap"] as const) {
+    test(container === "webm-gap" ? "rejects a WebM gap without publishing a package"
+      : `exports native ${container} through the bundled helper and reimports its CAF`, async ({
+      launchApp,
+      userDataDir,
+    }) => {
+      const realDirBefore = fileSig(realUserDataDir());
+      const stem = "native-electron-audio";
+      const summaryFile = writeMeetingSummary(userDataDir, stem, {
+        name: "Native Electron audio",
+        summary: "Synthetic native meeting summary.",
+        transcript: "Synthetic native meeting transcript.",
       });
-      expect(pkg.audio[0].metadata.duration).toBeCloseTo(0.25, 3);
-      const caf = await codec.inspectCAF(pkg.audio[0].sourcePath);
-      expect(caf).toMatchObject({
-        sha256: pkg.audio[0].metadata.sha256,
-        byteCount: pkg.audio[0].metadata.byteCount,
-        sampleRate: 16_000,
-        channelCount: 1,
+      const recordingsDir = path.join(userDataDir, "recordings");
+      mkdirSync(recordingsDir, { recursive: true });
+      const wavFile = path.join(recordingsDir, `${stem}.${container === "wav" ? "wav" : "webm"}`);
+      if (container === "wav") makeWav(wavFile, { seconds: 2, sampleRate: 48_000, channels: 2 });
+      else writeFileSync(wavFile, makeWebMOpus({ gap: container === "webm-gap" ? 1000 : 0 }));
+      const original = readFileSync(wavFile);
+      const duration = container === "wav" ? 2 : 95208 / 48000;
+
+      const transferDir = path.join(userDataDir, "transfer-fixtures");
+      mkdirSync(transferDir, { recursive: true });
+      const destination = path.join(transferDir, "native-audio.stenomeeting");
+      const { app, page } = await launchApp();
+      await stubNativeDialogs(app, {
+        saveFile: destination,
+        checkboxAudio: true,
       });
-      expect(caf.duration).toBeCloseTo(0.25, 3);
-      expect(pkg.notes).toContain("Synthetic native meeting summary.");
-      expect(JSON.stringify(pkg.transcript)).toContain(
-        "Synthetic native meeting transcript.",
+
+      const exported = await page.evaluate(
+        (file) =>
+          (window as StenoWindow).stenoai.meetingTransfer.exportPackage(file),
+        summaryFile,
       );
-    } finally {
-      await pkg.cleanup();
-    }
-    expect(readFileSync(wavFile).subarray(0, 4).toString("ascii")).toBe("RIFF");
-    expect(fileSig(realUserDataDir())).toBe(realDirBefore);
-  });
+      if (container === "webm-gap") {
+        expect(exported).toMatchObject({ success: false, error_code: "unsupported_audio" });
+        expect(existsSync(destination)).toBe(false);
+        expect(readFileSync(wavFile)).toEqual(original);
+        expect(readdirSync(path.join(userDataDir, "meeting-transfer")).filter(name => name.startsWith("audio-"))).toEqual([]);
+        expect(fileSig(realUserDataDir())).toBe(realDirBefore);
+        return;
+      }
+      expect(exported).toMatchObject({ success: true, cancelled: false });
+      expect(existsSync(destination)).toBe(true);
+
+      const pkg = await codec.readPackage(destination);
+      try {
+        expect(pkg.audio).toHaveLength(1);
+        expect(pkg.audio[0].metadata).toMatchObject({
+          logicalTrackID: "track-1",
+          kind: "imported",
+          sampleRate: 48_000,
+          channelCount: 2,
+        });
+        expect(pkg.audio[0].metadata.duration).toBeCloseTo(duration, 6);
+        const bytes = readFileSync(pkg.audio[0].sourcePath);
+        expect(bytes.toString("ascii", 28, 32)).toBe(container === "wav" ? "aac " : "opus");
+        if (container === "wav") expect(bytes.length).toBeLessThan(statSync(wavFile).size);
+        const caf = await codec.inspectCAF(pkg.audio[0].sourcePath);
+        expect(caf).toMatchObject({
+          sha256: pkg.audio[0].metadata.sha256,
+          byteCount: pkg.audio[0].metadata.byteCount,
+          sampleRate: 48_000,
+          channelCount: 2,
+        });
+        expect(caf.duration).toBeCloseTo(duration, 6);
+        expect(pkg.notes).toContain("Synthetic native meeting summary.");
+        expect(JSON.stringify(pkg.transcript)).toContain(
+          "Synthetic native meeting transcript.",
+        );
+      } finally {
+        await pkg.cleanup();
+      }
+      expect(readFileSync(wavFile)).toEqual(original);
+      const imported = await page.evaluate((file) =>
+        (window as StenoWindow).stenoai.meetingTransfer.importPackage(file), destination);
+      expect(imported.success).toBe(true);
+      expect(fileSig(realUserDataDir())).toBe(realDirBefore);
+    });
+  }
 
   test("a Swift audio package follows the warm open-file route, exports audio by choice, and cleans media on commit", async ({
     launchApp,

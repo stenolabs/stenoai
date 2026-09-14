@@ -2988,7 +2988,6 @@ async function findMeetingTransferAudio(summaryFile) {
 
 async function prepareMeetingTransferAudio(source) {
   const { sourcePath, identity } = source;
-  const { inspectCAF } = require('./meeting-transfer-codec');
   const { privateDirectory } = require('./meeting-transfer-store');
   const root = await privateDirectory(getUserDataDir(), 'meeting-transfer');
   const scratch = await fs.promises.mkdtemp(path.join(root, 'audio-'));
@@ -2997,17 +2996,16 @@ async function prepareMeetingTransferAudio(source) {
     const input = path.join(scratch, 'source' + path.extname(sourcePath));
     await copyRegularFile(sourcePath, input, identity);
     const target = path.join(scratch, 'track.caf');
-    if (path.extname(input).toLowerCase() === '.caf') await fs.promises.copyFile(input, target, fs.constants.COPYFILE_EXCL);
-    else {
-      const backendDir = path.dirname(getBackendPath());
-      const binary = [path.join(backendDir, '_internal', 'ffmpeg'), path.join(backendDir, 'ffmpeg')]
-        .find(candidate => fs.existsSync(candidate));
-      if (!binary) throw { code: 'unsupported_audio' };
-      await require('./meeting-transfer-audio').runAudioConverter(binary,
-        ['-nostdin', '-v', 'error', '-n', '-i', input, '-vn', '-c:a', 'pcm_f32le', '-f', 'caf', target]);
-    }
+    const backendDir = path.dirname(getBackendPath());
+    const candidates = name => [path.join(backendDir, '_internal', name), path.join(backendDir, name)];
+    const helperCandidates = candidates('steno-audio-encode');
+    if (!app.isPackaged) helperCandidates.push(path.join(__dirname, '..', 'bin', 'steno-audio-encode'));
+    const values = await require('./meeting-transfer-audio').convertTransferAudio(input, target, {
+      nativeHelper: helperCandidates.find(candidate => fs.existsSync(candidate)),
+      ffmpeg: candidates('ffmpeg').find(candidate => fs.existsSync(candidate)),
+    });
     await fs.promises.chmod(target, 0o600);
-    const metadata = { ...(await inspectCAF(target)), logicalTrackID: 'track-1', kind: 'imported' };
+    const metadata = { ...values, logicalTrackID: 'track-1', kind: 'imported' };
     return { audio: [{ metadata, sourcePath: target }], cleanup };
   } catch (error) { await cleanup(); throw error; }
 }
