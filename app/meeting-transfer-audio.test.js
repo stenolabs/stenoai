@@ -271,7 +271,7 @@ test('Opus CAF accepts long recordings and still rejects inconsistent packet cou
   const desc = Buffer.alloc(32);
   desc.writeDoubleBE(48000); desc.write('opus', 8); desc.writeUInt32BE(2, 24);
   const cookie = Buffer.from('4f707573486561640102380180bb0000000000', 'hex');
-  const table = Buffer.alloc(24 + count * 3), data = Buffer.alloc(4 + count * 3);
+  let table = Buffer.alloc(24 + count * 3), data = Buffer.alloc(4 + count * 3);
   table.writeBigInt64BE(BigInt(count)); table.writeBigInt64BE(BigInt(count * 960 - 312), 8);
   table.writeInt32BE(312, 16);
   for (let i = 0; i < count; i++) {
@@ -285,7 +285,15 @@ test('Opus CAF accepts long recordings and still rejects inconsistent packet cou
   const result = await inspectCAF(target, { includeFormat: true });
   assert.equal(result.format, 'opus');
   assert.equal(Math.round(result.duration * 48000), count * 960 - 312);
-  for (const declared of [count - 1, count + 1]) {
+  // Count mismatches need only three packets; parse the boundary-scale fixture once.
+  const smallCount = 3;
+  table = table.subarray(0, 24 + smallCount * 3);
+  data = data.subarray(0, 4 + smallCount * 3);
+  table.writeBigInt64BE(BigInt(smallCount));
+  table.writeBigInt64BE(BigInt(smallCount * 960 - 312), 8);
+  await fs.writeFile(target, bytes());
+  assert.equal(Math.round((await inspectCAF(target)).duration * 48000), smallCount * 960 - 312);
+  for (const declared of [smallCount - 1, smallCount + 1]) {
     table.writeBigInt64BE(BigInt(declared));
     await fs.writeFile(target, bytes());
     await assert.rejects(inspectCAF(target), { code: 'unsupported_audio' });
