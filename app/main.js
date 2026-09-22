@@ -7792,6 +7792,14 @@ ipcMain.handle('setup-ollama-and-model', async () => {
   }
 });
 
+function describeParakeetDownloadError(raw) {
+  const text = String(raw || '');
+  if (/CERTIFICATE_VERIFY_FAILED|unable to get local issuer certificate|TLS certificate verification failed/i.test(text)) {
+    return 'Parakeet model download failed because this computer could not verify Hugging Face’s certificate. Steno uses its bundled certificate store automatically; if you are on a corporate VPN, proxy, or antivirus HTTPS inspection network, add that network’s root certificate to the system trust store or set SSL_CERT_FILE / REQUESTS_CA_BUNDLE to its CA bundle.';
+  }
+  return text || 'Download failed';
+}
+
 ipcMain.handle('setup-parakeet', async () => {
   try {
     // Download Parakeet TDT v3 via the bundled backend. Used by
@@ -7837,15 +7845,18 @@ ipcMain.handle('setup-parakeet', async () => {
           sendDebugLog('Parakeet model ready');
           resolve({ success: true, message: 'Parakeet model ready' });
         } else {
-          const err = (parsed && parsed.error) || `Parakeet download exited with code ${code}`;
+          const err = describeParakeetDownloadError(
+            (parsed && parsed.error) || `Parakeet download exited with code ${code}`,
+          );
           sendDebugLog(err);
           resolve({ success: false, error: err });
         }
       });
 
       proc.on('error', (error) => {
-        sendDebugLog(`Process error: ${error.message}`);
-        resolve({ success: false, error: error.message });
+        const err = describeParakeetDownloadError(error.message);
+        sendDebugLog(`Process error: ${err}`);
+        resolve({ success: false, error: err });
       });
     });
   } catch (error) {
@@ -8428,7 +8439,7 @@ ipcMain.handle('pull-parakeet-model', async (event, modelId) => {
         } else {
           const errorMsg = timedOut
             ? 'Download timed out after 30 minutes'
-            : (pullResult && pullResult.error) || `Process exited with code ${code}`;
+            : describeParakeetDownloadError((pullResult && pullResult.error) || `Process exited with code ${code}`);
           finishOnce(
             { success: false, error: errorMsg },
             { model: modelId, success: false, error: errorMsg },
@@ -8436,9 +8447,10 @@ ipcMain.handle('pull-parakeet-model', async (event, modelId) => {
         }
       });
       proc.on('error', (error) => {
+        const errorMsg = describeParakeetDownloadError(error.message);
         finishOnce(
-          { success: false, error: error.message },
-          { model: modelId, success: false, error: error.message },
+          { success: false, error: errorMsg },
+          { model: modelId, success: false, error: errorMsg },
         );
       });
     });

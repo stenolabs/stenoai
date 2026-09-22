@@ -25,6 +25,13 @@ function registration(sourceText, channel) {
   return matches[0].getText(file);
 }
 
+function functionDeclaration(sourceText, name) {
+  const file = ts.createSourceFile('main.js', sourceText, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
+  const matches = file.statements.filter(statement => ts.isFunctionDeclaration(statement) && statement.name?.text === name);
+  assert.equal(matches.length, 1, `Expected exactly one function declaration for ${name}`);
+  return matches[0].getText(file);
+}
+
 test('registration extraction tolerates indentation and nested callbacks', () => {
   const input = `  ipcMain.handle('sample', () => {
     nested(() => {
@@ -42,12 +49,15 @@ for (const channel of ['setup-parakeet', 'pull-parakeet-model']) {
     proc.stdout = new EventEmitter();
     proc.stderr = new EventEmitter();
     const events = [];
-    vm.runInNewContext(registration(source, channel), {
-      ipcMain: { handle: (_, fn) => { handler = fn; } },
-      spawn: () => proc, getBackendPath: () => '/synthetic/backend', getBackendCwd: () => '/synthetic',
-      makeLineReader, sendDebugLog: () => {}, setTimeout, clearTimeout,
-      mainWindow: { isDestroyed: () => false, webContents: { send: (name, data) => events.push([name, data]) } },
-    });
+    vm.runInNewContext(
+      `${functionDeclaration(source, 'describeParakeetDownloadError')}\n${registration(source, channel)}`,
+      {
+        ipcMain: { handle: (_, fn) => { handler = fn; } },
+        spawn: () => proc, getBackendPath: () => '/synthetic/backend', getBackendCwd: () => '/synthetic',
+        makeLineReader, sendDebugLog: () => {}, setTimeout, clearTimeout,
+        mainWindow: { isDestroyed: () => false, webContents: { send: (name, data) => events.push([name, data]) } },
+      },
+    );
     return { proc, events, promise: handler({}, 'synthetic-model') };
   }
   test(`${channel}: split progress and final JSON survive arbitrary stdout chunks`, async () => {
@@ -68,4 +78,15 @@ for (const channel of ['setup-parakeet', 'pull-parakeet-model']) {
       assert.equal((await promise).success, false);
     });
   }
+  test(`${channel}: SSL certificate failures are actionable in app UI`, async () => {
+    const { proc, promise } = start();
+    proc.stdout.emit('data', Buffer.from('{"success":false,"error":"[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1006)"}\n'));
+    proc.emit('close', 0);
+    const result = await promise;
+    assert.equal(result.success, false);
+    assert.match(result.error, /could not verify Hugging Face/i);
+    assert.match(result.error, /this computer/i);
+    assert.match(result.error, /corporate VPN, proxy, or antivirus/i);
+    assert.match(result.error, /SSL_CERT_FILE \/ REQUESTS_CA_BUNDLE/);
+  });
 }
