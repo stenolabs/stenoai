@@ -3,7 +3,7 @@ title: "Transcription"
 description: "Steno transcribes recordings on-device by default with Parakeet and Whisper, with optional support for OpenAI-compatible cloud transcription endpoints."
 ---
 
-Steno transcribes on-device by default using two local engines: **Parakeet** (the default, NVIDIA Parakeet TDT v3 running via MLX on Apple Silicon) and **Whisper** (an optional alternate, OpenAI's Whisper `large-v3-turbo`). Both run locally on your device -- your audio is never sent to any server unless you explicitly opt in to an **OpenAI-compatible ASR endpoint** in **Settings → Transcribe**.
+Steno transcribes on-device by default using two local engines: **Parakeet** (the default, NVIDIA Parakeet TDT v3 running via MLX on Apple Silicon) and **Whisper** (an optional alternate, OpenAI's Whisper `large-v3-turbo`). Both run locally on your device -- your audio is never sent to any server unless you explicitly opt in to an **OpenAI-compatible ASR endpoint** in **Settings → AI → Transcription**.
 
 ## How it works
 
@@ -11,7 +11,7 @@ With the default Parakeet engine, a live transcript appears while you record, an
 
 ## Optional cloud transcription
 
-In **Settings → Transcribe**, choose **Cloud API (OpenAI-compatible)** and confirm the privacy notice. Enter your provider's API base URL, model name, and API key. Remote endpoints require HTTPS; HTTP is allowed only for loopback endpoints such as `localhost`.
+In **Settings → AI → Transcription**, choose **Cloud API** and confirm the privacy notice. Enter your provider's API base URL, model name, and API key. Remote endpoints require HTTPS; HTTP is allowed only for loopback endpoints such as `localhost`.
 
 The API key is stored encrypted on your device, separately from the summarisation key. Changing the endpoint to another provider requires saving a key for that provider. Use **Clear** to remove the saved key. Large recordings are split into smaller uploads automatically.
 
@@ -22,7 +22,7 @@ Cloud transcription sends recording audio off-device and may incur charges from 
 Language coverage depends on the engine. Steno auto-detects the language -- you do not need to set it manually.
 
 - **Parakeet (default)** transcribes 25 European languages, including English, French, German, Spanish, Italian, Dutch, Portuguese, Russian, and Polish. A curated subset of six (English, French, German, Spanish, Dutch, Portuguese) can be pinned as the summary output language.
-- **Whisper (optional)** covers the full set of 99 languages, including Japanese, Chinese, Korean, Hindi, and Arabic. To transcribe any of these, switch to the Whisper engine in **Settings → Transcribe**.
+- **Whisper (optional)** covers the full set of 99 languages, including Japanese, Chinese, Korean, Hindi, and Arabic. To transcribe any of these, switch to the Whisper engine in **Settings → AI → Transcription**.
 
 ## Speaker labels
 

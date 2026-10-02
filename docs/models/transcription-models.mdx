@@ -3,7 +3,7 @@ title: "Transcription models"
 description: "Choose local transcription with Parakeet (the default) or Whisper, or opt in to an OpenAI-compatible cloud API."
 ---
 
-Steno transcribes locally by default with **Parakeet** or **Whisper**. You can also opt in to **Cloud API (OpenAI-compatible)** in Settings; this sends recording audio to your configured provider.
+Steno transcribes locally by default with **Parakeet** or **Whisper**. You can also opt in to **Cloud API** in Settings; this sends recording audio to your configured provider.
 
 ## Available engines
 
@@ -15,15 +15,15 @@ Steno transcribes locally by default with **Parakeet** or **Whisper**. You can a
 
 **Parakeet** is the default on new installs. It runs via MLX on Apple Silicon and shows a live transcript as you record.
 
-**Whisper** is a single model, `large-v3-turbo`. Choose it in **Settings → Transcribe** when you need a language Parakeet does not cover. Whisper recordings are transcribed only after you stop the recording.
+**Whisper** is a single model, `large-v3-turbo`. Choose it in **Settings → AI → Transcription** when you need a language Parakeet does not cover. Whisper recordings are transcribed only after you stop the recording.
 
 Parakeet and Whisper run entirely on-device. Cloud API requires an endpoint URL, model name, and API key, and may incur provider charges. See [Optional cloud transcription](/features/transcription#optional-cloud-transcription) for setup and privacy details.
 
 ## How to change engines
 
 1. Open **Settings** in Steno
-2. Select **Transcribe**
-3. Choose **Parakeet**, **Whisper**, or **Cloud API (OpenAI-compatible)**
+2. Select **AI** and find the **Transcription** section
+3. Under **Model**, choose **Parakeet**, **Whisper**, or **Cloud API**
 4. Local models download if needed. For Cloud API, confirm the privacy notice and configure your provider's endpoint, model, and API key.
 
 The engine is applied to all future recordings. Existing recordings are not re-transcribed automatically -- transcription only runs once, when the recording is first processed.
@@ -50,11 +50,11 @@ Steno auto-detects the language from the audio -- you do not need to configure t
 ---
 
 <Accordion title="Which engine should I start with?">
-Start with **Parakeet** (the default). It runs on-device, shows a live transcript while you record, and covers 25 European languages, including English. Switch to **Whisper** in **Settings → Transcribe** if you need a language outside Parakeet's set.
+Start with **Parakeet** (the default). It runs on-device, shows a live transcript while you record, and covers 25 European languages, including English. Switch to **Whisper** in **Settings → AI → Transcription** if you need a language outside Parakeet's set.
 </Accordion>
 
 <Accordion title="Can I switch engines for future recordings?">
-Yes. Change the engine in **Settings → Transcribe** -- it applies to recordings from that point on. There is currently no way to re-transcribe an already-processed recording with a different engine; you can regenerate its summary, but not its transcript.
+Yes. Change the engine in **Settings → AI → Transcription** -- it applies to recordings from that point on. There is currently no way to re-transcribe an already-processed recording with a different engine; you can regenerate its summary, but not its transcript.
 </Accordion>
 
 <Accordion title="Does transcription accuracy vary by language?">
