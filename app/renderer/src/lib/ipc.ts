@@ -71,6 +71,7 @@ export interface Meeting {
    *  the audio (re-transcribe, speaker samples, any future re-diarization) is
    *  quietly unavailable without it. */
   has_audio?: boolean;
+  steno_transfer?: { sourceMeetingID: string };
   /** User notes as persisted + returned by the backend (`_parse_meeting_markdown` -> `user_notes`). */
   user_notes?: string | null;
   /** Renderer-side notes for the in-progress / draft recording (live + processing views). */
@@ -720,6 +721,8 @@ export type SetOpenAiAsrConfigResponse = Result<{
   model: string;
 }>;
 
+export type SetOpenAiAsrKeyResponse = Result<{ api_key_set: boolean }>;
+
 export type GetNotificationsResponse = Result<{ notifications_enabled: boolean }>;
 // `enabled` is the persisted preference; `registered` is the live global-
 // shortcut registration state (false when enabled but another app owns the
@@ -844,6 +847,8 @@ export interface SummaryTitleEvent {
 }
 export interface SummaryCompleteEvent {
   success: boolean;
+  /** Fixed reprocess failure code; never raw backend diagnostics. */
+  error_code?: string;
   sessionName: string;
   summaryFile?: string;
   /** True when this completion belongs to a template report generation rather
@@ -853,6 +858,8 @@ export interface SummaryCompleteEvent {
 }
 export interface ProcessingCompleteEvent {
   success: boolean;
+  /** Fixed reprocess failure code; never raw backend diagnostics. */
+  error_code?: string;
   sessionName: string;
   message: string;
   meetingData?: Meeting;
@@ -916,7 +923,10 @@ export interface ParakeetPullProgressEvent {
   /** Present on pull-parakeet-model invocations; omitted on
    *  setup-parakeet (which downloads the default model with no id arg). */
   model?: string | null;
-  stage: 'downloading' | 'loading' | string;
+  stage: 'preparing' | 'downloading' | 'loading' | 'complete' | string;
+  completed_files?: number;
+  total_files?: number;
+  file_bytes?: number;
 }
 export interface ParakeetPullCompleteEvent {
   model?: string | null;
@@ -997,6 +1007,11 @@ export interface UpdateErrorEvent {
 }
 export interface ShortcutStartRecordingEvent {
   sessionName: string | null;
+}
+
+export interface MeetingTransferImportedEvent {
+  summaryFile: string;
+  duplicate: boolean;
 }
 
 // ---------- bridge shape ----------
@@ -1082,9 +1097,14 @@ export interface StenoaiBridge {
     openSystemAudioFile: RequestFn<[name: string], Result<{ filePath: string }>>;
     appendSystemAudioChunk: RequestFn<[bytes: Uint8Array], Result<Record<string, never>>>;
     closeSystemAudioFile: RequestFn<[], Result<{ filePath: string }>>;
+    /** Linux-only: starts a pw-record subprocess in main capturing the default
+     *  sink's monitor (see app/linux-loopback.js). PCM arrives via
+     *  on.linuxLoopbackChunk, not through getDisplayMedia. */
+    startLinuxLoopback: RequestFn<[], Result<{ sampleRate: number; channels: number }>>;
+    stopLinuxLoopback: RequestFn<[], Result<Record<string, never>>>;
     /** Report a renderer-side capture failure so main can surface a native
      *  notification (a failed start would otherwise be silent). Fire-and-forget. */
-    reportCaptureError: SendFn<[message: string]>;
+    reportCaptureError: SendFn<[message: string, name?: string, phase?: 'start' | 'ongoing' | 'stop']>;
     processSystemAudio: RequestFn<[filePath: string, name: string], Result<{ message: string }>>;
     // Fire-and-forget: the handler copies the file into recordings/ and queues
     // it (addToProcessingQueue), then resolves immediately with no payload —
@@ -1141,6 +1161,15 @@ export interface StenoaiBridge {
       Result<Record<string, never>>
     >;
     deleteReport: RequestFn<[summaryFile: string, reportId: string], Result<Record<string, never>>>;
+  };
+
+  meetingTransfer: {
+    importPackage: RequestFn<
+      [filePath?: string],
+      Result<{ cancelled?: boolean; summaryFile?: string; duplicate?: boolean }>
+    >;
+    exportPackage: RequestFn<[summaryFile: string], Result<{ cancelled?: boolean }>>;
+    ready: RequestFn<[], Result<Record<string, never>>>;
   };
 
   query: {
@@ -1237,9 +1266,10 @@ export interface StenoaiBridge {
   openaiAsr: {
     getConfig: RequestFn<[], GetOpenAiAsrConfigResponse>;
     setConfig: RequestFn<
-      [cfg: { api_url?: string; api_key?: string; model?: string }],
+      [cfg: { api_url?: string; model?: string }],
       SetOpenAiAsrConfigResponse
     >;
+    setKey: RequestFn<[key: string], SetOpenAiAsrKeyResponse>;
   };
 
   settings: {
@@ -1399,6 +1429,13 @@ export interface StenoaiBridge {
     liveTranscriptReady: Subscribe<LiveTranscriptReadyEvent>;
     liveTranscriptChunk: Subscribe<LiveTranscriptChunkEvent>;
     liveTranscriptError: Subscribe<LiveTranscriptErrorEvent>;
+    /** Raw interleaved s16 PCM from the Linux loopback capture — see
+     *  recording.startLinuxLoopback. Electron serialises the main-side Buffer
+     *  as a Uint8Array on this side of the bridge. */
+    linuxLoopbackChunk: Subscribe<Uint8Array>;
+    /** pw-record died on its own (crash, PipeWire restart) — no more chunks
+     *  are coming. Not emitted on a normal stopLinuxLoopback(). */
+    linuxLoopbackEnded: Subscribe<{ code: number | null; signal: string | null }>;
     updateAvailable: Subscribe<UpdateAvailableEvent>;
     updateDownloadProgress: Subscribe<UpdateProgressEvent>;
     updateDownloaded: Subscribe<UpdateDownloadedEvent>;
@@ -1420,6 +1457,7 @@ export interface StenoaiBridge {
     generateNotesRequested: Subscribe<{ summaryFile: string; name?: string | null }>;
     navigateToMeeting: Subscribe<{ summaryFile: string }>;
     trayOpenSettings: Subscribe<void>;
+    meetingTransferImported: Subscribe<MeetingTransferImportedEvent>;
     showQuitDialog: Subscribe<{ type: 'recording' | 'processing'; jobCount?: number }>;
     showNotification: Subscribe<{
       id?: string;

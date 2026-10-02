@@ -12,6 +12,7 @@ Covers:
 import io
 import json
 import math
+import os
 import struct
 import subprocess
 import sys
@@ -23,6 +24,7 @@ import wave
 from pathlib import Path
 from unittest.mock import Mock, patch
 
+import src.transcriber as transcriber_mod
 from src.transcriber import (
     BLEED_JACCARD_THRESHOLD,
     CHANNEL_DOMINANCE_THRESHOLD,
@@ -43,6 +45,7 @@ from src.transcriber import (
     _merge_close_diar_segments,
     _parse_channels_from_ffmpeg_stderr,
     _parse_duration_from_ffmpeg_stderr,
+    _reconcile_cross_channel_speakers,
     _resolve_speaker_placeholders,
     _run_steno_diarize,
     _terminate_process_tree,
@@ -139,6 +142,43 @@ class TranscribeDiarisedTimestampTests(unittest.TestCase):
         self.assertNotIn("[00:0", result["text"])
         self.assertNotIn("[You]", result["text"])
 
+    def test_final_stereo_cleanup_retries_transient_windows_locks(self):
+        self.transcriber.transcribe_audio = Mock(side_effect=[
+            {"text": "Mic", "segments": [
+                {"text": "Mic", "start": 0.0, "end": 0.5},
+            ]},
+            {"text": "System", "segments": [
+                {"text": "System", "start": 1.0, "end": 1.5},
+            ]},
+        ])
+        real_unlink = Path.unlink
+        attempts = {self.mic_path: 0, self.system_path: 0}
+
+        def windows_transient_unlink(path, *args, **kwargs):
+            if path in attempts:
+                attempts[path] += 1
+                if attempts[path] < 3:
+                    raise PermissionError("Windows indexing holds the WAV briefly")
+            return real_unlink(path, *args, **kwargs)
+
+        with patch.object(Path, "unlink", new=windows_transient_unlink), patch(
+            "src.transcriber.time.sleep"
+        ) as sleep, patch.object(
+            transcriber_mod,
+            "_unlink_temporary_audio",
+            wraps=transcriber_mod._unlink_temporary_audio,
+        ) as cleanup:
+            self.transcriber.transcribe_diarised(self.audio_path)
+
+        self.assertEqual(attempts, {self.mic_path: 3, self.system_path: 3})
+        self.assertEqual(sleep.call_count, 4)
+        self.assertFalse(self.mic_path.exists())
+        self.assertFalse(self.system_path.exists())
+        self.assertEqual(cleanup.call_count, 2)
+        self.assertTrue(all(
+            call.args[1] == "stereo channel" for call in cleanup.call_args_list
+        ))
+
     def test_single_source_is_not_timestamped_or_diarised(self):
         self.transcriber.transcribe_audio = Mock(side_effect=[
             {"text": "Only mic.", "segments": [{"text": "Only mic.", "start": 0.4, "end": 1.0}]},
@@ -147,6 +187,57 @@ class TranscribeDiarisedTimestampTests(unittest.TestCase):
         result = self.transcriber.transcribe_diarised(self.audio_path)
         self.assertFalse(result["is_diarised"])
         self.assertIsNone(result["diarised_text"])
+
+    def test_textonly_fallback_has_no_fabricated_timestamps(self):
+        # An OpenAI-compatible text-only endpoint yields no per-segment
+        # timestamps; each channel returns a single whole-channel segment at
+        # start=end=0. Sorting those by start would collapse both channels to
+        # time 0 and always emit [You] before [Others]. Instead we keep the
+        # speaker labels but omit the fabricated [00:00] timestamp so we don't
+        # silently imply a chronology we don't actually have.
+        self.transcriber.transcribe_audio = Mock(side_effect=[
+            {"text": "Hi from me.", "segments": [{"text": "Hi from me.", "start": 0.0, "end": 0.0}]},
+            {"text": "And from them.", "segments": [{"text": "And from them.", "start": 0.0, "end": 0.0}]},
+        ])
+        result = self.transcriber.transcribe_diarised(self.audio_path)
+        self.assertTrue(result["is_diarised"])
+        self.assertEqual(
+            result["diarised_text"],
+            "[You] Hi from me.\n\n[Others] And from them.",
+        )
+        # No fabricated [MM:SS] marker anywhere in the diarised text.
+        self.assertNotIn("[00:00]", result["diarised_text"])
+
+    def test_discarded_bleed_does_not_lower_retained_channel_coverage(self):
+        for dropped in ("mic", "system"):
+            with self.subTest(dropped=dropped):
+                segment = {"text": "The budget is approved.", "start": 0.0, "end": 1.0}
+                self.transcriber.transcribe_audio = Mock(side_effect=[
+                    {"text": segment["text"], "segments": [dict(segment)],
+                     "window_coverage": 0.2 if dropped == "mic" else 1.0},
+                    {"text": segment["text"], "segments": [dict(segment)],
+                     "window_coverage": 0.2 if dropped == "system" else 1.0},
+                ])
+                with patch("src.transcriber._segment_rms", side_effect=[
+                    0.1 if dropped == "mic" else 1.0,
+                    0.1 if dropped == "system" else 1.0,
+                ]):
+                    result = self.transcriber.transcribe_diarised(self.audio_path)
+                self.assertEqual(result["window_coverage"], 1.0)
+                self.assertFalse(result["is_diarised"])
+
+    def test_retained_channel_still_contributes_low_coverage(self):
+        self.transcriber.transcribe_audio = Mock(side_effect=[
+            {"text": "The budget is approved.", "segments": [
+                {"text": "The budget is approved.", "start": 0.0, "end": 1.0},
+            ], "window_coverage": 1.0},
+            {"text": "Deployment starts tomorrow.", "segments": [
+                {"text": "Deployment starts tomorrow.", "start": 2.0, "end": 3.0},
+            ], "window_coverage": 0.2},
+        ])
+        result = self.transcriber.transcribe_diarised(self.audio_path)
+        self.assertEqual(result["window_coverage"], 0.2)
+        self.assertTrue(result["is_diarised"])
 
 
 class TranscribeDiarisedMultiSpeakerTests(unittest.TestCase):
@@ -246,6 +337,53 @@ class TranscribeDiarisedMultiSpeakerTests(unittest.TestCase):
         self.assertEqual(clusters["system"]["recording_type"], "remote")
         self.assertEqual(clusters["system"]["clusters"]["SPEAKER_0"]["embedding"], [0.5, 0.6])
 
+    def test_enabled_pipeline_reconciles_sidecar_and_turn_manifest_together(self):
+        mic_diar = [
+            {"start": 0.0, "end": 2.0, "speaker": "SPEAKER_0"},
+            {"start": 2.5, "end": 4.5, "speaker": "SPEAKER_1"},
+        ]
+        system_diar = [
+            {"start": 5.0, "end": 7.0, "speaker": "SPEAKER_0"},
+            {"start": 7.5, "end": 9.5, "speaker": "SPEAKER_1"},
+        ]
+        mic_embeddings = {
+            "SPEAKER_0": [1.0, 0.0, 0.0],
+            "SPEAKER_1": [0.0, 1.0, 0.0],
+        }
+        system_embeddings = {
+            "SPEAKER_0": [0.0, 0.0, 1.0],
+            "SPEAKER_1": [0.0, 1.0, 0.0],
+        }
+        with patch("src.transcriber._identity_matching_enabled", return_value=True), \
+             patch("src.config.get_config") as mock_get_config, \
+             patch(
+                "src.transcriber._run_steno_diarize",
+                side_effect=[(mic_diar, mic_embeddings), (system_diar, system_embeddings)],
+             ):
+            mock_get_config.return_value.get_voiceprints.return_value = []
+            self.transcriber.transcribe_audio = Mock(side_effect=[
+                {"text": "Local. Echo.", "segments": [
+                    {"text": "Local.", "start": 0.5, "end": 1.5},
+                    {"text": "Echo.", "start": 3.0, "end": 4.0},
+                ]},
+                {"text": "Remote one. Remote participant speaking.", "segments": [
+                    {"text": "Remote one.", "start": 5.5, "end": 6.5},
+                    {"text": "Remote participant speaking.", "start": 8.0, "end": 9.0},
+                ]},
+            ])
+
+            result = self.transcriber.transcribe_diarised(self.audio_path)
+
+        self.assertEqual(set(result["speaker_clusters"]["mic"]["clusters"]), {"SPEAKER_0"})
+        self.assertEqual(
+            set(result["speaker_clusters"]["system"]["clusters"]),
+            {"SPEAKER_0", "SPEAKER_1"},
+        )
+        self.assertIn(
+            {"start": 2.5, "channel": "system", "diarization_speaker_id": "SPEAKER_1"},
+            result["turn_manifest"],
+        )
+
     def test_speaker_clusters_empty_and_no_self_match_when_identity_matching_disabled(self):
         # identity_matching_enabled=False must stop per-meeting speaker
         # embeddings from ever reaching speaker_clusters (so nothing is
@@ -267,6 +405,7 @@ class TranscribeDiarisedMultiSpeakerTests(unittest.TestCase):
         system_embeddings = {"SPEAKER_0": [0.5, 0.6]}
         self_voiceprint = {"is_self": True, "centroid": [0.3, 0.4]}  # matches SPEAKER_1
         with patch("src.transcriber._identity_matching_enabled", return_value=False), \
+             patch("src.transcriber._reconcile_cross_channel_speakers") as reconcile, \
              patch(
                 "src.transcriber._run_steno_diarize",
                 side_effect=[(mic_diar, mic_embeddings), (system_diar, system_embeddings)],
@@ -283,6 +422,7 @@ class TranscribeDiarisedMultiSpeakerTests(unittest.TestCase):
             ])
             result = self.transcriber.transcribe_diarised(self.audio_path)
         self.assertEqual(result["speaker_clusters"], {})
+        reconcile.assert_not_called()
         # Dominant-by-duration labeling survives untouched: SPEAKER_1 stays
         # "Speaker 2", it is NOT re-anchored to "You" despite matching the
         # self voiceprint above -- proving self-matching never ran.
@@ -789,6 +929,34 @@ class CheckRmsEnergyTests(unittest.TestCase):
         # surface the late-arriving energy and return True.
         path = self.tmpdir / 'late_speech.wav'
         _write_wav_with_segments(path, [(10, 'silent'), (5, 'loud')])
+        self.assertTrue(self.transcriber._check_rms_energy(path))
+
+    def test_sparse_left_channel_burst_between_old_windows_is_caught(self):
+        path = self.tmpdir / 'sparse_stereo_burst.wav'
+        frame_count = 16000 * 120
+        burst_start = 16000 * 37 + 8000
+        raw = bytearray(frame_count * 4)
+        # Per-channel RMS is above the gate while a stereo-wide average
+        # would dilute this below it.
+        signal_frame = (150).to_bytes(2, 'little', signed=True) + b'\0\0'
+        for frame in range(burst_start, burst_start + 80):
+            raw[frame * 4:(frame + 1) * 4] = signal_frame
+        with wave.open(str(path), 'wb') as wf:
+            wf.setnchannels(2)
+            wf.setsampwidth(2)
+            wf.setframerate(16000)
+            wf.writeframes(raw)
+
+        self.assertTrue(self.transcriber._check_rms_energy(path))
+
+    def test_truncated_pcm_read_is_not_classified_as_silence(self):
+        path = self.tmpdir / 'truncated.wav'
+        _write_wav_with_segments(path, [(1, 'silent')])
+        raw = bytearray(path.read_bytes())
+        raw[4:8] = (36 + 64000).to_bytes(4, 'little')
+        raw[40:44] = (64000).to_bytes(4, 'little')
+        path.write_bytes(raw)
+
         self.assertTrue(self.transcriber._check_rms_energy(path))
 
     def test_zero_frame_file_returns_false(self):
@@ -1360,6 +1528,168 @@ class ResolveSpeakerPlaceholdersTests(unittest.TestCase):
         # channel/raw_sid pass through untouched -- only label is rewritten.
 
 
+class ReconcileCrossChannelSpeakersTests(unittest.TestCase):
+    @staticmethod
+    def _cluster(embedding):
+        return {
+            "embedding": embedding,
+            "speech_duration_seconds": 10.0,
+            "segment_count": 2,
+        }
+
+    def test_merges_unambiguous_echo_pairs_but_keeps_dominant_legacy_pair(self):
+        mic_clusters = {
+            "SPEAKER_0": self._cluster([1.0, 0.0, 0.0]),
+            "SPEAKER_1": self._cluster([0.0, 1.0, 0.0]),
+            "SPEAKER_2": self._cluster([0.0, 0.0, 1.0]),
+        }
+        system_clusters = {
+            "SPEAKER_0": self._cluster([1.0, 0.0, 0.0]),
+            "SPEAKER_1": self._cluster([0.0, 0.0, 1.0]),
+            "SPEAKER_2": self._cluster([0.0, 1.0, 0.0]),
+        }
+        tagged = [
+            (0.0, "You", "the longer direct local turn", "mic", "SPEAKER_0"),
+            (1.0, "Others", "echo", "system", "SPEAKER_0"),
+            (2.0, "__diar__You__SPEAKER_1", "echo", "mic", "SPEAKER_1"),
+            (3.0, "__diar__Others__SPEAKER_2", "the longer direct remote turn", "system", "SPEAKER_2"),
+            (4.0, "__diar__You__SPEAKER_2", "small", "mic", "SPEAKER_2"),
+            (5.0, "__diar__Others__SPEAKER_1", "another longer remote turn", "system", "SPEAKER_1"),
+        ]
+
+        reconciled, mic_out, system_out = _reconcile_cross_channel_speakers(
+            tagged, mic_clusters, system_clusters,
+        )
+
+        self.assertEqual(
+            reconciled,
+            [
+                (0.0, "You", "the longer direct local turn", "mic", "SPEAKER_0"),
+                (1.0, "Others", "echo", "system", "SPEAKER_0"),
+                (2.0, "__diar__Others__SPEAKER_2", "echo", "system", "SPEAKER_2"),
+                (3.0, "__diar__Others__SPEAKER_2", "the longer direct remote turn", "system", "SPEAKER_2"),
+                (4.0, "__diar__Others__SPEAKER_1", "small", "system", "SPEAKER_1"),
+                (5.0, "__diar__Others__SPEAKER_1", "another longer remote turn", "system", "SPEAKER_1"),
+            ],
+        )
+        self.assertEqual(set(mic_out), {"SPEAKER_0"})
+        self.assertEqual(set(system_out), {"SPEAKER_0", "SPEAKER_1", "SPEAKER_2"})
+        resolved = _resolve_speaker_placeholders(reconciled)
+        self.assertEqual(
+            {turn[1] for turn in resolved},
+            {"You", "Others", "Speaker 2", "Speaker 3"},
+        )
+
+    def test_ambiguous_near_ties_are_not_merged(self):
+        mic_clusters = {"SPEAKER_0": self._cluster([1.0, 0.0])}
+        system_clusters = {
+            "SPEAKER_0": self._cluster([1.0, 0.0]),
+            "SPEAKER_1": self._cluster([1.0, 0.0]),
+        }
+        tagged = [
+            (0.0, "You", "mic", "mic", "SPEAKER_0"),
+            (1.0, "Others", "system a", "system", "SPEAKER_0"),
+            (2.0, "__diar__Others__SPEAKER_1", "system b", "system", "SPEAKER_1"),
+        ]
+
+        result = _reconcile_cross_channel_speakers(tagged, mic_clusters, system_clusters)
+
+        self.assertEqual(result, (tagged, mic_clusters, system_clusters))
+
+    def test_unrelated_cross_channel_clusters_are_not_merged(self):
+        mic_clusters = {"SPEAKER_0": self._cluster([1.0, 0.0])}
+        system_clusters = {"SPEAKER_0": self._cluster([0.0, 1.0])}
+        tagged = [
+            (0.0, "You", "mic", "mic", "SPEAKER_0"),
+            (1.0, "Others", "system", "system", "SPEAKER_0"),
+        ]
+
+        result = _reconcile_cross_channel_speakers(tagged, mic_clusters, system_clusters)
+
+        self.assertEqual(result, (tagged, mic_clusters, system_clusters))
+
+    def test_dominant_legacy_pair_is_not_merged(self):
+        mic_clusters = {"SPEAKER_0": self._cluster([1.0, 0.0])}
+        system_clusters = {"SPEAKER_0": self._cluster([1.0, 0.0])}
+        tagged = [
+            (0.0, "You", "local speaker", "mic", "SPEAKER_0"),
+            (1.0, "Others", "remote speaker", "system", "SPEAKER_0"),
+        ]
+
+        result = _reconcile_cross_channel_speakers(tagged, mic_clusters, system_clusters)
+
+        self.assertEqual(result, (tagged, mic_clusters, system_clusters))
+
+    def test_placeholder_pair_is_not_merged_when_it_would_erase_speaker_split(self):
+        mic_clusters = {"SPEAKER_0": self._cluster([1.0, 0.0])}
+        system_clusters = {"SPEAKER_0": self._cluster([1.0, 0.0])}
+        tagged = [
+            (0.0, "__diar__You__SPEAKER_0", "first", "mic", "SPEAKER_0"),
+            (1.0, "__diar__Others__SPEAKER_0", "second", "system", "SPEAKER_0"),
+        ]
+
+        result = _reconcile_cross_channel_speakers(tagged, mic_clusters, system_clusters)
+
+        self.assertEqual(result, (tagged, mic_clusters, system_clusters))
+
+    def test_post_bleed_text_weight_beats_folded_legacy_label(self):
+        mic_clusters = {
+            "SPEAKER_0": self._cluster([1.0, 0.0]),
+            "SPEAKER_1": self._cluster([0.0, 1.0]),
+        }
+        system_clusters = {
+            "SPEAKER_0": self._cluster([0.0, 1.0]),
+            "SPEAKER_1": self._cluster([1.0, 0.0]),
+        }
+        tagged = [
+            (0.0, "You", "short", "mic", "SPEAKER_0"),
+            (1.0, "__diar__Others__SPEAKER_1", "a much longer echo turn", "system", "SPEAKER_1"),
+            (2.0, "__diar__You__SPEAKER_1", "echo", "mic", "SPEAKER_1"),
+            (3.0, "Others", "remote speaker", "system", "SPEAKER_0"),
+        ]
+
+        reconciled, mic_out, system_out = _reconcile_cross_channel_speakers(
+            tagged, mic_clusters, system_clusters,
+        )
+
+        self.assertEqual(
+            reconciled[0][1:],
+            ("__diar__Others__SPEAKER_1", "short", "system", "SPEAKER_1"),
+        )
+        self.assertEqual(set(mic_out), set())
+        self.assertEqual(set(system_out), {"SPEAKER_0", "SPEAKER_1"})
+
+    def test_merge_preserves_union_of_segment_ranges(self):
+        mic_clusters = {
+            "SPEAKER_0": {
+                **self._cluster([1.0, 0.0]),
+                "segments": [{"start": 0.0, "end": 2.0}],
+            },
+            "SPEAKER_1": self._cluster([0.0, 1.0]),
+        }
+        system_clusters = {
+            "SPEAKER_0": self._cluster([0.0, 1.0]),
+            "SPEAKER_1": {
+                **self._cluster([1.0, 0.0]),
+                "segments": [{"start": 1.5, "end": 3.0}],
+            },
+        }
+        tagged = [
+            (0.0, "You", "direct local", "mic", "SPEAKER_0"),
+            (1.5, "__diar__Others__SPEAKER_1", "echo", "system", "SPEAKER_1"),
+            (4.0, "__diar__You__SPEAKER_1", "echo", "mic", "SPEAKER_1"),
+            (5.0, "Others", "direct remote", "system", "SPEAKER_0"),
+        ]
+
+        _reconciled, mic_out, _system_out = _reconcile_cross_channel_speakers(
+            tagged, mic_clusters, system_clusters,
+        )
+
+        self.assertEqual(mic_out["SPEAKER_0"]["segments"], [{"start": 0.0, "end": 3.0}])
+        self.assertEqual(mic_out["SPEAKER_0"]["speech_duration_seconds"], 3.0)
+        self.assertEqual(mic_out["SPEAKER_0"]["segment_count"], 4)
+
+
 class AssembleDiarisedTurnsTests(unittest.TestCase):
     def test_merges_only_adjacent_segments_with_the_same_label_and_provenance(self):
         assembled = _assemble_diarised_turns([
@@ -1907,6 +2237,35 @@ class RunStenoDiarizeTests(unittest.TestCase):
     def test_returns_none_when_binary_unresolved(self):
         with patch("src.transcriber._resolve_steno_diarize", return_value=None):
             self.assertIsNone(_run_steno_diarize(Path("/fake/mic.wav"), 60))
+
+    def test_sidecar_env_removes_cloud_credentials_case_insensitively(self):
+        payload = json.dumps({"segments": [], "speakers": {}}).encode()
+        fake = _FakePopen(stdout=payload)
+        with patch.dict(os.environ, {
+            "STENOAI_OAI_API_KEY": "parent-key",
+            "stenoai_oai_api_origin": "https://parent.example",
+            "STENOAI_OAI_API_URL": "https://parent.example/v1",
+        }), patch(
+            "src.transcriber._resolve_steno_diarize",
+            return_value="/fake/steno-diarize",
+        ), patch("subprocess.Popen", return_value=fake) as popen:
+            self.assertIsNotNone(_run_steno_diarize(
+                Path("/fake/mic.wav"),
+                60,
+                extra_env={
+                    "StEnOaI_OaI_ApI_KeY": "extra-key",
+                    "STENOAI_DIARIZE_COMPUTE_UNITS": "cpuOnly",
+                },
+            ))
+
+        env = popen.call_args.kwargs["env"]
+        self.assertFalse(any(
+            name.upper() in {
+                "STENOAI_OAI_API_KEY", "STENOAI_OAI_API_ORIGIN", "STENOAI_OAI_API_URL",
+            }
+            for name in env
+        ))
+        self.assertEqual(env["STENOAI_DIARIZE_COMPUTE_UNITS"], "cpuOnly")
 
     def test_windows_taskkill_failure_falls_back_to_parent_kill(self):
         proc = _FakePopen()

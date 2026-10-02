@@ -13,6 +13,10 @@ export const isMac = bridgePlatform
   : typeof navigator !== 'undefined'
     && /mac|iphone|ipad|ipod/i.test(navigator.platform || navigator.userAgent);
 
+export const isLinux = bridgePlatform
+  ? bridgePlatform === 'linux'
+  : typeof navigator !== 'undefined' && /linux/i.test(navigator.platform || navigator.userAgent);
+
 /**
  * Render a keyboard shortcut for the current platform. Pass mac glyphs and a
  * non-mac fallback; we pick the right one at call time. The Electron main

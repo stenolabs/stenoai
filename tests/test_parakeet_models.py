@@ -156,7 +156,7 @@ class DownloadErrorSurfacingTests(unittest.TestCase):
         masking = FileNotFoundError(
             2, "No such file or directory", f"{model_id}/config.json"
         )
-        with patch("src.parakeet.ensure_loaded", side_effect=masking), \
+        with patch("src.parakeet_models.is_installed", return_value=True), patch("src.parakeet.ensure_loaded", side_effect=masking), \
                 self.assertLogs("src.parakeet_models", level="ERROR") as cm:
             ok = parakeet_models.download(model_id)
         self.assertFalse(ok)
@@ -165,13 +165,67 @@ class DownloadErrorSurfacingTests(unittest.TestCase):
         self.assertIn("401", joined)
 
     def test_unrelated_error_uses_plain_message(self):
-        with patch("src.parakeet.ensure_loaded", side_effect=RuntimeError("boom")), \
+        with patch("src.parakeet_models.is_installed", return_value=True), patch("src.parakeet.ensure_loaded", side_effect=RuntimeError("boom")), \
                 self.assertLogs("src.parakeet_models", level="ERROR") as cm:
             ok = parakeet_models.download(parakeet_models.DEFAULT_MODEL_ID)
         self.assertFalse(ok)
         joined = "\n".join(cm.output)
         self.assertIn("download/load failed", joined)
         self.assertNotIn("HF_TOKEN", joined)
+
+
+class DownloadProgressTests(unittest.TestCase):
+    def test_stages_and_failure(self):
+        for failure in (False, True):
+            events = []
+            def fetch(model, emit):
+                self.assertEqual(events[-1]["stage"], "preparing")
+                emit({"stage": "downloading"})
+                if failure:
+                    raise OSError("offline")
+            def load(model):
+                from huggingface_hub import constants
+                self.assertTrue(constants.HF_HUB_OFFLINE)
+                self.assertEqual(events[-1]["stage"], "loading")
+            with patch("src.parakeet_models.is_installed", return_value=False), patch("src.parakeet_models._download_snapshot", side_effect=fetch), patch("src.parakeet.ensure_loaded", side_effect=load) as loaded:
+                self.assertEqual(parakeet_models.download(progress_callback=events.append), not failure)
+            expected = ["preparing", "downloading"] + ([] if failure else ["loading", "complete"])
+            self.assertEqual([e["stage"] for e in events], expected)
+            self.assertEqual(loaded.call_count, 0 if failure else 1)
+
+    @patch.dict(os.environ)
+    def test_snapshot_progress_and_older_hub_fallback(self):
+        import types
+        import sys
+        for modern in (True, False):
+            events, calls = [], []
+            def old(repo, filename, revision=None, token=None):
+                calls.append((filename, revision, token))
+                return "/synthetic/snapshots/abc123/" + filename
+            def new(repo, filename, revision=None, token=None, tqdm_class=None):
+                with tqdm_class(total=100, initial=40, unit="B", mininterval=0, disable=None, name="download") as bar:
+                    bar.update(60)
+                return old(repo, filename, revision, token)
+            hub = types.ModuleType("huggingface_hub")
+            hub.hf_hub_download = new if modern else old
+            with patch.dict(sys.modules, {"huggingface_hub": hub}):
+                parakeet_models._download_snapshot(parakeet_models.DEFAULT_MODEL_ID, events.append)
+            self.assertIsNone(calls[0][1])
+            self.assertTrue(all(c[1] == "abc123" for c in calls[1:]))
+            self.assertTrue(all(c[2] is False for c in calls))
+            self.assertEqual(any(e.get("file_bytes") == 100 for e in events), modern)
+            self.assertEqual(events[-1]["completed_files"], len(calls))
+
+
+class OfflineLoadTests(unittest.TestCase):
+    def test_offline_sessions_restored_after_load_error(self):
+        from huggingface_hub import constants
+        from huggingface_hub.utils import _http
+        states = []
+        with patch("src.parakeet_models.is_installed", return_value=True), patch.object(constants, "HF_HUB_OFFLINE", False), patch.object(_http, "reset_sessions", side_effect=lambda: states.append(constants.HF_HUB_OFFLINE), create=True), patch("src.parakeet.ensure_loaded", side_effect=RuntimeError("synthetic load error")):
+            self.assertFalse(parakeet_models.download())
+            self.assertFalse(constants.HF_HUB_OFFLINE)
+        self.assertEqual(states, [True, False])
 
 
 if __name__ == "__main__":

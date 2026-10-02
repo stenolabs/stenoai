@@ -15,6 +15,7 @@ import { useUpdateMeeting } from '@/hooks/useMeetings';
 import { getLiveDraft, useLiveDraftStore } from '@/hooks/liveDraftStore';
 import { ipc } from '@/lib/ipc';
 import { stripReasoning } from '@/lib/markdown';
+import { UI_LOCALE } from '@/lib/locale';
 
 type ProcessingStage = 'transcribing' | 'diarizing' | 'summarizing' | 'finalizing' | 'error';
 
@@ -793,7 +794,7 @@ function ElapsedTimer({ startedAt, fallbackElapsed }: { startedAt: Date | null, 
 }
 
 function formatDate(d: Date): string {
-  return d.toLocaleDateString(undefined, {
+  return d.toLocaleDateString(UI_LOCALE, {
     weekday: 'short',
     day: 'numeric',
     month: 'short',

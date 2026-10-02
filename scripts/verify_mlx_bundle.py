@@ -225,6 +225,70 @@ def check_dlopen_probes() -> None:
             _ok(f"dlopen: {rel}")
 
 
+_VERSION_H = os.path.join(_INTERNAL, 'mlx', 'include', 'mlx', 'version.h')
+_REQUIREMENTS = os.path.join(_REPO_ROOT, 'requirements.txt')
+_PIN_RE = re.compile(r"^mlx==([0-9][^\s;]*)", re.MULTILINE)
+_VERSION_RE = re.compile(
+    r"#define\s+MLX_VERSION_MAJOR\s+(\d+).*?"
+    r"#define\s+MLX_VERSION_MINOR\s+(\d+).*?"
+    r"#define\s+MLX_VERSION_PATCH\s+(\d+)",
+    re.DOTALL,
+)
+
+
+def check_pinned_version() -> None:
+    """The bundled mlx must be exactly the version requirements.txt pins.
+
+    This is a PROVENANCE check, not a behaviour one, and that distinction is the
+    whole point. Whether mlx works is decided by whether it can load its Metal
+    shader library, and no GitHub runner has a Metal device to find out: the
+    macOS @pipeline job runs whisper, and the parakeet jobs are Windows/onnx.
+    So the bundled mlx build is never actually exercised anywhere in CI.
+
+    What CI *can* do is refuse to ship a version nobody verified. mlx is a
+    transitive dep of parakeet-mlx with only a `>=0.22.1` floor, so before the
+    pin an ordinary rebuild silently upgraded it — that is exactly how 0.32.x,
+    which cannot find its metallib inside the bundle, reached a build and
+    killed Parakeet (the default macOS engine) with no test going red.
+    """
+    if not os.path.exists(_REQUIREMENTS):
+        _fail('pinned-version', f'requirements.txt not found at {_REQUIREMENTS}')
+        return
+    with open(_REQUIREMENTS, encoding='utf-8') as fh:
+        pin_match = _PIN_RE.search(fh.read())
+    if not pin_match:
+        _fail(
+            'pinned-version',
+            'requirements.txt no longer pins mlx (expected a line like '
+            "`mlx==X.Y.Z; sys_platform == 'darwin'`). Without the pin an "
+            'ordinary rebuild can ship an unverified mlx.',
+        )
+        return
+    pinned = pin_match.group(1)
+
+    if not os.path.exists(_VERSION_H):
+        _fail('pinned-version', f'bundled mlx version.h not found at {_VERSION_H}')
+        return
+    with open(_VERSION_H, encoding='utf-8') as fh:
+        ver_match = _VERSION_RE.search(fh.read())
+    if not ver_match:
+        _fail('pinned-version', f'could not parse MLX_VERSION_* from {_VERSION_H}')
+        return
+    bundled = '.'.join(ver_match.groups())
+
+    if bundled != pinned:
+        _fail(
+            'pinned-version',
+            f'bundle ships mlx {bundled} but requirements.txt pins {pinned}. '
+            'Parakeet is the default macOS engine and no CI job can load Metal '
+            'to test it, so an unverified mlx must not ship. Rebuild against '
+            'the pin, or move the pin deliberately after running '
+            '`dist/stenoai/stenoai spike-parakeet` on real Apple Silicon.',
+        )
+        return
+    _ok('pinned-version', f'bundled mlx {bundled} matches the requirements.txt pin')
+
+
 def main() -> int:
     if sys.platform != 'darwin':
         print(f"verify_mlx_bundle: no-op on {sys.platform} (darwin-only check). PASS.")
@@ -238,6 +302,7 @@ def main() -> int:
         )
         return 1
 
+    check_pinned_version()
     check_bit_identity()
     check_layout_contract()
     check_rpath_contract()
@@ -253,7 +318,7 @@ def main() -> int:
     if _failures:
         print(
             f"\nverify_mlx_bundle: FAIL - {len(_failures)} check(s) failed "
-            "(libmlx ABI-collision guard tripped).",
+            "(libmlx ABI-collision / mlx provenance guard tripped).",
             file=sys.stderr,
         )
         return 1

@@ -10,6 +10,8 @@ import { MeetingsShell } from '@/components/MeetingsShell';
 import { useNavigate } from '@/lib/router';
 import { useRecording } from '@/hooks/useRecording';
 import { useLiveMeeting } from '@/hooks/useLiveMeeting';
+import { UI_LOCALE } from '@/lib/locale';
+import { isLiveRowStatus } from '@/lib/liveMeetingRow';
 
 export function Recording() {
   const navigate = useNavigate();
@@ -32,11 +34,11 @@ export function Recording() {
   // home — visible most reliably when the user had been typing notes (queue
   // poll cadence + cache updates landed in a different order). The delay
   // lets the transition settle before we make any bouncing decision.
-  const hasSession =
-    live.active ||
-    recording.status === 'recording' ||
-    recording.status === 'paused' ||
-    recording.status === 'processing';
+  //
+  // isLiveRowStatus is shared with the meetings list's live row, so the row that
+  // sends the user here and this page can never disagree about whether a
+  // session runs — they used to, and the row won.
+  const hasSession = live.active || isLiveRowStatus(recording.status);
   React.useEffect(() => {
     if (recording.isLoading) return;
     if (hasSession) return;
@@ -170,7 +172,7 @@ function Chip({
 }
 
 function formatDate(d: Date): string {
-  return d.toLocaleDateString(undefined, {
+  return d.toLocaleDateString(UI_LOCALE, {
     weekday: 'short',
     day: 'numeric',
     month: 'short',

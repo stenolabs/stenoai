@@ -4,6 +4,7 @@ import type { CalendarEvent } from '@/lib/ipc';
 import { ipc } from '@/lib/ipc';
 import { cn } from '@/lib/utils';
 import { useRecording } from '@/hooks/useRecording';
+import { UI_LOCALE } from '@/lib/locale';
 
 interface UpcomingCardProps {
   event: CalendarEvent;
@@ -218,7 +219,7 @@ function formatMeta(
   } else if (sameDay(start, tomorrow)) {
     primary = 'Tomorrow';
   } else {
-    primary = start.toLocaleDateString(undefined, {
+    primary = start.toLocaleDateString(UI_LOCALE, {
       weekday: 'short',
       day: 'numeric',
       month: 'short',

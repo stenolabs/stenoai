@@ -1,5 +1,5 @@
 import { test, expect } from '../fixtures/electron';
-import { writeMeetingMarkdown } from '../fixtures/user-config';
+import { writeMeetingMarkdown, writeTranscriptFile } from '../fixtures/user-config';
 
 /**
  * T2 — the meeting-DETAIL parser (get-meeting) must surface the optional
@@ -36,6 +36,7 @@ type Meeting = {
   user_notes?: string | null;
   folders?: string[];
   transcript?: string;
+  diarised_text?: string | null;
 };
 type GetResult = { success: boolean; meeting?: Meeting; error?: string };
 type ListResult = { success: boolean; meetings: Meeting[] };
@@ -120,6 +121,30 @@ test('get-meeting leaves the markers unset for a normal summarised note', async 
   expect(res.meeting!.session_info.notes_stale).toBeFalsy();
   expect(res.meeting!.session_info.processing).toBeFalsy();
   expect(res.meeting!.session_info.is_live_transcript).toBeFalsy();
+});
+
+test('get-meeting keeps a manually redacted diarised summary transcript authoritative', async ({
+  launchApp,
+  userDataDir,
+}) => {
+  const file = writeMeetingMarkdown(userDataDir, 'redacted-speakers', {
+    name: 'Redacted speakers',
+    summaryMarkdown: '## Summary\nSensitive wording was removed.',
+    transcript: '[00:05] [Speaker 2] [redacted]',
+    frontmatter: { is_diarised: true },
+  });
+  writeTranscriptFile(
+    userDataDir,
+    'redacted-speakers',
+    '[00:05] [Person Alpha] sensitive wording that must stay hidden',
+  );
+
+  const { page } = await launchApp();
+
+  const res = await getMeeting(page, file);
+  expect(res.success, res.error).toBe(true);
+  expect(res.meeting!.diarised_text).toBe('[00:05] [Speaker 2] [redacted]');
+  expect(res.meeting!.diarised_text).not.toContain('sensitive wording that must stay hidden');
 });
 
 test('LIST (Python parser) and DETAIL (JS parser) agree on the session_info markers', async ({

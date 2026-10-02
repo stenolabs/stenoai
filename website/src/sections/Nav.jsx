@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { Github, Download, Menu, X, ChevronDown, Landmark, Shield, Scale, Stethoscope, Banknote, Briefcase } from "lucide-react";
+import { Github, Download, Menu, X, ChevronDown, Landmark, Shield } from "lucide-react";
 import { m as Motion, AnimatePresence, LazyMotion, domAnimation } from "framer-motion";
 import { StenoMark, Wordmark } from "../components/Brand";
 import { ThemeToggle } from "../components/ThemeToggle";
@@ -23,11 +23,7 @@ const PRODUCT_LINKS = [
 
 const ENTERPRISE_LINKS = [
   { href: "/enterprise/government/", label: "Government", icon: Landmark },
-  { href: "/enterprise/defense/", label: "Defense", icon: Shield },
-  { href: "/enterprise/legal/", label: "Legal", icon: Scale },
-  { href: "/enterprise/healthcare/", label: "Healthcare", icon: Stethoscope },
-  { href: "/enterprise/finance/", label: "Finance", icon: Banknote },
-  { href: "/enterprise/executive/", label: "Executive", icon: Briefcase },
+  { href: "/enterprise/defense/", label: "Defence", icon: Shield },
 ];
 
 function formatStars(n) {
@@ -221,7 +217,7 @@ export function Nav({ subpage = false }) {
           <NavDropdown
             label="Product"
             hubHref={subpage ? "/#how" : "#how"}
-            ariaLabel="Steno product sections"
+            ariaLabel="StenographAI product sections"
             links={PRODUCT_LINKS.map(({ href, label }) => ({
               href: subpage ? `/${href}` : href,
               label,
@@ -231,8 +227,8 @@ export function Nav({ subpage = false }) {
           <NavDropdown
             label="Enterprise"
             hubHref="/enterprise/"
-            hubLabel="All industries"
-            ariaLabel="Steno for specific industries"
+            hubLabel="Enterprise overview"
+            ariaLabel="StenographAI for specific industries"
             links={ENTERPRISE_LINKS}
           />
           {NAV_LINKS.map(({ href, label }) => (

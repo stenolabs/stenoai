@@ -246,7 +246,7 @@ class TranscribeWindowsMergeTests(unittest.TestCase):
         merged = onnx_backend._transcribe_windows(model, self._eighty_seconds())
         self.assertEqual(merged.windows_attempted, 2)
         self.assertEqual(merged.windows_recognized, 1)
-        self.assertEqual(onnx_backend._result_to_dict(merged, language=None)["window_coverage"], 0.5)
+        self.assertEqual(onnx_backend._result_to_dict(merged, language=None)["window_coverage"], 60 / 80)
 
     def test_misaligned_tokens_and_timestamps_do_not_count_as_recognized(self):
         model = _FakeTsModel([
@@ -259,7 +259,42 @@ class TranscribeWindowsMergeTests(unittest.TestCase):
         self.assertEqual(merged.tokens, ["Valid."])
         self.assertEqual(merged.windows_attempted, 2)
         self.assertEqual(merged.windows_recognized, 1)
-        self.assertEqual(onnx_backend._result_to_dict(merged, language=None)["window_coverage"], 0.5)
+        self.assertEqual(onnx_backend._result_to_dict(merged, language=None)["window_coverage"], 35 / 80)
+
+    def test_short_tail_does_not_weigh_as_much_as_first_window(self):
+        samples = np.zeros(61 * onnx_backend._SAMPLE_RATE, dtype=np.float32)
+        valid = (["Words."], [(0.0, 0.5)])
+        for responses, expected in [
+            ([RuntimeError("failed"), valid], 16 / 61),
+            ([valid, RuntimeError("failed")], 60 / 61),
+        ]:
+            with self.subTest(expected=expected):
+                merged = onnx_backend._transcribe_windows(_FakeTsModel(responses), samples)
+                coverage = onnx_backend._result_to_dict(merged, language=None)["window_coverage"]
+                self.assertAlmostEqual(coverage, expected)
+
+    def test_middle_gap_is_excluded_and_overlap_counted_once(self):
+        samples = np.zeros(180 * onnx_backend._SAMPLE_RATE, dtype=np.float32)
+        valid = (["Words."], [(0.0, 0.5)])
+        merged = onnx_backend._transcribe_windows(
+            _FakeTsModel([valid, RuntimeError("failed"), valid, valid]), samples,
+        )
+        self.assertEqual(merged.covered_seconds, 150)
+        self.assertAlmostEqual(
+            onnx_backend._result_to_dict(merged, language=None)["window_coverage"], 150 / 180,
+        )
+
+    def test_all_malformed_windows_still_raise(self):
+        invalid = (["missing timestamp"], [])
+        with self.assertRaisesRegex(RuntimeError, "all 2 ONNX transcription windows failed"):
+            onnx_backend._transcribe_windows(_FakeTsModel([invalid, invalid]), self._eighty_seconds())
+
+    def test_warning_counts_only_usable_windows_and_uncovered_audio(self):
+        model = _FakeTsModel([(["broken"], []), (["Valid."], [(0.0, 0.5)])])
+        with self.assertLogs(onnx_backend.logger, level="WARNING") as logs:
+            onnx_backend._transcribe_windows(model, self._eighty_seconds())
+        self.assertIn("read 35s of 80s (1 of 2 windows usable)", logs.output[-1])
+        self.assertIn("missing roughly 45s", logs.output[-1])
 
     def test_a_clean_run_reports_full_coverage(self):
         model = _FakeTsModel([

@@ -1,35 +1,36 @@
 ---
 title: "Transcription models"
-description: "Steno transcribes on-device with one of two engines: Parakeet (the default) and Whisper (optional). Choose the engine that matches your language and workflow needs."
+description: "Choose local transcription with Parakeet (the default) or Whisper, or opt in to an OpenAI-compatible cloud API."
 ---
 
-Steno transcribes recordings entirely on your Mac -- no audio is sent to any server. There are two transcription engines: **Parakeet**, the default, and **Whisper**, an optional alternate you can switch to in Settings.
+Steno transcribes locally by default with **Parakeet** or **Whisper**. You can also opt in to **Cloud API (OpenAI-compatible)** in Settings; this sends recording audio to your configured provider.
 
-## The two engines
+## Available engines
 
 | Engine | Model | Size | Notes |
 |--------|-------|------|-------|
 | **Parakeet** (default) | `mlx-community/parakeet-tdt-0.6b-v3` | ~572MB | Live transcript while recording; 25 European languages, including English |
 | **Whisper** (optional) | `large-v3-turbo` | ~1.6GB | Full 99-language coverage; transcribes after you stop |
+| **Cloud API** (opt-in) | Configured by you | No local ASR model required | Uploads audio after you stop; languages and timestamps depend on the provider |
 
 **Parakeet** is the default on new installs. It runs via MLX on Apple Silicon and shows a live transcript as you record.
 
 **Whisper** is a single model, `large-v3-turbo`. Choose it in **Settings → Transcribe** when you need a language Parakeet does not cover. Whisper recordings are transcribed only after you stop the recording.
 
-Both engines run 100% on-device.
+Parakeet and Whisper run entirely on-device. Cloud API requires an endpoint URL, model name, and API key, and may incur provider charges. See [Optional cloud transcription](/features/transcription#optional-cloud-transcription) for setup and privacy details.
 
 ## How to change engines
 
 1. Open **Settings** in Steno
 2. Select **Transcribe**
-3. Choose **Parakeet** or **Whisper**
-4. If the engine's model is not yet downloaded, Steno will prompt you to download it
+3. Choose **Parakeet**, **Whisper**, or **Cloud API (OpenAI-compatible)**
+4. Local models download if needed. For Cloud API, confirm the privacy notice and configure your provider's endpoint, model, and API key.
 
 The engine is applied to all future recordings. Existing recordings are not re-transcribed automatically -- transcription only runs once, when the recording is first processed.
 
 ## Speed
 
-Transcription runs on-device and is fast on Apple Silicon. Parakeet additionally shows a live transcript while you record, so notes are ready shortly after you stop. Whisper transcribes after the recording ends rather than during it.
+Local transcription is fast on Apple Silicon. Parakeet shows a live transcript while you record, so notes are ready shortly after you stop. Whisper and Cloud API transcribe after the recording ends. Cloud speed depends on your connection and provider.
 
 ## Language support
 

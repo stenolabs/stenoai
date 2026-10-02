@@ -1,13 +1,13 @@
 <div align="center">
-  <img src="website/public/dragonfly-logo-512.png" alt="Steno Logo" width="120" height="120">
+  <img src="website/public/dragonfly-logo-512.png" alt="StenographAI Logo" width="120" height="120">
 
-  # Steno
+  # StenographAI
 
   *Your private stenographer*
 </div>
 
 <p align="center">
-  <a href="https://github.com/stenolabs/stenoai/actions/workflows/build-release.yml"><img src="https://img.shields.io/github/actions/workflow/status/stenolabs/stenoai/build-release.yml?style=for-the-badge" alt="Build"></a>
+  <a href="https://github.com/stenolabs/stenoai/actions/workflows/build-release.yml"><img src="https://img.shields.io/github/actions/workflow/status/stenolabs/stenoai/build-release.yml?event=push&style=for-the-badge" alt="Build"></a>
   <a href="https://github.com/stenolabs/stenoai/releases"><img src="https://img.shields.io/github/v/release/stenolabs/stenoai?style=for-the-badge" alt="Release"></a>
   <a href="https://discord.gg/DZ6vcQnxxu"><img src="https://img.shields.io/badge/Discord-Join%20Server-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="Discord"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue?style=for-the-badge" alt="License"></a>
@@ -16,14 +16,14 @@
   <a href="#sponsors"><img src="https://img.shields.io/badge/Sponsors-%E2%9D%A4-EA4AAA?style=for-the-badge" alt="Sponsors"></a>
 </p>
 
-<p align="center">Steno is the privacy-first AI notepad for all your confidential conversations. No cloud, no usage limits and your private data never leaves your premises. Record, transcribe, summarize, and query your meetings using local AI models. Perfect for government, defence and C-suite professionals with confidential data needs.</p>
+<p align="center">StenographAI is the privacy-first AI notepad for all your confidential conversations. No cloud, no usage limits and your private data never leaves your premises. Record, summarize, and query your meetings using local AI models. Perfect for government, defence and C-suite professionals with confidential data needs.</p>
 
 <p align="center"><sub>Trusted by teams at <b>AWS</b>, <b>Deliveroo</b>, <b>Tesco</b>, <b>Hashicorp</b>, <b>Rutgers</b> & <b>European Union</b>.</sub></p>
 
 <div align="center">
   <picture>
     <source srcset="website/public/demo.gif" type="image/gif">
-    <img src="website/public/readme.png" alt="Steno" width="800">
+    <img src="website/public/readme.png" alt="StenoAI" width="800">
   </picture>
 
   <br>
@@ -42,18 +42,18 @@
 If you're looking for a hosted desktop recording API, consider checking out [Recall.ai](https://www.recall.ai/product/desktop-recording-sdk?utm_source=github&utm_medium=sponsorship&utm_campaign=ruzin-stenoai), an API that records Zoom, Google Meet, Microsoft Teams, in-person meetings, and more.
 
 ## 📢 What's New
-- **2026-08-04** 💎 Sync to Obsidian — mirror your notes into an Obsidian vault folder as Markdown. Turn it on in Settings → Integrations and pick a vault folder. One-way (Steno → vault); notes you edit in Obsidian are never overwritten.
-- **2026-08-03** 🔔 One-tap meeting notes — "Take Notes" starts recording instantly, meetings auto-stop when they end, and a single "Summarise?" tap opens the note and generates it. Recordings are transcript-first now — turn on auto-summarise in Settings → AI for automatic notes.
-- **2026-07-26** 🎙️ System audio without Screen Recording — record both sides of a call with no Screen Recording permission. Now requires macOS 14.4 or later.
-- **2026-07-26** ⬇️ Automatic updates — Steno installs a downloaded update while you're idle and relaunches, never mid-recording. Turn it off in Settings to keep the manual prompt.
-
+- **2026-09-05** 🐧 Linux alpha: Debian/Ubuntu packages and an AppImage support microphone and PipeWire system-audio recording, with CPU-only bundled summaries.
+- **2026-09-05** 📁 Reliable recording and folders: failed recording starts no longer leave a stuck entry, and repeated clicks no longer create duplicate folders.
+- **2026-09-05** 📥 Clear download progress: Parakeet shows actual download progress and a separate model-preparation stage.
+- **2026-09-05** 📝 Transcript recovery: on Windows and Linux, the available live transcript replaces an ONNX batch transcript that read less than half the recording.
 
 ## Features
 
-- **Privacy-first** — 100% on-device; your recordings, transcripts, and summaries never leave your Mac.
-- **Live transcription with speaker labels** — Real-time on-screen text as you speak via Parakeet TDT v3 on Apple Silicon (MLX). Granola-style chat-bubble view with `[You]` vs `[Others]` attribution live during the recording and on the final transcript.
-- **Auto start/stop meetings** — Steno notices when a meeting starts and offers to take notes, then offers to summarise when it ends. Granola-style frictionless capture.
-- **System audio capture** — Record both sides of virtual meetings, headphones on, no extra setup or virtual cable. Native Core Audio Tap on macOS 14.4+, with selectable microphone input.
+- **Privacy-first**: local AI processes your recordings, transcripts, and summaries on your device. External AI providers are optional.
+- **Live speaker labels** — Real-time on-screen text as you speak via Parakeet TDT v3 on Apple Silicon (MLX). Granola-style chat-bubble view with `[You]` vs `[Others]` attribution live during the recording.
+- **Individual speakers (macOS)** — Once the recording stops, StenographAI separates the voices sharing each channel, so the saved transcript reads `Speaker 2` / `Speaker 3` rather than one merged `[Others]`. Name a speaker once and StenographAI can suggest them in later meetings — that part is off by default, and the voice profiles never leave your Mac.
+- **Auto start/stop meetings** — StenographAI notices when a meeting starts and offers to take notes, then offers to summarise when it ends. Granola-style frictionless capture.
+- **System audio capture** — Record both sides of virtual meetings. Native Core Audio Tap on macOS 14.4+, Windows loopback capture, and PipeWire capture on Linux, with selectable microphone input.
 - **Recording that coexists** — A compact transcription pill docks beside the app instead of taking over; Stop lands you on the note instantly and you can resume recording into an existing note (it appends and re-generates on demand).
 - **Global record shortcut** — Start or stop recording from anywhere with `⌘⇧R` (`Ctrl+Shift+R` on Windows). Toggle it off in Settings if it clashes with another app. On macOS, power users can additionally bind any key of their own via the `stenoai://record/start` / `record/stop` deep links (Shortcuts app).
 - **In-app note-taking** — Jot notes while you record, or keep a dedicated **My notes** tab that stays editable alongside the AI summary; your notes are folded straight into the summary.
@@ -63,24 +63,24 @@ If you're looking for a hosted desktop recording API, consider checking out [Rec
 - **Report templates** — Define custom report styles and generate them per meeting; a note can hold multiple reports (the structured summary plus template-driven ones), switchable in the detail view.
 - **Transcript export** — Copy the full transcript or save it as Markdown (with metadata, notes, and speaker labels) to drop into any external tool.
 - **Bring your own cloud model** — Optional OpenAI, Anthropic, AWS Bedrock (Claude — including application inference profile ARNs for governed AWS environments), or custom API endpoint for users who prefer a hosted LLM.
-- **Organisation AI** — On managed deployments, sign in to your org's Steno adapter and AI routes through it automatically — no local API key, no per-user setup.
+- **Organisation AI** — On managed deployments, sign in to your org's StenographAI adapter and AI routes through it automatically — no local API key, no per-user setup.
 
 ## Coming from Granola?
 
 If you already use Claude Code / Cowork with a connected Granola MCP, the
 [`granola-to-steno`](skills/granola-to-steno/README.md) skill syncs your Granola
 meeting notes (titles, dates, participants, summaries, and transcripts) into
-Steno's file-based store. It is idempotent and re-runnable, so you can backfill
+StenographAI's file-based store. It is idempotent and re-runnable, so you can backfill
 your history once and keep it in sync on a schedule. This is an agent skill you
 drop into your skills folder and invoke conversationally ("sync Granola to
-Steno"), not an in-app feature. See
+StenographAI"), not an in-app feature. See
 [`skills/granola-to-steno/README.md`](skills/granola-to-steno/README.md) for
 setup and limitations.
 
 ## Use your notes from an agent (`/steno`)
 
 The [`steno`](skills/steno/README.md) skill makes an AI agent aware of your local
-Steno notes. Run `/steno` (or just mention your meetings) and it pulls in the
+StenographAI notes. Run `/steno` (or just mention your meetings) and it pulls in the
 relevant notes and acts on them — answer a question across meetings, recap your
 week, extract action items, or use the meetings as source material to draft a
 spec, PRD, or follow-up. It can also **guide you through setting up a cloud model**
@@ -95,7 +95,7 @@ skills folder. See [`skills/steno/README.md`](skills/steno/README.md).
 <details>
 <summary>Expand setup and calendar automation guide</summary>
 
-Steno supports Apple Shortcuts via deep links using the `stenoai://` URL scheme.
+StenographAI supports Apple Shortcuts via deep links using the `stenoai://` URL scheme.
 
 - Start recording: `stenoai://record/start?name=Daily%20Standup`
 - Stop recording: `stenoai://record/stop`
@@ -103,7 +103,7 @@ Steno supports Apple Shortcuts via deep links using the `stenoai://` URL scheme.
 ### How to set it up
 
 1. Open the **Shortcuts** app on macOS.
-2. Create a new shortcut (for example: "Start Steno Recording").
+2. Create a new shortcut (for example: "Start StenographAI Recording").
 3. Add the **Open URLs** action.
 4. Use one of the URLs above.
 5. (Optional) Add a keyboard shortcut from the shortcut settings.
@@ -133,12 +133,12 @@ This addon uses:
 3. If matched, Rules runs a Shortcut.
 4. The Shortcut gets the next event title and opens:
    - `stenoai://record/start?name={calendar_event_title}`
-5. Steno receives the URL and starts recording with that name.
+5. StenographAI receives the URL and starts recording with that name.
 
 #### Step-by-step setup
 
 1. Install **Rules – Calendar Automation** on macOS.
-2. Create a Shortcut in Apple Shortcuts (example name: `Steno Start From Calendar Event`).
+2. Create a Shortcut in Apple Shortcuts (example name: `StenographAI Start From Calendar Event`).
 3. In that Shortcut, add actions in this order:
    - `Find Calendar Events` (limit to `1`, sorted by start date ascending, upcoming only)
    - Extract the event title from the found event
@@ -149,12 +149,12 @@ This addon uses:
    - Source: your target calendar(s)
    - Trigger window: event start (or preferred offset)
    - Condition: event note contains `stenoai`
-   - Action: run Shortcut `Steno Start From Calendar`
+   - Action: run Shortcut `StenographAI Start From Calendar`
 5. In your Calendar event notes, add the word `stenoai` for meetings that should auto-start recording.
 6. Test with a near-future event:
    - create event with `stenoai` in notes,
    - wait for trigger,
-   - confirm Steno starts and uses the event title as session name.
+   - confirm StenographAI starts and uses the event title as session name.
 
 #### Notes
 
@@ -199,8 +199,8 @@ Download the latest release (**Apple Silicon Mac, macOS 14.4 or later**):
    - Go to **System Settings > Privacy & Security** and click **"Open Anyway"**
 
    **Alternatively:**
-   - Right-click Steno in Applications and select **"Open"**
-   - Or run in Terminal: `xattr -cr /Applications/Steno.app`
+   - Right-click StenoAI in Applications and select **"Open"**
+   - Or run in Terminal: `xattr -cr /Applications/StenoAI.app`
 5. **The app will work normally on subsequent launches**
 
 You can run it locally as well (see below) if you don't want to install a DMG.
@@ -219,6 +219,26 @@ Known alpha limitations:
 - **CPU-only summarisation** — the bundled Ollama runs on CPU (the NVIDIA GPU libraries are excluded to keep the download small); a separate GPU build is a follow-up. Transcription is CPU on every platform regardless.
 - **Auto-update** is wired (NSIS + `latest.yml`) but updates are unsigned until code signing is in place.
 - **Transcription** runs through `onnx-asr` (ONNX Runtime) instead of MLX, with the same Parakeet model and behaviour as macOS. Whisper is also available as an engine option.
+
+### Linux (Debian/Ubuntu, alpha)
+
+Verified on Ubuntu 26.04 LTS (GNOME/Wayland, PipeWire), including system-audio loopback capture with `[You]`/`[Others]` diarisation.
+
+**Install (`.deb`, recommended):** download [`stenoAI-linux-amd64.deb`](https://github.com/stenolabs/stenoai/releases/latest/download/stenoAI-linux-amd64.deb) from the [latest release](https://github.com/stenolabs/stenoai/releases/latest) and install it with `sudo apt install ./stenoAI-linux-amd64.deb` — apt pulls in the required system libraries automatically.
+
+**AppImage:** download [`stenoAI-linux-x86_64.AppImage`](https://github.com/stenolabs/stenoai/releases/latest/download/stenoAI-linux-x86_64.AppImage), `chmod +x` it, and run it. An AppImage carries no package metadata, so **you must install PortAudio yourself** or the setup check fails with `OSError: PortAudio library not found`:
+
+```bash
+sudo apt install libportaudio2
+```
+
+Known alpha limitations:
+
+- **Unsigned**, same as the Windows alpha.
+- **CPU-only bundled summarisation** and `onnx-asr` transcription, same as Windows. To use GPU-accelerated summaries, run a separately installed Ollama with a supported GPU and driver, select **Settings → AI → Private Server**, enter `http://127.0.0.1:11434`, and choose a model installed on that server.
+- **System audio requires PipeWire** (Ubuntu's default since 22.10). The toggle reports unsupported on a PulseAudio-only or headless install, and recording falls back to mic-only.
+- **No speaker diarization sidecar** — per-channel `[You]`/`[Others]` labelling works, but the acoustic multi-speaker split is macOS-only.
+- **No auto-update.** `.deb` installs update by downloading a new package; AppImage self-update is a follow-up.
 
 Issues + feedback welcome on the GitHub issues tracker.
 
@@ -279,23 +299,23 @@ stenoai/
 
 **Terminal logging (recommended for runtime issues):** launch the app from a terminal to stream all logs (Python subprocess output, Whisper transcription, Ollama API traffic, error stack traces):
 ```bash
-/Applications/Steno.app/Contents/MacOS/Steno
+/Applications/StenoAI.app/Contents/MacOS/StenoAI
 ```
 
 **System Console:**
 ```bash
-# View recent Steno-related logs
-log show --last 10m --predicate 'process CONTAINS "Steno" OR eventMessage CONTAINS "ollama"' --info
+# View recent StenographAI-related logs
+log show --last 10m --predicate 'process CONTAINS "StenoAI" OR eventMessage CONTAINS "ollama"' --info
 
 # Monitor live logs
-log stream --predicate 'eventMessage CONTAINS "ollama" OR process CONTAINS "Steno"' --level info
+log stream --predicate 'eventMessage CONTAINS "ollama" OR process CONTAINS "StenoAI"' --level info
 ```
 
 ### Common Issues
 
-- **Update didn't install**: Auto-updates are applied on next quit. Quit via the **Steno → Quit** menu (not just closing the window), then reopen.
-- **No system audio / no `[Others]` speaker labels**: On macOS, allow Steno to record system audio in **System Settings → Privacy & Security → Screen & System Audio Recording**. Screen Recording access is not required.
-- **`stenoai://` deep link doesn't start recording**: Make sure Steno has launched at least once after install so the URL scheme is registered. If it still fails, check the terminal log for `Protocol handler registration` output.
+- **Update didn't install**: Auto-updates are applied on next quit. Quit via the **StenoAI → Quit** menu (not just closing the window), then reopen.
+- **No system audio / no `[Others]` speaker labels**: On macOS, allow StenoAI to record system audio in **System Settings → Privacy & Security → Screen & System Audio Recording**. Screen Recording access is not required.
+- **`stenoai://` deep link doesn't start recording**: Make sure StenographAI has launched at least once after install so the URL scheme is registered. If it still fails, check the terminal log for `Protocol handler registration` output.
 - **Recording stops early**: Check microphone permission, System Audio Recording permission (if recording system audio), and available disk space.
 - **"Processing failed"**: Usually an Ollama service or model issue — check the terminal logs.
 - **Empty transcripts**: Whisper couldn't detect speech — verify audio input levels.

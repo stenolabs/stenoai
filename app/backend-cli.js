@@ -19,6 +19,20 @@
 const path = require('path');
 const { spawn: _spawnRaw } = require('child_process');
 
+const OPENAI_ASR_KEY_ENV = 'STENOAI_OAI_API_KEY';
+const OPENAI_ASR_ORIGIN_ENV = 'STENOAI_OAI_API_ORIGIN';
+const OPENAI_ASR_URL_ENV = 'STENOAI_OAI_API_URL';
+
+function withoutOpenAiAsrKey(env) {
+  return Object.fromEntries(
+    Object.entries(env || {}).filter(([name]) => ![
+      OPENAI_ASR_KEY_ENV,
+      OPENAI_ASR_ORIGIN_ENV,
+      OPENAI_ASR_URL_ENV,
+    ].includes(name.toUpperCase())),
+  );
+}
+
 // Wrap spawn so every backend / ollama launch defaults to windowsHide:true
 // AND PYTHONUNBUFFERED:1.
 // The PyInstaller backend (stenoai.exe) and bundled ollama.exe are console
@@ -37,7 +51,9 @@ const { spawn: _spawnRaw } = require('child_process');
 // Callers can still override either by passing an explicit windowsHide/env.
 function spawn(command, args, options) {
   const unbufferedEnv = (existingEnv) => ({
-    ...require('process').env,
+    // Never inherit an ambient ASR credential into arbitrary backend jobs.
+    // The transcription path supplies it explicitly only for openai-asr.
+    ...withoutOpenAiAsrKey(require('process').env),
     PYTHONUNBUFFERED: '1',
     ...(existingEnv || {}),
   });
@@ -121,7 +137,7 @@ function createBackendCli({
       const backendPath = getBackendPath();
 
       // Log the command being executed (unless silent)
-      console.log('Running:', `${backendPath} ${args.join(' ')}`);
+      console.log('Running:', `${backendPath} ${sanitizeArgsForLog(args)}`);
       if (!silent) {
         // Sanitize the echoed argv: denylisted commands (query, save-template,
         // set-user-name/storage-path, folder + URL setters) carry content/PII in
@@ -132,7 +148,9 @@ function createBackendCli({
 
       const process = spawn(backendPath, args, {
         cwd: getBackendCwd(),
-        env: Object.keys(extraEnv).length > 0 ? { ...require('process').env, ...extraEnv } : undefined
+        // spawn() supplies the sanitized inherited environment; extraEnv is
+        // intentionally the only way a caller can add a secret to this job.
+        env: Object.keys(extraEnv).length > 0 ? extraEnv : undefined
       });
 
       // Opt-in persistent capture for the legacy process-recording path only.
@@ -197,4 +215,4 @@ function createBackendCli({
   return { getBackendPath, getBackendCwd, runPythonScript };
 }
 
-module.exports = { spawn, killProcessTree, createBackendCli };
+module.exports = { spawn, killProcessTree, createBackendCli, withoutOpenAiAsrKey };

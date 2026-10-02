@@ -121,7 +121,12 @@ const stenoai = {
     openSystemAudioFile: (name) => invoke('open-system-audio-file', name),
     appendSystemAudioChunk: (bytes) => invoke('append-system-audio-chunk', bytes),
     closeSystemAudioFile: () => invoke('close-system-audio-file'),
-    reportCaptureError: (message) => send('recording-capture-error', message),
+    // Linux-only loopback path (see app/linux-loopback.js) — starts a
+    // pw-record subprocess in main and streams PCM back via
+    // on.linuxLoopbackChunk instead of going through getDisplayMedia.
+    startLinuxLoopback: () => invoke('start-linux-loopback'),
+    stopLinuxLoopback: () => invoke('stop-linux-loopback'),
+    reportCaptureError: (message, name, phase) => send('recording-capture-error', message, name, phase),
     processSystemAudio: (filePath, name) => invoke('process-system-audio-recording', filePath, name),
     processFile: (filePath, name) => invoke('process-recording', filePath, name),
     pickAudioFile: () => invoke('select-audio-file'),
@@ -174,6 +179,12 @@ const stenoai = {
       invoke('export-transcript', defaultFilename, content),
     exportNotePdf: (defaultFilename, html) =>
       invoke('export-note-pdf', defaultFilename, html),
+  },
+
+  meetingTransfer: {
+    importPackage: (filePath) => invoke('import-meeting-package', filePath),
+    exportPackage: (summaryFile) => invoke('export-meeting-package', summaryFile),
+    ready: () => invoke('meeting-transfer-ready'),
   },
 
   query: {
@@ -262,8 +273,11 @@ const stenoai = {
 
   openaiAsr: {
     getConfig: () => invoke('get-openai-asr-config'),
-    // cfg may include any subset of { api_url, api_key, model }
+    // cfg may include any subset of { api_url, model } - the key is NOT set
+    // here; use setKey (safeStorage-backed) for the credential.
     setConfig: (cfg) => invoke('set-openai-asr-config', cfg),
+    // Pass an empty string to clear the stored key.
+    setKey: (key) => invoke('set-openai-asr-key', key),
   },
 
   settings: {
@@ -422,6 +436,8 @@ const stenoai = {
     liveTranscriptReady: (cb) => subscribe('live-transcript-ready', cb),
     liveTranscriptChunk: (cb) => subscribe('live-transcript-chunk', cb),
     liveTranscriptError: (cb) => subscribe('live-transcript-error', cb),
+    linuxLoopbackChunk: (cb) => subscribe('linux-loopback-chunk', cb),
+    linuxLoopbackEnded: (cb) => subscribe('linux-loopback-ended', cb),
     updateAvailable: (cb) => subscribe('update-available', cb),
     updateDownloadProgress: (cb) => subscribe('update-download-progress', cb),
     updateDownloaded: (cb) => subscribe('update-downloaded', cb),
@@ -443,6 +459,7 @@ const stenoai = {
     generateNotesRequested: (cb) => subscribe('generate-notes-requested', cb),
     navigateToMeeting: (cb) => subscribe('navigate-to-meeting', cb),
     trayOpenSettings: (cb) => subscribe('tray-open-settings', cb),
+    meetingTransferImported: (cb) => subscribe('meeting-transfer-imported', cb),
     showQuitDialog: (cb) => subscribe('show-quit-dialog', cb),
     showNotification: (cb) => subscribe('show-notification', cb),
   },

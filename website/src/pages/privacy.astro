@@ -3,8 +3,8 @@ import BaseLayout from "../layouts/BaseLayout.astro";
 ---
 
 <BaseLayout
-  title="Privacy Policy — Steno"
-  description="Steno privacy policy. Learn how we protect your data with local-first processing."
+  title="Privacy Policy — StenographAI"
+  description="StenographAI privacy policy. Learn how we protect your data with local-first processing."
   canonical="https://stenoai.co/privacy/"
 >
   <style>
@@ -74,7 +74,7 @@ import BaseLayout from "../layouts/BaseLayout.astro";
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 450 450" class="brand-mark" fill="none" stroke="currentColor" stroke-width="12" aria-hidden="true">
           <path d="M209.447 166.845C216.663 178.772 218.44 193.966 219.417 213.035C219.422 213.129 219.42 213.225 219.412 213.319C214.789 263.829 206.174 314.234 212.902 339.223C216.552 352.776 220.264 365.163 222.752 376.169C223.295 378.571 226.99 378.494 227.504 376.086C230.284 363.077 235.173 350.435 238.631 339.223C244.283 320.903 234.784 262.669 231.647 213.178C232.645 196.737 231.398 182.538 241.126 166.845M198.971 149.906C168.786 114.986 141.601 89.6233 93.21 90.3707C44.8194 91.1182 56.9695 115.86 74.0034 131.971C91.0372 148.081 141.627 159.331 184.18 158.423C165.298 159.389 201.563 157.91 131.124 159.87C60.7551 161.828 59.9172 224.098 127.681 209.733C127.81 209.705 127.945 209.663 128.065 209.611C168.511 192.126 188.231 177.43 218.676 143.678M231.647 125.494C278.527 72.0571 171.372 66.055 217.429 124.498C240.809 154.72 227.634 146.076 285.026 191.257C342.419 236.437 456.639 176.062 271.806 158.873C290.471 159.304 302.167 161.07 317.703 157.628C434.433 128.215 403.63 47.4569 282.532 121.508C268.291 131.274 261.97 137.712 252.35 150.155" />
         </svg>
-        <span class="brand-name">Steno</span>
+        <span class="brand-name">StenographAI</span>
       </a>
       <a href="/" class="back">&larr; Back to home</a>
     </div>
@@ -87,7 +87,7 @@ import BaseLayout from "../layouts/BaseLayout.astro";
     <div class="content">
       <section>
         <h2>Overview</h2>
-        <p>Steno is a privacy-first, open-source meeting notes application that runs entirely on your local device. We are committed to protecting your privacy and being transparent about our data practices.</p>
+        <p>StenographAI is a privacy-first, open-source meeting notes application that runs entirely on your local device. We are committed to protecting your privacy and being transparent about our data practices.</p>
       </section>
 
       <section>
@@ -105,16 +105,16 @@ import BaseLayout from "../layouts/BaseLayout.astro";
       <section>
         <h2>Speaker identification and voice profiles (optional)</h2>
         <p>Anonymous speaker separation within one meeting works independently of speaker identification. Cross-meeting speaker identification is off by default.</p>
-        <p>If you enable speaker identification and create a named person, Steno derives a numerical biometric voice profile from excerpts you confirm. The profile is stored only on your device and is used to suggest that person in future meetings. Voice profiles and the audio used to create them are not sent to Steno or included in analytics.</p>
+        <p>If you enable speaker identification and create a named person, StenographAI derives a numerical biometric voice profile from excerpts you confirm. The profile is stored only on your device and is used to suggest that person in future meetings. Voice profiles and the audio used to create them are not sent to StenographAI or included in analytics.</p>
         <p>Speaker suggestions can be wrong and should be reviewed before you rely on them. You can delete a voice profile at any time in <strong>Settings &gt; People</strong>. Deleting a profile stops future matching and removes the person's stored profile, but it does not delete recordings or transcripts, which are managed separately.</p>
-        <p>You are responsible for informing recorded people and establishing an appropriate legal basis for recording and creating a voice profile. Steno requires you to enable speaker identification in Settings before a named profile can be created, but Steno does not collect consent from the recorded person or record a separate authorization for each profile. Enabling the setting does not by itself establish legal compliance for your recording or use case.</p>
+        <p>You are responsible for informing recorded people and establishing an appropriate legal basis for recording and creating a voice profile. StenographAI requires you to enable speaker identification in Settings before a named profile can be created, but StenographAI does not collect consent from the recorded person or record a separate authorization for each profile. Enabling the setting does not by itself establish legal compliance for your recording or use case.</p>
       </section>
 
       <section>
         <h2>Google Calendar integration (optional)</h2>
-        <p>If you choose to connect Google Calendar, Steno accesses your calendar data with the <code>calendar.readonly</code> scope. This means:</p>
+        <p>If you choose to connect Google Calendar, StenographAI accesses your calendar data with the <code>calendar.readonly</code> scope. This means:</p>
         <ul>
-          <li>Steno can only <strong>read</strong> your calendar events — it cannot create, modify, or delete events</li>
+          <li>StenographAI can only <strong>read</strong> your calendar events — it cannot create, modify, or delete events</li>
           <li>Event data (titles, times, attendees, descriptions) is fetched directly from Google's API to your device</li>
           <li>Calendar data is held in memory only and is never written to disk or sent to any third-party server</li>
           <li>OAuth tokens are encrypted using macOS Keychain (via Electron safeStorage) and stored locally</li>
@@ -124,10 +124,10 @@ import BaseLayout from "../layouts/BaseLayout.astro";
 
       <section>
         <h2>Google user data: collection, use, and protection</h2>
-        <p>This section describes how Steno handles data received from Google APIs, in compliance with the <a href="https://developers.google.com/terms/api-services-user-data-policy">Google API Services User Data Policy</a>.</p>
+        <p>This section describes how StenographAI handles data received from Google APIs, in compliance with the <a href="https://developers.google.com/terms/api-services-user-data-policy">Google API Services User Data Policy</a>.</p>
 
         <h3>Data accessed</h3>
-        <p>When you connect Google Calendar, Steno accesses the following Google user data via the <code>calendar.readonly</code> scope:</p>
+        <p>When you connect Google Calendar, StenographAI accesses the following Google user data via the <code>calendar.readonly</code> scope:</p>
         <ul>
           <li>Calendar event titles and descriptions</li>
           <li>Event start and end times</li>
@@ -138,14 +138,14 @@ import BaseLayout from "../layouts/BaseLayout.astro";
         <h3>Data usage</h3>
         <p>Google Calendar data is used solely to:</p>
         <ul>
-          <li>Display your upcoming meetings within the Steno interface so you can quickly start recording a session</li>
+          <li>Display your upcoming meetings within the StenographAI interface so you can quickly start recording a session</li>
           <li>Auto-populate meeting names and attendee lists for your transcription sessions</li>
         </ul>
         <p>Google user data is never used for advertising, profiling, or any purpose unrelated to the app's core meeting-transcription functionality.</p>
         <p><strong>Google Workspace APIs are not used to develop, improve, or train generalized AI and/or ML models.</strong> Data retrieved from Google Workspace APIs (including Google Calendar) is used solely for the user-facing features described above and is never used as training data, fine-tuning data, or input to any AI/ML model — generalized or otherwise.</p>
 
         <h3>Data sharing</h3>
-        <p>Steno does <strong>not</strong> share, sell, or transfer Google user data to any third party. Calendar data stays entirely on your device and is never sent to Steno servers, analytics services, or any other external service.</p>
+        <p>StenographAI does <strong>not</strong> share, sell, or transfer Google user data to any third party. Calendar data stays entirely on your device and is never sent to StenographAI servers, analytics services, or any other external service.</p>
 
         <h3>Data storage and protection</h3>
         <ul>
@@ -158,15 +158,15 @@ import BaseLayout from "../layouts/BaseLayout.astro";
         <ul>
           <li>Calendar event data is not retained — it exists only in application memory and is discarded when the app is closed or when you navigate away from the calendar view.</li>
           <li>OAuth tokens are retained locally until you disconnect Google Calendar.</li>
-          <li><strong>To delete all Google data:</strong> Open Steno Settings and click "Disconnect Google Calendar." This immediately revokes the OAuth token with Google and deletes all stored credentials from your device.</li>
-          <li>Uninstalling Steno also removes all locally stored tokens and data.</li>
+          <li><strong>To delete all Google data:</strong> Open StenographAI Settings and click "Disconnect Google Calendar." This immediately revokes the OAuth token with Google and deletes all stored credentials from your device.</li>
+          <li>Uninstalling StenographAI also removes all locally stored tokens and data.</li>
           <li>You can also revoke access at any time from your <a href="https://myaccount.google.com/permissions">Google Account permissions page</a>.</li>
         </ul>
       </section>
 
       <section>
         <h2>Analytics (optional)</h2>
-        <p>Steno includes optional, privacy-safe analytics via PostHog to help improve the product. This can be disabled in Settings. When enabled, we collect:</p>
+        <p>StenographAI includes optional, privacy-safe analytics via PostHog to help improve the product. This can be disabled in Settings. When enabled, we collect:</p>
         <ul>
           <li>Anonymous usage events (e.g., "recording started", "summary generated")</li>
           <li>Duration buckets (e.g., "5-15 minutes") — never exact durations</li>
@@ -177,7 +177,7 @@ import BaseLayout from "../layouts/BaseLayout.astro";
 
       <section>
         <h2>Third-party services</h2>
-        <p>Steno connects to the internet only for:</p>
+        <p>StenographAI connects to the internet only for:</p>
         <ul>
           <li>Google Calendar API (if connected by you)</li>
           <li>PostHog analytics (enabled by default — can be disabled in Settings)</li>
@@ -192,5 +192,5 @@ import BaseLayout from "../layouts/BaseLayout.astro";
     </div>
   </main>
 
-  <footer class="legal-footer">&copy; 2026 Steno</footer>
+  <footer class="legal-footer">&copy; 2026 StenographAI</footer>
 </BaseLayout>

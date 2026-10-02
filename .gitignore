@@ -18,6 +18,7 @@ app/build/*
 !app/build/icon.icns
 !app/build/icon-dragonfly.icns
 !app/build/icon.ico
+!app/build/icon.png
 develop-eggs/
 dist/
 downloads/

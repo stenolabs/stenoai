@@ -289,9 +289,9 @@ def _result_to_dict(result: Any, language: Optional[str]) -> dict:
     # None when the result came from a single non-windowed pass (onnx-asr's
     # own TimestampedResult, or a file shorter than one window) -- there is
     # no windowing there, so there is nothing that could have been lost.
-    attempted = int(getattr(result, "windows_attempted", 0) or 0)
-    recognized = int(getattr(result, "windows_recognized", 0) or 0)
-    coverage = (recognized / attempted) if attempted > 0 else None
+    total = float(getattr(result, "total_seconds", 0) or 0)
+    covered = float(getattr(result, "covered_seconds", 0) or 0)
+    coverage = min(1.0, covered / total) if total > 0 else None
 
     return {
         "text": text or None,
@@ -415,18 +415,18 @@ class _SimpleResult:
     ``timestamps`` — so a merged multi-window transcript flows through the
     exact same shaping path as a single-window TimestampedResult.
 
-    ``windows_attempted`` / ``windows_recognized`` carry how much of the file
-    actually made it through. A window whose ``recognize`` raises is skipped
-    on purpose (one bad window shouldn't fail a whole meeting), but the
-    resulting transcript then covers less audio than the recording holds, and
-    nothing downstream could tell. onnx-asr's own TimestampedResult has no
-    such fields, so every reader goes through ``getattr`` with a default.
+    Coverage is the union of audio read by usable windows, not their count:
+    overlapping windows and a short final window have different weights.
+    Counters remain available for diagnostics. Native onnx-asr results have
+    no coverage fields, so readers use getattr with a default.
     """
     text: str
     tokens: list
     timestamps: list
     windows_attempted: int = 0
     windows_recognized: int = 0
+    total_seconds: float = 0.0
+    covered_seconds: float = 0.0
 
 
 def _load_wav_16k_mono(audio_path: Path):
@@ -491,6 +491,8 @@ def _transcribe_windows(ts_model: Any, samples) -> _SimpleResult:
     last_end = -1.0
     windows_attempted = 0
     windows_recognized = 0
+    covered_samples = 0
+    covered_upto = 0
     last_error: Optional[Exception] = None
 
     for start in range(0, len(samples), step_samples):
@@ -524,6 +526,12 @@ def _transcribe_windows(ts_model: Any, samples) -> _SimpleResult:
             continue
 
         windows_recognized += 1
+        # Count the union only after payload validation. The watermark avoids
+        # counting overlap twice and excludes gaps left by skipped windows.
+        window_end = min(start + chunk_samples, len(samples))
+        if window_end > covered_upto:
+            covered_samples += window_end - max(start, covered_upto)
+            covered_upto = window_end
         for tok, ts in zip(tokens, timestamps):
             g_start = _ts_start(ts) + chunk_start_s
             g_end = _ts_end(ts) + chunk_start_s
@@ -551,13 +559,14 @@ def _transcribe_windows(ts_model: Any, samples) -> _SimpleResult:
     text = "".join(
         tok if isinstance(tok, str) else str(tok) for tok in merged_tokens
     ).strip()
-    if windows_recognized < windows_attempted:
+    total_seconds = len(samples) / _SAMPLE_RATE
+    covered_seconds = covered_samples / _SAMPLE_RATE
+    if covered_seconds < total_seconds:
         logger.warning(
-            "ONNX transcription covered %d of %d windows (%d failed) — the "
-            "transcript is missing roughly %.0fs of audio",
-            windows_recognized, windows_attempted,
-            windows_attempted - windows_recognized,
-            (windows_attempted - windows_recognized) * PARAKEET_CHUNK_DURATION_S,
+            "ONNX transcription read %.0fs of %.0fs (%d of %d windows usable); "
+            "the transcript is missing roughly %.0fs of audio",
+            covered_seconds, total_seconds, windows_recognized, windows_attempted,
+            total_seconds - covered_seconds,
         )
     return _SimpleResult(
         text=text,
@@ -565,4 +574,6 @@ def _transcribe_windows(ts_model: Any, samples) -> _SimpleResult:
         timestamps=merged_timestamps,
         windows_attempted=windows_attempted,
         windows_recognized=windows_recognized,
+        total_seconds=total_seconds,
+        covered_seconds=covered_seconds,
     )

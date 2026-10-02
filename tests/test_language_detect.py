@@ -84,6 +84,18 @@ PT_TEXT = (
     "falar sobre como a equipe vai lidar com o suporte quando mais pessoas "
     "começarem a usá-lo, porque essa é a parte que mais me preocupa agora."
 )
+RU_TEXT = (
+    "Итак, вопрос, который нам нужно решить сегодня, это запускать ли новый "
+    "процесс на этой неделе или подождать до следующей версии. Я думаю, что "
+    "данные, которые у нас есть с последнего теста, хорошие, но есть ещё "
+    "несколько вещей, которые можно сделать лучше, прежде чем мы отправим это "
+    "всем нашим пользователям. Что вы хотите сделать со страницей цен? Нам "
+    "также нужно поговорить о том, как команда будет обрабатывать поддержку, "
+    "когда больше людей начнут этим пользоваться, потому что это та часть, "
+    "которая меня сейчас беспокоит больше всего. Если можно, давайте также "
+    "обсудим, что уже готово и что ещё нужно доделать, чтобы мы могли "
+    "запустить это очень скоро."
+)
 
 # A diarised transcript with speaker markers and timestamps — the detector must
 # ignore the [You]/[Others] labels and clock stamps and still read German.
@@ -108,6 +120,7 @@ class DetectTranscriptLanguageTests(unittest.TestCase):
             "es": ES_TEXT,
             "nl": NL_TEXT,
             "pt": PT_TEXT,
+            "ru": RU_TEXT,
         }
         for expected, text in cases.items():
             with self.subTest(language=expected):
@@ -162,6 +175,12 @@ class ResolveOutputLanguagePriorityTests(unittest.TestCase):
         self.assertEqual(
             resolve_output_language("auto", detected_language=None, transcript_text=DE_TEXT),
             "de",
+        )
+
+    def test_text_detection_resolves_russian_in_auto(self):
+        self.assertEqual(
+            resolve_output_language("auto", detected_language=None, transcript_text=RU_TEXT),
+            "ru",
         )
 
     def test_falls_back_to_en_when_detector_inconclusive(self):

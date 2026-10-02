@@ -1,6 +1,7 @@
 // Shared helpers for the Chat tab + conversation view.
 
 import type { AiProvider, CloudProvider } from '@/lib/ipc';
+import { UI_LOCALE } from './locale';
 
 /** The AI-provider config fields the active-model label reads. */
 type ActiveModelFields = {
@@ -118,7 +119,7 @@ export function toBucketLabel(key: string): string {
   if (key === 'this-month') return 'This month';
   if (key.startsWith('month-')) {
     const m = parseInt(key.slice(6), 10);
-    return new Date(2000, m, 1).toLocaleString(undefined, { month: 'long' });
+    return new Date(2000, m, 1).toLocaleString(UI_LOCALE, { month: 'long' });
   }
   if (key.startsWith('year-')) return key.slice(5);
   return key;

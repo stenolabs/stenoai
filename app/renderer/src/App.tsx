@@ -35,6 +35,7 @@ import { useCalendarEvents, useCalendarAuthBus } from '@/hooks/useCalendarEvents
 import { navigate, useRoute, rememberNonSettingsRoute } from '@/lib/router';
 import { ipc } from '@/lib/ipc';
 import { primeDebugLogs } from '@/lib/debugLogs';
+import { useMeetingTransferEvents } from '@/hooks/useMeetingTransfer';
 
 export function App() {
   useTheme();
@@ -102,6 +103,7 @@ export function App() {
   // Settings would otherwise each register their own pair and fire
   // invalidateQueries N times per auth event).
   useCalendarAuthBus();
+  useMeetingTransferEvents();
 
   // Track the last non-settings route so the sidebar Settings toggle and the
   // Settings page's Back button can return the user to where they came from

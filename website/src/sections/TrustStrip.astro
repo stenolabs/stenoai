@@ -1,4 +1,7 @@
 ---
+// The customer logo band. Rendered inline inside the hero (between the
+// subhead and the app screenshot), so this component deliberately owns no
+// <section> or .container-site wrapper — the caller places and spaces it.
 const logos = [
   { name: "AWS", src: "/logos/aws.svg", w: 80, hpx: 32 },
   { name: "HashiCorp", src: "/logos/hashicorp.svg", w: 24, hpx: 24 },
@@ -7,25 +10,25 @@ const logos = [
   { name: "Rutgers", src: "/logos/rutgers.svg", w: 100, hpx: 32 },
   { name: "European Union", src: "/logos/european-union.svg", w: 150, hpx: 32 },
 ];
+
+const { class: className = "" } = Astro.props;
 ---
 
-<section class="py-6 md:py-8">
-  <div class="container-site">
-    <div class="text-center text-fg-2 text-xs tracking-[0.06em] uppercase mb-7">
-      Trusted by teams at
-    </div>
-    <div class="flex flex-wrap justify-center items-center gap-x-12 sm:gap-x-20 gap-y-6">
-      {logos.map((l) => (
-        <img
-          key={l.name}
-          src={l.src}
-          alt={l.name}
-          width={l.w}
-          height={l.hpx}
-          class={`${l.h || "h-6 sm:h-7"} w-auto dark:invert`}
-          style={{ opacity: 0.5 }}
-        />
-      ))}
-    </div>
+<div class={className}>
+  <div class="text-center text-fg-2 text-xs tracking-[0.06em] uppercase mb-6">
+    Trusted by teams at
   </div>
-</section>
+  <div class="flex flex-wrap justify-center items-center gap-x-10 sm:gap-x-16 gap-y-5">
+    {logos.map((l) => (
+      <img
+        key={l.name}
+        src={l.src}
+        alt={l.name}
+        width={l.w}
+        height={l.hpx}
+        class={`${l.h || "h-6 sm:h-7"} w-auto dark:invert`}
+        style={{ opacity: 0.45 }}
+      />
+    ))}
+  </div>
+</div>

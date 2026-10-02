@@ -1,4 +1,11 @@
 import type { Meeting } from '@/lib/ipc';
+import { parseTranscript } from '@/lib/transcriptSegments';
+
+const COALESCE_MAX_GAP_S = 2.5;
+const COALESCE_MAX_SPAN_S = 20;
+const COALESCE_MAX_CHARS = 400;
+const TIMED_DIARISED_TURN_AT_HEAD_RE =
+  /^\[\d{1,3}:\d{2}(?::\d{2})?(?:\.\d+)?\]\s*\[[^\]]+\]\s*([\s\S]*?)(?=(?:\[\d{1,3}:\d{2}(?::\d{2})?(?:\.\d+)?\]\s*)?\[[^\]]+\]|$)/;
 
 // Build a clean, metadata-rich Markdown bundle for pasting into an external LLM.
 // Pure: takes the in-memory Meeting, returns a string. Returns '' when there is no
@@ -17,9 +24,6 @@ export function buildTranscriptBundle(meeting: Meeting | null | undefined): stri
   ).trim();
   if (!body) return '';
 
-  // Metadata line — drop any field that is missing. Labels are English to match
-  // the rest of the UI (the Copy notes bundle, headings, etc. are all English);
-  // the app isn't localised, so hardcoded German here read as a stray.
   const metaParts: string[] = [];
   const dateStr = meetingDate(info);
   if (dateStr) metaParts.push(`Date: ${dateStr}`);
@@ -31,15 +35,16 @@ export function buildTranscriptBundle(meeting: Meeting | null | undefined): stri
   const lines: string[] = [`# ${title}`];
   if (metaParts.length) lines.push(metaParts.join(' · '));
 
-  // The backend persists user notes under `user_notes` (see
-  // _parse_meeting_markdown); `notes` is only ever set by the renderer for the
-  // live/draft recording. Prefer the backend field so saved meetings actually
-  // carry the user's notes into the export, and fall back to `notes` for the
-  // in-memory draft case.
   const notes = (meeting.user_notes ?? meeting.notes ?? '').trim();
   if (notes) lines.push('', '## Notes', notes);
 
-  lines.push('', '## Transcript', body);
+  const conversation = meeting.is_diarised ? coalesceConversation(body) : null;
+  if (conversation) {
+    lines.push('', '## Transcript', conversation);
+    lines.push('', '## Timestamped transcript', body);
+  } else {
+    lines.push('', '## Transcript', body);
+  }
   return lines.join('\n');
 }
 
@@ -114,20 +119,94 @@ function secondsToMinutes(seconds: number | undefined): string | null {
 }
 
 function participantNames(participants: unknown): string | null {
-  // participants is typed as a list, but malformed/legacy data could hand us a
-  // string or object; calling .map() on a non-array would throw and crash the
-  // whole export render. Guard the collection itself, not just its entries.
-  if (!Array.isArray(participants) || participants.length === 0) return null;
-  const names = participants
-    .map((p) => {
-      // participants is unknown[]; a non-string entry (or a {name} whose name
-      // isn't a string) must not reach .trim() — that would throw and crash the
-      // whole export. Coerce anything non-string to '' instead.
-      if (typeof p === 'string') return p;
-      const name = (p as { name?: unknown } | null)?.name;
-      return typeof name === 'string' ? name : '';
-    })
-    .map((s) => s.trim())
-    .filter(Boolean);
+  const names: string[] = [];
+  const seen = new Set<string>();
+  if (!Array.isArray(participants)) return null;
+  for (const p of participants) {
+    let raw = '';
+    if (typeof p === 'string') raw = p;
+    else if (p && typeof p === 'object' && 'name' in p && typeof p.name === 'string') {
+      raw = p.name;
+    }
+    const name = raw.trim();
+    if (!name || seen.has(name)) continue;
+    seen.add(name);
+    names.push(name);
+  }
   return names.length ? names.join(', ') : null;
+}
+
+
+function conversationSpeaker(raw: string | null): string {
+  if (raw === 'You') return 'Me';
+  const label = raw?.trim();
+  return label ? label : 'Unknown';
+}
+
+function normalizeConversationText(text: string): string {
+  return text.replace(/\s+/g, ' ').trim();
+}
+
+function timestampToSeconds(ts: string | undefined): number | null {
+  if (!ts) return null;
+  const parts = ts.split(':').map(Number);
+  if (parts.length < 2 || parts.some((n) => !Number.isFinite(n))) return null;
+  if (parts.length === 2) {
+    if (parts[1] >= 60) return null;
+    return parts[0] * 60 + parts[1];
+  }
+  if (parts.length === 3) {
+    if (parts[1] >= 60 || parts[2] >= 60) return null;
+    return parts[0] * 3600 + parts[1] * 60 + parts[2];
+  }
+  return null;
+}
+
+function coalesceConversation(body: string): string | null {
+  const firstTurn = body.match(TIMED_DIARISED_TURN_AT_HEAD_RE);
+  if (!firstTurn?.[1]?.trim()) return null;
+
+  const segs = parseTranscript(body, true);
+  if (segs.length === 0) return null;
+  const timedSegments: Array<{ speaker: string; text: string; start: number }> = [];
+  for (const seg of segs) {
+    const start = timestampToSeconds(seg.timestamp);
+    if (start == null) return null;
+    timedSegments.push({
+      speaker: conversationSpeaker(seg.speaker),
+      text: normalizeConversationText(seg.text),
+      start,
+    });
+  }
+  type Row = {
+    speaker: string;
+    text: string;
+    rowStart: number;
+    lastStart: number;
+  };
+  const rows: Row[] = [];
+  for (const { speaker, text, start } of timedSegments) {
+    const last = rows[rows.length - 1];
+    const gap = last == null ? null : start - last.lastStart;
+    const span = last == null ? null : start - last.rowStart;
+    const gapOk =
+      last != null &&
+      last.speaker === speaker &&
+      gap != null &&
+      gap >= 0 &&
+      gap <= COALESCE_MAX_GAP_S;
+    const spanOk =
+      last != null &&
+      span != null &&
+      span >= 0 &&
+      span <= COALESCE_MAX_SPAN_S;
+    const charsOk = last != null && last.text.length + 1 + text.length <= COALESCE_MAX_CHARS;
+    if (last && gapOk && spanOk && charsOk) {
+      last.text = `${last.text} ${text}`;
+      last.lastStart = start;
+    } else {
+      rows.push({ speaker, text, rowStart: start, lastStart: start });
+    }
+  }
+  return rows.map((r) => `${r.speaker}: ${r.text}`).join('\n\n');
 }

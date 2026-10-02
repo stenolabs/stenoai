@@ -18,7 +18,7 @@ import { readFileSync } from 'fs';
  *   - It is kept OUT of the per-PR lanes: not tagged @pipeline (so the
  *     model-bearing pipeline jobs don't pick it up) and grep-inverted out of the
  *     model-free t2 jobs in e2e.yml. It runs only in the dedicated
- *     e2e-nightly.yml `summarize-real-macos` job.
+ *     e2e-nightly.yml `summarize-real-windows` job.
  *   - It asserts ONLY WEAK INVARIANTS. A 1B model does not reliably emit an
  *     exact section set, so there is NO section-list / exact-heading assertion
  *     and NO content-quality check — only: a summary was written and is

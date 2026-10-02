@@ -63,6 +63,25 @@ const industries = defineCollection({
         b: z.string(),
       }),
     ),
+    // Documented incidents shown on the industry page. Optional so a new
+    // industry can ship before its evidence has been researched and sourced;
+    // when present, every item must carry a source link (see the editorial
+    // rules in industries.data.js).
+    breaches: z
+      .object({
+        heading: z.string(),
+        intro: z.string(),
+        items: z.array(
+          z.object({
+            title: z.string(),
+            meta: z.string(),
+            what: z.string(),
+            why: z.string(),
+            source: z.object({ label: z.string(), href: z.string().url() }),
+          }),
+        ),
+      })
+      .optional(),
     faqs: z.array(faqSchema),
   }),
 })

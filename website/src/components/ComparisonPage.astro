@@ -83,11 +83,11 @@ function toneIconMarkup(tone) {
     <div class="container-site" style="max-width: 880px">
       <div class="vs-table-wrap">
         <table class="vs-table">
-          <caption class="sr-only">Feature comparison between Steno and {data.name}</caption>
+          <caption class="sr-only">Feature comparison between StenographAI and {data.name}</caption>
           <thead>
             <tr>
               <th scope="col" aria-label="Feature"></th>
-              <th scope="col" class="vs-col-steno">Steno</th>
+              <th scope="col" class="vs-col-steno">StenographAI</th>
               <th scope="col">{data.name}</th>
             </tr>
           </thead>
@@ -149,7 +149,7 @@ function toneIconMarkup(tone) {
     <div class="container-site" style="max-width: 880px">
       <div class="grid md:grid-cols-2 gap-10 md:gap-14">
         <div>
-          <h2 class="mb-6" style={H2_STYLE}>Choose Steno if</h2>
+          <h2 class="mb-6" style={H2_STYLE}>Choose StenographAI if</h2>
           <ul class="m-0 p-0 flex flex-col gap-4" style="list-style: none">
             {data.chooseSteno.map((item) => (
               <li class="flex items-start gap-3 text-fg-2 text-[15px] leading-[1.6]">
@@ -208,7 +208,7 @@ function toneIconMarkup(tone) {
         More comparisons:{" "}
         {others.map((c, i) => (
           <span>
-            <a href={`/vs/${c.slug}/`}>Steno vs {c.name}</a>
+            <a href={`/vs/${c.slug}/`}>StenographAI vs {c.name}</a>
             {i < others.length - 1 ? " · " : ""}
           </span>
         ))}

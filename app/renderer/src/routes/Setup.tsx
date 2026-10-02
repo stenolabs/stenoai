@@ -1,3 +1,5 @@
+import { parakeetProgressLabel } from '@/lib/parakeetProgress';
+import type { ParakeetPullProgressEvent } from '@/lib/ipc';
 import * as React from 'react';
 import { AudioLines, Check, Cloud, HardDrive, Mic, MessageSquare, Zap, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -78,9 +80,7 @@ function OllamaProgressBar({ status, pct }: { status: string; pct: number }) {
   );
 }
 
-/** Indeterminate bar for the transcription-model download. Parakeet only
- *  exposes coarse stages (no byte counts), so we signal activity without
- *  fabricating a percentage. */
+/** Activity indicator with measured details in the label; no estimated percentage. */
 function IndeterminateBar({ label, kind = 'transcription' }: { label: string; kind?: 'transcription' | 'speakers' }) {
   return (
     <div
@@ -165,8 +165,8 @@ export function Setup() {
   const [debugOpen, setDebugOpen] = React.useState(false);
   const [logs, setLogs] = React.useState<string[]>([]);
   // Live download progress surfaced on the step cards. Parakeet only exposes a
-  // coarse stage (indeterminate bar); Ollama streams byte-level percent.
-  const [parakeetStage, setParakeetStage] = React.useState<string | null>(null);
+  // measured file progress (indeterminate bar); Ollama streams byte-level percent.
+  const [parakeetStage, setParakeetStage] = React.useState<ParakeetPullProgressEvent | null>(null);
   const [ollamaProgress, setOllamaProgress] = React.useState<{
     status: string;
     pct: number;
@@ -187,14 +187,15 @@ export function Setup() {
   // events) emitted by main.js 'setup-parakeet' / 'setup-ollama-and-model'.
   React.useEffect(() => {
     if (typeof window === 'undefined' || !window.stenoai) return;
-    const offParakeet = ipc().on.parakeetPullProgress(({ model, stage }) => {
+    const offParakeet = ipc().on.parakeetPullProgress((progress) => {
+      const { model } = progress;
       // Both the setup-parakeet flow and the Settings model-management pull
       // emit on the shared 'parakeet-pull-progress' channel. Settings pulls
       // carry a `model` id; the setup handler emits only { stage }. Ignore
       // model-bearing events so the wizard bar can't reflect an unrelated
       // Settings pull.
       if (model != null) return;
-      setParakeetStage(stage);
+      setParakeetStage(progress);
     });
     const offOllama = ipc().on.setupOllamaProgress(({ status, pct }) => {
       setOllamaProgress({ status, pct });
@@ -208,7 +209,7 @@ export function Setup() {
   const checkMic = useCheckMicPermission();
   const requestMic = useRequestMicPermission();
   // Step 2 installs Parakeet TDT v3 by default — the active engine for fresh
-  // installs. Size differs by backend (MLX ~572 MB on mac, ONNX int8 ~670 MB
+  // installs. Size differs by backend (MLX ~2.5 GB on mac, ONNX int8 ~670 MB
   // on Windows/Linux). Existing Whisper users get skipped past this step in
   // runSetup() once we see their model is already on disk; see the
   // parakeet-status + list-whisper-models precheck below.
@@ -361,7 +362,8 @@ export function Setup() {
         if (parakeetInstalled || anyWhisperInstalled) {
           setStatus('transcription', 'done', 'Transcription model ready');
         } else {
-          setStatus('transcription', 'running', `Downloading Parakeet TDT v3 (${isMac ? '~572 MB' : '~670 MB'})...`);
+          setStatus('transcription', 'running', `Downloading Parakeet TDT v3 (${isMac ? '~2.5 GB' : '~670 MB'})...`);
+          setParakeetStage({ stage: 'preparing' });
           await parakeetStep.mutateAsync();
           setParakeetStage(null);
           setStatus('transcription', 'done', 'Transcription model ready');
@@ -474,7 +476,7 @@ export function Setup() {
       detail: details.transcription,
       progressNode:
         statuses.transcription === 'running' && parakeetStage !== null ? (
-          <IndeterminateBar label="Downloading and preparing model..." />
+          <IndeterminateBar label={parakeetProgressLabel(parakeetStage)} />
         ) : undefined,
     },
     {

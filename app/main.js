@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, shell, systemPreferences, globalShortcut, Tray, Menu, nativeImage, powerMonitor, net, session, desktopCapturer } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, systemPreferences, globalShortcut, Tray, Menu, nativeImage, powerMonitor, net, session } = require('electron');
 
 // safeStorage is accessed lazily via getSafeStorage(), NOT destructured from the
 // require above. On macOS, merely retrieving the safeStorage binding at load
@@ -47,29 +47,49 @@ if (process.platform !== 'darwin') {
   process.on('unhandledRejection', (reason) => { _logStartupCrash('unhandledRejection', reason); });
 }
 
-
 const path = require('path');
 // Backend CLI seam (spawn wrapper, process-tree kill, bundled-backend paths,
 // runPythonScript), the debug-log sink, and the quit teardown registry are
 // carved out of this file (RFC #327, Phase 0); wired once below via factories.
-const { spawn, killProcessTree, createBackendCli } = require('./backend-cli');
+const { spawn, killProcessTree, createBackendCli, withoutOpenAiAsrKey } = require('./backend-cli');
+const {
+  isEncryptedKeyCleared,
+  legacyKeyMigrationAction,
+  loadEncryptedKeyForOrigin,
+  markEncryptedKeyClearedAtomically,
+  readOpenAiAsrConfigSnapshot,
+  readOpenAiAsrEndpointSnapshot,
+  saveEncryptedKeyAtomically,
+} = require('./openai-asr-key-store');
+// Keep an unreadable config distinct from a readable config without a legacy
+// key. Migration may treat only the latter as complete.
+const OPENAI_ASR_CONFIG_SNAPSHOT_UNREADABLE = Symbol('openai-asr-config-snapshot-unreadable');
+const { registerOpenAiAsrIpc } = require('./openai-asr-ipc');
 const { createDebugLog } = require('./debug-log');
 const { createTeardownRegistry } = require('./teardown');
 const { registerFoldersIpc } = require('./folders-ipc');
 const { registerSettingsIpc } = require('./settings-ipc');
+const { registerMeetingTransferIpc, copyRegularFile } = require('./meeting-transfer-ipc');
+const { STORE_DOCUMENT_LIMIT } = require('./meeting-transfer-store');
 const { registerPersonSampleIpc } = require('./person-sample-ipc');
 const { registerSpeakerIpc } = require('./speaker-ipc');
 const { registerObsidianSync } = require('./obsidian-sync');
 const { registerObsidianIpc } = require('./obsidian-ipc');
 const { isSafeToAutoInstall } = require('./update-idle-gate');
-const { describeUpdateError, updateErrorPhase } = require('./update-error-copy');
+const { describeUpdateError, updateErrorPhase, isMissingUpdateFeedError } = require('./update-error-copy');
 const { isOSUpdateEligible, MIN_MACOS_FOR_AUTOUPDATE } = require('./update-os-gate');
 const processingLog = require('./processing-log');
 const { isMeetingApp, allowsDeviceLevelFallback, isMacos14Plus } = require('./meeting-detect');
+const { isLinuxLoopbackSupported, startLoopbackCapture, createFrameAligner, createSerialQueue } = require('./linux-loopback');
 const { sweepOrphanedLiveSnapshots } = require('./live-snapshot-sweep');
 const { userNotesFilePath } = require('./notes-file');
-const { buildNoteReadyNotificationOptions, buildTranscriptReadyBody } = require('./notification-copy');
+const {
+  buildNoteReadyNotificationOptions,
+  buildTranscriptReadyBody,
+  buildCaptureErrorBody,
+} = require('./notification-copy');
 const { makeLineReader } = require('./backend-stream');
+const { classifyReprocessError } = require('./reprocess-error');
 // Pure deep-link (stenoai://) parsing/sanitizing lives in ./shortcut-url
 // (unit-tested). The stateful side — window creation, IPC dispatch,
 // notifications — stays here and calls parseShortcutUrl().
@@ -180,8 +200,7 @@ if (IS_E2E_MOCK_IPC) {
   require('./e2e-mock-ipc').install({ ipcMain, BrowserWindow });
 }
 
-// Distinguish dev runs from the packaged "Steno" app in the dock, About menu,
-// and Cmd+Tab. Production keeps the productName from package.json untouched.
+// Give development runs a distinct dock, About menu, and Cmd+Tab name.
 if (!app.isPackaged) {
   app.setName('Steno Dev');
 }
@@ -262,7 +281,11 @@ function isAutoDetectSupported() {
 // Whether system-audio (loopback) capture is available on this OS at all.
 // macOS: CoreAudio Process Tap (14.4+). Windows: electron-audio-loopback uses
 // Chromium's WASAPI loopback on Windows 10+ (both Win10 and Win11 report major
-// version 10). Linux: not wired. Drives the Settings/MainToolbar toggle.
+// version 10). Linux: a PipeWire monitor-port capture (see ./linux-loopback.js)
+// bypassing Chromium's getDisplayMedia path entirely — that path would route
+// through xdg-desktop-portal's ScreenCast picker on Wayland just to get a
+// throwaway video track, a real UX regression versus mac/Windows showing no
+// dialog at all. Drives the Settings/MainToolbar toggle.
 function isSystemAudioSupported() {
   if (process.platform === 'darwin') return isCoreAudioTapSupported();
   if (process.platform === 'win32') {
@@ -273,6 +296,7 @@ function isSystemAudioSupported() {
       return true; // assume a modern Windows if the version probe fails
     }
   }
+  if (process.platform === 'linux') return isLinuxLoopbackSupported();
   return false;
 }
 
@@ -771,7 +795,6 @@ const GOOGLE_CLIENT_SECRET = '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';
 // no extra userinfo API call needed.
 const GOOGLE_SCOPES = 'openid https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/userinfo.email';
 const GOOGLE_AUTH_URL = 'https://accounts.google.com/o/oauth2/v2/auth';
-const GOOGLE_TOKEN_URL = 'https://oauth2.googleapis.com/token';
 
 // Outlook Calendar OAuth2 configuration (PKCE public client — no client secret)
 const OUTLOOK_CLIENT_ID = '53a8ba1f-3a2e-4fc9-afb1-b9b8ff13de19';
@@ -926,7 +949,7 @@ function trackEvent(eventName, properties = {}) {
         ...properties
       }
     });
-  } catch (error) {
+  } catch {
     // Silent fail -- telemetry must never break the app
   }
 }
@@ -969,7 +992,7 @@ async function shutdownTelemetry() {
       posthogClient = null;
       console.log('Telemetry shut down');
     }
-  } catch (error) {
+  } catch {
     // Silent fail
   }
 }
@@ -1260,7 +1283,7 @@ function validateSafeFilePath(filepath, allowedBaseDirs) {
 // Deleting a note HIDES only its summary file, by renaming it into a hidden
 // sibling dir (`output/.pending-delete/<id>/`). Every backend scan identifies a
 // note SOLELY by its summary glob (`list_meetings` / global chat glob
-// `output/*_summary.{json,md}`, non-recursive), so hiding the summary makes the
+// `output/<stem>_summary.{json,md}`, non-recursive), so hiding the summary makes the
 // note invisible to all of them via a SINGLE atomic same-filesystem rename — no
 // multi-file moves, no cross-volume copy, no manifest, no restore/purge/sweep.
 //
@@ -1389,6 +1412,20 @@ function isAllowedMeetingSource(src, allowedBaseDirs) {
   return leafDirs.includes(realParent);
 }
 
+// Transfer tracks belong only to the validated summary's immutable stem.
+// Neither a receipt nor the renderer can supply a different media directory.
+function transferMediaDirectory(outputDir, stem) {
+  if (!/^transfer_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(stem ?? '')) return null;
+  try {
+    const root = path.join(fs.realpathSync(outputDir), '.meeting-transfer');
+    const media = path.join(root, stem);
+    for (const directory of [root, media]) {
+      if (!fs.lstatSync(directory).isDirectory() || fs.realpathSync(directory) !== directory) return null;
+    }
+    return media;
+  } catch (_) { return null; }
+}
+
 // No-clobber occupancy test. Uses lstat (NOT existsSync) so a DANGLING symlink
 // at the path counts as occupied: existsSync follows the link and returns false
 // for a broken target, which would let a renameSync silently REPLACE the symlink
@@ -1471,9 +1508,20 @@ function commitPendingDelete(id) {
   // not the note itself: a rare permanently-locked orphan is accepted (fail-safe
   // direction — never risk the note over a stray file). Log any that survived.
   for (const p of entry.ancillaryPaths) {
+    // Recheck the private media ancestors after the undo window as well.
+    if (entry.transferMediaDir && path.dirname(p) === entry.transferMediaDir
+      && transferMediaDirectory(path.dirname(entry.originalSummaryPath), path.basename(entry.transferMediaDir)) !== entry.transferMediaDir) {
+      console.warn('Commit: retained transfer media after storage revalidation failed:', path.basename(entry.transferMediaDir));
+      continue;
+    }
     if (!unlinkBestEffort(p)) {
       console.warn(`Commit: orphaned ancillary file (could not remove): ${p}`);
     }
+  }
+  if (entry.transferMediaDir
+    && transferMediaDirectory(path.dirname(entry.originalSummaryPath), path.basename(entry.transferMediaDir)) === entry.transferMediaDir) {
+    // Only an empty directory may go; a failed unlink preserves its contents.
+    try { fs.rmdirSync(entry.transferMediaDir); } catch (_) {}
   }
   removeHiddenScaffold(entry.hiddenDir);
   pendingDeletes.delete(id);
@@ -1725,7 +1773,7 @@ function createTray() {
   const icon = nativeImage.createFromPath(getTrayIconPath(false));
   icon.setTemplateImage(true);
   tray = new Tray(icon);
-  tray.setToolTip('Steno');
+  tray.setToolTip('StenoAI');
 
   updateTrayMenu();
 }
@@ -1735,7 +1783,7 @@ function updateTrayIcon(recording) {
   const icon = nativeImage.createFromPath(getTrayIconPath(recording));
   icon.setTemplateImage(true);
   tray.setImage(icon);
-  tray.setToolTip(recording ? 'Steno - Recording' : 'Steno');
+  tray.setToolTip(recording ? 'StenoAI - Recording' : 'StenoAI');
   updateTrayMenu();
 }
 
@@ -1751,7 +1799,7 @@ function updateTrayMenu() {
 
   const contextMenu = Menu.buildFromTemplate([
     {
-      label: 'Open Steno',
+      label: 'Open StenoAI',
       click: showAndFocusWindow
     },
     {
@@ -1772,14 +1820,14 @@ function updateTrayMenu() {
       }
     },
     {
-      label: 'Hide Steno',
+      label: 'Hide StenoAI',
       click: () => {
         if (mainWindow) mainWindow.hide();
       }
     },
     { type: 'separator' },
     {
-      label: `Steno v${appVersion}`,
+      label: `StenoAI v${appVersion}`,
       enabled: false
     },
     {
@@ -1790,7 +1838,7 @@ function updateTrayMenu() {
     },
     { type: 'separator' },
     {
-      label: 'Quit Steno',
+      label: 'Quit StenoAI',
       click: () => {
         app.quit();
       }
@@ -1849,8 +1897,24 @@ function rewarmParakeet(reason) {
 if (!gotSingleInstanceLock) {
   app.quit();
 } else {
+  const meetingTransfer = registerMeetingTransferIpc({
+    app, ipcMain, dialog, getMainWindow: () => mainWindow, exposeMainWindow,
+    getOutputDir, getUserDataDir,
+    isBusy: () => currentRecordingProcess !== null || systemAudioRecordingActive || isProcessing || activeReprocessJobs.size > 0,
+    readMeeting: readMeetingForTransfer,
+    findAudioSource: findMeetingTransferAudio,
+    prepareAudio: prepareMeetingTransferAudio,
+    makeShareMenu: items => new (require('electron').ShareMenu)(items),
+  });
+  if (process.platform === 'darwin') {
+    for (const arg of process.argv.slice(1)) meetingTransfer.openFile(arg);
+  }
+
   ipcMain.on('warmup-parakeet-hint', () => rewarmParakeet('renderer-hint'));
   app.on('second-instance', (event, argv) => {
+    if (process.platform === 'darwin') {
+      for (const arg of argv.slice(1)) meetingTransfer.openFile(arg);
+    }
     const shortcutUrl = extractShortcutUrlFromArgv(argv);
     if (shortcutUrl) {
       if (app.isReady()) {
@@ -1901,7 +1965,7 @@ if (!gotSingleInstanceLock) {
         if (mainWindow && !mainWindow.isDestroyed()) {
           try {
             await mainWindow.webContents.executeJavaScript('stopSystemAudioRecording("quit")');
-          } catch (e) {
+          } catch {
             // Best effort -- file is saved even if processing doesn't start
           }
         }
@@ -1992,6 +2056,12 @@ if (!gotSingleInstanceLock) {
     } catch (e) {
       console.warn('processing-log init failed (non-fatal):', e?.message);
     }
+
+    // Migrate the pre-safeStorage plaintext ASR credential on every launch,
+    // independent of the active engine or whether Settings is opened. The
+    // helper encrypts, verifies a decrypt/readback, then asks the backend to
+    // remove plaintext only after that succeeds.
+    void migrateLegacyOpenAiAsrApiKey();
 
     // Application menu. macOS uses the global menu bar with mac-only roles
     // (services/hide/unhide). Windows/Linux get a slimmer, platform-correct
@@ -2236,7 +2306,7 @@ if (!gotSingleInstanceLock) {
           _cachedCustomStoragePath = spData.storage_path;
           console.log('Custom storage path loaded:', _cachedCustomStoragePath);
         }
-      } catch (e) {
+      } catch {
         // Non-fatal - custom path just won't be cached
       }
     }
@@ -2892,6 +2962,54 @@ async function validateMeetingFilePath(summaryFile) {
   return { realPath, allowedOutputDirs };
 }
 
+// The transfer exporter reads a stable saved snapshot rather than trusting
+// renderer-supplied meeting content or an arbitrary audio path.
+async function readMeetingForTransfer(summaryFile) {
+  const validated = await validateMeetingFilePath(summaryFile);
+  if (validated.error) throw { code: 'unsafe_storage' };
+  const handle = await fs.promises.open(validated.realPath, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW | fs.constants.O_NONBLOCK);
+  try {
+    const before = await handle.stat({ bigint: true });
+    if (!before.isFile() || before.size > BigInt(STORE_DOCUMENT_LIMIT)) throw { code: 'unsafe_storage' };
+    const bytes = await handle.readFile();
+    const after = await handle.stat({ bigint: true });
+    if (before.size !== after.size || before.mtimeNs !== after.mtimeNs || before.ctimeNs !== after.ctimeNs) throw { code: 'source_changed' };
+    const content = bytes.toString('utf8');
+    const meeting = validated.realPath.endsWith('.md')
+      ? parseMeetingMarkdown(content, validated.realPath) : JSON.parse(content);
+    if (!meeting.session_info) throw { code: 'unsafe_storage' };
+    return { realPath: validated.realPath, meeting, fingerprint: require('crypto').createHash('sha256').update(bytes).digest('hex') };
+  } finally { await handle.close(); }
+}
+
+async function findMeetingTransferAudio(summaryFile) {
+  return require('./meeting-transfer-audio').findAudioSource(summaryFile, getAllowedBaseDirs(), IMPORT_AUDIO_EXTENSIONS);
+}
+
+async function prepareMeetingTransferAudio(source) {
+  const { sourcePath, identity } = source;
+  const { privateDirectory } = require('./meeting-transfer-store');
+  const root = await privateDirectory(getUserDataDir(), 'meeting-transfer');
+  const scratch = await fs.promises.mkdtemp(path.join(root, 'audio-'));
+  const cleanup = () => fs.promises.rm(scratch, { recursive: true, force: true });
+  try {
+    const input = path.join(scratch, 'source' + path.extname(sourcePath));
+    await copyRegularFile(sourcePath, input, identity);
+    const target = path.join(scratch, 'track.caf');
+    const backendDir = path.dirname(getBackendPath());
+    const candidates = name => [path.join(backendDir, '_internal', name), path.join(backendDir, name)];
+    const helperCandidates = candidates('steno-audio-encode');
+    if (!app.isPackaged) helperCandidates.push(path.join(__dirname, '..', 'bin', 'steno-audio-encode'));
+    const values = await require('./meeting-transfer-audio').convertTransferAudio(input, target, {
+      nativeHelper: helperCandidates.find(candidate => fs.existsSync(candidate)),
+      ffmpeg: candidates('ffmpeg').find(candidate => fs.existsSync(candidate)),
+    });
+    await fs.promises.chmod(target, 0o600);
+    const metadata = { ...values, logicalTrackID: 'track-1', kind: 'imported' };
+    return { audio: [{ metadata, sourcePath: target }], cleanup };
+  } catch (error) { await cleanup(); throw error; }
+}
+
 ipcMain.handle('get-meeting', async (_event, summaryFile) => {
   try {
     const validated = await validateMeetingFilePath(summaryFile);
@@ -2943,6 +3061,11 @@ ipcMain.handle('clear-state', async () => {
 });
 
 ipcMain.handle('reprocess-meeting', async (event, summaryFile, regenerateTitle, sessionName, retranscribe) => {
+  let errorCode = 'generation_failed';
+  const rememberError = (error) => {
+    const classified = classifyReprocessError(error);
+    if (classified !== 'generation_failed') errorCode = classified;
+  };
   try {
     // Security: symlink-safe containment-check the renderer-supplied summary path
     // before it reaches the backend CLI, and pass the canonical realPath (not the
@@ -2950,7 +3073,8 @@ ipcMain.handle('reprocess-meeting', async (event, summaryFile, regenerateTitle, 
     // summaryFile — that's UI correlation the renderer matches on, not file access.
     const validated = await validateMeetingFilePath(summaryFile);
     if (validated.error) {
-      return { success: false, error: validated.error };
+      sendDebugLog(`Reprocess path validation failed: ${validated.error}`);
+      return { success: false, error: 'Note generation failed', error_code: errorCode };
     }
     const { realPath } = validated;
 
@@ -2974,8 +3098,10 @@ ipcMain.handle('reprocess-meeting', async (event, summaryFile, regenerateTitle, 
     // stuck.
     activeReprocessJobs.set(summaryFile, { summaryFile, sessionName: sessionName || null });
 
-    const aiEnv = getAiEnv();
-    const reprocessEnv = Object.keys(aiEnv).length > 0 ? { ...require('process').env, ...aiEnv } : undefined;
+    const reprocessSecrets = retranscribe
+      ? { ...getAiEnv(), ...getTranscriptionEnv() }
+      : getAiEnv();
+    const reprocessEnv = getBackendEnv(reprocessSecrets);
 
     await new Promise((resolve, reject) => {
       const proc = spawn(getBackendPath(), args, {
@@ -2990,6 +3116,7 @@ ipcMain.handle('reprocess-meeting', async (event, summaryFile, regenerateTitle, 
       // assume. Threaded into processing-complete so the renderer fires
       // "Note ready" only when notes exist (#bug2).
       let summarizationCompleted = false;
+      let streamFailed = false;
 
       // Liveness watchdog — see makeInactivityWatchdog. Summary CHUNK:
       // lines (and HEARTBEAT: lines if a retranscribe is ever added here)
@@ -3029,10 +3156,15 @@ ipcMain.handle('reprocess-meeting', async (event, summaryFile, regenerateTitle, 
             }
           } else if (line.startsWith('STREAM_ERROR:')) {
             const errMsg = line.slice('STREAM_ERROR:'.length);
+            streamFailed = true;
+            rememberError(errMsg);
             sendDebugLog(`❌ Reprocess stream error: ${errMsg}`);
             if (mainWindow && !mainWindow.isDestroyed()) {
-              mainWindow.webContents.send('summary-complete', { success: false, sessionName, summaryFile });
+              mainWindow.webContents.send('summary-complete', { success: false, sessionName, summaryFile, error_code: errorCode });
             }
+          } else if (line.startsWith('ERROR:')) {
+            rememberError(line.slice('ERROR:'.length));
+            forwardDiagnosticStdout(line, 'reprocess');
           } else {
             // Unclassified stdout: forward only diagnostic markers, drop content.
             forwardDiagnosticStdout(line, 'reprocess');
@@ -3051,7 +3183,7 @@ ipcMain.handle('reprocess-meeting', async (event, summaryFile, regenerateTitle, 
 
       proc.on('close', (code) => {
         watchdog.clear();
-        if (code === 0) {
+        if (code === 0 && !streamFailed && !watchdog.timedOut) {
           console.log(`✅ Completed reprocessing: ${sessionName}`);
           // Reprocess / generate-notes / re-transcribe rewrote the note — mirror
           // it into the vault (#413) if sync is on. Use the canonical realPath
@@ -3095,12 +3227,17 @@ ipcMain.handle('reprocess-meeting', async (event, summaryFile, regenerateTitle, 
             })
             .finally(() => resolve());
         } else {
+          // A STREAM_ERROR is more specific than a generic exit or trailing
+          // diagnostic. Keep it through both terminal events and the result.
+          if (errorCode === 'generation_failed' && watchdog.timedOut) errorCode = 'generation_timeout';
+          if (errorCode === 'generation_failed') rememberError(stderrBuf);
           if (mainWindow && !mainWindow.isDestroyed()) {
             mainWindow.webContents.send('processing-complete', {
               success: false,
               sessionName,
               summaryFile,
               message: `Reprocessing failed (exit ${code})`,
+              error_code: errorCode,
             });
           }
           reject(new Error(`reprocess exited with code ${code}: ${stderrBuf.slice(-500)}`));
@@ -3112,7 +3249,8 @@ ipcMain.handle('reprocess-meeting', async (event, summaryFile, regenerateTitle, 
     return { success: true };
   } catch (error) {
     sendDebugLog(`❌ Reprocessing failed: ${error.message}`);
-    return { success: false, error: error.message };
+    if (errorCode === 'generation_failed') rememberError(error);
+    return { success: false, error: 'Note generation failed', error_code: errorCode };
   } finally {
     activeReprocessJobs.delete(summaryFile);
   }
@@ -3187,7 +3325,7 @@ ipcMain.handle('generate-report-meeting', async (event, summaryFile, templateId)
     activeReprocessJobs.set(summaryFile, { summaryFile, sessionName });
 
     const aiEnv = getAiEnv();
-    const reportEnv = Object.keys(aiEnv).length > 0 ? { ...require('process').env, ...aiEnv } : undefined;
+    const reportEnv = getBackendEnv(aiEnv);
 
     await new Promise((resolve, reject) => {
       const proc = spawn(getBackendPath(), args, {
@@ -3346,7 +3484,7 @@ ipcMain.handle('regen-meeting-title', async (event, summaryFile, sessionName) =>
     activeReprocessJobs.set(summaryFile, { summaryFile, sessionName: sessionName || null });
 
     const aiEnv = getAiEnv();
-    const regenEnv = Object.keys(aiEnv).length > 0 ? { ...require('process').env, ...aiEnv } : undefined;
+    const regenEnv = getBackendEnv(aiEnv);
 
     await new Promise((resolve, reject) => {
       const proc = spawn(getBackendPath(), ['regen-title', realPath], {
@@ -3489,7 +3627,7 @@ ipcMain.on('query-cancel', (_event, queryId) => {
 ipcMain.on('query-transcript-stream', async (event, queryId, summaryFile, question) => {
   console.log(`[QUERY] IPC received: question="${question.substring(0, 50)}" file="${summaryFile}"`);
   sendDebugLog(`🤖 Streaming query (${String(question || '').length} chars)`);
-  const env = { ...process.env, ...getAiEnv() };
+  const env = getBackendEnv(getAiEnv());
 
   // chat_message_sent restores visibility into single-meeting chat (dormant
   // since the old bare-ping ai_query_used stopped being reachable once chat
@@ -3545,7 +3683,7 @@ ipcMain.on('query-transcript-stream', async (event, queryId, summaryFile, questi
   let validated;
   try {
     validated = await validateMeetingFilePath(summaryFile);
-  } catch (err) {
+  } catch {
     // Defense-in-depth: validateMeetingFilePath is fail-closed and shouldn't
     // throw, but if it ever does (e.g. a future refactor), don't let it become
     // an unhandled rejection that can take down the main process.
@@ -3678,7 +3816,7 @@ ipcMain.on('query-transcript-stream', async (event, queryId, summaryFile, questi
 // fewer recent notes instead of overflowing. No retrieval (RAG) yet.
 ipcMain.on('chat-global-stream', (event, queryId, question, folderId) => {
   sendDebugLog(`💬 Global chat query (${String(question || '').length} chars, folder: ${folderId || 'all'})`);
-  const env = { ...process.env, ...getAiEnv() };
+  const env = getBackendEnv(getAiEnv());
 
   const args = ['chat-global-streaming', '-q', question];
   if (folderId && typeof folderId === 'string' && folderId !== 'all') {
@@ -3743,7 +3881,7 @@ ipcMain.on('chat-global-stream', (event, queryId, question, folderId) => {
             proc.kill();
             activeQueryProcs.delete(queryId);
           }
-        } catch (e) { /* ignore decode errors */ }
+        } catch { /* ignore decode errors */ }
       } else if (line === 'CHAT_STREAM_COMPLETE') {
         if (!event.sender.isDestroyed()) {
           event.sender.send('query-done', { queryId, success: true });
@@ -4390,6 +4528,16 @@ ipcMain.handle('delete-meeting', async (event, meetingData) => {
     if (stem) {
       ancillaryCandidates.push(path.join(outputDir, `${stem}_speakers.json`));
     }
+    // Imported transfer audio is bound to the same immutable summary stem.
+    // Enumerate only canonical track files, never paths from meeting JSON.
+    const transferMediaDir = transferMediaDirectory(outputDir, stem);
+    if (transferMediaDir) {
+      try {
+        for (const name of fs.readdirSync(transferMediaDir)) {
+          if (/^track-[1-9][0-9]*\.caf$/.test(name)) ancillaryCandidates.push(path.join(transferMediaDir, name));
+        }
+      } catch (_) { /* text-only package */ }
+    }
     // Derive the transcript + recording from the summary stem (FACT A). A normal
     // .md note carries ONLY summary_file, so without this the transcript and the
     // RECORDING would be orphaned, defeating the whole point of #234 (protect the
@@ -4437,7 +4585,7 @@ ipcMain.handle('delete-meeting', async (event, meetingData) => {
     // --- Twin edge (ANOMALOUS, FAIL-SAFE): a note names EXACTLY ONE
     // summary_file, and we hide only that one. If a stem somehow has BOTH
     // <stem>_summary.json AND <stem>_summary.md, hiding the named one leaves the
-    // other, and the `output/*_summary.{json,md}` scan keeps the note VISIBLE —
+    // other, and the `output/<stem>_summary.{json,md}` scan keeps the note VISIBLE —
     // so the delete under-hides (note REAPPEARS), never over-deletes: nothing is
     // lost. This is accepted deliberately: the app's own writers only ever
     // produce <stem>_summary.md (JSON summaries are legacy, read-only; reprocess
@@ -4469,7 +4617,9 @@ ipcMain.handle('delete-meeting', async (event, meetingData) => {
         console.warn(`Skipping non-regular-file ancillary (not tracked): ${p}`);
         continue;
       }
-      if (!isAllowedMeetingSource(p, allowedBaseDirs)) {
+      const isTransferTrack = transferMediaDir && path.dirname(p) === transferMediaDir
+        && /^track-[1-9][0-9]*\.caf$/.test(path.basename(p));
+      if (!isTransferTrack && !isAllowedMeetingSource(p, allowedBaseDirs)) {
         console.warn(`Skipping ancillary outside allowed meeting folders (not tracked): ${p}`);
         continue;
       }
@@ -4541,6 +4691,7 @@ ipcMain.handle('delete-meeting', async (event, meetingData) => {
       hiddenSummaryPath,
       canonicalSummary,
       ancillaryPaths,
+      transferMediaDir,
       deadline,
       state: 'pending',
       timer: null,
@@ -4788,10 +4939,8 @@ function spawnLiveTranscribe(sessionName) {
     liveTranscribeSessionName = null;
     liveTranscribeStdoutBuf = '';
   }
-  const aiEnv = getAiEnv();
-  const env = Object.keys(aiEnv).length > 0
-    ? { ...require('process').env, ...aiEnv }
-    : undefined;
+  const aiEnv = { ...getAiEnv(), ...getTranscriptionEnv() };
+  const env = getBackendEnv(aiEnv);
   parakeetLoadStartedAt = Date.now();
   liveTranscribeProcess = spawn(getBackendPath(), ['transcribe-stream'], {
     cwd: getBackendCwd(),
@@ -5088,6 +5237,8 @@ function loadTranscriptionContext() {
     } else if (engine === 'openai-asr') {
       model = sanitizeModelForAnalytics(cfg.openai_asr_model) || 'whisper-1';
     } else {
+      // Parakeet has no separate user-selectable model today (single bundled
+      // default) -- report the engine name rather than guess a variant id.
       model = 'parakeet';
     }
     return {
@@ -5270,7 +5421,6 @@ let recordingRuntimeState = {
 };
 let ollamaProcess = null;  // Track spawned Ollama process for cleanup on quit
 let ollamaPid = null;      // Store PID separately since unref() disconnects the process
-let ollamaStartedByUs = false;
 
 // Content-free crash/force-quit detection (report Appendix: ~8% of macOS
 // recordings never fire recording_stopped at all -- a silent gap in the
@@ -5402,16 +5552,20 @@ let systemSuspendedForWatchdogs = false;
 
 function makeInactivityWatchdog(proc, ms, label) {
   let timer = null;
+  let timedOut = false;
   const arm = () => {
     timer = setTimeout(() => {
       timer = null;
+      timedOut = true;
       activeInactivityWatchdogs.delete(watchdog);
       console.error(`${label} produced no output for ${Math.round(ms / 60000)} minutes, killing`);
       sendDebugLog(`${label} inactive for ${Math.round(ms / 60000)} minutes — killing process`);
-      try { proc.kill(); } catch (e) { /* process already gone */ }
+      try { proc.kill(); } catch { /* process already gone */ }
     }, ms);
   };
   const watchdog = {
+    // Retain the cause after clear(): close handlers need it after cleanup.
+    get timedOut() { return timedOut; },
     // Any stdout/stderr activity proves liveness — push the deadline out.
     reset() {
       if (timer === null) return; // fired, cleared, or frozen — don't re-arm
@@ -5497,8 +5651,10 @@ async function processNextInQueue() {
   let summarizationCompleted = false;
 
   try {
-    const queueAiEnv = getAiEnv();
-    const queueEnv = Object.keys(queueAiEnv).length > 0 ? { ...require('process').env, ...queueAiEnv } : undefined;
+    // process-streaming does BOTH transcription (needs the ASR key) and
+    // summarization (needs the AI env), so merge both.
+    const queueAiEnv = { ...getAiEnv(), ...getTranscriptionEnv() };
+    const queueEnv = getBackendEnv(queueAiEnv);
     const processArgs = ['process-streaming', currentProcessingJob.audioFile, '--name', currentProcessingJob.sessionName];
     if (currentProcessingJob.notesFile && fs.existsSync(currentProcessingJob.notesFile)) {
       processArgs.push('--notes', currentProcessingJob.notesFile);
@@ -6430,7 +6586,7 @@ async function runSpeakerModelCommand(command) {
 ipcMain.handle('speaker-model-status', async () => {
   try {
     return await runSpeakerModelCommand('speaker-model-status');
-  } catch (error) {
+  } catch {
     sendDebugLog('Speaker diarization model status check failed');
     return {
       success: false,
@@ -6448,7 +6604,7 @@ ipcMain.handle('setup-speaker-models', async () => {
       sendDebugLog('Speaker diarization models ready');
     }
     return result;
-  } catch (error) {
+  } catch {
     sendDebugLog('Speaker diarization model setup failed');
     return {
       success: false,
@@ -6747,12 +6903,14 @@ function setupAutoUpdater() {
     // download is still running forever, and About would show a stuck
     // progress bar with no way to tell it failed.
     pendingDownloadPercent = null;
-    // Until a release carrying this platform's update feed (latest.yml on
-    // Windows) is published, the updater 404s on the feed file. That's an
-    // expected transitional state, not a real failure — log it quietly so it
-    // doesn't read as a scary stack trace for alpha testers, and don't
-    // surface it to the renderer as an error.
-    if (/latest(-mac)?\.yml/i.test(msg) && /(404|cannot find)/i.test(msg)) {
+    // Until a release carrying this platform's update feed is published
+    // (latest.yml on Windows, latest-linux*.yml on Linux — which ships none
+    // at all today), the updater 404s on the feed file. That's an expected
+    // state, not a real failure — log it quietly so it doesn't read as a
+    // scary stack trace for alpha testers, and don't surface it to the
+    // renderer as an error. See isMissingUpdateFeedError for why the match
+    // is not spelled out inline any more.
+    if (isMissingUpdateFeedError(msg)) {
       sendDebugLog('Auto-updater: no update feed published for this release yet — skipping.');
       return;
     }
@@ -6819,8 +6977,10 @@ const MIC_MONITOR_HEALTHY_RESET_MS = 30_000;
 // Browsers route media capture through helper sub-processes (Safari →
 // com.apple.WebKit.GPU, Chrome → com.google.Chrome.helper, etc.), so the raw
 // app_name reads as "Safari Graphics and Media" / "Google Chrome Helper".
-// Translate those back to the user-recognisable parent app name.
+// FaceTime, Phone.app and Continuity calls use the daemon "avconferenced".
+// Translate both back to the user-recognisable parent app name.
 const APP_NAME_OVERRIDES = [
+  { match: /^com\.apple\.avconferenced/, name: 'Call' },
   { match: /^com\.apple\.WebKit/, name: 'Safari' },
   { match: /^com\.google\.Chrome/, name: 'Google Chrome' },
   { match: /^org\.chromium\./, name: 'Chromium' },
@@ -7370,7 +7530,6 @@ ipcMain.handle('setup-ollama-and-model', async () => {
         }
       });
       ollamaProcess.unref();
-      ollamaStartedByUs = true;
     }
 
     // Wait for Ollama to be ready (poll with early exit detection).
@@ -7397,7 +7556,7 @@ ipcMain.handle('setup-ollama-and-model', async () => {
           sendDebugLog(`Ollama ready after ${i + 1} seconds`);
           break;
         }
-      } catch (e) {
+      } catch {
         // Continue polling
       }
     }
@@ -7568,7 +7727,7 @@ ipcMain.handle('setup-ollama-and-model', async () => {
             let json;
             try {
               json = JSON.parse(line);
-            } catch (e) {
+            } catch {
               // Non-JSON line, log as-is
               sendDebugLog(line);
               continue;
@@ -7601,7 +7760,7 @@ ipcMain.handle('setup-ollama-and-model', async () => {
             sendDebugLog('AI model download completed successfully');
             try {
               await runPythonScript('simple_recorder.py', ['set-model', DEFAULT_AI_MODEL], true);
-            } catch (e) {
+            } catch {
               // Non-fatal -- config reset is best-effort
             }
             trackEvent('setup_completed', { step: 'ollama_and_model' });
@@ -7635,28 +7794,29 @@ ipcMain.handle('setup-ollama-and-model', async () => {
 
 ipcMain.handle('setup-parakeet', async () => {
   try {
-    // Download Parakeet TDT v3 (~572 MB) via the bundled backend. Used by
-    // the Setup wizard's step 2 for fresh installs. Emits coarse stage
-    // lines (PARAKEET_PULL_STAGE:downloading / :loading) rather than
-    // byte-level progress — see src/parakeet_models.py for why.
+    // Download Parakeet TDT v3 via the bundled backend. Used by
+    // the Setup wizard. Structured progress distinguishes cache download
+    // from model initialisation.
     const backendPath = getBackendPath();
-    sendDebugLog('Downloading Parakeet TDT v3 (~572 MB)...');
+    sendDebugLog('Downloading Parakeet TDT v3...');
     sendDebugLog(`$ ${backendPath} download-parakeet-model`);
 
     return new Promise((resolve) => {
       const proc = spawn(backendPath, ['download-parakeet-model'], { stdio: 'pipe' });
       let lastStdoutLine = '';
+      const stdoutReader = makeLineReader();
 
       proc.stdout.on('data', (data) => {
         const text = data.toString();
-        for (const line of text.split('\n')) {
+        for (const line of stdoutReader.feed(text)) {
           const trimmed = line.trim();
           if (!trimmed) continue;
           sendDebugLog(trimmed);
-          if (trimmed.startsWith('PARAKEET_PULL_STAGE:')) {
-            const stage = trimmed.slice('PARAKEET_PULL_STAGE:'.length);
+          if (trimmed.startsWith('PARAKEET_PULL_PROGRESS:')) {
+            let progress;
+            try { progress = JSON.parse(trimmed.slice('PARAKEET_PULL_PROGRESS:'.length)); } catch (_) { continue; }
             if (mainWindow && !mainWindow.isDestroyed()) {
-              mainWindow.webContents.send('parakeet-pull-progress', { stage });
+              mainWindow.webContents.send('parakeet-pull-progress', progress);
             }
           } else {
             lastStdoutLine = trimmed;
@@ -7672,7 +7832,7 @@ ipcMain.handle('setup-parakeet', async () => {
       proc.on('close', (code) => {
         let parsed = null;
         try { parsed = JSON.parse(lastStdoutLine); } catch (_) { /* not JSON */ }
-        const ok = code === 0 && (!parsed || parsed.success !== false);
+        const ok = code === 0 && parsed?.success === true;
         if (ok) {
           sendDebugLog('Parakeet model ready');
           resolve({ success: true, message: 'Parakeet model ready' });
@@ -7814,56 +7974,6 @@ ipcMain.handle('get-ai-prompts', async () => {
   }
 });
 
-// Helper function to ensure Ollama service is running
-async function ensureOllamaRunning() {
-  try {
-    // Check if Ollama service is responding
-    const http = require('http');
-    const response = await new Promise((resolve) => {
-      const req = http.get('http://127.0.0.1:11434/api/version', { timeout: 3000 }, (res) => {
-        resolve(res.statusCode === 200);
-      });
-      req.on('error', () => resolve(false));
-      req.on('timeout', () => { req.destroy(); resolve(false); });
-    });
-
-    if (response) {
-      return true; // Service is running
-    }
-
-    // Service not running, try to start it.
-    // The macOS-14 gate only applies to mac (os.release() is the NT build on
-    // Windows, which would always trigger the < 23 check).
-    if (process.platform === 'darwin') {
-      const macRelease = os.release();
-      if (parseInt(macRelease.split('.')[0], 10) < 23) {
-        sendDebugLog('macOS version too old for bundled Ollama — requires macOS 14 (Sonoma) or later');
-        return false;
-      }
-    }
-
-    const ollamaPath = await findOllamaExecutable();
-    if (!ollamaPath) {
-      return false;
-    }
-
-    // Start Ollama service in background with proper env vars for dylibs
-    ollamaProcess = spawn(ollamaPath, ['serve'], { detached: true, stdio: 'ignore', env: getOllamaEnv() });
-    ollamaPid = ollamaProcess.pid;
-    try { require('fs').writeFileSync(path.join(getBackendCwd(), '_internal', 'ollama.pid'), String(ollamaPid)); } catch (_) {}
-    ollamaProcess.on('exit', () => { ollamaPid = null; });
-    ollamaProcess.unref();
-    ollamaStartedByUs = true;
-
-    // Wait for service to start
-    await new Promise(resolve => setTimeout(resolve, 2000));
-    return true;
-  } catch (error) {
-    console.error('Error ensuring Ollama is running:', error);
-    return false;
-  }
-}
-
 // Check if Ollama is installed (for setup wizard)
 ipcMain.handle('check-ollama-installed', async () => {
   try {
@@ -7887,7 +7997,7 @@ ipcMain.handle('check-model-installed', async (event, modelName) => {
       try {
         const data = JSON.parse(lines[i]);
         return { success: true, installed: data.installed };
-      } catch (e) {
+      } catch {
         continue;
       }
     }
@@ -8049,30 +8159,50 @@ ipcMain.handle('set-transcription-engine', async (event, engine) => {
   } catch (e) { return { success: false, error: e.message }; }
 });
 
+// OpenAI-compatible ASR: the NON-SECRET config (url/model) shells to the CLI
+// like set-cloud-api-url does. api_key_set is always overridden with the
+// safeStorage truth (hasOpenAiAsrKey) - the CLI only sees the env-var key,
+// which isn't injected on these calls, so its own api_key_set is unreliable.
 ipcMain.handle('get-openai-asr-config', async () => {
   try {
-    const extraEnv = {};
-    const oaiKey = loadOpenAiAsrApiKey();
-    if (oaiKey) { extraEnv.STENOAI_OAI_API_KEY = oaiKey; }
-    const result = await runPythonScript('simple_recorder.py', ['get-openai-asr-config'], true, extraEnv);
-    return JSON.parse(result.trim());
+    await migrateLegacyOpenAiAsrApiKey();
+    const result = await runPythonScript('simple_recorder.py', ['get-openai-asr-config'], true);
+    const jsonData = JSON.parse(result.trim());
+    jsonData.api_key_set = hasOpenAiAsrKey();
+    return jsonData;
   } catch (e) { return { success: false, error: e.message }; }
 });
 
-ipcMain.handle('set-openai-asr-config', async (_event, cfg) => {
+registerOpenAiAsrIpc({
+  ipcMain,
+  runPythonScript,
+  migrateLegacyOpenAiAsrApiKey,
+  hasOpenAiAsrKey,
+});
+
+// The SECRET key: stored encrypted via safeStorage (never argv, never
+// config.json), mirroring set-cloud-api-key. Passing an empty string clears it
+// (deletes the file).
+ipcMain.handle('set-openai-asr-key', async (_event, key) => {
   try {
-    if (cfg.api_key !== undefined) {
-      const saved = saveOpenAiAsrApiKey(cfg.api_key);
-      if (!saved) return { success: false, error: 'Failed to save OpenAI ASR API key' };
+    if (typeof key !== 'string') {
+      return { success: false, error: 'OpenAI ASR API key must be a string' };
     }
-    const args = ['set-openai-asr-config'];
-    if (cfg.api_url !== undefined) { args.push('--api-url', cfg.api_url); }
-    if (cfg.model !== undefined)   { args.push('--model',   cfg.model);   }
-    const extraEnv = {};
-    const oaiKey = loadOpenAiAsrApiKey();
-    if (oaiKey) { extraEnv.STENOAI_OAI_API_KEY = oaiKey; }
-    const result = await runPythonScript('simple_recorder.py', args, false, extraEnv);
-    return JSON.parse(result.trim());
+    if (!key) {
+      markOpenAiAsrKeyCleared();
+      // The durable marker already makes every encrypted/legacy copy
+      // ineffective. Retry plaintext removal now, while retaining the marker
+      // if the locked config write is temporarily unavailable.
+      await migrateLegacyOpenAiAsrApiKey();
+      return { success: true, api_key_set: false };
+    }
+    const origin = getOpenAiAsrEndpointOrigin();
+    if (!origin) throw new Error('OpenAI ASR endpoint is invalid');
+    const saved = saveOpenAiAsrKey(key, origin);
+    return {
+      success: saved,
+      api_key_set: saved && Boolean(loadOpenAiAsrKey(origin)),
+    };
   } catch (e) { return { success: false, error: e.message }; }
 });
 
@@ -8225,8 +8355,7 @@ ipcMain.handle('pull-whisper-model', async (event, modelName) => {
 ipcMain.handle('pull-parakeet-model', async (event, modelId) => {
   // Mirrors pull-whisper-model: settle-gate + SIGTERM-then-SIGKILL escalation
   // so a stalled HF download can never leave the renderer spinner hanging.
-  // Progress is coarse — we relay PARAKEET_PULL_STAGE:<stage> lines from the
-  // Python child rather than byte counts. See src/parakeet_models.py for why.
+  // Relay structured progress from the Python downloader.
   try {
     sendDebugLog(`Pulling Parakeet model: ${modelId || '<default>'}`);
     return new Promise((resolve) => {
@@ -8234,6 +8363,7 @@ ipcMain.handle('pull-parakeet-model', async (event, modelId) => {
       if (modelId) args.push(modelId);
       const proc = spawn(getBackendPath(), args, { cwd: getBackendCwd() });
       let lastStdoutLine = '';
+      const stdoutReader = makeLineReader();
       let timedOut = false;
       let settled = false;
       let sigkillTimer = null;
@@ -8267,14 +8397,15 @@ ipcMain.handle('pull-parakeet-model', async (event, modelId) => {
       }, 30 * 60 * 1000);
       proc.stdout.on('data', (data) => {
         const text = data.toString();
-        for (const line of text.split('\n')) {
+        for (const line of stdoutReader.feed(text)) {
           const trimmed = line.trim();
           if (!trimmed) continue;
           sendDebugLog(trimmed);
-          if (trimmed.startsWith('PARAKEET_PULL_STAGE:')) {
-            const stage = trimmed.slice('PARAKEET_PULL_STAGE:'.length);
+          if (trimmed.startsWith('PARAKEET_PULL_PROGRESS:')) {
+            let progress;
+            try { progress = JSON.parse(trimmed.slice('PARAKEET_PULL_PROGRESS:'.length)); } catch (_) { continue; }
             if (mainWindow && !mainWindow.isDestroyed()) {
-              mainWindow.webContents.send('parakeet-pull-progress', { model: modelId, stage });
+              mainWindow.webContents.send('parakeet-pull-progress', { ...progress, model: modelId });
             }
           } else {
             lastStdoutLine = trimmed;
@@ -8288,7 +8419,7 @@ ipcMain.handle('pull-parakeet-model', async (event, modelId) => {
       proc.on('close', (code) => {
         let pullResult = null;
         try { pullResult = JSON.parse(lastStdoutLine); } catch (_) { /* not JSON */ }
-        const succeeded = !timedOut && code === 0 && (!pullResult || pullResult.success !== false);
+        const succeeded = !timedOut && code === 0 && pullResult?.success === true;
         if (succeeded) {
           finishOnce(
             { success: true, model: modelId },
@@ -8368,16 +8499,20 @@ ipcMain.handle('show-silence-auto-stop-notification', async (_event, payload) =>
 });
 
 // Fired by useSystemAudioCapture.ts when an enabled loopback acquisition
-// genuinely fails (for example, System Audio Recording permission is denied).
-// It is not fired when the user turns system audio off or the OS is unsupported.
-// Clicking it opens Settings via the same tray-open-settings event the tray
-// menu uses.
+// genuinely fails (for example, System Audio Recording permission is denied),
+// or when a live Linux capture dies mid-recording. It is not fired when the
+// user turns system audio off or the OS is unsupported. Clicking it opens
+// Settings via the same tray-open-settings event the tray menu uses.
 ipcMain.handle('show-system-audio-mic-only-notification', async () => {
   try {
     if (!(await notificationsEnabled())) return { success: true, shown: false };
     const notif = new Notification({
       title: 'Recording mic-only',
-      body: 'System audio could not be captured. Check Steno’s Screen & System Audio Recording access in System Settings.',
+      // The permissions hint is macOS-only; elsewhere there is no such setting
+      // to send the user to.
+      body: process.platform === 'darwin'
+        ? 'System audio could not be captured. Check Steno’s Screen & System Audio Recording access in System Settings.'
+        : 'System audio could not be captured. Continuing with the microphone only.',
       iconType: 'alert',
     });
     notif.on('click', () => {
@@ -8883,53 +9018,149 @@ function hasCloudApiKey() {
   return fs.existsSync(getCloudKeyPath());
 }
 
+// --- OpenAI-compatible ASR (transcription) API key -------------------------
+// Mirrors the cloud summariser key exactly: encrypted-at-rest via safeStorage,
+// stored under getUserDataDir() (honours STENOAI_USER_DATA_DIR test isolation),
+// never written to config.json, and injected into the TRANSCRIPTION subprocess
+// env as STENOAI_OAI_API_KEY. This is the security-critical difference from the
+// upstream PR, which persisted the key in plaintext config.json.
 function getOpenAiAsrKeyPath() {
   return path.join(getUserDataDir(), '.openai-asr-api-key');
 }
 
-function saveOpenAiAsrApiKey(key) {
+// Credentials belong to a network origin, not a configurable URL path. URL's
+// origin canonicalises scheme, hostname, and the effective port (including
+// default-port elision), so equivalent endpoints compare equal while a host,
+// scheme, or port change cannot reuse the old bearer token.
+function getOpenAiAsrEndpointOrigin() {
+  return readOpenAiAsrEndpointSnapshot({
+    fs,
+    configPath: path.join(getUserDataDir(), 'config.json'),
+  })?.origin || null;
+}
+
+function isOpenAiAsrKeyCleared() {
+  return isEncryptedKeyCleared({ fs, keyPath: getOpenAiAsrKeyPath() });
+}
+
+function markOpenAiAsrKeyCleared() {
+  return markEncryptedKeyClearedAtomically({
+    fs,
+    path,
+    processId: process.pid,
+    now: Date.now(),
+    keyPath: getOpenAiAsrKeyPath(),
+  });
+}
+
+function saveOpenAiAsrKey(key, origin) {
   try {
-    const keyPath = getOpenAiAsrKeyPath();
-    if (!key || !key.trim()) {
-      if (fs.existsSync(keyPath)) {
-        fs.unlinkSync(keyPath);
-      }
-      return true;
-    }
-    const keyDir = path.dirname(keyPath);
-    if (!fs.existsSync(keyDir)) {
-      fs.mkdirSync(keyDir, { recursive: true });
-    }
-    const safe = getSafeStorage();
-    if (!safe || !safe.isEncryptionAvailable()) {
-      console.error('safeStorage is not available to encrypt OpenAI ASR key');
-      return false;
-    }
-    const encrypted = safe.encryptString(key.trim());
-    fs.writeFileSync(keyPath, encrypted);
-    return true;
+    if (!origin) throw new Error('OpenAI ASR endpoint is invalid');
+    return saveEncryptedKeyAtomically({
+      fs,
+      path,
+      processId: process.pid,
+      now: Date.now(),
+      keyPath: getOpenAiAsrKeyPath(),
+      key,
+      origin,
+      safeStorage: getSafeStorage(),
+    });
   } catch (error) {
-    console.error('Failed to save OpenAI ASR API key:', error.message);
-    return false;
+    console.error(error.message);
+    throw error;
   }
 }
 
-function loadOpenAiAsrApiKey() {
+function loadOpenAiAsrCredential(origin) {
   try {
+    if (isOpenAiAsrKeyCleared()) return null;
+    if (!origin) return null;
     const keyPath = getOpenAiAsrKeyPath();
-    if (!fs.existsSync(keyPath)) return null;
-    const safe = getSafeStorage();
-    if (!safe || !safe.isEncryptionAvailable()) return null;
-    const encrypted = fs.readFileSync(keyPath);
-    return safe.decryptString(encrypted);
+    migrateLegacyCredentialFile(keyPath, '.openai-asr-api-key');
+    const key = loadEncryptedKeyForOrigin({ fs, keyPath, origin, safeStorage: getSafeStorage() });
+    return key ? { key, origin } : null;
   } catch (error) {
     console.error('Failed to load OpenAI ASR API key:', error.message);
     return null;
   }
 }
 
-function hasOpenAiAsrApiKey() {
-  return fs.existsSync(getOpenAiAsrKeyPath());
+function loadOpenAiAsrKey(origin) {
+  return loadOpenAiAsrCredential(origin)?.key || null;
+}
+
+function hasOpenAiAsrKey() {
+  const origin = getOpenAiAsrEndpointOrigin();
+  return Boolean(origin && loadOpenAiAsrKey(origin));
+}
+
+function readLegacyOpenAiAsrCredential() {
+  const snapshot = readOpenAiAsrConfigSnapshot({
+    fs,
+    configPath: path.join(getUserDataDir(), 'config.json'),
+  });
+  return snapshot === null ? OPENAI_ASR_CONFIG_SNAPSHOT_UNREADABLE : snapshot.legacy;
+}
+
+function secureLegacyOpenAiAsrApiKey(legacy = readLegacyOpenAiAsrCredential()) {
+  if (legacy === OPENAI_ASR_CONFIG_SNAPSHOT_UNREADABLE) return false;
+  if (!legacy || !legacy.key || !legacy.origin) return false;
+  const stored = loadOpenAiAsrKey(legacy.origin);
+  const action = legacyKeyMigrationAction({
+    cleared: isOpenAiAsrKeyCleared(),
+    legacyKey: legacy.key,
+    storedKey: stored,
+  });
+  if (action !== 'secure') return action === 'remove-legacy' && Boolean(stored);
+  try {
+    // Do not remove config.json's value unless encrypt + decrypt both work.
+    return saveOpenAiAsrKey(legacy.key, legacy.origin)
+      && Boolean(loadOpenAiAsrKey(legacy.origin));
+  } catch (_) {
+    return false;
+  }
+}
+
+async function migrateLegacyOpenAiAsrApiKey(legacy = readLegacyOpenAiAsrCredential()) {
+  if (legacy === OPENAI_ASR_CONFIG_SNAPSHOT_UNREADABLE) return false;
+  if (!legacy) return true;
+  const removeLegacyKey = async () => {
+    try {
+      const raw = await runPythonScript(
+        'simple_recorder.py', ['remove-legacy-openai-asr-api-key'], true,
+        { STENOAI_OAI_LEGACY_SNAPSHOT_DIGEST: legacy.snapshotDigest },
+      );
+      return JSON.parse(raw.trim()).success === true;
+    } catch (_) {
+      // A clear marker remains authoritative, or the encrypted copy is safe;
+      // either way the plaintext can be removed on a future retry.
+      return false;
+    }
+  };
+  // Invalid raw legacy values must never become encrypted credentials. They
+  // still have a raw-digest CAS snapshot, so remove only that exact stale
+  // plaintext instead of leaving it in config.json indefinitely.
+  if (!legacy.key || !legacy.origin) return removeLegacyKey();
+
+  let stored = loadOpenAiAsrKey(legacy.origin);
+  const action = legacyKeyMigrationAction({
+    cleared: isOpenAiAsrKeyCleared(),
+    legacyKey: legacy.key,
+    storedKey: stored,
+  });
+  if (action === 'none') return false;
+  if (action === 'remove-legacy') return removeLegacyKey();
+  if (action === 'secure') {
+    try {
+      if (!saveOpenAiAsrKey(legacy.key, legacy.origin)) return false;
+      stored = loadOpenAiAsrKey(legacy.origin);
+      if (stored !== legacy.key) return false;
+    } catch (_) {
+      return false;
+    }
+  }
+  return removeLegacyKey();
 }
 
 // Build the env additions a Python AI-driven subprocess needs. Merges
@@ -8942,12 +9173,47 @@ function getAiEnv() {
   const env = {};
   const cloudKey = loadCloudApiKey();
   if (cloudKey) env.STENOAI_CLOUD_API_KEY = cloudKey;
-  const oaiAsrKey = loadOpenAiAsrApiKey();
-  if (oaiAsrKey) env.STENOAI_OAI_API_KEY = oaiAsrKey;
   const session = loadOrgSession();
   if (session && session.adapterUrl && session.token && !isJwtExpired(session.token)) {
     env.STENOAI_ADAPTER_URL = session.adapterUrl;
     env.STENOAI_ADAPTER_TOKEN = session.token;
+  }
+  return env;
+}
+
+function getBackendEnv(extra = {}) {
+  return { ...withoutOpenAiAsrKey(require('process').env), ...extra };
+}
+
+// Env additions a transcription subprocess needs. Only when openai-asr is the
+// configured engine, decrypt its key from safeStorage and surface its
+// endpoint-bound credential snapshot to Python atomically.
+function getTranscriptionEnv() {
+  const env = {};
+  if (loadTranscriptionEngine() !== 'openai-asr') return env;
+  // A legacy plaintext key must be secured before this first cloud job. The
+  // deletion itself is async (via the locked Python config writer), but this
+  // sync path can safely use the encrypted copy immediately.
+  const configSnapshot = readOpenAiAsrConfigSnapshot({
+    fs,
+    configPath: path.join(getUserDataDir(), 'config.json'),
+  });
+  // Endpoint, origin, and any legacy credential come from one direct config
+  // read. Do not let the asynchronous cleanup read a replacement endpoint.
+  const legacy = configSnapshot === null
+    ? OPENAI_ASR_CONFIG_SNAPSHOT_UNREADABLE
+    : configSnapshot.legacy;
+  secureLegacyOpenAiAsrApiKey(legacy);
+  void migrateLegacyOpenAiAsrApiKey(legacy);
+  const endpoint = configSnapshot?.endpoint || null;
+  const credential = endpoint ? loadOpenAiAsrCredential(endpoint.origin) : null;
+  if (credential) {
+    env.STENOAI_OAI_API_KEY = credential.key;
+    env.STENOAI_OAI_API_ORIGIN = credential.origin;
+    // This WHATWG-canonical ASCII URL and the origin above come from one
+    // config snapshot. Python validates it again without re-reading a mutable
+    // endpoint while the bearer credential is in scope.
+    env.STENOAI_OAI_API_URL = endpoint.apiUrl;
   }
   return env;
 }
@@ -9556,6 +9822,66 @@ ipcMain.handle('close-system-audio-file', async () => {
   }
 });
 
+// Linux system-audio loopback — spawns pw-record and streams raw PCM to the
+// renderer instead of going through Chromium's capture path (see
+// ./linux-loopback.js for why). Module-level, like activeSysAudioWriteStream.
+let activeLinuxLoopback = null;
+
+// Serialises start/stop — see createSerialQueue in ./linux-loopback.js for why.
+const queueLinuxLoopback = createSerialQueue();
+
+ipcMain.handle('start-linux-loopback', () => queueLinuxLoopback(async () => {
+  try {
+    // Reclaim an unstopped prior capture, same as open-system-audio-file above
+    // — and not a rare race: a renderer reload remounts useSystemAudioCapture
+    // with a fresh activeRef, which restarts capture off main's still-
+    // 'recording' status. Leaving the old process running would feed the
+    // renderer's new subscription both streams interleaved, and stop-linux-
+    // loopback only knows the newer one.
+    if (activeLinuxLoopback) {
+      const prior = activeLinuxLoopback;
+      activeLinuxLoopback = null;
+      sendDebugLog('[linux-loopback] abandoning unstopped prior capture');
+      prior.stdout.removeAllListeners('data');
+      await prior.stop();
+    }
+    const capture = await startLoopbackCapture({
+      onError: (err) => sendDebugLog(`[linux-loopback] capture error: ${err.message}`),
+    });
+    const align = createFrameAligner(2 * capture.channels); // s16 = 2 bytes/sample
+    capture.stdout.on('data', (chunk) => {
+      const whole = align(chunk);
+      if (whole) mainWindow?.webContents.send('linux-loopback-chunk', whole);
+    });
+    capture.proc.on('exit', (code, signal) => {
+      // stop() clears the ref before killing, so reaching here still-referenced
+      // means pw-record died on its own. Tell the renderer — otherwise the
+      // recording continues with a dead system channel and no warning.
+      if (activeLinuxLoopback?.proc === capture.proc) {
+        sendDebugLog(`[linux-loopback] pw-record exited unexpectedly (code=${code}, signal=${signal})`);
+        activeLinuxLoopback = null;
+        mainWindow?.webContents.send('linux-loopback-ended', { code, signal });
+      }
+    });
+    activeLinuxLoopback = capture;
+    sendDebugLog(`[linux-loopback] capturing from ${capture.target}`);
+    return { success: true, sampleRate: capture.sampleRate, channels: capture.channels };
+  } catch (error) {
+    sendDebugLog(`[linux-loopback] start failed: ${error.message}`);
+    return { success: false, error: error.message };
+  }
+}));
+
+ipcMain.handle('stop-linux-loopback', () => queueLinuxLoopback(async () => {
+  const capture = activeLinuxLoopback;
+  activeLinuxLoopback = null;
+  if (!capture) return { success: true };
+  capture.stdout.removeAllListeners('data');
+  await capture.stop();
+  sendDebugLog('[linux-loopback] stopped');
+  return { success: true };
+}));
+
 // A failed renderer-side capture (mic permission denied, no audio device)
 // would otherwise be silent — the optimistic "recording" pill is dropped via
 // system-audio-recording-state, but the user gets no reason. Surface a native
@@ -9566,7 +9892,7 @@ function showRecordingFailedNotification(body) {
   try {
     if (!Notification.isSupported()) return;
     new Notification({
-      title: 'Steno',
+      title: 'StenoAI',
       body: body || "Recording couldn't start.",
       iconType: 'alert',
     }).show();
@@ -9575,11 +9901,13 @@ function showRecordingFailedNotification(body) {
   }
 }
 
-ipcMain.on('recording-capture-error', (_event, message) => {
-  sendDebugLog(`[sysaudio] capture error: ${message}`);
-  showRecordingFailedNotification(
-    message ? `Recording couldn't start: ${message}` : "Recording couldn't start.",
-  );
+ipcMain.on('recording-capture-error', (_event, message, name, phase) => {
+  // The raw text stays in the debug log, where it is what a diagnosis needs —
+  // and ONLY there. What reaches the notification is prose built from the
+  // error's name and the caller's phase; see buildCaptureErrorBody for why the
+  // message itself is never consulted.
+  sendDebugLog(`[sysaudio] capture error (${phase || 'start'}): ${name ? `${name}: ` : ''}${message}`);
+  showRecordingFailedNotification(buildCaptureErrorBody({ name, phase }));
 });
 
 ipcMain.handle('process-system-audio-recording', async (event, audioFilePath, sessionName) => {
@@ -9897,7 +10225,7 @@ function getOllamaEnv() {
   } else {
     ollamaDir = path.join(__dirname, '..', 'bin');
   }
-  const env = { ...process.env };
+  const env = getBackendEnv();
   if (process.platform === 'darwin') {
     const existing = env.DYLD_LIBRARY_PATH || '';
     env.DYLD_LIBRARY_PATH = existing ? `${ollamaDir}:${existing}` : ollamaDir;
@@ -9962,7 +10290,7 @@ async function checkForUpdates() {
       let url;
       try {
         url = new URL(urlStr);
-      } catch (e) {
+      } catch {
         resolve({ success: false, error: 'Invalid update URL' });
         return;
       }
@@ -9988,7 +10316,7 @@ async function checkForUpdates() {
           let next;
           try {
             next = new URL(res.headers.location, urlStr).toString();
-          } catch (e) {
+          } catch {
             resolve({ success: false, error: 'Invalid redirect URL' });
             return;
           }
@@ -10494,7 +10822,7 @@ function exchangeCodeForTokens(code, codeVerifier, port) {
           // Store expiry as absolute timestamp
           parsed.expires_at = Date.now() + (parsed.expires_in * 1000);
           resolve(parsed);
-        } catch (err) {
+        } catch {
           reject(new Error('Failed to parse token response'));
         }
       });
@@ -10581,7 +10909,7 @@ function refreshAccessToken(refreshToken) {
             return;
           }
           resolve(parsed);
-        } catch (err) {
+        } catch {
           reject(new Error('Failed to parse refresh response'));
         }
       });
@@ -10621,7 +10949,7 @@ async function fetchGoogleCalendarList(accessToken, signal) {
             return;
           }
           resolve(parsed.items || []);
-        } catch (err) {
+        } catch {
           reject(new Error('Failed to parse calendar list response'));
         }
       });
@@ -10632,7 +10960,7 @@ async function fetchGoogleCalendarList(accessToken, signal) {
 }
 
 function fetchGoogleEventsForCalendar(accessToken, calendarId, params, signal) {
-  return new Promise((resolve, reject) => {
+  return new Promise((resolve) => {
     const options = {
       hostname: 'www.googleapis.com',
       path: `/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events?${params.toString()}`,
@@ -10675,38 +11003,34 @@ async function fetchCalendarEvents(accessToken, maxResults = 50, signal) {
     fields: 'items(id,status,summary,description,start,end,attendees,htmlLink,conferenceData,colorId)'
   });
 
-  try {
-    const calendars = await fetchGoogleCalendarList(accessToken, signal);
-    const selectedCalendars = calendars.filter(c => c.selected);
-    if (selectedCalendars.length === 0) return [];
+  const calendars = await fetchGoogleCalendarList(accessToken, signal);
+  const selectedCalendars = calendars.filter(c => c.selected);
+  if (selectedCalendars.length === 0) return [];
 
-    const results = [];
-    const concurrency = 3;
-    for (let i = 0; i < selectedCalendars.length; i += concurrency) {
-      const chunk = selectedCalendars.slice(i, i + concurrency);
-      const chunkPromises = chunk.map(async (cal) => {
-        const items = await fetchGoogleEventsForCalendar(accessToken, cal.id, params, signal);
-        items.forEach(item => { 
-          item.calendarBackgroundColor = cal.backgroundColor; 
-          item._sourceCalendarId = cal.id;
-        });
-        return items;
+  const results = [];
+  const concurrency = 3;
+  for (let i = 0; i < selectedCalendars.length; i += concurrency) {
+    const chunk = selectedCalendars.slice(i, i + concurrency);
+    const chunkPromises = chunk.map(async (cal) => {
+      const items = await fetchGoogleEventsForCalendar(accessToken, cal.id, params, signal);
+      items.forEach(item => {
+        item.calendarBackgroundColor = cal.backgroundColor;
+        item._sourceCalendarId = cal.id;
       });
-      const chunkResults = await Promise.all(chunkPromises);
-      results.push(...chunkResults);
-    }
-    let allEvents = results.flat();
-    
-    allEvents.sort((a, b) => {
-      const startA = new Date(a.start?.dateTime || a.start?.date || 0);
-      const startB = new Date(b.start?.dateTime || b.start?.date || 0);
-      return startA.getTime() - startB.getTime();
+      return items;
     });
-
-    return allEvents.slice(0, maxResults);
-  } catch (err) {
-    throw err;
+    const chunkResults = await Promise.all(chunkPromises);
+    results.push(...chunkResults);
   }
+  const allEvents = results.flat();
+
+  allEvents.sort((a, b) => {
+    const startA = new Date(a.start?.dateTime || a.start?.date || 0);
+    const startB = new Date(b.start?.dateTime || b.start?.date || 0);
+    return startA.getTime() - startB.getTime();
+  });
+
+  return allEvents.slice(0, maxResults);
 }
 
 // ── Outlook Calendar: OAuth2 Flow with PKCE ─────────────────────────────
@@ -10900,7 +11224,7 @@ function exchangeOutlookCodeForTokens(code, codeVerifier, port) {
           }
           parsed.expires_at = Date.now() + (parsed.expires_in * 1000);
           resolve(parsed);
-        } catch (err) {
+        } catch {
           reject(new Error('Failed to parse token response'));
         }
       });
@@ -10992,7 +11316,7 @@ function refreshOutlookAccessToken(refreshToken) {
             return;
           }
           resolve(parsed);
-        } catch (err) {
+        } catch {
           reject(new Error('Failed to parse refresh response'));
         }
       });
@@ -11026,7 +11350,7 @@ async function fetchOutlookCalendarList(accessToken, signal) {
             return;
           }
           resolve(parsed.value || []);
-        } catch (err) {
+        } catch {
           reject(new Error('Failed to parse Outlook calendar list response'));
         }
       });
@@ -11037,7 +11361,7 @@ async function fetchOutlookCalendarList(accessToken, signal) {
 }
 
 function fetchOutlookEventsForCalendar(accessToken, calendarId, params, signal) {
-  return new Promise((resolve, reject) => {
+  return new Promise((resolve) => {
     const options = {
       hostname: 'graph.microsoft.com',
       path: `/v1.0/me/calendars/${encodeURIComponent(calendarId)}/calendarView?${params.toString()}`,
@@ -11084,52 +11408,48 @@ async function fetchOutlookCalendarEvents(accessToken, maxResults = 50, signal) 
     $select: 'id,subject,body,start,end,attendees,webLink,onlineMeeting,isOnlineMeeting,isAllDay,isCancelled,responseStatus,categories'
   });
 
-  try {
-    const calendars = await fetchOutlookCalendarList(accessToken, signal);
-    if (calendars.length === 0) return [];
+  const calendars = await fetchOutlookCalendarList(accessToken, signal);
+  if (calendars.length === 0) return [];
 
-    const results = [];
-    const concurrency = 3;
-    for (let i = 0; i < calendars.length; i += concurrency) {
-      const chunk = calendars.slice(i, i + concurrency);
-      const chunkPromises = chunk.map(async (cal) => {
-        const items = await fetchOutlookEventsForCalendar(accessToken, cal.id, params, signal);
-        
-        let hexColor = undefined;
-        switch (cal.color) {
-          case 'lightBlue': hexColor = '#3B82F6'; break;
-          case 'lightGreen': hexColor = '#10B981'; break;
-          case 'lightOrange': hexColor = '#F97316'; break;
-          case 'lightGray': hexColor = '#6B7280'; break;
-          case 'lightYellow': hexColor = '#EAB308'; break;
-          case 'lightTeal': hexColor = '#14B8A6'; break;
-          case 'lightPink': hexColor = '#EC4899'; break;
-          case 'lightBrown': hexColor = '#92400E'; break;
-          case 'lightRed': hexColor = '#EF4444'; break;
-          default: hexColor = '#3B82F6';
-        }
-        
-        items.forEach(item => { 
-          item.calendarBackgroundColor = hexColor; 
-          item.id = `${cal.id}_${item.id}`;
-        });
-        return items;
+  const results = [];
+  const concurrency = 3;
+  for (let i = 0; i < calendars.length; i += concurrency) {
+    const chunk = calendars.slice(i, i + concurrency);
+    const chunkPromises = chunk.map(async (cal) => {
+      const items = await fetchOutlookEventsForCalendar(accessToken, cal.id, params, signal);
+
+      let hexColor;
+      switch (cal.color) {
+        case 'lightBlue': hexColor = '#3B82F6'; break;
+        case 'lightGreen': hexColor = '#10B981'; break;
+        case 'lightOrange': hexColor = '#F97316'; break;
+        case 'lightGray': hexColor = '#6B7280'; break;
+        case 'lightYellow': hexColor = '#EAB308'; break;
+        case 'lightTeal': hexColor = '#14B8A6'; break;
+        case 'lightPink': hexColor = '#EC4899'; break;
+        case 'lightBrown': hexColor = '#92400E'; break;
+        case 'lightRed': hexColor = '#EF4444'; break;
+        default: hexColor = '#3B82F6';
+      }
+
+      items.forEach(item => {
+        item.calendarBackgroundColor = hexColor;
+        item.id = `${cal.id}_${item.id}`;
       });
-      const chunkResults = await Promise.all(chunkPromises);
-      results.push(...chunkResults);
-    }
-    let allEvents = results.flat();
-    
-    allEvents.sort((a, b) => {
-      const startA = new Date(a.start?.dateTime || a.start?.date || 0);
-      const startB = new Date(b.start?.dateTime || b.start?.date || 0);
-      return startA.getTime() - startB.getTime();
+      return items;
     });
-
-    return allEvents.slice(0, maxResults);
-  } catch (err) {
-    throw err;
+    const chunkResults = await Promise.all(chunkPromises);
+    results.push(...chunkResults);
   }
+  const allEvents = results.flat();
+
+  allEvents.sort((a, b) => {
+    const startA = new Date(a.start?.dateTime || a.start?.date || 0);
+    const startB = new Date(b.start?.dateTime || b.start?.date || 0);
+    return startA.getTime() - startB.getTime();
+  });
+
+  return allEvents.slice(0, maxResults);
 }
 
 function normalizeOutlookEvent(event) {
@@ -11220,7 +11540,7 @@ ipcMain.handle('google-auth-status', async () => {
   try {
     const tokens = loadGoogleTokens();
     return { success: true, connected: !!tokens, email: tokens?.email ?? null };
-  } catch (error) {
+  } catch {
     return { success: false, connected: false };
   }
 });
@@ -11247,7 +11567,7 @@ ipcMain.handle('google-auth-disconnect', async () => {
           req.on('error', () => resolve()); // Best-effort
           req.end();
         });
-      } catch (e) {
+      } catch {
         // Best-effort revocation -- ignore errors
       }
     }
@@ -11662,17 +11982,18 @@ async function firePreMeetingNotification(event) {
   notif.payload.attendees = event.attendees
     ? event.attendees.map((a) => a.name || a.email).join(', ')
     : '';
-
-  notif.on('click', () => {
-    if (event.meeting_url) {
-      shell.openExternal(event.meeting_url);
-    }
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      if (mainWindow.isMinimized()) mainWindow.restore();
-      mainWindow.focus();
-    }
-  });
-
+  // Only count a PASSIVE dismiss here (15s auto-close or being superseded). An
+  // active click/X-dismiss is tracked by the renderer, which also flags
+  // _analyticsInteracted via close-notification-window — so skip it here to
+  // avoid double-counting. This is the same split the old createNotificationWindow
+  // used, preserved verbatim.
+  //
+  // Read THIS notif's own window (notif._window), never the module-level
+  // `notificationWindow`: when this toast is superseded, the successor reassigns
+  // `notificationWindow` (and resets its `_analyticsInteracted` to false) before
+  // this 'close' fires, so reading the module-level var would attribute this
+  // toast's dismissal to the NEXT toast's interaction flag — dropping or
+  // duplicating the dismiss. The per-instance window keeps the flag correct.
   notif.on('close', () => {
     if (!notif._window || !notif._window._analyticsInteracted) {
       trackEvent('notification_dismissed', { type: 'premeeting' });
@@ -11681,6 +12002,8 @@ async function firePreMeetingNotification(event) {
   notif.show();
   trackEvent('notification_shown', { type: 'premeeting' });
 
+  // Mark fired only after we've actually shown it, so an unshowable notif
+  // (no OS support) isn't permanently skipped by the scheduler's dedupe.
   premeetingFiredIds.add(event.id);
   return true;
 }
@@ -11843,7 +12166,7 @@ ipcMain.handle('outlook-auth-status', async () => {
   try {
     const tokens = loadOutlookTokens();
     return { success: true, connected: !!tokens, email: tokens?.email ?? null };
-  } catch (error) {
+  } catch {
     return { success: false, connected: false };
   }
 });
@@ -11965,7 +12288,7 @@ function clearOrgSession() {
     if (fs.existsSync(p)) fs.unlinkSync(p);
     orgSessionGeneration++;
     return true;
-  } catch (e) {
+  } catch {
     return false;
   }
 }

@@ -25,6 +25,22 @@ async function openDetail(page: Page) {
   await expect(page.getByTestId('speaker-review-panel')).toBeVisible();
 }
 
+test('saved transcript identifies each acoustically diarised speaker', async ({ launchApp }) => {
+  const { page } = await launchApp({
+    mockIpc: true,
+    env: { STENOAI_E2E_SEED_SPEAKER_SUGGESTIONS: '1' },
+  });
+  await navigateToDetail(page);
+
+  await page.getByRole('button', { name: 'Show transcript' }).click();
+  const transcript = page.locator('.mv-transcript.open');
+
+  await expect(transcript.getByText('Speaker 2', { exact: true })).toBeVisible();
+  await expect(transcript.getByText('Speaker 3', { exact: true })).toBeVisible();
+  await expect(transcript.getByText('Speaker 4', { exact: true })).toBeVisible();
+  await expect(transcript.getByText('Others', { exact: true })).toHaveCount(0);
+});
+
 test('sidecar has multiple clusters opens review even when the transcript is not diarised', async ({
   launchApp,
 }) => {

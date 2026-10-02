@@ -7,7 +7,15 @@ Steno transcribes on-device by default using two local engines: **Parakeet** (th
 
 ## How it works
 
-Transcription runs on-device and is fast on Apple Silicon. With the default Parakeet engine, a live transcript appears while you record, and Steno finalizes it when you stop. With the Whisper engine, transcription runs after you stop the recording. Either way, the active engine processes the audio file locally and outputs a verbatim transcript with timestamps.
+With the default Parakeet engine, a live transcript appears while you record, and Steno finalizes it when you stop. Whisper also processes audio locally, after you stop the recording. Both local engines output a verbatim transcript with timestamps. Cloud ASR runs after you stop and sends audio to your configured endpoint; timestamp and language support depend on the provider.
+
+## Optional cloud transcription
+
+In **Settings → Transcribe**, choose **Cloud API (OpenAI-compatible)** and confirm the privacy notice. Enter your provider's API base URL, model name, and API key. Remote endpoints require HTTPS; HTTP is allowed only for loopback endpoints such as `localhost`.
+
+The API key is stored encrypted on your device, separately from the summarisation key. Changing the endpoint to another provider requires saving a key for that provider. Use **Clear** to remove the saved key. Large recordings are split into smaller uploads automatically.
+
+Cloud transcription sends recording audio off-device and may incur charges from your provider. Choose Parakeet or Whisper to return to local transcription. Parakeet remains the default on new installs.
 
 ## Language support
 
@@ -31,7 +39,7 @@ See [Transcription models](/models/transcription-models) for a comparison of the
 ---
 
 <Accordion title="Does Steno transcribe in real time?">
-Yes. On macOS with the default Parakeet engine, a live transcript appears while you record. If you switch to the Whisper engine, transcription runs after you stop the recording.
+Yes. On macOS with the default Parakeet engine, a live transcript appears while you record. With Whisper or Cloud API, transcription runs after you stop the recording.
 </Accordion>
 
 <Accordion title="Can I edit the transcript?">

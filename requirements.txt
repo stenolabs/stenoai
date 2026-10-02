@@ -7,6 +7,21 @@ numpy>=2.0,<3.0
 # x86_64 wheels). Gated to darwin so Windows / Linux installs don't
 # trip a ResolutionImpossible.
 parakeet-mlx>=0.5.0; sys_platform == 'darwin'
+# mlx is PINNED, not floored. parakeet-mlx only asks for `mlx>=0.22.1`, so an
+# unpinned build resolves to whatever PyPI serves that day — and the version
+# decides whether the shipped app works at all. mlx 0.32.x fails inside the
+# PyInstaller bundle with "Failed to load the default metallib": the shader
+# library is present at _internal/mlx/lib/mlx.metallib and is simply not found
+# at load time, which kills Parakeet — the DEFAULT macOS engine. 0.31.2 is the
+# build this app is verified against.
+#
+# Nothing in CI can catch a regression here: GitHub's macOS runners have no
+# Metal device, so the macOS @pipeline job runs whisper and the parakeet jobs
+# are Windows/onnx. scripts/verify_mlx_bundle.py therefore asserts the bundled
+# version matches this pin — provenance, since behaviour can't be tested.
+# Moving the pin means rebuilding the bundle and running `stenoai spike-parakeet`
+# on a real Apple Silicon machine.
+mlx==0.31.2; sys_platform == 'darwin'
 # onnx-asr is the cross-platform Parakeet backend. Used on Windows and
 # Linux where parakeet-mlx can't install. Wraps the istupakov/parakeet-tdt-0.6b-v3-onnx
 # weights (int8 quantised, ~670 MB) via ONNX Runtime CPU; pure Python,

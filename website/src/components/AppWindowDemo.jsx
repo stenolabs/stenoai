@@ -12,15 +12,15 @@ const SCREENS = ["notes", "generating", "summary", "chat"];
 const SCREEN_MS = { notes: 5500, generating: 4000, summary: 5500, chat: 7000 };
 
 const NOTES_TEXT =
-  "- Rotate 2nd company off the eastern line\n- Resupply convoy delayed — reroute via northern road\n- Air-defense coverage gap at dawn\n- Engineers to reinforce forward positions";
+  "- Rotate 2nd company off the eastern line\n- Resupply convoy delayed — reroute via northern road\n- Air-defence coverage gap at dawn\n- Engineers to reinforce forward positions";
 
 const SUMMARY_INTRO =
-  "The team aligned on the sector defense plan for the coming week. The 2nd company rotates off the eastern line for rest and refit, with resupply rerouted through the northern road after convoy delays. Engineers will reinforce the forward positions before the next rotation.";
+  "The team aligned on the sector defence plan for the coming week. The 2nd company rotates off the eastern line for rest and refit, with resupply rerouted through the northern road after convoy delays. Engineers will reinforce the forward positions before the next rotation.";
 
 const KEY_POINTS = [
   "2nd company rotates off the eastern line for rest and refit.",
   "Resupply convoy rerouted via the northern road after delays.",
-  "Air-defense coverage gap at dawn flagged for immediate cover.",
+  "Air-defence coverage gap at dawn flagged for immediate cover.",
 ];
 
 const ACTION_ITEMS = [
@@ -95,7 +95,7 @@ function AppSidebar({ activeScreen }) {
           </svg>
         </span>
         <span style={{ fontFamily: "var(--font-serif)", fontWeight: 400, fontSize: 18, letterSpacing: "-0.02em", color: "var(--fg-1)", lineHeight: 1 }}>
-          Steno
+          StenoAI
         </span>
       </div>
 
@@ -207,7 +207,7 @@ function NotesScreen() {
           <div
             style={{ fontFamily: "var(--font-serif)", fontWeight: 400, fontSize: 34, lineHeight: 1.15, letterSpacing: "-0.02em", color: "var(--fg-1)", marginBottom: 10 }}
           >
-            Frontline Defense Planning
+            Frontline Defence Planning
           </div>
 
           <div className="flex flex-wrap items-center gap-1.5 mb-6">
@@ -272,11 +272,11 @@ function NotesScreen() {
 // ─── Screen: Generating summary ───────────────────────────────────
 
 const GENERATING_TEXT =
-  "The team aligned on the sector defense plan for the week. The 2nd company rotates off the eastern line.\n\n" +
+  "The team aligned on the sector defence plan for the week. The 2nd company rotates off the eastern line.\n\n" +
   "**Key points**\n\n" +
   "- 2nd company rotates off the eastern line for refit.\n" +
   "- Resupply rerouted via the northern road.\n" +
-  "- Air-defense gap at dawn flagged for cover.\n\n" +
+  "- Air-defence gap at dawn flagged for cover.\n\n" +
   "**Action items**\n\n" +
   "- Kovalenko to confirm the northern route by 06:00.";
 
@@ -364,7 +364,7 @@ function GeneratingScreen() {
           </button>
 
           <div style={{ fontFamily: "var(--font-serif)", fontWeight: 400, fontSize: 34, lineHeight: 1.15, letterSpacing: "-0.02em", color: "var(--fg-1)", margin: "0 0 10px" }}>
-            Frontline Defense Planning
+            Frontline Defence Planning
           </div>
 
           <div className="flex flex-wrap items-center gap-1.5 mb-6">
@@ -424,7 +424,7 @@ function SummaryScreen() {
           </button>
 
           <div style={{ fontFamily: "var(--font-serif)", fontWeight: 400, fontSize: 36, lineHeight: 1.1, letterSpacing: "-0.025em", color: "var(--fg-1)", margin: "0 0 10px" }}>
-            Frontline Defense Planning
+            Frontline Defence Planning
           </div>
 
           <div className="flex flex-wrap items-center gap-1.5 pb-5 mb-5" style={{ borderBottom: "1px solid var(--border-subtle)" }}>
@@ -555,7 +555,7 @@ function ChatScreen() {
           <ChevronLeft size={13} /> Work
         </div>
         <div style={{ fontFamily: "var(--font-serif)", fontSize: 30, fontWeight: 400, letterSpacing: "-0.02em", color: "var(--fg-1)", marginBottom: 10 }}>
-          Frontline Defense Planning
+          Frontline Defence Planning
         </div>
         <div style={{ display: "flex", gap: 6, marginBottom: 16 }}>
           <span style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "3px 10px", background: "var(--surface-hover)", borderRadius: 20, fontSize: 12, color: "var(--fg-2)" }}>
@@ -591,7 +591,7 @@ function ChatScreen() {
             <div style={{ background: "color-mix(in srgb, var(--surface-raised) 92%, transparent)", backdropFilter: "saturate(160%) blur(10px)", WebkitBackdropFilter: "saturate(160%) blur(10px)", border: "1px solid var(--border-subtle)", borderRadius: 14, boxShadow: "var(--shadow-md)", overflow: "hidden" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 14px", borderBottom: "1px solid var(--border-subtle)" }}>
                 <span style={{ fontSize: 13, fontWeight: 600, color: "var(--fg-1)", flex: 1 }}>
-                  Frontline Defense Planning
+                  Frontline Defence Planning
                   <ChevronDown size={11} style={{ display: "inline", marginLeft: 3, color: "var(--fg-2)", verticalAlign: "middle" }} />
                 </span>
                 <button style={{ border: "1px solid var(--border-subtle)", borderRadius: 6, padding: "2px 8px", fontSize: 12, color: "var(--fg-2)", background: "transparent", cursor: "default" }}>
