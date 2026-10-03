@@ -1,4 +1,4 @@
-"""Silero VAD via ONNX Runtime.
+"""Silero VAD via ONNX Runtime (Windows/Linux) or plain numpy (macOS).
 
 Why ONNX-runtime directly instead of the silero-vad PyPI package: the PyPI
 wrapper imports torch at module load, and shipping torch in the PyInstaller
@@ -64,24 +64,121 @@ DEFAULT_PRE_PAD_MS = 300
 DEFAULT_POST_PAD_MS = 400
 
 
-def _resolve_model_path() -> Path:
-    """Find the bundled ONNX model in both dev and PyInstaller layouts."""
+def _resolve_model_path(filename: str = "silero_vad.onnx") -> Path:
+    """Find a bundled model file in both dev and PyInstaller layouts."""
     # PyInstaller's data files end up under _MEIPASS; dev runs use the
     # source tree directly.
     candidates: list[Path] = []
     if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
-        candidates.append(Path(sys._MEIPASS) / "src" / "data" / "silero_vad.onnx")
-    candidates.append(Path(__file__).parent / "data" / "silero_vad.onnx")
+        candidates.append(Path(sys._MEIPASS) / "src" / "data" / filename)
+    candidates.append(Path(__file__).parent / "data" / filename)
     for c in candidates:
         if c.exists():
             return c
     raise FileNotFoundError(
-        f"silero_vad.onnx not found in any of: {candidates}"
+        f"{filename} not found in any of: {candidates}"
     )
 
 
 # ---------------------------------------------------------------------------
-# Low-level ONNX wrapper
+# Model backends
+# ---------------------------------------------------------------------------
+
+class _OnnxSilero:
+    """The ONNX graph on onnxruntime. Windows/Linux, where onnxruntime is
+    bundled anyway for onnx-asr."""
+
+    def __init__(self, model_path: Optional[Path] = None):
+        import onnxruntime as ort  # local import: keep module-level light
+        # CPUExecutionProvider is fine — the model is tiny and CoreML
+        # provider for such a small graph adds more overhead than it saves.
+        sess_opts = ort.SessionOptions()
+        sess_opts.log_severity_level = 3
+        self._sess = ort.InferenceSession(
+            str(Path(model_path) if model_path else _resolve_model_path()),
+            sess_opts,
+            providers=["CPUExecutionProvider"],
+        )
+        self._sr = np.array(VAD_SAMPLE_RATE, dtype=np.int64)
+
+    def run(self, x: np.ndarray, state: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+        prob, state = self._sess.run(None, {"input": x, "state": state, "sr": self._sr})
+        return prob, state
+
+
+def _conv1d(x: np.ndarray, weight: np.ndarray, bias: Optional[np.ndarray],
+            stride: int = 1, pad: int = 0) -> np.ndarray:
+    """1-D convolution of one ``(C_in, T)`` signal, as ONNX Conv / torch Conv1d."""
+    if pad:
+        x = np.pad(x, ((0, 0), (pad, pad)))
+    c_out, c_in, k = weight.shape
+    t_out = (x.shape[1] - k) // stride + 1
+    # im2col: (C_in, K, T_out) windows, flattened to match weight's layout.
+    idx = np.arange(k)[:, None] + stride * np.arange(t_out)[None, :]
+    cols = x[:, idx].reshape(c_in * k, t_out)
+    out = weight.reshape(c_out, c_in * k) @ cols
+    if bias is not None:
+        out += bias[:, None]
+    return out
+
+
+def _sigmoid(x):
+    return 1.0 / (1.0 + np.exp(-x))
+
+
+class _NumpySilero:
+    """Silero VAD v5's 16 kHz graph re-implemented in numpy. macOS.
+
+    The macOS bundle has no other use for onnxruntime (~60 MB), so it runs
+    this instead, from weights exported by scripts/export_silero_weights.py.
+    It mirrors the ONNX graph op for op: reflect-pad, STFT-as-conv magnitude,
+    four conv+ReLU encoder layers, one LSTMCell step, ReLU, 1x1 conv, sigmoid.
+    tests/test_silero_vad_numpy.py checks it against onnxruntime.
+    """
+
+    _HOP = 128
+    _RIGHT_PAD = 64
+
+    def __init__(self, weights_path: Optional[Path] = None):
+        w = np.load(weights_path or _resolve_model_path("silero_vad_16k.npz"))
+        self._basis = w["stft.forward_basis_buffer"]
+        self._n_freq = self._basis.shape[0] // 2
+        self._encoder = [
+            (w[f"encoder.{i}.reparam_conv.weight"], w[f"encoder.{i}.reparam_conv.bias"], stride)
+            for i, stride in enumerate((1, 2, 2, 1))
+        ]
+        self._w_ih = w["decoder.rnn.weight_ih"]
+        self._w_hh = w["decoder.rnn.weight_hh"]
+        self._b = w["decoder.rnn.bias_ih"] + w["decoder.rnn.bias_hh"]
+        self._out_w = w["decoder.decoder.2.weight"].reshape(-1)
+        self._out_b = float(w["decoder.decoder.2.bias"][0])
+
+    def run(self, x: np.ndarray, state: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+        # STFT magnitude: reflect-pad the right edge, then the fixed basis as
+        # a stride-128 conv; the first half of the channels is real, the
+        # second imaginary.
+        signal = np.pad(x[0], (0, self._RIGHT_PAD), mode="reflect")
+        spec = _conv1d(signal[None, :], self._basis, None, stride=self._HOP)
+        real, imag = spec[: self._n_freq], spec[self._n_freq :]
+        h = np.sqrt(real * real + imag * imag)
+        for weight, bias, stride in self._encoder:
+            h = np.maximum(_conv1d(h, weight, bias, stride=stride, pad=1), 0.0)
+        feat = h[:, 0]  # the strided encoder leaves a single frame
+
+        # One LSTMCell step; torch gate order i, f, g, o.
+        h_prev, c_prev = state[0, 0], state[1, 0]
+        gates = self._w_ih @ feat + self._w_hh @ h_prev + self._b
+        i, f, g, o = np.split(gates, 4)
+        c = _sigmoid(f) * c_prev + _sigmoid(i) * np.tanh(g)
+        h_new = _sigmoid(o) * np.tanh(c)
+
+        logit = self._out_w @ np.maximum(h_new, 0.0) + self._out_b
+        prob = np.array([[_sigmoid(logit)]], dtype=np.float32)
+        return prob, np.stack([h_new, c])[:, None, :].astype(np.float32)
+
+
+# ---------------------------------------------------------------------------
+# Stateful wrapper
 # ---------------------------------------------------------------------------
 
 class SileroVAD:
@@ -104,19 +201,9 @@ class SileroVAD:
     _CONTEXT_SAMPLES = 64
 
     def __init__(self, model_path: Optional[Path] = None):
-        import onnxruntime as ort  # local import: keep module-level light
-        self._ort = ort
-        self._model_path = Path(model_path) if model_path else _resolve_model_path()
-        # CPUExecutionProvider is fine — the model is tiny and CoreML
-        # provider for such a small graph adds more overhead than it saves.
-        sess_opts = ort.SessionOptions()
-        sess_opts.log_severity_level = 3
-        self._sess = ort.InferenceSession(
-            str(self._model_path),
-            sess_opts,
-            providers=["CPUExecutionProvider"],
-        )
-        self._sr = np.array(VAD_SAMPLE_RATE, dtype=np.int64)
+        # macOS bundles no onnxruntime (see _NumpySilero); model_path names
+        # the ONNX file and so applies only to the onnxruntime backend.
+        self._model = _NumpySilero() if sys.platform == "darwin" else _OnnxSilero(model_path)
         self.reset()
 
     def reset(self) -> None:
@@ -139,12 +226,7 @@ class SileroVAD:
         full = np.concatenate(
             [self._context, chunk.reshape(1, -1)], axis=1
         )
-        feeds = {
-            "input": full,
-            "state": self._state,
-            "sr": self._sr,
-        }
-        prob, self._state = self._sess.run(None, feeds)
+        prob, self._state = self._model.run(full, self._state)
         self._context = full[:, -self._CONTEXT_SAMPLES:]
         return float(prob[0, 0])
 
