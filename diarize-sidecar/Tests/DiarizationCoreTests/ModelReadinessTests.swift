@@ -51,7 +51,6 @@ struct ModelReadinessTests {
             "coremldata.bin", "metadata.json", "model.mil", "weights/weight.bin",
         ]
         #expect(ModelReadiness.requiredModelRelativePaths == [
-            "sortformer/Sortformer_v2.1.mlmodelc",
             "sortformer/SortformerNvidiaHigh_v2.mlmodelc",
             "speaker-diarization/pyannote_segmentation.mlmodelc",
             "speaker-diarization/wespeaker_v2.mlmodelc",

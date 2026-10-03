@@ -179,7 +179,9 @@ def download(
     """Fetch runtime files into the existing HF cache, then initialise the model.
 
     Progress reports completed files and, where the installed hub API supports
-    it, bytes for the current file. Never estimates a total percentage or ETA.
+    it, bytes for the current file. When the Hub's metadata gives exact file
+    sizes it also reports ``downloaded_bytes`` / ``total_bytes`` -- a measured
+    percentage, never an estimate or ETA.
     """
     if model_id not in SUPPORTED_PARAKEET_MODELS:
         logger.error("Unknown Parakeet model: %s", model_id)
@@ -247,8 +249,12 @@ def _download_snapshot(model_id: str, emit: Callable[[dict], None]) -> None:
     revision = None
     files = _REQUIRED_SNAPSHOT_FILES[model_id]
     supports_progress = "tqdm_class" in inspect.signature(hf_hub_download).parameters
+    sizes = _snapshot_file_sizes(model_id, files)
+    done_bytes = 0
     for index, filename in enumerate(files):
         base = {"stage": "downloading", "completed_files": index, "total_files": len(files)}
+        if sizes:
+            base.update(total_bytes=sum(sizes.values()), downloaded_bytes=done_bytes)
         emit(base)
 
         class DownloadProgress(tqdm):
@@ -263,7 +269,10 @@ def _download_snapshot(model_id: str, emit: Callable[[dict], None]) -> None:
                 # n includes resumed bytes; this is file progress, not network
                 # throughput. Avoid deriving speed or ETA from cached bytes.
                 if self.unit == "B":
-                    emit({**base, "file_bytes": self.n})
+                    event = {**base, "file_bytes": self.n}
+                    if sizes:
+                        event["downloaded_bytes"] = done_bytes + min(self.n, sizes[filename])
+                    emit(event)
 
         kwargs = {"tqdm_class": DownloadProgress} if supports_progress else {}
         cached = hf_hub_download(model_id, filename, revision=revision, token=False, **kwargs)
@@ -271,4 +280,25 @@ def _download_snapshot(model_id: str, emit: Callable[[dict], None]) -> None:
         # files to that same snapshot so an upstream update cannot mix weights.
         if revision is None:
             revision = Path(cached).parent.name
-        emit({**base, "completed_files": index + 1})
+        finished = {**base, "completed_files": index + 1}
+        if sizes:
+            done_bytes += sizes[filename]
+            finished["downloaded_bytes"] = done_bytes
+        emit(finished)
+
+
+def _snapshot_file_sizes(model_id: str, files: tuple[str, ...]) -> Optional[dict[str, int]]:
+    """Exact byte size of each file from the Hub's metadata, so progress can be
+    a real percentage of the total rather than an estimate. ``None`` when the
+    metadata call is unavailable or fails -- progress then reports files and
+    current-file bytes only, as before."""
+    try:
+        from huggingface_hub import HfApi
+        infos = HfApi().get_paths_info(model_id, list(files), token=False)
+        sizes = {info.path: int(info.size) for info in infos}
+    except Exception as e:  # metadata is a nicety; never fail the download for it
+        logger.info("Parakeet download size lookup unavailable: %s", e)
+        return None
+    if set(sizes) != set(files) or any(size <= 0 for size in sizes.values()):
+        return None
+    return sizes

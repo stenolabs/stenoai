@@ -939,6 +939,15 @@ export interface ParakeetPullProgressEvent {
   completed_files?: number;
   total_files?: number;
   file_bytes?: number;
+  /** Exact bytes from the Hub's file metadata; absent when that lookup failed. */
+  downloaded_bytes?: number;
+  total_bytes?: number;
+}
+/** Speaker-diarization model download ('setup-speaker-models'), relayed from
+ *  FluidAudio's own progress: downloading fills 0-50%, compiling 50-100%. */
+export interface SpeakerModelsProgressEvent {
+  percent: number;
+  phase: 'listing' | 'downloading' | 'compiling';
 }
 export interface ParakeetPullCompleteEvent {
   model?: string | null;
@@ -1439,6 +1448,7 @@ export interface StenoaiBridge {
     parakeetPullProgress: Subscribe<ParakeetPullProgressEvent>;
     parakeetPullComplete: Subscribe<ParakeetPullCompleteEvent>;
     setupOllamaProgress: Subscribe<SetupOllamaProgressEvent>;
+    speakerModelsProgress: Subscribe<SpeakerModelsProgressEvent>;
     liveTranscriptReady: Subscribe<LiveTranscriptReadyEvent>;
     liveTranscriptChunk: Subscribe<LiveTranscriptChunkEvent>;
     liveTranscriptError: Subscribe<LiveTranscriptErrorEvent>;

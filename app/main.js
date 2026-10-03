@@ -101,6 +101,7 @@ const {
 } = require('./shortcut-url');
 const { parseSetupCheckOutput } = require('./setup-check-parse');
 const { parseSpeakerModelStatusOutput } = require('./speaker-model-status');
+const { createSpeakerModelPreparer } = require('./speaker-model-prepare');
 const { isDiagnosticStdoutLine, sanitizeArgsForLog } = require('./diagnostics-filter');
 // Pure analytics bucketing/classification/sanitization lives in
 // ./analytics-helpers (unit-tested). trackEvent() itself and every IPC
@@ -6670,22 +6671,27 @@ ipcMain.handle('speaker-model-status', async () => {
   }
 });
 
-ipcMain.handle('setup-speaker-models', async () => {
-  try {
-    sendDebugLog('Preparing local speaker diarization models...');
-    const result = await runSpeakerModelCommand('prepare-speaker-models');
-    if (result.success && result.ready) {
-      sendDebugLog('Speaker diarization models ready');
+// One shared download for onboarding and Settings; progress goes to the
+// renderer as 'speaker-models-progress' ({ percent, phase }).
+const prepareSpeakerModels = createSpeakerModelPreparer({
+  spawn,
+  getBackendPath,
+  makeLineReader,
+  platform: process.platform,
+  onProgress: (progress) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('speaker-models-progress', progress);
     }
-    return result;
-  } catch {
-    sendDebugLog('Speaker diarization model setup failed');
-    return {
-      success: false,
-      ready: false,
-      error: 'Speaker diarization model setup failed',
-    };
-  }
+  },
+});
+
+ipcMain.handle('setup-speaker-models', async () => {
+  sendDebugLog('Preparing local speaker diarization models...');
+  const result = await prepareSpeakerModels();
+  sendDebugLog(result.success && result.ready
+    ? 'Speaker diarization models ready'
+    : 'Speaker diarization model setup failed');
+  return result;
 });
 
 // ── Auto-updater ──

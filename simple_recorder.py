@@ -4396,12 +4396,75 @@ def clear_state():
         print("SUCCESS: No state file found - already clear")
 
 
-def _run_speaker_model_command(command: str, timeout: int) -> dict:
+_SPEAKER_PROGRESS_PREFIX = "STENO_PROGRESS "
+_SPEAKER_PROGRESS_PHASES = {"listing", "downloading", "compiling"}
+
+
+def _parse_speaker_progress_line(line: str) -> Optional[dict]:
+    """Validate one sidecar ``STENO_PROGRESS {json}`` stderr line.
+
+    Only a whole percent and a known phase name are passed on; any other
+    stderr text (CoreML diagnostics, error detail) is dropped here so it never
+    reaches the renderer.
+    """
+    if not line.startswith(_SPEAKER_PROGRESS_PREFIX):
+        return None
+    try:
+        event = json.loads(line[len(_SPEAKER_PROGRESS_PREFIX):])
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(event, dict):
+        return None
+    percent, phase = event.get("percent"), event.get("phase")
+    if not isinstance(percent, int) or isinstance(percent, bool) or not 0 <= percent <= 100:
+        return None
+    if phase not in _SPEAKER_PROGRESS_PHASES:
+        return None
+    return {"percent": percent, "phase": phase}
+
+
+def _run_sidecar_with_progress(args: list, timeout: int, on_progress):
+    """Like ``subprocess.run(capture_output=True)`` but relays progress lines
+    from stderr to ``on_progress`` while the sidecar runs."""
+    import subprocess
+    import threading
+
+    stdout_chunks: list = []
+    stderr_lines: list = []
+    with subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True) as proc:
+        def pump_stderr():
+            for line in proc.stderr:
+                stderr_lines.append(line)
+                event = _parse_speaker_progress_line(line.strip())
+                if event is not None:
+                    on_progress(event)
+
+        # Both pipes drain on threads so wait() below enforces the timeout
+        # even if the sidecar hangs with its pipes open.
+        pumps = [
+            threading.Thread(target=pump_stderr, daemon=True),
+            threading.Thread(target=lambda: stdout_chunks.append(proc.stdout.read()), daemon=True),
+        ]
+        for pump in pumps:
+            pump.start()
+        try:
+            proc.wait(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            raise
+        finally:
+            for pump in pumps:
+                pump.join(timeout=5)
+    return subprocess.CompletedProcess(args, proc.returncode, "".join(stdout_chunks), "".join(stderr_lines))
+
+
+def _run_speaker_model_command(command: str, timeout: int, on_progress=None) -> dict:
     """Run a non-audio command on the macOS diarization sidecar.
 
     The sidecar is the single authority for its FluidAudio cache layout. Keep
     this wrapper deliberately narrow and return only validated JSON so stderr
-    from model loaders never crosses the renderer IPC boundary.
+    from model loaders never crosses the renderer IPC boundary. With
+    ``on_progress``, validated download progress is relayed as it arrives.
     """
     import subprocess
     from src.transcriber import _resolve_steno_diarize
@@ -4414,13 +4477,16 @@ def _run_speaker_model_command(command: str, timeout: int) -> dict:
             "error": "Speaker diarization is unavailable on this system",
         }
     try:
-        result = subprocess.run(
-            [binary, command],
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-            check=False,
-        )
+        if on_progress is None:
+            result = subprocess.run(
+                [binary, command],
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+                check=False,
+            )
+        else:
+            result = _run_sidecar_with_progress([binary, command], timeout, on_progress)
     except (OSError, subprocess.TimeoutExpired):
         logger.warning("Speaker diarization model command could not complete")
         return {
@@ -4475,8 +4541,15 @@ def speaker_model_status():
 
 @cli.command(name="prepare-speaker-models")
 def prepare_speaker_models():
-    """Download and compile the macOS speaker-diarization models."""
-    payload = _run_speaker_model_command("prepare-models", timeout=60 * 60)
+    """Download and compile the macOS speaker-diarization models.
+
+    Prints ``SPEAKER_MODELS_PROGRESS:{"percent": n, "phase": ...}`` lines while
+    it runs (main.js relays them to the UI), then the JSON status last.
+    """
+    def relay(event):
+        print(f"SPEAKER_MODELS_PROGRESS:{json.dumps(event)}", flush=True)
+
+    payload = _run_speaker_model_command("prepare-models", timeout=60 * 60, on_progress=relay)
     print(json.dumps(payload))
     if not payload.get("success") or not payload.get("ready"):
         sys.exit(1)

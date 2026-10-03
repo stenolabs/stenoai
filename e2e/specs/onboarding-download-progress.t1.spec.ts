@@ -6,7 +6,9 @@ import { test, expect } from '../fixtures/electron';
  * debug console, so a fresh install showed a static "Downloading… (~2 GB)"
  * string with no visible bar. Setup.tsx now subscribes to the setup-specific
  * progress channels and renders progress on the step cards:
- *   - transcription (Parakeet): an INDETERMINATE bar (stages only, no byte %).
+ *   - transcription (Parakeet): a real percent when the backend reports Hub byte
+ *     totals, otherwise an INDETERMINATE bar (stages only, no fabricated %).
+ *   - speakers (opt-in, macOS): a real percent from speaker-models-progress.
  *   - summarization (Ollama): a REAL bar + percent from setup-ollama-progress.
  *
  * The mock (app/e2e-mock-ipc.js, gated on STENOAI_E2E_SETUP_PROGRESS) emits the
@@ -101,6 +103,7 @@ test('optional speaker model failure does not block the rest of onboarding', asy
   await page.evaluate(() => {
     window.location.hash = '#/setup';
   });
+  await page.getByRole('switch', { name: 'Separate individual speakers' }).click();
   await page.getByRole('button', { name: 'Begin setup' }).click();
 
   const speakerStep = page.locator('[data-setup-step="speakers"]');
@@ -110,6 +113,105 @@ test('optional speaker model failure does not block the rest of onboarding', asy
     'done',
   );
   await expect(page.getByRole('button', { name: 'Continue to app' })).toBeVisible();
+});
+
+test('speaker models are opt-in: onboarding skips them unless the switch is on', async ({ launchApp }) => {
+  const { app, page } = await launchApp({
+    mockIpc: true,
+    env: {
+      STENOAI_E2E_MOCK_PARAKEET_INSTALLED: '1',
+      STENOAI_E2E_SPEAKER_MODELS_MISSING: '1',
+      STENOAI_E2E_RENDERER_PLATFORM: 'darwin',
+    },
+  });
+  await page.evaluate(() => {
+    window.location.hash = '#/setup';
+  });
+  await expect(page.getByRole('switch', { name: 'Separate individual speakers' })).not.toBeChecked();
+  await page.getByRole('button', { name: 'Begin setup' }).click();
+
+  await expect(page.getByRole('button', { name: 'Continue to app' })).toBeVisible();
+  await expect(page.locator('[data-setup-step="speakers"]')).toHaveCount(0);
+  const calls = await app.evaluate(() => (global as { __speakerModels?: { calls: number } }).__speakerModels?.calls ?? 0);
+  expect(calls).toBe(0);
+});
+
+test('opted-in speaker download shows a real percent bar', async ({ launchApp }) => {
+  const { app, page } = await launchApp({
+    mockIpc: true,
+    env: {
+      STENOAI_E2E_MOCK_PARAKEET_INSTALLED: '1',
+      STENOAI_E2E_SPEAKER_MODELS_MISSING: '1',
+      STENOAI_E2E_RENDERER_PLATFORM: 'darwin',
+    },
+  });
+  await page.evaluate(() => {
+    window.location.hash = '#/setup';
+  });
+  await page.getByRole('switch', { name: 'Separate individual speakers' }).click();
+  await page.getByRole('button', { name: 'Begin setup' }).click();
+
+  const speakerStep = page.locator('[data-setup-step="speakers"]');
+  await expect(speakerStep).toHaveAttribute('data-setup-status', 'running');
+  const bar = speakerStep.locator('[data-setup-speaker-progress]');
+  await expect(bar.getByText('Downloading speaker models…')).toBeVisible();
+  await expect(bar.getByText('37%')).toBeVisible();
+  await expect(speakerStep.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '37');
+
+  await app.evaluate(({ BrowserWindow }) => {
+    BrowserWindow.getAllWindows()[0].webContents.send('speaker-models-progress', { percent: 81, phase: 'compiling' });
+  });
+  await expect(bar.getByText('Preparing speaker models…')).toBeVisible();
+  await expect(bar.getByText('81%')).toBeVisible();
+
+  await app.evaluate(() => (global as { __speakerModels?: { finish: () => void } }).__speakerModels!.finish());
+  await expect(speakerStep).toHaveAttribute('data-setup-status', 'done');
+});
+
+test('Parakeet shows a real percent once the backend reports byte totals', async ({ launchApp }) => {
+  const { app, page } = await launchApp({
+    mockIpc: true,
+    env: { STENOAI_E2E_SETUP_PROGRESS: '1' },
+  });
+  await page.evaluate(() => {
+    window.location.hash = '#/setup';
+  });
+  await page.getByRole('button', { name: 'Begin setup' }).click();
+
+  const step = page.locator('[data-setup-step="transcription"]');
+  await expect(step).toHaveAttribute('data-setup-status', 'running');
+  await app.evaluate(({ BrowserWindow }) => {
+    BrowserWindow.getAllWindows()[0].webContents.send('parakeet-pull-progress', {
+      stage: 'downloading', completed_files: 1, total_files: 2,
+      downloaded_bytes: 1_254_000_000, total_bytes: 2_508_000_000,
+    });
+  });
+  const bar = step.locator('[data-setup-transcription-progress]');
+  await expect(bar.getByText('Downloading model… 1.3 GB of 2.5 GB', { exact: true })).toBeVisible();
+  await expect(bar.getByText('50%')).toBeVisible();
+  await expect(step.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '50');
+});
+
+test('Settings downloads speaker models on demand with a percent bar', async ({ launchApp }) => {
+  const { app, page } = await launchApp({
+    mockIpc: true,
+    env: {
+      STENOAI_E2E_SPEAKER_MODELS_MISSING: '1',
+      STENOAI_E2E_RENDERER_PLATFORM: 'darwin',
+    },
+  });
+  await page.evaluate(() => {
+    window.location.hash = '#/settings?tab=ai';
+  });
+  const row = page.locator('[data-settings-speaker-models]');
+  await row.getByRole('button', { name: 'Download' }).click();
+  const bar = row.getByTestId('speaker-models-progress');
+  await expect(bar.getByText('37%')).toBeVisible();
+  await expect(row.getByRole('progressbar', { name: 'Speaker model download progress' })).toHaveAttribute('aria-valuenow', '37');
+
+  await app.evaluate(() => (global as { __speakerModels?: { finish: () => void } }).__speakerModels!.finish());
+  await expect(row.getByText('Installed')).toBeVisible();
+  await expect(row.getByRole('button', { name: 'Download' })).toHaveCount(0);
 });
 
 test('speaker model setup is absent on non-macOS', async ({ launchApp }) => {

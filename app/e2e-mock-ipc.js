@@ -998,34 +998,43 @@ function install({ ipcMain }) {
       }
       return { success: true, message: 'Parakeet model ready' };
     },
-    'speaker-model-status': async () => (
-      process.env.STENOAI_E2E_SPEAKER_MODEL_FAILURE === '1'
-        ? {
-            success: true,
-            ready: false,
-            cache_directory: '/tmp/e2e/models/speaker-diarization',
-            required_models: ['model'],
-            missing_models: ['model'],
-          }
-        : {
-            success: true,
-            ready: true,
-            cache_directory: '/tmp/e2e/models/speaker-diarization',
-            required_models: [],
-            missing_models: [],
-          }
-    ),
-    'setup-speaker-models': async () => (
-      process.env.STENOAI_E2E_SPEAKER_MODEL_FAILURE === '1'
-        ? { success: false, error: 'synthetic model setup failure' }
-        : {
-            success: true,
-            ready: true,
-            cache_directory: '/tmp/e2e/models/speaker-diarization',
-            required_models: [],
-            missing_models: [],
-          }
-    ),
+    // Speaker models. STENOAI_E2E_SPEAKER_MODEL_FAILURE: missing, and the
+    // download fails. STENOAI_E2E_SPEAKER_MODELS_MISSING: missing, and the
+    // download emits a progress event then waits until the spec resolves it
+    // through global.__speakerModels.finish() (calls counts downloads, so a
+    // spec can assert that onboarding did not start one).
+    'speaker-model-status': async () => {
+      const state = global.__speakerModels ||= { calls: 0, ready: false, finish: null };
+      const missing = process.env.STENOAI_E2E_SPEAKER_MODEL_FAILURE === '1'
+        || (process.env.STENOAI_E2E_SPEAKER_MODELS_MISSING === '1' && !state.ready);
+      return {
+        success: true,
+        ready: !missing,
+        cache_directory: '/tmp/e2e/models/speaker-diarization',
+        required_models: missing ? ['model'] : [],
+        missing_models: missing ? ['model'] : [],
+      };
+    },
+    'setup-speaker-models': async (event) => {
+      const state = global.__speakerModels ||= { calls: 0, ready: false, finish: null };
+      state.calls++;
+      if (process.env.STENOAI_E2E_SPEAKER_MODEL_FAILURE === '1') {
+        return { success: false, ready: false, error: 'synthetic model setup failure' };
+      }
+      const ready = {
+        success: true,
+        ready: true,
+        cache_directory: '/tmp/e2e/models/speaker-diarization',
+        required_models: [],
+        missing_models: [],
+      };
+      if (process.env.STENOAI_E2E_SPEAKER_MODELS_MISSING !== '1') return ready;
+      const wc = event && event.sender;
+      if (wc && !wc.isDestroyed()) wc.send('speaker-models-progress', { percent: 37, phase: 'downloading' });
+      return new Promise((resolve) => {
+        state.finish = () => { state.ready = true; resolve(ready); };
+      });
+    },
     'setup-ollama-and-model': async (event) => {
       if (process.env.STENOAI_E2E_SETUP_PROGRESS === '1') {
         const wc = event && event.sender;

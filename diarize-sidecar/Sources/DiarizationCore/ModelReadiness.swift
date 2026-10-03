@@ -20,8 +20,16 @@ public enum ModelReadiness {
     private static let modelDirectoryEnvironmentKey = "STENOAI_DIARIZE_MODEL_DIR"
     private static let userDataEnvironmentKey = "STENOAI_USER_DATA_DIR"
 
+    /// The one Sortformer config the sidecar runs. Short recordings are padded
+    /// to its minimum window (see main.swift), so `.default`'s bundle is never
+    /// needed or downloaded.
+    public static let sortformerConfig: SortformerConfig = .highContextV2
+
+    /// Sortformer bundles an earlier release prepared and nothing loads now.
+    static let retiredSortformerConfigs: [SortformerConfig] = [.default]
+
     public static let requiredModelRelativePaths: [String] = {
-        let sortformerBundles = [SortformerConfig.default, .highContextV2]
+        let sortformerBundles = [sortformerConfig]
             .compactMap { ModelNames.Sortformer.bundle(for: $0) }
             .map { "sortformer/\($0)" }
         let embeddingBundles = DiarizerModels.requiredModelNames
@@ -92,23 +100,21 @@ public enum ModelReadiness {
         DownloadUtils.enforceOffline = false
         try FileManager.default.createDirectory(at: cacheDirectory, withIntermediateDirectories: true)
 
+        // Two downloads report their own 0...1 fraction each; scale them into
+        // one overall fraction by their rough share of the bytes (Sortformer
+        // ~243 MB, the embedding models ~13 MB).
         _ = try await SortformerModels.loadFromHuggingFace(
-            config: .default,
+            config: sortformerConfig,
             cacheDirectory: cacheDirectory,
             computeUnits: computeUnits,
-            progressHandler: progressHandler
-        )
-        _ = try await SortformerModels.loadFromHuggingFace(
-            config: .highContextV2,
-            cacheDirectory: cacheDirectory,
-            computeUnits: computeUnits,
-            progressHandler: progressHandler
+            progressHandler: scaled(progressHandler, from: 0.0, to: sortformerShare)
         )
         _ = try await DiarizerModels.downloadIfNeeded(
             to: cacheDirectory.appendingPathComponent("speaker-diarization", isDirectory: true),
             configuration: MLModelConfigurationUtils.defaultConfiguration(computeUnits: computeUnits),
-            progressHandler: progressHandler
+            progressHandler: scaled(progressHandler, from: sortformerShare, to: 1.0)
         )
+        removeRetiredBundles(in: cacheDirectory)
 
         let result = status(cacheDirectory: cacheDirectory)
         guard result.ready else {
@@ -122,6 +128,33 @@ public enum ModelReadiness {
             )
         }
         return result
+    }
+
+    static let sortformerShare = 0.95
+
+    static func scaled(
+        _ handler: DownloadUtils.ProgressHandler?, from start: Double, to end: Double
+    ) -> DownloadUtils.ProgressHandler? {
+        guard let handler else { return nil }
+        return { progress in
+            let fraction = min(max(progress.fractionCompleted, 0), 1)
+            handler(DownloadUtils.DownloadProgress(
+                fractionCompleted: start + (end - start) * fraction,
+                phase: progress.phase
+            ))
+        }
+    }
+
+    /// Reclaim the ~230 MB `.default` Sortformer bundle an earlier release
+    /// downloaded. Best-effort: a failure here leaves disk used, nothing else.
+    static func removeRetiredBundles(in cacheDirectory: URL) {
+        for config in retiredSortformerConfigs {
+            guard let bundle = ModelNames.Sortformer.bundle(for: config) else { continue }
+            let url = cacheDirectory
+                .appendingPathComponent("sortformer", isDirectory: true)
+                .appendingPathComponent(bundle, isDirectory: true)
+            try? FileManager.default.removeItem(at: url)
+        }
     }
 
     public static func enableOfflineOnly() {

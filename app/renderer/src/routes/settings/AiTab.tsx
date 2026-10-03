@@ -1,4 +1,6 @@
-import { parakeetProgressLabel } from '@/lib/parakeetProgress';
+import { parakeetProgressLabel, speakerModelsProgressLabel } from '@/lib/parakeetProgress';
+import { DownloadProgressBar } from '@/components/DownloadProgressBar';
+import { useSpeakerModels } from '@/hooks/useSpeakerModels';
 import * as React from 'react';
 import { Building2, Check, ChevronDown, ChevronRight, Cloud, Laptop, Loader2, Server, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -156,11 +158,79 @@ function TranscriptionSection() {
         />
       </SettingRow>
 
+      {isMac && <SpeakerSeparationSetting />}
+
       {isMac && (
         <SpeakerIdentificationSetting />
       )}
 
       <TranscriptionModelList />
+    </div>
+  );
+}
+
+/**
+ * Opt-in download of the speaker-separation models (macOS). Until they are on
+ * disk, transcripts keep the plain You / Others labels; the pipeline already
+ * falls back without them, so this row only manages the download.
+ */
+export function SpeakerSeparationSetting() {
+  const { status, progress, download } = useSpeakerModels();
+  const ready = status.data?.success === true && status.data.ready;
+  const unavailable = status.data?.success === false;
+
+  let control: React.ReactNode;
+  if (download.isPending) {
+    control = progress ? (
+      <DownloadProgressBar
+        className="w-[200px]"
+        data-testid="speaker-models-progress"
+        label={speakerModelsProgressLabel(progress)}
+        percent={progress.percent}
+        aria-label={t('downloads.speakers.ariaLabel')}
+      />
+    ) : (
+      <Loader2 className="h-4 w-4 animate-spin" style={{ color: 'var(--fg-2)' }} />
+    );
+  } else if (ready) {
+    control = (
+      <span className="flex items-center gap-1.5 text-[13px]" style={{ color: 'var(--fg-2)' }}>
+        <Check className="h-3.5 w-3.5" />
+        {t('settings.ai.speakers.installed')}
+      </span>
+    );
+  } else if (unavailable) {
+    control = (
+      <span className="text-[13px]" style={{ color: 'var(--fg-2)' }}>
+        {t('settings.ai.speakers.unavailable')}
+      </span>
+    );
+  } else {
+    control = (
+      <Button
+        size="sm"
+        variant="outline"
+        onClick={() => download.mutate()}
+        disabled={status.isPending}
+      >
+        {download.isError ? t('settings.ai.speakers.retry') : t('settings.ai.speakers.download')}
+      </Button>
+    );
+  }
+
+  return (
+    <div data-settings-speaker-models>
+      <SettingRow
+        label={t('settings.ai.speakers.label')}
+        description={t('settings.ai.speakers.description')}
+      >
+        {control}
+      </SettingRow>
+      {download.isError && (
+        <p role="alert" className="-mt-2 pb-3 text-[12px]" style={{ color: 'var(--fg-2)' }}>
+          {t('settings.ai.speakers.failed')}
+        </p>
+      )}
     </div>
   );
 }

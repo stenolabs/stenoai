@@ -216,6 +216,52 @@ class DownloadProgressTests(unittest.TestCase):
             self.assertEqual(any(e.get("file_bytes") == 100 for e in events), modern)
             self.assertEqual(events[-1]["completed_files"], len(calls))
 
+    @patch.dict(os.environ)
+    def test_snapshot_reports_measured_total_bytes(self):
+        import types
+        import sys
+        files = parakeet_models._REQUIRED_SNAPSHOT_FILES[parakeet_models.DEFAULT_MODEL_ID]
+        sizes = {name: 100 * (i + 1) for i, name in enumerate(files)}
+
+        def download(repo, filename, revision=None, token=None, tqdm_class=None):
+            with tqdm_class(total=sizes[filename], unit="B", mininterval=0, disable=None) as bar:
+                bar.update(sizes[filename] // 2)
+                bar.update(sizes[filename] - sizes[filename] // 2)
+            return "/synthetic/snapshots/abc123/" + filename
+
+        class Api:
+            def get_paths_info(self, repo, paths, token=None):
+                return [types.SimpleNamespace(path=p, size=sizes[p]) for p in paths]
+
+        hub = types.ModuleType("huggingface_hub")
+        hub.hf_hub_download, hub.HfApi = download, Api
+        events = []
+        with patch.dict(sys.modules, {"huggingface_hub": hub}):
+            parakeet_models._download_snapshot(parakeet_models.DEFAULT_MODEL_ID, events.append)
+        total = sum(sizes.values())
+        self.assertTrue(all(e["total_bytes"] == total for e in events))
+        downloaded = [e["downloaded_bytes"] for e in events]
+        self.assertEqual(downloaded, sorted(downloaded))
+        self.assertEqual(downloaded[-1], total)
+
+    @patch.dict(os.environ)
+    def test_snapshot_without_size_metadata_omits_totals(self):
+        import types
+        import sys
+
+        class BrokenApi:
+            def get_paths_info(self, *a, **k):
+                raise OSError("offline")
+
+        hub = types.ModuleType("huggingface_hub")
+        hub.hf_hub_download = lambda repo, filename, revision=None, token=None: "/s/snapshots/abc/" + filename
+        hub.HfApi = BrokenApi
+        events = []
+        with patch.dict(sys.modules, {"huggingface_hub": hub}):
+            parakeet_models._download_snapshot(parakeet_models.DEFAULT_MODEL_ID, events.append)
+        self.assertTrue(events)
+        self.assertFalse(any("total_bytes" in e for e in events))
+
 
 class OfflineLoadTests(unittest.TestCase):
     def test_offline_sessions_restored_after_load_error(self):
