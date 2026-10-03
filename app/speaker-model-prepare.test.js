@@ -20,8 +20,10 @@ function setup(platform = 'darwin') {
     platform,
     makeLineReader,
     getBackendPath: () => '/synthetic/backend',
-    spawn: (_bin, args) => {
+    getBackendCwd: () => '/synthetic',
+    spawn: (_bin, args, opts) => {
       assert.deepEqual(args, ['prepare-speaker-models']);
+      assert.equal(opts.cwd, '/synthetic');
       const proc = new EventEmitter();
       proc.stdout = new EventEmitter();
       proc.stderr = new EventEmitter();

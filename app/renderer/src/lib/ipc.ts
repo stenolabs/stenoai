@@ -943,8 +943,9 @@ export interface ParakeetPullProgressEvent {
   downloaded_bytes?: number;
   total_bytes?: number;
 }
-/** Speaker-diarization model download ('setup-speaker-models'), relayed from
- *  FluidAudio's own progress: downloading fills 0-50%, compiling 50-100%. */
+/** Speaker-diarization model download ('setup-speaker-models'). One overall
+ *  bar across the sidecar's loads: percent and phase only ever move forward
+ *  (downloading, then compiling once past the main model's download). */
 export interface SpeakerModelsProgressEvent {
   percent: number;
   phase: 'listing' | 'downloading' | 'compiling';

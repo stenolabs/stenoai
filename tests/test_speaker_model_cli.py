@@ -139,6 +139,31 @@ class SpeakerModelProgressTests(unittest.TestCase):
         self.assertEqual(json.loads(lines[-1]), {"success": True, **payload})
         self.assertNotIn("CoreML", result.output)
 
+    def test_progress_arrives_while_the_sidecar_is_still_running(self):
+        import time
+        with tempfile.TemporaryDirectory() as tmp:
+            sidecar = Path(tmp) / "steno-diarize"
+            # Lots of stderr noise around the progress line, then a pause:
+            # the event must be relayed before the process exits.
+            sidecar.write_text(
+                "#!/bin/sh\n"
+                "i=0; while [ $i -lt 2000 ]; do echo 'CoreML noise line' >&2; i=$((i+1)); done\n"
+                "echo 'STENO_PROGRESS {\"percent\":5,\"phase\":\"downloading\"}' >&2\n"
+                "sleep 1\n"
+                "echo '{}'\n"
+            )
+            sidecar.chmod(0o755)
+            seen = []
+            started = time.monotonic()
+            result = simple_recorder._run_sidecar_with_progress(
+                [str(sidecar)], 10, lambda e: seen.append((time.monotonic(), e))
+            )
+            finished = time.monotonic()
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(result.stdout.strip(), "{}")
+        self.assertEqual([e for _, e in seen], [{"percent": 5, "phase": "downloading"}])
+        self.assertLess(seen[0][0] - started, finished - started - 0.5)
+
     def test_hung_sidecar_times_out(self):
         with tempfile.TemporaryDirectory() as tmp:
             sidecar = Path(tmp) / "steno-diarize"

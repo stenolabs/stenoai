@@ -177,7 +177,10 @@ function TranscriptionSection() {
 export function SpeakerSeparationSetting() {
   const { status, progress, download } = useSpeakerModels();
   const ready = status.data?.success === true && status.data.ready;
-  const unavailable = status.data?.success === false;
+  // Only a missing sidecar means "not on this Mac"; a failed or timed-out
+  // check still offers the download, which re-checks when it finishes.
+  const unavailable = status.data?.success === false
+    && status.data.error === 'Speaker diarization is unavailable on this system';
 
   let control: React.ReactNode;
   if (download.isPending) {

@@ -18,7 +18,9 @@ function isProgress(value) {
  * download) shares the same promise instead of racing two writers into the
  * same model cache.
  */
-function createSpeakerModelPreparer({ spawn, getBackendPath, makeLineReader, onProgress, platform }) {
+function createSpeakerModelPreparer({
+  spawn, getBackendPath, getBackendCwd, makeLineReader, onProgress, onLog = () => {}, platform,
+}) {
   let inFlight = null;
 
   function run() {
@@ -30,7 +32,7 @@ function createSpeakerModelPreparer({ spawn, getBackendPath, makeLineReader, onP
       });
     }
     return new Promise((resolve) => {
-      const proc = spawn(getBackendPath(), ['prepare-speaker-models'], { stdio: 'pipe' });
+      const proc = spawn(getBackendPath(), ['prepare-speaker-models'], { stdio: 'pipe', cwd: getBackendCwd() });
       const reader = makeLineReader();
       let stdout = '';
       proc.stdout.on('data', (data) => {
@@ -45,8 +47,12 @@ function createSpeakerModelPreparer({ spawn, getBackendPath, makeLineReader, onP
           if (isProgress(progress)) onProgress({ percent: progress.percent, phase: progress.phase });
         }
       });
-      // Drain stderr so a chatty CoreML load can't fill the pipe and stall.
-      proc.stderr?.on('data', () => {});
+      // The backend's own log lines (the Python wrapper never forwards the
+      // sidecar's stderr) go to the local debug console, like setup-parakeet.
+      proc.stderr?.on('data', (data) => {
+        const text = data.toString().trim();
+        if (text) onLog(`STDERR: ${text}`);
+      });
       proc.on('close', () => {
         try {
           resolve(parseSpeakerModelStatusOutput(stdout));

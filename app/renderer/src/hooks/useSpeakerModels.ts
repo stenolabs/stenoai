@@ -12,6 +12,10 @@ export function useSpeakerModels() {
   const status = useQuery({
     queryKey: statusKey,
     queryFn: () => ipc().setup.speakerModelsStatus(),
+    // Each check spawns the backend and the sidecar; the answer only changes
+    // when a download finishes, which invalidates it below.
+    staleTime: 5 * 60_000,
+    refetchOnWindowFocus: false,
   });
 
   const [progress, setProgress] = React.useState<SpeakerModelsProgressEvent | null>(null);

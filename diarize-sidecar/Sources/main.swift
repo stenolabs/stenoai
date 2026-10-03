@@ -473,7 +473,9 @@ final class PrepareProgressReporter: @unchecked Sendable {
         let percent = Int((min(max(progress.fractionCompleted, 0), 1) * 100).rounded(.down))
         lock.lock()
         defer { lock.unlock() }
-        guard percent != lastPercent || phase != lastPhase else { return }
+        // Forward only: never step the bar or the label backwards.
+        guard percent > lastPercent || (percent == lastPercent && phase != lastPhase),
+              !(lastPhase == "compiling" && phase != "compiling") else { return }
         lastPercent = percent
         lastPhase = phase
         fputs("STENO_PROGRESS {\"percent\":\(percent),\"phase\":\"\(phase)\"}\n", stderr)
@@ -511,6 +513,9 @@ Task {
             )
         }
         ModelReadiness.enableOfflineOnly()
+        if cacheDirectory.path == ModelReadiness.cacheDirectory().path {
+            ModelReadiness.removeRetiredBundles(in: cacheDirectory)
+        }
 
         let samples = try await loadSamplesViaFfmpeg(path: inputPath)
 
@@ -551,10 +556,9 @@ Task {
         let diarizer = SortformerDiarizer(config: sortformerConfig)
         diarizer.initialize(models: models)
 
-        let minSamples = Int(sortformerHighContextMinDuration * 16000.0)
-        let paddedSamples = samples.count >= minSamples
-            ? samples
-            : samples + [Float](repeating: 0, count: minSamples - samples.count)
+        let paddedSamples = ShortRecording.padded(
+            samples, minDuration: sortformerHighContextMinDuration, sampleRate: 16000.0
+        )
         let timeline = try diarizer.processComplete(paddedSamples, sourceSampleRate: nil)
 
         struct Segment: Encodable {
@@ -571,10 +575,13 @@ Task {
         let segments = timeline.speakers.values
             .flatMap { $0.finalizedSegments }
             .compactMap { seg -> Segment? in
-                let start = Double(seg.startTime)
-                let end = min(Double(seg.endTime), durationSeconds)
-                guard end - start >= Double(minSegmentDurationSeconds) else { return nil }
-                return Segment(speakerId: "SPEAKER_\(seg.speakerIndex)", start: start, end: end)
+                guard let span = ShortRecording.clipped(
+                    start: Double(seg.startTime),
+                    end: Double(seg.endTime),
+                    recordingDuration: durationSeconds,
+                    minSegment: Double(minSegmentDurationSeconds)
+                ) else { return nil }
+                return Segment(speakerId: "SPEAKER_\(seg.speakerIndex)", start: span.start, end: span.end)
             }
             .sorted { $0.start < $1.start }
 
@@ -582,9 +589,10 @@ Task {
         // extractSortformerEmbeddings never throws, returning [:] on any
         // failure so a voiceprint problem can never take down diarization
         // itself (the segments above are the load-bearing output).
-        // The padded buffer, so every timeline frame index stays in range.
+        // The real samples, not the padded buffer: the chunk loop is bounded by
+        // both audio and mask length, and silence must never feed a voiceprint.
         let speakers = await extractSortformerEmbeddings(
-            audio: paddedSamples,
+            audio: samples,
             timeline: timeline,
             cacheDirectory: cacheDirectory
         )

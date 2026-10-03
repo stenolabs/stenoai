@@ -100,19 +100,21 @@ public enum ModelReadiness {
         DownloadUtils.enforceOffline = false
         try FileManager.default.createDirectory(at: cacheDirectory, withIntermediateDirectories: true)
 
-        // Two downloads report their own 0...1 fraction each; scale them into
-        // one overall fraction by their rough share of the bytes (Sortformer
-        // ~243 MB, the embedding models ~13 MB).
+        // Each FluidAudio load reports downloading as its 0...0.5 and
+        // compiling as 0.5...1, whatever the bytes. Map each half onto its own
+        // band of one overall bar, sized by real cost: the ~243 MB Sortformer
+        // download dominates, then its CoreML compile, then the ~13 MB
+        // embedding models.
         _ = try await SortformerModels.loadFromHuggingFace(
             config: sortformerConfig,
             cacheDirectory: cacheDirectory,
             computeUnits: computeUnits,
-            progressHandler: scaled(progressHandler, from: 0.0, to: sortformerShare)
+            progressHandler: banded(progressHandler, download: 0.0...0.85, compile: 0.85...0.95)
         )
         _ = try await DiarizerModels.downloadIfNeeded(
             to: cacheDirectory.appendingPathComponent("speaker-diarization", isDirectory: true),
             configuration: MLModelConfigurationUtils.defaultConfiguration(computeUnits: computeUnits),
-            progressHandler: scaled(progressHandler, from: sortformerShare, to: 1.0)
+            progressHandler: banded(progressHandler, download: 0.95...0.975, compile: 0.975...1.0)
         )
         removeRetiredBundles(in: cacheDirectory)
 
@@ -130,27 +132,59 @@ public enum ModelReadiness {
         return result
     }
 
-    static let sortformerShare = 0.95
+    /// Overall progress at or past this point is reported as preparing, so
+    /// the label only ever moves forward (download, then prepare) even though
+    /// the small embedding models still download after Sortformer compiles.
+    public static let preparingFrom = 0.85
 
-    static func scaled(
-        _ handler: DownloadUtils.ProgressHandler?, from start: Double, to end: Double
+    /// Where one FluidAudio load's own fraction lands on the overall bar.
+    public static func overallFraction(
+        _ fraction: Double,
+        compiling: Bool,
+        download: ClosedRange<Double>,
+        compile: ClosedRange<Double>
+    ) -> Double {
+        let f = min(max(fraction, 0), 1)
+        if compiling {
+            return compile.lowerBound + (compile.upperBound - compile.lowerBound) * max(0, (f - 0.5) / 0.5)
+        }
+        return download.lowerBound + (download.upperBound - download.lowerBound) * min(1, f / 0.5)
+    }
+
+    static func banded(
+        _ handler: DownloadUtils.ProgressHandler?,
+        download: ClosedRange<Double>,
+        compile: ClosedRange<Double>
     ) -> DownloadUtils.ProgressHandler? {
         guard let handler else { return nil }
         return { progress in
-            let fraction = min(max(progress.fractionCompleted, 0), 1)
+            let compiling: Bool
+            switch progress.phase {
+            case .compiling: compiling = true
+            case .listing, .downloading: compiling = false
+            }
+            let overall = overallFraction(
+                progress.fractionCompleted, compiling: compiling, download: download, compile: compile
+            )
             handler(DownloadUtils.DownloadProgress(
-                fractionCompleted: start + (end - start) * fraction,
-                phase: progress.phase
+                fractionCompleted: overall,
+                phase: overall >= preparingFrom
+                    ? .compiling(modelName: "")
+                    : .downloading(completedFiles: 0, totalFiles: 0)
             ))
         }
     }
 
     /// Reclaim the ~230 MB `.default` Sortformer bundle an earlier release
-    /// downloaded. Best-effort: a failure here leaves disk used, nothing else.
-    static func removeRetiredBundles(in cacheDirectory: URL) {
+    /// downloaded into Steno's own model cache. Deliberately not the legacy
+    /// shared FluidAudio cache, which other apps on the Mac may be using.
+    /// Best-effort: a failure leaves disk used, nothing else. Run by prepare
+    /// and by each diarization, since a user whose models are already
+    /// prepared never re-runs prepare.
+    public static func removeRetiredBundles(in root: URL = cacheDirectory()) {
         for config in retiredSortformerConfigs {
             guard let bundle = ModelNames.Sortformer.bundle(for: config) else { continue }
-            let url = cacheDirectory
+            let url = root
                 .appendingPathComponent("sortformer", isDirectory: true)
                 .appendingPathComponent(bundle, isDirectory: true)
             try? FileManager.default.removeItem(at: url)

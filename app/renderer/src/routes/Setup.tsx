@@ -371,17 +371,17 @@ export function Setup() {
       }
 
       if (isMac && includeSpeakers && snapshot.speakers !== 'done') {
-        setStatus('speakers', 'running', 'Checking speaker diarization models...');
+        setStatus('speakers', 'running', 'Checking speaker models...');
         try {
           const status = await ipc().setup.speakerModelsStatus();
           if (!status.success) throw new Error(status.error);
           if (status.ready) {
-            setStatus('speakers', 'done', 'Speaker diarization models ready');
+            setStatus('speakers', 'done', 'Speaker models ready');
           } else {
-            setStatus('speakers', 'running', 'Downloading speaker diarization models...');
+            setStatus('speakers', 'running', 'Downloading speaker models...');
             await speakerModelsStep.mutateAsync();
             setSpeakerProgress(null);
-            setStatus('speakers', 'done', 'Speaker diarization models ready');
+            setStatus('speakers', 'done', 'Speaker models ready');
           }
         } catch {
           setSpeakerProgress(null);
@@ -512,7 +512,7 @@ export function Setup() {
     steps.splice(2, 0, {
       id: 'speakers',
       title: t('settings.ai.speakers.label'),
-      description: 'Separates individual speakers locally',
+      description: 'Separates the voices on each side of a call',
       icon: AudioLines,
       status: statuses.speakers,
       detail: details.speakers,
@@ -754,7 +754,8 @@ export function Setup() {
             <Switch
               checked={includeSpeakers}
               onCheckedChange={setIncludeSpeakers}
-              disabled={running || statuses.speakers === 'done'}
+              // Fixed once setup has run: Settings -> AI handles it from there.
+              disabled={running || done || statuses.speakers === 'done'}
               aria-label={t('setup.speakers.optInTitle')}
             />
           </div>

@@ -6676,7 +6676,9 @@ ipcMain.handle('speaker-model-status', async () => {
 const prepareSpeakerModels = createSpeakerModelPreparer({
   spawn,
   getBackendPath,
+  getBackendCwd,
   makeLineReader,
+  onLog: sendDebugLog,
   platform: process.platform,
   onProgress: (progress) => {
     if (mainWindow && !mainWindow.isDestroyed()) {

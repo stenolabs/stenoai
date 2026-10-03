@@ -30,7 +30,7 @@
   "downloads.speakers.preparing": "Preparing speaker models…",
   "downloads.speakers.ariaLabel": "Speaker model download progress",
   "setup.speakers.optInTitle": "Separate individual speakers",
-  "setup.speakers.optInDescription": "Labels each voice on a call as Speaker 2, Speaker 3 and so on. Downloads about 250 MB. You can turn this on later in Settings → AI.",
+  "setup.speakers.optInDescription": "Labels each voice on a call as Speaker 2, Speaker 3 and so on. Downloads about 250 MB. You can also download it later in Settings → AI.",
   "settings.ai.speakers.label": "Individual speakers",
   "settings.ai.speakers.description": "Splits several voices on the same side of a call into Speaker 2, Speaker 3 and so on. Runs on your device. Downloads about 250 MB.",
   "settings.ai.speakers.download": "Download",
