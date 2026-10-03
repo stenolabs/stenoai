@@ -141,3 +141,11 @@ export function relativeTime(ts: number): string {
   if (months < 12) return `${months}mo`;
   return `${Math.floor(months / 12)}y`;
 }
+
+/** Keep follow-up history within the backend contract and the selected scope. */
+export function boundedChatHistory(messages: Array<{ role: 'user' | 'assistant'; content: string; context?: string }>, context: string, legacyContext: string) {
+  const turns = messages.filter((m) => (m.context ?? legacyContext) === context)
+    .slice(-6).map(({ role, content }) => ({ role, content: content.slice(-4000) }));
+  while (turns.reduce((n, t) => n + t.content.length, 0) > 12000) turns.shift();
+  return turns;
+}

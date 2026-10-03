@@ -1,5 +1,6 @@
 import { describe, test, expect } from 'vitest';
-import { stripReasoning } from '@/lib/markdown';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { stripReasoning, renderMarkdown } from '@/lib/markdown';
 
 /**
  * Unit coverage for stripReasoning — the guard that removes `<think>` /
@@ -59,5 +60,52 @@ describe('stripReasoning', () => {
   test('handles uppercase tags', () => {
     const input = '<THINK>A</think>B';
     expect(stripReasoning(input)).toBe('B');
+  });
+});
+
+
+describe('chat Markdown lists', () => {
+  function parse(text: string) {
+    const div = document.createElement('div');
+    div.innerHTML = renderToStaticMarkup(renderMarkdown(text));
+    return div;
+  }
+  test('blank lines and repeated 1 markers form one numbered list', () => {
+    for (const text of ['1. First\n\n2. Second\n\n3. Third', '1. First\n\n1. Second\n\n1. Third']) {
+      const root = parse(text);
+      expect(root.querySelectorAll('ol')).toHaveLength(1);
+      expect(root.querySelectorAll('ol > li')).toHaveLength(3);
+    }
+  });
+  test('continuation paragraphs and nested bullets stay inside their parent item', () => {
+    const root = parse('1. First\n\n   More detail.\n\n   - Nested\n\n2. Second');
+    expect(root.querySelectorAll('ol')).toHaveLength(1);
+    expect(root.querySelectorAll('ol > li')).toHaveLength(2);
+    expect(root.querySelector('ol > li ul')?.textContent).toContain('Nested');
+  });
+  test('preserves explicit starts and separates lists divided by a heading', () => {
+    const root = parse('3. Third\n4. Fourth\n\n## Next\n\n1. Restart');
+    expect(root.querySelectorAll('ol')).toHaveLength(2);
+    expect(root.querySelector('ol')?.getAttribute('start')).toBe('3');
+  });
+  test('retains tables and code without interpreting raw HTML', () => {
+    const root = parse('| Name | Value |\n| --- | --- |\n| A | B |\n\n```js\n1. code\n```\n\n<img src=x onerror=alert(1)>');
+    expect(root.querySelectorAll('table')).toHaveLength(1);
+    expect(root.querySelector('pre code')?.textContent).toContain('1. code');
+    expect(root.querySelector('img')).toBeNull();
+    expect(root.querySelector('script')).toBeNull();
+    expect(parse('Use <div> here').textContent).toContain('Use <div> here');
+  });
+  test('an incomplete response keeps the first items together as it grows', () => {
+    for (const text of ['1. First\n\n2. Sec', '1. First\n\n2. Second\n\n3. Third']) {
+      expect(parse(text).querySelectorAll('ol')).toHaveLength(1);
+    }
+  });
+  test('retains typographic bullets and preserves literal code examples', () => {
+    const root = parse('• First\n• **Second**\n\n```text\n• literal\n```\n\n    • indented code');
+    expect(root.querySelectorAll('ul > li')).toHaveLength(2);
+    expect(root.querySelector('li strong')?.textContent).toBe('Second');
+    expect(root.querySelectorAll('pre code')[0].textContent).toContain('• literal');
+    expect(root.querySelectorAll('pre code')[1].textContent).toContain('• indented code');
   });
 });

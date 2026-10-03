@@ -350,6 +350,7 @@ function install({ ipcMain }) {
     // "recording this note" by identity (not display name).
     appendTo: null,
     startedAt: 0,
+    recordingId: null,
     pausedAt: 0,
   };
 
@@ -526,7 +527,7 @@ function install({ ipcMain }) {
     },
     'set-privacy-notice-seen': async () => {
       privacyNoticeSeen = true;
-      return { success: true };
+      return { success: true, privacy_notice_seen: true };
     },
     'load-chat-sessions': async () => ({ success: true, data: chatSessions }),
     'save-chat-sessions': async (_event, data) => {
@@ -550,6 +551,7 @@ function install({ ipcMain }) {
       rec.sessionName = name && String(name).trim() ? String(name).trim() : 'Note';
       rec.appendTo = appendTo && String(appendTo).trim() ? String(appendTo).trim() : null;
       rec.startedAt = Date.now();
+      rec.recordingId = String(rec.startedAt);
       return { success: true, sessionName: rec.sessionName };
     },
     'stop-recording-ui': async () => {
@@ -643,6 +645,8 @@ function install({ ipcMain }) {
             ? rec.sessionName
             : null,
         recordingSummaryFile: rec.active ? rec.appendTo : null,
+        recordingId: rec.active ? rec.recordingId : null,
+        chatSummaryFile: rec.active ? rec.appendTo || `/mock/output/live-${rec.recordingId}_summary.md` : null,
       };
     },
 
@@ -1648,6 +1652,35 @@ function install({ ipcMain }) {
   // contextBridge object is frozen, so a spec cannot spy on the renderer side;
   // this is the observable seam for "which IPC did the renderer actually call".
   global.__mockIpcCalls = [];
+
+  let chatData = null;
+  MOCKS['load-chat-sessions'] = async () => ({ success: true, data: chatData });
+  MOCKS['save-chat-sessions'] = async (_event, data) => {
+    if (global.__holdNextChatSave) {
+      global.__holdNextChatSave = false;
+      return new Promise((resolve) => { global.__failChatSave = () => resolve({ success: false, error: 'Save failed' }); });
+    }
+    chatData = data;
+    return { success: true };
+  };
+  const originalOn = ipcMain.on.bind(ipcMain);
+  ipcMain.on = (channel, handler) => {
+    if (channel === 'chat-context-stream') {
+      return originalOn(channel, (event, queryId, request) => {
+        global.__mockIpcCalls.push({ channel, args: [queryId, request] });
+        const reply = process.env.STENOAI_E2E_CHAT_REPLY || '1. First point\n\n2. Second point\n\n3. Third point';
+        // Tests release held answers explicitly to exercise recording transitions.
+        const finish = () => {
+          if (event.sender.isDestroyed()) return;
+          event.sender.send('query-chunk', { queryId, chunk: reply });
+          event.sender.send('query-done', { queryId, success: true });
+        };
+        if (process.env.STENOAI_E2E_HOLD_CHAT === '1') global.__finishChat = finish;
+        else setTimeout(finish, 20);
+      });
+    }
+    return originalOn(channel, handler);
+  };
 
   const originalHandle = ipcMain.handle.bind(ipcMain);
   ipcMain.handle = (channel, realFn) => {

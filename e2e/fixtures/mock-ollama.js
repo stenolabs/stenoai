@@ -165,8 +165,9 @@ function startMockOllama(opts = {}) {
     });
     // No EADDRINUSE swallow — a bind failure is a real signal (live Ollama up).
     server.on('error', reject);
-    server.listen(OLLAMA_PORT, '127.0.0.1', () => {
+    server.listen(opts.port ?? OLLAMA_PORT, '127.0.0.1', () => {
       resolve({
+        url: `http://127.0.0.1:${server.address().port}`,
         close: () => new Promise((r) => server.close(() => r())),
         lastChatPrompt: () => lastChatPrompt,
         chatCalls: () => chatCalls,

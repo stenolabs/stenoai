@@ -134,12 +134,22 @@ export interface UpdateMeetingPatch {
   user_notes?: string;
 }
 
+export interface ChatRequest {
+  scope: 'live' | 'meeting' | 'notes' | 'general';
+  question: string;
+  history?: Array<{ role: 'user' | 'assistant'; content: string }>;
+  recordingId?: string;
+  file?: string;
+  folder?: string | null;
+}
+
 export interface ChatSessionsBlob {
   sessions: Array<{
     id: string;
     name: string;
     summaryFile?: string;
-    messages: Array<{ role: 'user' | 'assistant'; content: string; ts: number }>;
+    scopeFolderId?: string | null;
+    messages: Array<{ role: 'user' | 'assistant'; content: string; ts: number; context?: string }>;
     createdAt: number;
     updatedAt: number;
   }>;
@@ -367,6 +377,8 @@ export type PauseRecordingResponse = Result<{ message: string }>;
 export type ResumeRecordingResponse = Result<{ message: string }>;
 
 export interface QueueStatus {
+  recordingId?: string | null;
+  chatSummaryFile?: string | null;
   success: true;
   isProcessing: boolean;
   queueSize: number;
@@ -1174,6 +1186,7 @@ export interface StenoaiBridge {
 
   query: {
     ask: RequestFn<[file: string, q: string], QueryResponse>;
+    chatContext: SendFn<[id: string, request: ChatRequest]>;
     askStream: SendFn<[id: string, file: string, q: string]>;
     chatGlobalStream: SendFn<[id: string, q: string, folderId?: string | null]>;
     cancel: SendFn<[id: string]>;

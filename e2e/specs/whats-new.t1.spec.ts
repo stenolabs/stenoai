@@ -208,7 +208,10 @@ test("fresh install entering Settings establishes its baseline without interrupt
 test("a manual request waits for privacy disclosure without stacking dialogs", async ({
   launchApp,
 }) => {
-  const { app, page } = await launchApp({ mockIpc: true, env: { ...env, STENOAI_E2E_DELAY_PRIVACY_NOTICE: '1' } });
+  const { app, page } = await launchApp({
+    mockIpc: true,
+    env: { ...env, STENOAI_E2E_DELAY_PRIVACY_NOTICE: "1" },
+  });
   await page.evaluate(() => {
     location.hash = "#/settings?tab=about";
   });
@@ -217,7 +220,9 @@ test("a manual request waits for privacy disclosure without stacking dialogs", a
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await app.evaluate(() => {
     (
-      globalThis as unknown as { __resolvePrivacyNotice: (seen: boolean) => void }
+      globalThis as unknown as {
+        __resolvePrivacyNotice: (seen: boolean) => void;
+      }
     ).__resolvePrivacyNotice(false);
   });
   const privacy = page.getByRole("dialog", { name: "A quick note on privacy" });
@@ -226,4 +231,45 @@ test("a manual request waits for privacy disclosure without stacking dialogs", a
   await privacy.getByRole("button", { name: "Got it" }).click();
   await expect(page.getByRole("dialog", { name: title })).toBeVisible();
   await expect(privacy).toHaveCount(0);
+});
+
+test("installing a model in Settings prevents a stale setup redirect on Home", async ({
+  launchApp,
+}) => {
+  const { app, page } = await launchApp({
+    mockIpc: true,
+    env: { STENOAI_E2E_APP_VERSION: version },
+  });
+  await page.evaluate(() => {
+    location.hash = "#/settings?tab=about";
+  });
+  await page.reload();
+  await foreground(app);
+  await expect(page.locator('[data-settings-tab="about"]')).toBeVisible();
+  await expect
+    .poll(() => page.evaluate((key) => localStorage.getItem(key), seenKey))
+    .toBe(version);
+  const reads = await app.evaluate(() => {
+    process.env.STENOAI_E2E_MOCK_PARAKEET_INSTALLED = "1";
+    return (
+      globalThis as unknown as { __mockIpcCalls: string[] }
+    ).__mockIpcCalls.filter((c) => c === "parakeet-status").length;
+  });
+  await page.evaluate(() => {
+    location.hash = "#/";
+  });
+  await expect
+    .poll(() =>
+      app.evaluate(
+        () =>
+          (
+            globalThis as unknown as { __mockIpcCalls: string[] }
+          ).__mockIpcCalls.filter((c) => c === "parakeet-status").length,
+      ),
+    )
+    .toBeGreaterThan(reads);
+  await expect(
+    page.getByRole("button", { name: "New note", exact: true }).first(),
+  ).toBeVisible();
+  expect(await page.evaluate(() => location.hash)).toBe("#/");
 });

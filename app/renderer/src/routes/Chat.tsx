@@ -187,9 +187,10 @@ export function Chat() {
     setSubmitError(null);
     let createdSessionId: string | null = null;
     try {
-      createdSessionId = await chat.createSession(deriveSessionName(q));
+      createdSessionId = await chat.createSession(deriveSessionName(q), scopeFolderId);
       await chat.appendMessage(createdSessionId, {
         role: 'user',
+        context: scopeFolderId ?? 'notes',
         content: q,
         ts: Date.now(),
       });

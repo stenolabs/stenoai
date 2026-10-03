@@ -1,9 +1,9 @@
 ---
 title: "Ask your meetings"
-description: "Query any saved meeting note in plain English. Steno answers from your local transcript and summary -- no data leaves your Mac."
+description: "Ask about a live meeting, saved notes, or general topics using your configured AI provider."
 ---
 
-Every meeting note in Steno has an inline ask bar. Type a question in plain English and Steno answers from the saved transcript, summary, and key topics using the local language model.
+Use the ask bar while recording or when viewing a saved note. Questions use your configured AI provider, and follow-up questions include recent conversation history for the selected context.
 
 ## How to use it
 
@@ -11,7 +11,22 @@ Every meeting note in Steno has an inline ask bar. Type a question in plain Engl
 2. Click the **Ask** bar at the bottom of the pane
 3. Type your question and press Return
 
-Steno reads the saved `.md` files for that meeting -- the summary, key topics, and full transcript -- and passes them with your question to the local model. The answer streams inline below the ask bar.
+General questions work with any context, even before anyone speaks or when a folder is empty. The **Context** menu controls which meeting information accompanies your question:
+
+- **This meeting** uses the saved note, or a snapshot of finalized speech during recording.
+- **All notes** or a folder uses a bounded selection of saved meeting summaries.
+- **No meeting context** answers without attaching meeting content or conversation turns from another context.
+- **Shared notes**, when signed in, queries your organisation's shared notes.
+
+Answers should distinguish general knowledge from what was said in the meeting. When you ask about a meeting without enough evidence, the assistant should say what is missing.
+
+## During recording
+
+You can chat as soon as recording starts, including with Whisper or before speech has been transcribed. Keep **Context: This meeting** selected to include available meeting evidence alongside general questions.
+
+Parakeet adds finalized speech as the meeting progresses. Whisper transcribes after recording stops, so its current recording has no live transcript to reference. New speech becomes available to the next question; it does not change an answer already being generated.
+
+Recording continues while you chat. Pausing or stopping recording does not discard an answer in progress, and the conversation stays attached to the saved note. You can also chat with other notes or ask general questions when live transcription is unavailable.
 
 ## What you can ask
 
@@ -28,19 +43,21 @@ Questions that reference specific details from the meeting work best. Vague ques
 
 ## What Steno reads
 
-When you ask a question, Steno reads three sources from the saved note:
+The selected context determines what Steno sends to your AI provider:
 
-| Source | Content |
-|--------|---------|
-| Summary | The AI-generated paragraph summary of the meeting |
-| Key topics | The structured list of topics identified during summarization |
-| Full transcript | The verbatim transcript with timestamps and speaker labels |
+| Context | Content |
+|-------|---------|
+| This meeting, while recording | A snapshot of finalized speech, including earlier transcript when continuing a saved note |
+| This meeting, saved note | Summary, topics, key points, action items, personal notes, and transcript |
+| All notes or a folder | A bounded selection of recent saved summaries, titles, and key points |
+| Shared notes | Your organisation's shared-note content |
+| No meeting context | The question and recent conversation turns with this same selection, without meeting content |
 
-The full transcript is included, bounded by the active model's context window. Very long meetings can exceed that window; switching to a model with a larger context window (see [Summarization models](/models/summarization-models)) helps if a question about the end of a long meeting gets a weaker answer.
+Recent follow-ups are bounded and kept within the selected scope. Long contexts are truncated; local and remote Ollama budgets depend on the configured model. Older meetings may fall outside the All notes budget, so open a specific note to ask about it directly.
 
 ## Privacy
 
-All queries are processed by the local model on your Mac. Your questions and the meeting content are not sent to any external server unless you have configured a cloud model in Settings.
+Chat follows your existing AI-provider setting. With local Ollama, questions stay on your device. A configured remote, cloud, or organisation provider receives the question and selected context. Selecting **No meeting context** excludes meeting content and conversation history from other contexts.
 
 ---
 

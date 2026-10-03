@@ -31,6 +31,7 @@ import { useAiProvider } from '@/hooks/useAi';
 import { navigate } from '@/lib/router';
 import {
   GLOBAL_SCOPE,
+  boundedChatHistory,
   bucketKey,
   deriveSessionName,
   toBucketLabel,
@@ -39,12 +40,15 @@ import {
 } from '@/lib/chat';
 import { consumePendingNewChat } from '@/routes/Chat';
 import { renderMarkdown } from '@/lib/markdown';
+import { t } from '@/i18n';
 
 interface ChatConversationProps {
   sessionId: string;
 }
 
 export function ChatConversation({ sessionId }: ChatConversationProps) {
+  const scopeOwnerRef = React.useRef(sessionId);
+  scopeOwnerRef.current = sessionId;
   const allSessions = useAllChatSessions();
   const chat = useChatSessions(GLOBAL_SCOPE, null);
   const streaming = useGlobalStreaming();
@@ -58,7 +62,7 @@ export function ChatConversation({ sessionId }: ChatConversationProps) {
   // The entry page's scope is handed off via consumePendingNewChat; later
   // turns in the same conversation can be re-scoped from this composer.
   const [scopeFolderId, setScopeFolderId] = React.useState<string | null>(null);
-  const pendingPersistRef = React.useRef<string | null>(null);
+  const pendingPersistRef = React.useRef<{ sessionId: string; context: string } | null>(null);
   const submittingRef = React.useRef(false);
   const inputRef = React.useRef<HTMLInputElement>(null);
   const scrollRef = React.useRef<HTMLDivElement>(null);
@@ -87,7 +91,7 @@ export function ChatConversation({ sessionId }: ChatConversationProps) {
   React.useEffect(() => {
     const pending = consumePendingNewChat(sessionId);
     if (pending) {
-      pendingPersistRef.current = pending.sessionId;
+      pendingPersistRef.current = { sessionId: pending.sessionId, context: pending.folderId ?? 'notes' };
       setActiveStreamId(pending.streamId);
       setScopeFolderId(pending.folderId);
     }
@@ -97,6 +101,14 @@ export function ChatConversation({ sessionId }: ChatConversationProps) {
     const list = allSessions.data?.sessions ?? [];
     return list.find((s) => s.id === sessionId) ?? null;
   }, [allSessions.data?.sessions, sessionId]);
+
+  const restoredScopeRef = React.useRef<string | null>(null);
+  React.useEffect(() => {
+    if (session && restoredScopeRef.current !== session.id) {
+      restoredScopeRef.current = session.id;
+      setScopeFolderId(session.scopeFolderId ?? null);
+    }
+  }, [session]);
 
   const otherSessions = React.useMemo(() => {
     const list = allSessions.data?.sessions ?? [];
@@ -133,8 +145,8 @@ export function ChatConversation({ sessionId }: ChatConversationProps) {
     if (!activeStreamId) return;
     const stream = streaming.streams[activeStreamId];
     if (!stream || stream.status === 'streaming') return;
-    const persistId = pendingPersistRef.current;
-    if (!persistId) return;
+    const pending = pendingPersistRef.current;
+    if (!pending) return;
     const content =
       stream.text.trim() ||
       (stream.status === 'error'
@@ -142,10 +154,11 @@ export function ChatConversation({ sessionId }: ChatConversationProps) {
         : '(empty response)');
     const message: ChatMessage = {
       role: 'assistant',
+      context: pending.context,
       content,
       ts: Date.now(),
     };
-    void chat.appendMessage(persistId, message);
+    void chat.appendMessage(pending.sessionId, message);
     pendingPersistRef.current = null;
     streaming.clearStream(activeStreamId);
     setActiveStreamId(null);
@@ -165,7 +178,7 @@ export function ChatConversation({ sessionId }: ChatConversationProps) {
     () => session?.messages ?? EMPTY_MESSAGES,
     [session?.messages],
   );
-  const streamingContent = isStreaming
+  const streamingContent = isStreaming && pendingPersistRef.current?.sessionId === sessionId
     ? activeStream?.text || 'Thinking…'
     : null;
   const totalItems = messages.length + (streamingContent !== null ? 1 : 0);
@@ -199,22 +212,17 @@ export function ChatConversation({ sessionId }: ChatConversationProps) {
     try {
       await chat.appendMessage(session.id, {
         role: 'user',
+        context: scopeFolderId ?? 'notes',
         content: q,
         ts: Date.now(),
       });
       appended = true;
       setInput('');
 
-      // Hand the running history to the org backend so follow-ups have
-      // context. For local scope this third arg is ignored.
-      const history = isOrgScope(scopeFolderId)
-        ? (session.messages ?? []).map((m) => ({
-            role: m.role,
-            content: m.content,
-          }))
-        : undefined;
+      // Follow-ups include only bounded history from the selected context.
+      const history = boundedChatHistory(session.messages ?? [], scopeFolderId ?? 'notes', 'notes');
       const streamId = streaming.startGlobalStream(q, scopeFolderId, history);
-      pendingPersistRef.current = session.id;
+      pendingPersistRef.current = { sessionId: session.id, context: scopeFolderId ?? 'notes' };
       setActiveStreamId(streamId);
     } catch (err) {
       // Disk write / IPC / streaming setup can all fail. Surface the error.
@@ -472,7 +480,15 @@ export function ChatConversation({ sessionId }: ChatConversationProps) {
           />
           <div className="flex items-center justify-between gap-2 px-1">
             <div className="flex items-center gap-1">
-              <FolderScopePicker value={scopeFolderId} onChange={setScopeFolderId} />
+              <FolderScopePicker value={scopeFolderId} onChange={(scope) => {
+                if (!session) return;
+                setScopeFolderId(scope);
+                void chat.setScope(session.id, scope).catch(() => {
+                  if (scopeOwnerRef.current !== session.id) return;
+                  setScopeFolderId((current) => current === scope ? session.scopeFolderId ?? null : current);
+                  setSubmitError(t('chat.saveError'));
+                });
+              }} disabled={isStreaming || !session} />
               <span
                 data-testid="chat-model-indicator"
                 className="text-[12px]"

@@ -120,7 +120,7 @@ export function useChatSessions(summaryFile: string | null, meetingName?: string
       .sessions.filter((s) => s.summaryFile === summaryFile)
       .sort((a, b) => b.updatedAt - a.updatedAt);
     setActiveId(sorted[0]?.id ?? null);
-  }, [summaryFile, readLatest]);
+  }, [summaryFile, readLatest, query.isSuccess]);
 
   const persist = React.useCallback(
     async (next: ChatSessionsBlob) => {
@@ -143,11 +143,12 @@ export function useChatSessions(summaryFile: string | null, meetingName?: string
   );
 
   const createSession = React.useCallback(
-    async (name?: string) => {
+    async (name?: string, scopeFolderId?: string | null) => {
       const now = Date.now();
       const session: ChatSession = {
         id: newSessionId(),
         name: name ?? 'New chat',
+        ...(scopeFolderId !== undefined ? { scopeFolderId } : {}),
         ...(summaryFile ? { summaryFile } : {}),
         messages: [],
         createdAt: now,
@@ -185,6 +186,12 @@ export function useChatSessions(summaryFile: string | null, meetingName?: string
     [persist, readLatest],
   );
 
+  const setScope = React.useCallback(async (sessionId: string, scopeFolderId: string | null) => {
+    const current = readLatest();
+    if (!current.sessions.some((s) => s.id === sessionId)) return;
+    await persist({ sessions: current.sessions.map((s) => s.id === sessionId ? { ...s, scopeFolderId, updatedAt: Date.now() } : s) });
+  }, [persist, readLatest]);
+
   const renameSession = React.useCallback(
     async (sessionId: string, name: string) => {
       const current = readLatest();
@@ -216,6 +223,7 @@ export function useChatSessions(summaryFile: string | null, meetingName?: string
     createSession,
     appendMessage,
     renameSession,
+    setScope,
     deleteSession,
     isLoading: query.isLoading,
   };

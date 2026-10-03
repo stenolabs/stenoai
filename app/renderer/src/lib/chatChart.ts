@@ -9,9 +9,9 @@ export interface ChatChartSpec {
 export const CHART_COPY = { loading: 'Loading chart…', data: 'View data' };
 
 /** Pick one notation for the whole axis, including ticks near zero. */
-export function chartTickFormatter(data: ChatChartSpec['data']) {
+export function chartTickFormatter(data: ChatChartSpec['data'], locale?: string) {
   const magnitude = Math.max(...data.map(({ value }) => Math.abs(value)));
-  return new Intl.NumberFormat(undefined, {
+  return new Intl.NumberFormat(locale, {
     notation: magnitude > 0 && magnitude < 0.0001 ? 'scientific' : 'compact',
     maximumSignificantDigits: 4,
   }).format;

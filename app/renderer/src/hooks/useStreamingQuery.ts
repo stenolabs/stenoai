@@ -1,6 +1,6 @@
 import * as React from 'react';
-import { ipc } from '@/lib/ipc';
-import { ORG_SHARED_SCOPE } from '@/components/FolderScopePicker';
+import { ipc, type ChatRequest } from '@/lib/ipc';
+import { GENERAL_SCOPE, ORG_SHARED_SCOPE } from '@/components/FolderScopePicker';
 import { buildOrgChatPayload } from '@/lib/orgChat';
 import { CHART_INSTRUCTIONS } from '@/lib/chatChart';
 
@@ -20,6 +20,7 @@ export function useStreamingQuery() {
   const [streams, setStreams] = React.useState<Record<string, StreamState>>({});
   const unsubsRef = React.useRef<Map<string, () => void>>(new Map());
   const activeRef = React.useRef<Set<string>>(new Set());
+  const completionsRef = React.useRef(new Map<string, () => void>());
 
   // Tear down the IPC subscription for a stream and forget its handle.
   // Called from onDone/onError so the listener doesn't linger past the
@@ -83,7 +84,7 @@ export function useStreamingQuery() {
   const startGlobalStream = React.useCallback((
     question: string,
     folderId?: string | null,
-    orgHistory?: Array<{ role: 'user' | 'assistant'; content: string }>,
+    history?: Array<{ role: 'user' | 'assistant'; content: string }>,
   ): string => {
     const id = newId();
     setStreams((prev) => ({
@@ -126,7 +127,7 @@ export function useStreamingQuery() {
       // off a request the renderer no longer cares about.
       void (async () => {
         try {
-          const payload = await buildOrgChatPayload(orgHistory ?? [], question);
+          const payload = await buildOrgChatPayload(history ?? [], question);
           if (!activeRef.current.has(id)) return; // cancelled while building
           ipc().org.chatStream(id, payload);
         } catch (e) {
@@ -143,7 +144,7 @@ export function useStreamingQuery() {
         }
       })();
     } else {
-      ipc().query.chatGlobalStream(id, question, folderId ?? null);
+      ipc().query.chatContext(id, { scope: folderId === GENERAL_SCOPE ? 'general' : 'notes', question, folder: folderId === GENERAL_SCOPE ? undefined : folderId, history: history ?? [] });
     }
     return id;
   }, []);
@@ -198,7 +199,45 @@ export function useStreamingQuery() {
     return id;
   }, []);
 
+  // Completion belongs to the request, not the composer lifecycle. Closing a
+  // transcript panel or stopping recording must not discard an assistant turn.
+  const startContextStream = React.useCallback((
+    request: ChatRequest,
+    onComplete?: (result: StreamState) => void,
+  ): string => {
+    const id = newId();
+    let result: StreamState = { text: '', status: 'streaming', error: null };
+    let finished = false;
+    setStreams((prev) => ({ ...prev, [id]: result }));
+    activeRef.current.add(id);
+    const finish = (status: StreamStatus, error: string | null = null) => {
+      if (finished) return;
+      finished = true;
+      result = { ...result, status, error };
+      setStreams((prev) => ({ ...prev, [id]: result }));
+      completionsRef.current.delete(id);
+      detachStream(id);
+      onComplete?.(result);
+    };
+    const off = ipc().subscribeQueryStream(id, {
+      onChunk: (chunk) => {
+        if (finished) return;
+        result = { ...result, text: result.text + chunk };
+        const snapshot = result;
+        setStreams((prev) => ({ ...prev, [id]: snapshot }));
+      },
+      onDone: () => finish('done'),
+      onError: (error) => finish('error', error.message),
+    });
+    unsubsRef.current.set(id, off);
+    completionsRef.current.set(id, () => finish('done'));
+    ipc().query.chatContext(id, request);
+    return id;
+  }, []);
+
   const cancelStream = React.useCallback((id: string) => {
+    const complete = completionsRef.current.get(id);
+    if (complete) { complete(); ipc().query.cancel(id); return; }
     const off = unsubsRef.current.get(id);
     off?.();
     unsubsRef.current.delete(id);
@@ -237,6 +276,7 @@ export function useStreamingQuery() {
   return {
     streams,
     startStream,
+    startContextStream,
     startGlobalStream,
     startOrgNoteStream,
     cancelStream,

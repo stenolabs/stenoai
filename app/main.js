@@ -3587,6 +3587,70 @@ ipcMain.handle('query-transcript', async (event, summaryFile, question) => {
 });
 
 const activeQueryProcs = new Map();
+const contextQueries = new Map();
+const { validateRequest: validateChatRequest, liveSnapshot, runQuery: runChatQuery } = require('./chat-query');
+
+ipcMain.on('chat-context-stream', async (event, queryId, request) => {
+  const sender = event.sender;
+  let chunkCount = 0;
+  let tracked = false;
+  const send = (channel, data) => {
+    if (channel === 'query-chunk') chunkCount++;
+    if (channel === 'query-done' && !tracked && data.error !== 'Answer stopped.') {
+      tracked = true;
+      trackEvent('chat_message_sent', {
+        success: data.success,
+        scope: request?.scope === 'live' || request?.scope === 'meeting' ? 'single_meeting' : 'global',
+        query_length: textLengthBucket(typeof request?.question === 'string' ? request.question : ''),
+        has_response: chunkCount > 0,
+      });
+    }
+    if (!sender.isDestroyed()) sender.send(channel, { queryId, ...data });
+  };
+  if (!mainWindow || sender !== mainWindow.webContents || event.senderFrame !== sender.mainFrame) return;
+  if (typeof queryId !== 'string' || !queryId || queryId.length > 256 || contextQueries.has(queryId)) return;
+  if (contextQueries.size >= 4) {
+    send('query-done', { success: false, error: 'Wait for another answer to finish.' });
+    return;
+  }
+  let cancelled = false;
+  const entry = { sender, cancel: () => { cancelled = true; } };
+  contextQueries.set(queryId, entry);
+  const onDestroyed = () => entry.cancel();
+  sender.once('destroyed', onDestroyed);
+  const cleanup = () => {
+    contextQueries.delete(queryId);
+    if (!sender.isDestroyed()) sender.removeListener('destroyed', onDestroyed);
+  };
+  try {
+    const payload = validateChatRequest(request);
+    if (payload.scope === 'live') {
+      if (!systemAudioRecordingActive || request.recordingId !== String(recordingRuntimeState.startedAtMs)
+          || !recordingRuntimeState.startedAtMs) throw new Error('This recording is no longer active.');
+      payload.transcript = liveSnapshot(liveTranscriptState);
+      // A continued recording can start after a cold launch, with no in-memory
+      // prior segments. Read its saved transcript via the validated note path.
+      if (currentRecordingAppendTarget) {
+        payload.file = currentRecordingAppendTarget;
+        payload.transcript = liveSnapshot({ segments: liveTranscriptState.segments });
+      }
+    } else if (payload.scope === 'meeting') {
+      const validated = await validateMeetingFilePath(request.file);
+      if (validated.error) throw new Error('This meeting is unavailable.');
+      payload.file = validated.realPath;
+    }
+    if (cancelled || sender.isDestroyed()) { cleanup(); return; }
+    const query = runChatQuery({
+      spawn: require('child_process').spawn,
+      backend: getBackendPath(), env: getBackendEnv(getAiEnv()), cwd: getBackendCwd(),
+      payload, send, onFinish: cleanup,
+    });
+    entry.cancel = query.cancel;
+  } catch (error) {
+    if (!cancelled) send('query-done', { success: false, error: error.message });
+    cleanup();
+  }
+});
 
 // Cancellation intent for streaming queries that are still in their pre-spawn
 // async window. query-transcript-stream now `await`s validateMeetingFilePath
@@ -3599,6 +3663,11 @@ const activeQueryProcs = new Map();
 const pendingQueryCancels = new Map();
 
 ipcMain.on('query-cancel', (_event, queryId) => {
+  const contextQuery = contextQueries.get(queryId);
+  if (contextQuery) {
+    if (contextQuery.sender === _event.sender) contextQuery.cancel();
+    return;
+  }
   const proc = activeQueryProcs.get(queryId);
   if (proc) {
     console.log(`[QUERY] Cancelling queryId=${queryId}`);
@@ -4807,6 +4876,10 @@ ipcMain.handle('get-queue-status', async () => {
           ? Math.floor((Date.now() - currentProcessingStartedAtMs) / 1000)
           : 0),
     sessionName: currentRecordingSessionName,
+    recordingId: systemAudioRecordingActive && recordingRuntimeState.startedAtMs
+      ? String(recordingRuntimeState.startedAtMs) : null,
+    chatSummaryFile: systemAudioRecordingActive
+      ? (currentRecordingAppendTarget || activeSysAudioSummaryFile) : null,
     // The note (summary-file realpath) an active continue/resume is recording
     // INTO, so the renderer can tell "recording this note" from "recording a
     // different one" by identity rather than by the (collidable) display name.
@@ -6257,6 +6330,7 @@ ipcMain.handle('start-recording-ui', async (_, sessionName, trigger, appendTo) =
     // retired, so there is no longer a mic-XOR-system fork here.
     sendDebugLog(`Starting renderer-driven recording (name ${String(actualSessionName || '').length} chars)`);
     currentRecordingSessionName = actualSessionName;
+    activeSysAudioSummaryFile = null;
     startRecordingRuntimeState();
     // Flip the active flag immediately so the queue handler reports
     // hasRecording=true on the very next poll, which is what cues the renderer
@@ -6673,7 +6747,7 @@ function gatherIdleInstallState() {
     isProcessing,
     queueLength: processingQueue.length,
     liveActive: liveTranscribeProcess != null,
-    streaming: activeQueryProcs.size > 0,
+    streaming: activeQueryProcs.size > 0 || contextQueries.size > 0,
     otherJobsActive: activeReprocessJobs.size > 0,
     idleSeconds: powerMonitor.getSystemIdleTime(),
     idleThresholdSeconds: IDLE_AUTO_INSTALL_THRESHOLD_SECONDS,

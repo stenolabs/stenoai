@@ -15,13 +15,19 @@ const spec = {
 
 describe('chat chart boundary', () => {
   test('small adjacent ticks keep consistent notation and meaningful precision', () => {
-    const format = chartTickFormatter([{ label: 'A', value: 0.011 }]);
+    const format = chartTickFormatter([{ label: 'A', value: 0.011 }], 'en-US');
     expect(format(0.00995)).toBe('0.00995');
     expect(format(0.01)).toBe('0.01');
     expect(format(0.011)).toBe('0.011');
-    const tiny = chartTickFormatter([{ label: 'A', value: 1e-12 }]);
+    const tiny = chartTickFormatter([{ label: 'A', value: 1e-12 }], 'en-US');
     expect(tiny(5e-13)).toMatch(/5E-13/i);
     expect(tiny(1e-12)).toMatch(/1E-12/i);
+  });
+  test.each(['de-DE', 'ar-EG'])('formats ticks using %s conventions', (locale) => {
+    const format = chartTickFormatter([{ label: 'A', value: 0.011 }], locale);
+    expect(format(0.00995)).toBe(
+      new Intl.NumberFormat(locale, { maximumSignificantDigits: 4 }).format(0.00995)
+    );
   });
   test('accepts bar and line charts, including zero and negative values', () => {
     for (const type of ['bar', 'line']) {

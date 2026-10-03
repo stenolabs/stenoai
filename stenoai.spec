@@ -67,11 +67,6 @@ hiddenimports = [
     # HuggingFace hub (both ASR backends pull weights through this)
     'huggingface_hub',
 
-    # ONNX Runtime — runs the bundled Silero VAD model directly on every
-    # platform; runs the Parakeet weights too on Windows / Linux via onnx-asr.
-    'onnxruntime',
-    'onnxruntime.capi',
-
     # Audio processing
     'sounddevice',
     'soundfile',
@@ -126,8 +121,12 @@ else:
     # onnx-asr (ASR via ONNX Runtime) — Windows / Linux. The package is laid
     # out so the top-level `onnx_asr` import pulls everything user-facing;
     # collect_submodules below catches the lazily-imported model adapters.
+    # ONNX Runtime also runs the Silero VAD model here. macOS runs Silero in
+    # numpy instead (src/silero_vad.py) and bundles no onnxruntime at all.
     hiddenimports += [
         'onnx_asr',
+        'onnxruntime',
+        'onnxruntime.capi',
     ]
 
 # Collect submodules — parakeet-mlx + mlx + huggingface_hub all have
@@ -137,13 +136,13 @@ else:
 hiddenimports += collect_submodules('pydantic')
 hiddenimports += collect_submodules('numpy')
 hiddenimports += collect_submodules('huggingface_hub')
-hiddenimports += collect_submodules('onnxruntime')
 
 if _IS_DARWIN:
     hiddenimports += collect_submodules('parakeet_mlx')
     hiddenimports += collect_submodules('mlx')
 else:
     hiddenimports += collect_submodules('onnx_asr')
+    hiddenimports += collect_submodules('onnxruntime')
 
 # Collect data files
 datas = []
@@ -159,11 +158,11 @@ datas += [('scripts', 'scripts')]
 # Collect data files (tokenizers, configs). parakeet-mlx ships tokenizer
 # JSON resources that get loaded by path; onnx-asr ships built-in model
 # alias configs the same way.
-_DATA_PKGS = ['huggingface_hub', 'pywhispercpp', 'onnxruntime']
+_DATA_PKGS = ['huggingface_hub', 'pywhispercpp']
 if _IS_DARWIN:
     _DATA_PKGS += ['parakeet_mlx', 'mlx']
 else:
-    _DATA_PKGS += ['onnx_asr']
+    _DATA_PKGS += ['onnx_asr', 'onnxruntime']
 for pkg in _DATA_PKGS:
     try:
         datas += collect_data_files(pkg)
@@ -203,11 +202,13 @@ for pkg in _METADATA_PKGS:
 # libwhisper.dylib via the same mechanism. onnxruntime ships its native
 # session DLLs on Windows; PyInstaller's hidden-import / collect-all
 # gotcha for onnxruntime is well-documented (microsoft/onnxruntime#25193)
-# so we always run collect_dynamic_libs on it.
+# so we always run collect_dynamic_libs on it off-darwin.
 binaries = []
-_DYLIB_PKGS = ['pywhispercpp', 'onnxruntime']
+_DYLIB_PKGS = ['pywhispercpp']
 if _IS_DARWIN:
     _DYLIB_PKGS += ['mlx', 'parakeet_mlx']
+else:
+    _DYLIB_PKGS += ['onnxruntime']
 for pkg in _DYLIB_PKGS:
     try:
         binaries += collect_dynamic_libs(pkg)
@@ -269,6 +270,13 @@ if os.path.exists(ollama_bin_dir):
             rel_fs = rel.replace(os.sep, '/').lower()
             if should_prune_ollama_gpu_path(rel_fs, platform=sys.platform):
                 continue  # Windows only: skip GPU runner libs
+            if _IS_DARWIN and rel_fs.startswith('mlx_metal_v4/'):
+                # Ollama ships two MLX runners: v3 (macOS 14+) and v4 (macOS
+                # 26.2+, Metal 4 shaders), preferring v4 when the OS allows.
+                # v3 runs every macOS we support (14.4+) and measured the same
+                # NVFP4 speed as v4 on an M3 Max (106 tok/s both), so v4's
+                # ~170 MB is left out. Revisit if M5-class GPUs show a real gap.
+                continue
             rel_dir = os.path.dirname(rel)
             base = os.path.basename(filename).lower()
             if base == 'steno-audio-encode':
@@ -312,7 +320,9 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=[
+    # macOS runs Silero VAD in numpy; keep onnxruntime (~60 MB) out even if
+    # something imports it transitively.
+    excludes=(['onnxruntime', 'onnx_asr'] if _IS_DARWIN else []) + [
         # Exclude PyTorch and related heavy packages (not needed with whisper.cpp)
         'torch',
         'torchvision',
@@ -320,6 +330,14 @@ a = Analysis(
         'tensorflow',
         'keras',
         'transformers',
+        # parakeet-mlx's only librosa call (filters.mel) is served by the
+        # numpy shim in src/_mel.py; librosa would otherwise pull ~170 MB of
+        # numba/llvmlite/scipy/scikit-learn into the bundle.
+        'librosa',
+        'numba',
+        'llvmlite',
+        'scipy',
+        'sklearn',
         # Exclude other unnecessary packages
         'matplotlib',
         'PIL',
