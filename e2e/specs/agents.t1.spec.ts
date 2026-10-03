@@ -61,6 +61,7 @@ test("Agents exposes both install prompts and opens the selected setup guide", a
     .getByRole("button", { name: /Copy install prompt|Copied/ })
     .click();
   await expect(codex.locator("details")).toHaveAttribute("open", "");
+  await expect(codex.getByRole('button', { name: 'Copy install prompt', exact: true })).toBeVisible();
   await codex.getByRole("button", { name: "Setup instructions" }).click();
   await expect(codex.getByRole("status")).toHaveText(
     "Could not open the instructions. Try again.",

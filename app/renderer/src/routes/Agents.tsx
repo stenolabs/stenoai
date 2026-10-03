@@ -63,6 +63,7 @@ function AgentCard({ agent }: { agent: (typeof AGENT_SKILLS)[number] }) {
       setError('');
       setCopied(true);
     } catch {
+      setCopied(false);
       setError(copy.copyError);
       setPromptOpen(true);
     }

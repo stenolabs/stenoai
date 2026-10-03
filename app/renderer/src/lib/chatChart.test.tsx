@@ -62,6 +62,12 @@ describe('chat chart boundary', () => {
     const python = readFileSync(resolve(__dirname, '../../../../src/chat_charts.py'), 'utf8');
     expect(python).toContain(CHART_INSTRUCTIONS);
   });
+  test('a chart language fence inside code stays literal until a bare closing fence', () => {
+    const html = renderToStaticMarkup(renderMarkdown('```text\n```steno-chart\n' + JSON.stringify(spec) + '\n```'));
+    expect(html).toContain('data-lang="text"');
+    expect(html).toContain('```steno-chart');
+    expect(html).not.toContain('Loading chart');
+  });
   test('a complete valid fence selects the lazy chart renderer', () => {
     const html = renderToStaticMarkup(
       renderMarkdown('```steno-chart\n' + JSON.stringify(spec) + '\n```')

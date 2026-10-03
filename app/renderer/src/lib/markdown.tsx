@@ -140,7 +140,7 @@ export function renderMarkdown(text: string): React.ReactNode {
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
     // Fenced code block: ```lang ... ```
-    const fence = line.match(/^```([\w-]*)\s*$/);
+    const fence = line.match(inCode ? /^```\s*$/ : /^```([\w-]*)\s*$/);
     if (fence) {
       if (inCode) {
         flushCode(true);
