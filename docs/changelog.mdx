@@ -3,6 +3,33 @@ title: "Changelog"
 description: "What's new in Steno -- recent releases and notable changes."
 ---
 
+<Update label="v0.8.0" description="October 3, 2026">
+**New**
+- **Agents sidebar**: install the Steno skill in Claude Code or Codex using copyable prompts and the new [setup guide](/features/agents).
+- **Charts in Chat**: ask for bar or line charts based on numbers in your notes, with a data table to inspect the values.
+- **Chat during recording**: ask questions while recording and keep the conversation with the saved note. Parakeet supplies live transcript context; Whisper supplies transcript context after recording stops.
+- **Meeting packages on macOS**: import and export `.stenomeeting` packages with notes, transcripts, and optional audio. Audio is excluded unless you select it.
+- **Optional cloud transcription**: use an OpenAI-compatible endpoint after confirming that audio will be sent to the provider. Credentials are encrypted and tied to the configured endpoint.
+- **What's new panel**: release highlights appear after an update when the app is idle. Reopen them from Settings → About.
+
+**Improved**
+- The macOS app download is smaller after removing unused libraries and reducing bundled audio and model runtimes.
+- Speaker-separation models on macOS are now optional during setup and can be downloaded later in Settings → AI. Their download is smaller and shows progress.
+- Parakeet downloads show byte totals and percentages when available, with a separate preparation stage.
+- Supported audio in macOS meeting exports uses native AAC compression; original recordings stay unchanged.
+- Linux packages retain Ollama's CUDA and Vulkan backends for supported GPUs and drivers.
+- The installed app is named StenoAI; the website uses StenographAI. Existing data locations and download links remain compatible.
+
+**Fixed**
+- Numbered chat responses preserve their numbering across paragraphs and nested lists.
+- Chat's rotating prompt examples no longer overlap.
+- Note-generation failures show guidance for connection, model, authentication, timeout, memory, and configuration problems. Existing notes remain available for retry.
+
+**Known Issues**
+- Meeting package transfer and acoustic speaker separation are macOS-only. Windows and Linux retain You / Others channel labels.
+- Windows and Linux installers remain unsigned. Linux updates are manual, and GPU support depends on the host hardware and drivers.
+</Update>
+
 <Update label="v0.7.1" description="September 5, 2026">
 **New**
 - **Linux alpha**: Debian/Ubuntu packages and an AppImage support microphone and PipeWire system-audio recording. Without PipeWire, recording uses the microphone only.

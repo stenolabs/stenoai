@@ -30,6 +30,14 @@ export const RELEASE_HIGHLIGHTS: readonly ReleaseHighlight[] = [
     route: '/chat',
     visual: 'chart',
   },
+  {
+    id: 'speaker-models',
+    title: 'Choose when to add individual speakers',
+    description:
+      'On macOS, speaker models are optional during setup. Download them later in AI settings, with progress shown as they install.',
+    action: 'Open AI settings',
+    route: '/settings?tab=ai',
+  },
 ];
 
 export const WHATS_NEW_COPY = {

@@ -42,10 +42,11 @@
 If you're looking for a hosted desktop recording API, consider checking out [Recall.ai](https://www.recall.ai/product/desktop-recording-sdk?utm_source=github&utm_medium=sponsorship&utm_campaign=ruzin-stenoai), an API that records Zoom, Google Meet, Microsoft Teams, in-person meetings, and more.
 
 ## 📢 What's New
-- **2026-09-05** 🐧 Linux alpha: Debian/Ubuntu packages and an AppImage support microphone and PipeWire system-audio recording, with CPU-only bundled summaries.
-- **2026-09-05** 📁 Reliable recording and folders: failed recording starts no longer leave a stuck entry, and repeated clicks no longer create duplicate folders.
-- **2026-09-05** 📥 Clear download progress: Parakeet shows actual download progress and a separate model-preparation stage.
-- **2026-09-05** 📝 Transcript recovery: on Windows and Linux, the available live transcript replaces an ONNX batch transcript that read less than half the recording.
+
+- **2026-10-03** 🤖 Agents and charts — Install the Steno skill in Claude Code or Codex from the Agents sidebar, and ask Chat for bar or line charts from your notes.
+- **2026-10-03** 💬 Chat while recording — Ask questions during a meeting and keep the conversation with the saved note.
+- **2026-10-03** 📦 Meeting packages — Import and export `.stenomeeting` packages on macOS, with optional audio and native AAC compression.
+- **2026-10-03** 📥 Smaller downloads — The macOS app download is smaller, and speaker models are optional with progress shown during installation.
 
 ## Features
 
@@ -58,11 +59,15 @@ If you're looking for a hosted desktop recording API, consider checking out [Rec
 - **Global record shortcut** — Start or stop recording from anywhere with `⌘⇧R` (`Ctrl+Shift+R` on Windows). Toggle it off in Settings if it clashes with another app. On macOS, power users can additionally bind any key of their own via the `stenoai://record/start` / `record/stop` deep links (Shortcuts app).
 - **In-app note-taking** — Jot notes while you record, or keep a dedicated **My notes** tab that stays editable alongside the AI summary; your notes are folded straight into the summary.
 - **Ask your meetings** — Ask general questions anytime, including while recording. Attach This meeting, All notes, a folder, or Shared notes as optional context, or choose No meeting context. Conversations stay with the note when recording stops.
+- **Charts in chat** — Ask for a bar or line chart based on numbers in your notes, and open its data table to inspect the values.
+- **Agent setup** — The Agents sidebar offers Steno skill install prompts for Claude Code and Codex, with a [setup guide](https://docs.stenoai.co/features/agents).
+- **Meeting packages (macOS)** — Import and export `.stenomeeting` packages containing notes and transcripts. Include audio only when you choose; supported recordings are compressed for export while originals stay unchanged.
 - **Multi-language (25 live, 99 total)** — Parakeet covers 25 European languages with live transcription; Whisper handles 99 languages including Chinese, Japanese, Arabic, and Hindi post-stop.
 - **Markdown ownership** — Summaries and transcripts save as clean Markdown you can edit, search, or sync to whatever knowledge base you live in.
 - **Report templates** — Define custom report styles and generate them per meeting; a note can hold multiple reports (the structured summary plus template-driven ones), switchable in the detail view.
 - **Transcript export** — Copy the full transcript or save it as Markdown (with metadata, notes, and speaker labels) to drop into any external tool.
 - **Bring your own cloud model** — Optional OpenAI, Anthropic, AWS Bedrock (Claude — including application inference profile ARNs for governed AWS environments), or custom API endpoint for users who prefer a hosted LLM.
+- **Optional cloud transcription** — Choose an OpenAI-compatible transcription endpoint in Settings → AI. Enabling it requires confirmation because recording audio is sent to that provider.
 - **Organisation AI** — On managed deployments, sign in to your org's StenographAI adapter and AI routes through it automatically — no local API key, no per-user setup.
 
 ## Coming from Granola?
@@ -235,7 +240,7 @@ sudo apt install libportaudio2
 Known alpha limitations:
 
 - **Unsigned**, same as the Windows alpha.
-- **CPU-only bundled summarisation** and `onnx-asr` transcription, same as Windows. To use GPU-accelerated summaries, run a separately installed Ollama with a supported GPU and driver, select **Settings → AI → Private Server**, enter `http://127.0.0.1:11434`, and choose a model installed on that server.
+- **GPU support for summaries** — Linux packages retain Ollama's CUDA and Vulkan backends; acceleration depends on your GPU and drivers. Transcription uses `onnx-asr` on CPU. A separately installed Ollama can also be used through Settings → AI → Private Server.
 - **System audio requires PipeWire** (Ubuntu's default since 22.10). The toggle reports unsupported on a PulseAudio-only or headless install, and recording falls back to mic-only.
 - **No speaker diarization sidecar** — per-channel `[You]`/`[Others]` labelling works, but the acoustic multi-speaker split is macOS-only.
 - **No auto-update.** `.deb` installs update by downloading a new package; AppImage self-update is a follow-up.
