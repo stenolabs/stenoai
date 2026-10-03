@@ -1,5 +1,6 @@
 import json
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -105,11 +106,14 @@ class SpeakerModelProgressTests(unittest.TestCase):
             'STENO_PROGRESS {"percent":4.2,"phase":"downloading"}',
             'STENO_PROGRESS {"percent":true,"phase":"downloading"}',
             'STENO_PROGRESS {"percent":4,"phase":"/Users/me/secret"}',
+            'STENO_PROGRESS {"percent":4,"phase":["downloading"]}',
+            'STENO_PROGRESS {"percent":4,"phase":{"a":1}}',
             'STENO_PROGRESS not json',
             'steno-diarize error: something',
         ]:
             self.assertIsNone(parse(line), line)
 
+    @unittest.skipIf(sys.platform == "win32", "runs a /bin/sh fake sidecar")
     def test_prepare_relays_progress_from_a_real_sidecar_process(self):
         payload = {
             "ready": True,
@@ -139,6 +143,7 @@ class SpeakerModelProgressTests(unittest.TestCase):
         self.assertEqual(json.loads(lines[-1]), {"success": True, **payload})
         self.assertNotIn("CoreML", result.output)
 
+    @unittest.skipIf(sys.platform == "win32", "runs a /bin/sh fake sidecar")
     def test_progress_arrives_while_the_sidecar_is_still_running(self):
         import time
         with tempfile.TemporaryDirectory() as tmp:
@@ -164,6 +169,7 @@ class SpeakerModelProgressTests(unittest.TestCase):
         self.assertEqual([e for _, e in seen], [{"percent": 5, "phase": "downloading"}])
         self.assertLess(seen[0][0] - started, finished - started - 0.5)
 
+    @unittest.skipIf(sys.platform == "win32", "runs a /bin/sh fake sidecar")
     def test_hung_sidecar_times_out(self):
         with tempfile.TemporaryDirectory() as tmp:
             sidecar = Path(tmp) / "steno-diarize"

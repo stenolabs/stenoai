@@ -6,6 +6,7 @@ import {
 } from '@/lib/parakeetProgress';
 import type { ParakeetPullProgressEvent, SpeakerModelsProgressEvent } from '@/lib/ipc';
 import { DownloadProgressBar } from '@/components/DownloadProgressBar';
+import { useSpeakerModelsStatus } from '@/hooks/useSpeakerModels';
 import { t } from '@/i18n';
 import * as React from 'react';
 import { AudioLines, Check, Cloud, HardDrive, Mic, MessageSquare, Zap, X } from 'lucide-react';
@@ -167,6 +168,12 @@ export function Setup() {
   // Speaker separation is opt-in: its models are an extra ~250 MB most people
   // can skip, and Settings -> AI offers the same download later.
   const [includeSpeakers, setIncludeSpeakers] = React.useState(false);
+  // Models already on disk (e.g. downloaded from Settings): show it on.
+  const speakerStatus = useSpeakerModelsStatus();
+  const speakersInstalled = isMac && speakerStatus.data?.success === true && speakerStatus.data.ready;
+  React.useEffect(() => {
+    if (speakersInstalled) setIncludeSpeakers(true);
+  }, [speakersInstalled]);
 
   React.useEffect(() => {
     if (typeof window === 'undefined' || !window.stenoai) return;

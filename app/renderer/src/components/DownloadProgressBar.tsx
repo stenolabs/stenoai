@@ -17,7 +17,8 @@ export function DownloadProgressBar({
   /** Names the progressbar element itself, not the wrapper. */
   'aria-label': string;
 } & Omit<React.HTMLAttributes<HTMLDivElement>, 'aria-label'>) {
-  const clamped = percent === null ? null : Math.max(0, Math.min(100, Math.round(percent)));
+  const clamped =
+    percent === null ? null : Math.max(0, Math.min(100, Math.round(Number.isFinite(percent) ? percent : 0)));
   return (
     <div className={cn('mt-2', className)} {...rest}>
       <div className="mb-1 flex items-center justify-between gap-3 text-[11px] text-muted-foreground">

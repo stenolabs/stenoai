@@ -66,9 +66,12 @@ struct ShortRecordingTests {
 
         try Data(count: 400).write(to: dir.appendingPathComponent("CFNetworkDownload_a.tmp"))
         monitor.poll()
+        // A second, smaller in-flight file (another download) doesn't add.
+        try Data(count: 100).write(to: dir.appendingPathComponent("CFNetworkDownload_b.tmp"))
+        monitor.poll()
         try Data(count: 5000).write(to: dir.appendingPathComponent("CFNetworkDownload_a.tmp"))
         monitor.poll()
-        #expect(seen.value == [0.4, 0.99])
+        #expect(seen.value == [0.4, 0.4, 0.99])
     }
 
     @Test("Prepare cleanup removes only the retired Sortformer bundle")

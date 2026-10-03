@@ -4418,7 +4418,7 @@ def _parse_speaker_progress_line(line: str) -> Optional[dict]:
     percent, phase = event.get("percent"), event.get("phase")
     if not isinstance(percent, int) or isinstance(percent, bool) or not 0 <= percent <= 100:
         return None
-    if phase not in _SPEAKER_PROGRESS_PHASES:
+    if not isinstance(phase, str) or phase not in _SPEAKER_PROGRESS_PHASES:
         return None
     return {"percent": percent, "phase": phase}
 

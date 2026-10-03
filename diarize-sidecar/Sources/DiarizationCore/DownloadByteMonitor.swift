@@ -7,9 +7,11 @@ import Foundation
 /// moves once per file -- and the Sortformer model is one ~243 MB file. The
 /// bytes are still visible: URLSession streams the download into a
 /// `CFNetworkDownload_*.tmp` file in the user's temp directory. This polls the
-/// size of such files created after `start()` and reports the fraction of
-/// `expectedBytes`, capped below 1 so only FluidAudio's own completion event
-/// can finish the download band.
+/// largest such file created after `start()` -- the model weights, which
+/// dwarf everything else -- rather than a sum, so another app's concurrent
+/// download in the same shared temp directory can't inflate it. It reports
+/// the fraction of `expectedBytes`, capped below 1 so only FluidAudio's own
+/// completion event can finish the download band.
 public final class DownloadByteMonitor: @unchecked Sendable {
     public static let tempFilePrefix = "CFNetworkDownload"
 
@@ -47,7 +49,10 @@ public final class DownloadByteMonitor: @unchecked Sendable {
 
     /// One measurement; public so tests can drive it without a timer.
     public func poll() {
-        let bytes = Self.inFlightBytes(in: directory, createdAfter: startDate)
+        lock.lock()
+        let since = startDate
+        lock.unlock()
+        let bytes = Self.inFlightBytes(in: directory, createdAfter: since)
         guard bytes > 0, expectedBytes > 0 else { return }
         onFraction(min(Double(bytes) / expectedBytes, 0.99))
     }
@@ -57,13 +62,13 @@ public final class DownloadByteMonitor: @unchecked Sendable {
         guard let entries = try? FileManager.default.contentsOfDirectory(
             at: directory, includingPropertiesForKeys: keys
         ) else { return 0 }
-        return entries.reduce(Int64(0)) { total, url in
+        return entries.reduce(Int64(0)) { largest, url in
             guard url.lastPathComponent.hasPrefix(tempFilePrefix),
                   let values = try? url.resourceValues(forKeys: Set(keys)),
                   values.isRegularFile == true,
                   let created = values.creationDate, created >= start,
-                  let size = values.fileSize else { return total }
-            return total + Int64(size)
+                  let size = values.fileSize else { return largest }
+            return max(largest, Int64(size))
         }
     }
 }

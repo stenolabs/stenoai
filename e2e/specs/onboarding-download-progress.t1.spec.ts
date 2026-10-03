@@ -136,6 +136,17 @@ test('speaker models are opt-in: onboarding skips them unless the switch is on',
   expect(calls).toBe(0);
 });
 
+test('the speaker switch starts on when the models are already installed', async ({ launchApp }) => {
+  const { page } = await launchApp({
+    mockIpc: true,
+    env: { STENOAI_E2E_MOCK_PARAKEET_INSTALLED: '1', STENOAI_E2E_RENDERER_PLATFORM: 'darwin' },
+  });
+  await page.evaluate(() => {
+    window.location.hash = '#/setup';
+  });
+  await expect(page.getByRole('switch', { name: 'Separate individual speakers' })).toBeChecked();
+});
+
 test('opted-in speaker download shows a real percent bar', async ({ launchApp }) => {
   const { app, page } = await launchApp({
     mockIpc: true,

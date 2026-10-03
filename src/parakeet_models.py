@@ -246,10 +246,12 @@ def _download_snapshot(model_id: str, emit: Callable[[dict], None]) -> None:
     disable_implicit_hf_token()
     from huggingface_hub import hf_hub_download
 
-    revision = None
     files = _REQUIRED_SNAPSHOT_FILES[model_id]
     supports_progress = "tqdm_class" in inspect.signature(hf_hub_download).parameters
-    sizes = _snapshot_file_sizes(model_id, files)
+    # Pin the snapshot up front when the Hub says which one is current, so the
+    # sizes and the downloads describe the same files. Otherwise the first
+    # download resolves it, as before.
+    revision, sizes = _snapshot_file_sizes(model_id, files)
     done_bytes = 0
     for index, filename in enumerate(files):
         base = {"stage": "downloading", "completed_files": index, "total_files": len(files)}
@@ -287,18 +289,23 @@ def _download_snapshot(model_id: str, emit: Callable[[dict], None]) -> None:
         emit(finished)
 
 
-def _snapshot_file_sizes(model_id: str, files: tuple[str, ...]) -> Optional[dict[str, int]]:
-    """Exact byte size of each file from the Hub's metadata, so progress can be
-    a real percentage of the total rather than an estimate. ``None`` when the
-    metadata call is unavailable or fails -- progress then reports files and
-    current-file bytes only, as before."""
+def _snapshot_file_sizes(
+    model_id: str, files: tuple[str, ...]
+) -> tuple[Optional[str], Optional[dict[str, int]]]:
+    """The current snapshot revision and the exact byte size of each file in
+    it, from the Hub's metadata, so progress can be a real percentage of the
+    total rather than an estimate. ``(None, None)`` when the metadata calls are
+    unavailable or fail -- progress then reports files and current-file bytes
+    only, as before."""
     try:
         from huggingface_hub import HfApi
-        infos = HfApi().get_paths_info(model_id, list(files), token=False)
+        api = HfApi()
+        revision = api.model_info(model_id, token=False).sha
+        infos = api.get_paths_info(model_id, list(files), revision=revision, token=False)
         sizes = {info.path: int(info.size) for info in infos}
     except Exception as e:  # metadata is a nicety; never fail the download for it
         logger.info("Parakeet download size lookup unavailable: %s", e)
-        return None
-    if set(sizes) != set(files) or any(size <= 0 for size in sizes.values()):
-        return None
-    return sizes
+        return None, None
+    if not revision or set(sizes) != set(files) or any(size <= 0 for size in sizes.values()):
+        return None, None
+    return revision, sizes

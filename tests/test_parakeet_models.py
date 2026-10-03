@@ -224,13 +224,20 @@ class DownloadProgressTests(unittest.TestCase):
         sizes = {name: 100 * (i + 1) for i, name in enumerate(files)}
 
         def download(repo, filename, revision=None, token=None, tqdm_class=None):
+            calls.append((filename, revision))
             with tqdm_class(total=sizes[filename], unit="B", mininterval=0, disable=None) as bar:
                 bar.update(sizes[filename] // 2)
                 bar.update(sizes[filename] - sizes[filename] // 2)
             return "/synthetic/snapshots/abc123/" + filename
 
+        calls = []
+
         class Api:
-            def get_paths_info(self, repo, paths, token=None):
+            def model_info(self, repo, token=None):
+                return types.SimpleNamespace(sha="pinned123")
+
+            def get_paths_info(self, repo, paths, revision=None, token=None):
+                calls.append(("sizes", revision))
                 return [types.SimpleNamespace(path=p, size=sizes[p]) for p in paths]
 
         hub = types.ModuleType("huggingface_hub")
@@ -243,6 +250,8 @@ class DownloadProgressTests(unittest.TestCase):
         downloaded = [e["downloaded_bytes"] for e in events]
         self.assertEqual(downloaded, sorted(downloaded))
         self.assertEqual(downloaded[-1], total)
+        # Sizes and every download describe the same pinned snapshot.
+        self.assertTrue(all(rev == "pinned123" for _, rev in calls), calls)
 
     @patch.dict(os.environ)
     def test_snapshot_without_size_metadata_omits_totals(self):
@@ -250,7 +259,7 @@ class DownloadProgressTests(unittest.TestCase):
         import sys
 
         class BrokenApi:
-            def get_paths_info(self, *a, **k):
+            def model_info(self, *a, **k):
                 raise OSError("offline")
 
         hub = types.ModuleType("huggingface_hub")

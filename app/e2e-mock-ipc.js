@@ -1031,9 +1031,11 @@ function install({ ipcMain }) {
       if (process.env.STENOAI_E2E_SPEAKER_MODELS_MISSING !== '1') return ready;
       const wc = event && event.sender;
       if (wc && !wc.isDestroyed()) wc.send('speaker-models-progress', { percent: 37, phase: 'downloading' });
-      return new Promise((resolve) => {
-        state.finish = () => { state.ready = true; resolve(ready); };
+      // Like main.js, concurrent callers share one in-flight download.
+      state.inFlight ||= new Promise((resolve) => {
+        state.finish = () => { state.ready = true; state.inFlight = null; resolve(ready); };
       });
+      return state.inFlight;
     },
     'setup-ollama-and-model': async (event) => {
       if (process.env.STENOAI_E2E_SETUP_PROGRESS === '1') {

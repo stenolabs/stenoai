@@ -67,6 +67,24 @@ test('a failed or garbled run resolves to a structured failure', async () => {
   });
 });
 
+test('a structured backend failure is passed through as-is', async () => {
+  const { prepare, procs } = setup();
+  const promise = prepare();
+  const failure = { success: false, ready: false, error: 'Speaker diarization model setup failed' };
+  procs[0].stdout.emit('data', Buffer.from(`${JSON.stringify(failure)}\n`));
+  procs[0].emit('close', 1);
+  assert.deepEqual(await promise, failure);
+});
+
+test('a spawn error resolves to the structured failure', async () => {
+  const { prepare, procs } = setup();
+  const promise = prepare();
+  procs[0].emit('error', new Error('ENOENT'));
+  assert.deepEqual(await promise, {
+    success: false, ready: false, error: 'Speaker diarization model setup failed',
+  });
+});
+
 test('concurrent requests share one download; a later request starts a new one', async () => {
   const { prepare, procs } = setup();
   const first = prepare();

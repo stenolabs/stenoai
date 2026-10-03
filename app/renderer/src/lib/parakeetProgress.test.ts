@@ -1,5 +1,9 @@
 import { it, expect } from 'vitest';
-import { parakeetProgressLabel as label, parakeetProgressPercent } from './parakeetProgress';
+import {
+  parakeetProgressLabel as label,
+  parakeetProgressPercent,
+  speakerModelsProgressPercent,
+} from './parakeetProgress';
 it('distinguishes measured download, preparation and completion without ETA', () => {
   expect(label()).toBe('Preparing download…');
   expect(label({ stage: 'loading' })).toBe('Download complete. Preparing model…');
@@ -25,4 +29,10 @@ it('reports a measured percent only when the backend sent valid byte totals', ()
   ]) {
     expect(percent(bad)).toBeNull();
   }
+});
+
+it('speaker progress measures the download only; compiling has no percent', () => {
+  expect(speakerModelsProgressPercent({ percent: 42, phase: 'downloading' })).toBe(42);
+  expect(speakerModelsProgressPercent({ percent: 0, phase: 'listing' })).toBe(0);
+  expect(speakerModelsProgressPercent({ percent: 100, phase: 'compiling' })).toBeNull();
 });
