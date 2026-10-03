@@ -5,10 +5,11 @@ compiled with an explicit list of demuxers, decoders, filters and muxers. A
 component missing from that list only fails at runtime, so this exercises the
 real pipeline invocations against bin/ffmpeg over one sample of every import
 format (app/main.js IMPORT_AUDIO_EXTENSIONS). wav/aiff/caf/m4a are made at test
-time with macOS's own `say` and `afconvert`; the formats afconvert cannot
-write (mp3, aac, webm, ogg vorbis/opus, flac, mp4, mov) are committed one-second
-stereo tones in tests/fixtures/ffmpeg_formats, generated once with a full
-ffmpeg. A full ffmpeg (an older dev checkout) passes too -- it is a superset.
+time with macOS's own `say` and `afconvert`. The formats afconvert cannot write
+(mp3, aac, webm, ogg vorbis/opus, flac, mp4, mov) are encoded at test time by a
+full reference ffmpeg -- STENOAI_REF_FFMPEG, or Homebrew's -- and skipped,
+loudly, without one. Media files are never committed (the repository privacy
+guard rejects them). A full ffmpeg as bin/ffmpeg passes too -- it is a superset.
 """
 
 import shutil
@@ -26,7 +27,25 @@ from src.transcriber import (
 )
 
 FFMPEG = Path(__file__).resolve().parents[1] / "bin" / "ffmpeg"
-COMMITTED_FIXTURES = Path(__file__).resolve().parent / "fixtures" / "ffmpeg_formats"
+
+# (file name, encoder args) for the formats afconvert cannot write.
+REFERENCE_ENCODED = [
+    ("tone.mp3", ["-c:a", "libmp3lame"]),
+    ("tone.aac", ["-c:a", "aac", "-f", "adts"]),
+    ("tone.webm", ["-c:a", "libopus"]),
+    ("tone.ogg", ["-c:a", "libvorbis"]),
+    ("tone_opus.ogg", ["-c:a", "libopus", "-f", "ogg"]),
+    ("tone.flac", ["-c:a", "flac"]),
+]
+REFERENCE_VIDEO = [("tone.mp4", ["-c:a", "aac"]), ("tone.mov", ["-c:a", "alac"])]
+
+
+def _reference_ffmpeg():
+    import os
+    for candidate in (os.environ.get("STENOAI_REF_FFMPEG"), "/opt/homebrew/bin/ffmpeg", "/usr/local/bin/ffmpeg"):
+        if candidate and Path(candidate).is_file() and Path(candidate).resolve() != FFMPEG.resolve():
+            return candidate
+    return None
 
 # Components named explicitly by an ffmpeg invocation in src/, simple_recorder.py
 # or app/meeting-transfer-audio.js, or required for an import format.
@@ -62,8 +81,20 @@ class BundledFfmpegTests(unittest.TestCase):
             out = cls.tmp / name
             subprocess.run(["afconvert", "-f", fmt, "-d", data, str(stereo), str(out)], check=True)
             cls.fixtures[name] = out
-        for path in sorted(COMMITTED_FIXTURES.iterdir()):
-            cls.fixtures[path.name] = path
+        # A reference build may lack an encoder (Homebrew's has no libvorbis);
+        # such formats are listed, by name, in the coverage test's skip.
+        cls.reference = _reference_ffmpeg()
+        if cls.reference:
+            ref = [cls.reference, "-nostdin", "-v", "error", "-y"]
+            video = ["-f", "lavfi", "-i", "color=black:s=16x16:r=2:d=2"]
+            jobs = [(n, ["-i", str(stereo), *a]) for n, a in REFERENCE_ENCODED] + [
+                (n, [*video, "-i", str(stereo), "-c:v", "libx264", "-pix_fmt", "yuv420p", *a, "-shortest"])
+                for n, a in REFERENCE_VIDEO
+            ]
+            for name, args in jobs:
+                out = cls.tmp / name
+                if subprocess.run([*ref, *args, str(out)], capture_output=True).returncode == 0:
+                    cls.fixtures[name] = out
 
     @classmethod
     def tearDownClass(cls):
@@ -100,6 +131,16 @@ class BundledFfmpegTests(unittest.TestCase):
                                 "-acodec", "pcm_s16le", "-ar", "16000", "-")
                 self.assertEqual(r.returncode, 0, r.stderr)
                 self.assertGreater(len(r.stdout), 16000, "decoded under half a second of audio")
+
+    def test_reference_formats_were_exercised(self):
+        if not self.reference:
+            self.skipTest(
+                "no full reference ffmpeg (set STENOAI_REF_FFMPEG or brew install ffmpeg): "
+                "mp3/aac/webm/ogg/flac/mp4/mov decoding NOT checked"
+            )
+        missing = sorted({n for n, _ in REFERENCE_ENCODED + REFERENCE_VIDEO} - set(self.fixtures))
+        if missing:
+            self.skipTest(f"reference ffmpeg {self.reference} cannot encode {missing}: those NOT checked")
 
     def test_probe_output_parses(self):
         r = subprocess.run([str(FFMPEG), "-hide_banner", "-t", "0", "-i", str(self.fixtures["stereo.wav"]),
