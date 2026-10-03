@@ -34,7 +34,7 @@ config or touches AWS.
 
 ## Install
 
-See [Use Steno with your agent](https://docs.stenoai.co/features/agents) for the
+See [Use Steno with your agent](https://github.com/stenolabs/stenoai/blob/main/docs/features/agents.mdx) for the
 setup guide, examples, and troubleshooting.
 
 There's no build or package step — the skill is a **self-contained folder**
@@ -47,7 +47,7 @@ The agent downloads the skill; Steno does not install files into other apps.
 
 ### Claude Code
 
-Copy the install prompt from [the Claude Code setup guide](https://docs.stenoai.co/features/agents#claude-code).
+Copy the install prompt from [the Claude Code setup guide](https://github.com/stenolabs/stenoai/blob/main/docs/features/agents.mdx#claude-code).
 
 You can also copy the complete `skills/steno` folder from a checkout into
 `~/.claude/skills/steno`, or `.claude/skills/steno` for one project.
@@ -55,7 +55,7 @@ Run `/steno <request>`. See [Claude Code skills](https://code.claude.com/docs/en
 
 ### Codex
 
-Copy the install prompt from [the Codex setup guide](https://docs.stenoai.co/features/agents#codex).
+Copy the install prompt from [the Codex setup guide](https://github.com/stenolabs/stenoai/blob/main/docs/features/agents.mdx#codex).
 
 For manual installation, copy the complete folder into `~/.agents/skills/steno`
 (personal) or `.agents/skills/steno` (one project). Invoke `$steno` in Codex CLI

@@ -60,7 +60,7 @@ If you're looking for a hosted desktop recording API, consider checking out [Rec
 - **In-app note-taking** — Jot notes while you record, or keep a dedicated **My notes** tab that stays editable alongside the AI summary; your notes are folded straight into the summary.
 - **Ask your meetings** — Ask general questions anytime, including while recording. Attach This meeting, All notes, a folder, or Shared notes as optional context, or choose No meeting context. Conversations stay with the note when recording stops.
 - **Charts in chat** — Ask for a bar or line chart based on numbers in your notes, and open its data table to inspect the values.
-- **Agent setup** — The Agents sidebar offers Steno skill install prompts for Claude Code and Codex, with a [setup guide](https://docs.stenoai.co/features/agents).
+- **Agent setup** — The Agents sidebar offers Steno skill install prompts for Claude Code and Codex, with a [setup guide](docs/features/agents.mdx).
 - **Meeting packages (macOS)** — Import and export `.stenomeeting` packages containing notes and transcripts. Include audio only when you choose; supported recordings are compressed for export while originals stay unchanged.
 - **Multi-language (25 live, 99 total)** — Parakeet covers 25 European languages with live transcription; Whisper handles 99 languages including Chinese, Japanese, Arabic, and Hindi post-stop.
 - **Markdown ownership** — Summaries and transcripts save as clean Markdown you can edit, search, or sync to whatever knowledge base you live in.

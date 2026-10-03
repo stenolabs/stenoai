@@ -43,8 +43,8 @@ test("Agents exposes both install prompts and opens the selected setup guide", a
       ),
     )
     .toEqual([
-      "https://docs.stenoai.co/features/agents#claude-code",
-      "https://docs.stenoai.co/features/agents#codex",
+      "https://github.com/stenolabs/stenoai/blob/main/docs/features/agents.mdx#claude-code",
+      "https://github.com/stenolabs/stenoai/blob/main/docs/features/agents.mdx#codex",
     ]);
   await app.evaluate(({ shell }) => {
     shell.openExternal = async () => {

@@ -5,7 +5,7 @@ import { ipc } from '@/lib/ipc';
 import { useAppVersion } from '@/hooks/useSettings';
 import { COMPACT_BTN, SettingRow } from './primitives';
 import { useWhatsNew } from '@/components/WhatsNew';
-import { WHATS_NEW_COPY } from '@/lib/releaseHighlights';
+import { CHANGELOG_URL, WHATS_NEW_COPY } from '@/lib/releaseHighlights';
 
 /** Plain external-link text (matches TemplatesTab's "learn more" link) for
  *  rows that just navigate out, rather than a bordered Button — keeps the
@@ -25,11 +25,6 @@ function ExternalLinkAction({ label, onClick }: { label: string; onClick: () => 
   );
 }
 
-// docs.stenoai.co/changelog (not github.com), so these go through the
-// generic shell.openExternal channel rather than updates.openReleasePage,
-// which is locked to the github.com origin (see main.js's open-release-page
-// handler) for the contextual "View release" button below.
-const CHANGELOG_URL = 'https://docs.stenoai.co/changelog';
 const DISCORD_URL = 'https://discord.gg/DZ6vcQnxxu';
 const GITHUB_URL = 'https://github.com/stenolabs/stenoai';
 const TERMS_URL = 'https://stenoai.co/terms.html';
