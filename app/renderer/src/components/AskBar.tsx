@@ -245,6 +245,8 @@ export function AskBar({ visible = true }: { visible?: boolean }) {
   const showStream = isStreaming && streamSessionKey === sessionKey && streamSessionId === chat.activeId;
   const session = chat.activeSession;
   const selectedSessionId = session?.id;
+  const scopeOwnerRef = React.useRef(selectedSessionId);
+  scopeOwnerRef.current = selectedSessionId;
   const selectedScope = session?.scopeFolderId;
   React.useEffect(() => {
     setScope(selectedSessionId && selectedScope !== undefined ? selectedScope : MEETING_SCOPE);
@@ -252,7 +254,8 @@ export function AskBar({ visible = true }: { visible?: boolean }) {
   const changeScope = (value: string | null) => {
     setScope(value);
     if (session) void chat.setScope(session.id, value).catch(() => {
-      setScope(session.scopeFolderId === undefined ? MEETING_SCOPE : session.scopeFolderId);
+      if (scopeOwnerRef.current !== session.id) return;
+      setScope((current) => current === value ? (session.scopeFolderId === undefined ? MEETING_SCOPE : session.scopeFolderId) : current);
       setSubmitError(t('chat.saveError'));
     });
   };

@@ -101,3 +101,27 @@ test('an answer keeps its original conversation and scope after switching histor
   expect(saved.success && saved.data?.sessions.find((s) => s.id === 'general')?.messages.at(-1)?.context).toBe('__general__');
   expect(saved.success && saved.data?.sessions.find((s) => s.id === 'notes')?.messages).toEqual([]);
 });
+
+test('a failed scope save cannot change the newly viewed conversation', async ({ launchApp }) => {
+  const { page, app } = await launchApp({ mockIpc: true });
+  await page.evaluate(() => window.stenoai.chat.save({ sessions: [
+    { id: 'first', name: 'First chat', summaryFile: '__global__', scopeFolderId: null, messages: [], createdAt: 1, updatedAt: 1 },
+    { id: 'second', name: 'Second chat', summaryFile: '__global__', scopeFolderId: '__general__', messages: [], createdAt: 2, updatedAt: 2 },
+  ] }));
+  await page.reload();
+  await page.evaluate(() => { window.location.hash = '#/chat/first'; });
+  await page.getByRole('button', { name: 'Scope: All notes' }).click();
+  await app.evaluate(() => { (global as any).__holdNextChatSave = true; });
+  await page.getByRole('button', { name: 'General', exact: true }).click();
+  await expect.poll(() => app.evaluate(() => typeof (global as any).__failChatSave)).toBe('function');
+  await page.evaluate(() => { window.location.hash = '#/chat/second'; });
+  await expect(page.getByRole('button', { name: 'Scope: General' })).toBeVisible();
+  await app.evaluate(() => (global as any).__failChatSave());
+  // Saving another message flushes the rollback before asserting the selected
+  // scope on the second conversation and its dispatched request.
+  await page.getByRole('textbox').first().fill('Explain DNS');
+  await page.getByRole('textbox').first().press('Enter');
+  await expect(page.locator('.chat-bubble ol')).toHaveCount(1);
+  const request = await app.evaluate(() => (global as any).__mockIpcCalls.filter((c: any) => c.channel === 'chat-context-stream').at(-1).args[1]);
+  expect(request.scope).toBe('general');
+});

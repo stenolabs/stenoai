@@ -1629,7 +1629,14 @@ function install({ ipcMain }) {
 
   let chatData = null;
   MOCKS['load-chat-sessions'] = async () => ({ success: true, data: chatData });
-  MOCKS['save-chat-sessions'] = async (_event, data) => { chatData = data; return { success: true }; };
+  MOCKS['save-chat-sessions'] = async (_event, data) => {
+    if (global.__holdNextChatSave) {
+      global.__holdNextChatSave = false;
+      return new Promise((resolve) => { global.__failChatSave = () => resolve({ success: false, error: 'Save failed' }); });
+    }
+    chatData = data;
+    return { success: true };
+  };
   const originalOn = ipcMain.on.bind(ipcMain);
   ipcMain.on = (channel, handler) => {
     if (channel === 'chat-context-stream') {

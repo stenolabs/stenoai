@@ -47,6 +47,8 @@ interface ChatConversationProps {
 }
 
 export function ChatConversation({ sessionId }: ChatConversationProps) {
+  const scopeOwnerRef = React.useRef(sessionId);
+  scopeOwnerRef.current = sessionId;
   const allSessions = useAllChatSessions();
   const chat = useChatSessions(GLOBAL_SCOPE, null);
   const streaming = useGlobalStreaming();
@@ -482,7 +484,8 @@ export function ChatConversation({ sessionId }: ChatConversationProps) {
                 if (!session) return;
                 setScopeFolderId(scope);
                 void chat.setScope(session.id, scope).catch(() => {
-                  setScopeFolderId(session.scopeFolderId ?? null);
+                  if (scopeOwnerRef.current !== session.id) return;
+                  setScopeFolderId((current) => current === scope ? session.scopeFolderId ?? null : current);
                   setSubmitError(t('chat.saveError'));
                 });
               }} disabled={isStreaming || !session} />
