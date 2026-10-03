@@ -25,6 +25,12 @@ from pathlib import Path
 from typing import Optional
 
 from src._heartbeat import _emit_heartbeat
+from src._mel import install_librosa_shim
+
+# parakeet_mlx.audio imports librosa at module level for one filterbank call;
+# the bundle excludes librosa (and numba/scipy/sklearn behind it), so stand in
+# for it before any parakeet_mlx import below. See src/_mel.py.
+install_librosa_shim()
 
 logger = logging.getLogger(__name__)
 

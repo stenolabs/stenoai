@@ -320,6 +320,14 @@ a = Analysis(
         'tensorflow',
         'keras',
         'transformers',
+        # parakeet-mlx's only librosa call (filters.mel) is served by the
+        # numpy shim in src/_mel.py; librosa would otherwise pull ~170 MB of
+        # numba/llvmlite/scipy/scikit-learn into the bundle.
+        'librosa',
+        'numba',
+        'llvmlite',
+        'scipy',
+        'sklearn',
         # Exclude other unnecessary packages
         'matplotlib',
         'PIL',
