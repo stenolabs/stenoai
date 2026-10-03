@@ -52,7 +52,7 @@ test('recording coexists: pill docks next to an enabled Ask bar, expands, stops 
   // Adjacent row: pill + Ask bar share the primary dock row, and the Ask bar
   // is visible and enabled.
   await expect(page.getByTestId('primary-dock-row')).toBeVisible();
-  const askInput = page.getByRole('textbox', { name: 'Ask about this meeting' });
+  const askInput = page.getByRole('textbox', { name: 'Ask anything…' });
   await expect(askInput).toBeVisible();
   await expect(askInput).toBeEnabled();
 
@@ -73,7 +73,7 @@ test('recording coexists: pill docks next to an enabled Ask bar, expands, stops 
     window.location.hash = '#/settings';
   });
   await expect(page.getByTestId('transcription-pill')).toBeVisible();
-  await expect(page.getByRole('textbox', { name: 'Ask about this meeting' })).toBeHidden();
+  await expect(page.getByRole('textbox', { name: 'Ask anything…' })).toBeHidden();
 
   // Processing route: recording wins the slot (back-to-back notes) — the
   // pill + Stop stay reachable instead of being displaced by ProcessingDock.
@@ -209,7 +209,7 @@ test('continue-recording: the transcript panel footer offers Resume (Granola-sty
   await resume.click();
   await expect(page.getByTestId('transcription-pill')).toBeVisible();
   await expect(page.getByTestId('resume-recording-button')).toHaveCount(0);
-  await expect(page.getByRole('textbox', { name: 'Ask about this meeting' })).toBeEnabled();
+  await expect(page.getByRole('textbox', { name: 'Ask anything…' })).toBeEnabled();
 });
 
 test('stale note (continued): floating CTA reads Generate notes', async ({ launchApp }) => {

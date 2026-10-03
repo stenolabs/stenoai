@@ -73,8 +73,8 @@ export function FolderScopePicker({ value, onChange, includeMeeting = false, dis
         <button
           type="button"
           disabled={disabled}
-          aria-label={`Scope: ${label}`}
-          title={`Scope: ${label}`}
+          aria-label={t('chat.context.label', { context: label })}
+          title={t('chat.context.label', { context: label })}
           className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[12px] transition-colors hover:bg-[color:var(--surface-hover)]"
           style={{ color: 'var(--fg-2)' }}
         >
@@ -85,13 +85,14 @@ export function FolderScopePicker({ value, onChange, includeMeeting = false, dis
           ) : (
             <Inbox className="size-[12px]" />
           )}
-          <span className="max-w-[140px] truncate">{label}</span>
+          <span className="max-w-[220px] truncate">{t('chat.context.label', { context: label })}</span>
           <ChevronDown className="size-[11px] opacity-60" />
         </button>
       </PopoverTrigger>
-      <PopoverContent align="start" className="w-[220px] p-1">
-        <div className="px-2 pb-1 pt-0.5 text-[11px] font-medium" style={{ color: 'var(--fg-muted)' }}>
-          Ask across…
+      <PopoverContent align="start" className="w-[260px] p-1">
+        <div className="px-2 pb-2 pt-1" style={{ color: 'var(--fg-muted)' }}>
+          <p className="text-xs font-medium" style={{ color: 'var(--fg-2)' }}>{t('chat.context.heading')}</p>
+          <p className="mt-1 text-[11px] leading-relaxed">{t('chat.context.hint')}</p>
         </div>
         <button
           type="button"

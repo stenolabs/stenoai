@@ -2,6 +2,23 @@ import { test, expect } from '../fixtures/electron';
 
 const ENV = { STENOAI_E2E_MOCK_PARAKEET_INSTALLED: '1' };
 
+test('general questions work with meeting context selected even without live transcription', async ({ launchApp }) => {
+  const { page, app } = await launchApp({ mockIpc: true, fakeAudio: true, env: { ...ENV, STENOAI_E2E_MOCK_ENGINE: 'whisper' } });
+  await page.evaluate(() => window.stenoai.recording.start('Note'));
+  const composer = page.locator('[data-ask-bar]');
+  await expect(composer.getByRole('button', { name: 'Context: This meeting' })).toBeVisible();
+  await composer.getByPlaceholder('Ask anything…').fill('Hi');
+  await composer.getByRole('button', { name: 'Send', exact: true }).click();
+  await expect(composer.locator('ol')).toHaveCount(1);
+  const request = await app.evaluate(() => (global as any).__mockIpcCalls.filter((c: any) => c.channel === 'chat-context-stream').at(-1).args[1]);
+  expect(request.scope).toBe('live');
+  expect(request.question).toBe('Hi');
+  await expect(page.getByTestId('transcription-pill')).toBeVisible();
+  await composer.getByRole('button', { name: 'Context: This meeting' }).click();
+  await expect(page.getByText('Choose notes to reference. You can ask general questions with any context.')).toBeVisible();
+  await page.screenshot({ path: test.info().outputPath('chat-context-picker.png'), animations: 'disabled' });
+});
+
 test('live chat formats loose lists, keeps follow-ups, and allows general questions', async ({ launchApp }) => {
   const { page, app } = await launchApp({ mockIpc: true, fakeAudio: true, env: ENV });
   await page.evaluate(() => window.stenoai.recording.start('Note'));
@@ -20,8 +37,8 @@ test('live chat formats loose lists, keeps follow-ups, and allows general questi
   const calls = await app.evaluate(() => (global as any).__mockIpcCalls.filter((c: any) => c.channel === 'chat-context-stream'));
   expect(calls[0].args[1].scope).toBe('live');
   expect(calls[1].args[1].history).toHaveLength(2);
-  await composer.getByRole('button', { name: 'Scope: This meeting' }).click();
-  await page.getByRole('button', { name: 'General', exact: true }).click();
+  await composer.getByRole('button', { name: 'Context: This meeting' }).click();
+  await page.getByRole('button', { name: 'No meeting context', exact: true }).click();
   await input.fill('Explain DNS');
   await composer.getByRole('button', { name: 'Send', exact: true }).click();
   await expect(composer.locator('ol')).toHaveCount(3);
@@ -30,11 +47,11 @@ test('live chat formats loose lists, keeps follow-ups, and allows general questi
   expect(general.history).toEqual([]);
   await expect(page.getByTestId('transcription-pill')).toBeVisible();
   await page.reload();
-  await expect(page.locator('[data-ask-bar]').getByRole('button', { name: 'Scope: General' })).toBeVisible();
-  await composer.getByRole('button', { name: 'Scope: General' }).click();
-  await expect(page.getByText('Ask across…', { exact: true })).toBeVisible();
+  await expect(page.locator('[data-ask-bar]').getByRole('button', { name: 'Context: No meeting context' })).toBeVisible();
+  await composer.getByRole('button', { name: 'Context: No meeting context' }).click();
+  await expect(page.getByText('Attach meeting context', { exact: true })).toBeVisible();
   await page.evaluate(() => { window.location.hash = '#/chat'; });
-  await expect(page.getByText('Ask across…', { exact: true })).toHaveCount(0);
+  await expect(page.getByText('Attach meeting context', { exact: true })).toHaveCount(0);
 });
 
 test('draft and answer survive transcript expansion and stopping the recording', async ({ launchApp }) => {
@@ -85,12 +102,12 @@ test('an answer keeps its original conversation and scope after switching histor
   ] }));
   await page.reload();
   await page.evaluate(() => { window.location.hash = '#/chat/general'; });
-  await expect(page.getByRole('button', { name: 'Scope: General' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Context: No meeting context' })).toBeVisible();
   await page.getByRole('textbox').first().fill('Explain DNS');
   await page.getByRole('textbox').first().press('Enter');
   await expect(page.getByText('Thinking…', { exact: true })).toBeVisible();
   await page.evaluate(() => { window.location.hash = '#/chat/notes'; });
-  await expect(page.getByRole('button', { name: 'Scope: All notes' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Context: All notes' })).toBeVisible();
   await expect(page.getByText('Thinking…', { exact: true })).toHaveCount(0);
   await app.evaluate(() => (global as any).__finishChat());
   await expect.poll(async () => {
@@ -110,12 +127,12 @@ test('a failed scope save cannot change the newly viewed conversation', async ({
   ] }));
   await page.reload();
   await page.evaluate(() => { window.location.hash = '#/chat/first'; });
-  await page.getByRole('button', { name: 'Scope: All notes' }).click();
+  await page.getByRole('button', { name: 'Context: All notes' }).click();
   await app.evaluate(() => { (global as any).__holdNextChatSave = true; });
-  await page.getByRole('button', { name: 'General', exact: true }).click();
+  await page.getByRole('button', { name: 'No meeting context', exact: true }).click();
   await expect.poll(() => app.evaluate(() => typeof (global as any).__failChatSave)).toBe('function');
   await page.evaluate(() => { window.location.hash = '#/chat/second'; });
-  await expect(page.getByRole('button', { name: 'Scope: General' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Context: No meeting context' })).toBeVisible();
   await app.evaluate(() => (global as any).__failChatSave());
   // Saving another message flushes the rollback before asserting the selected
   // scope on the second conversation and its dispatched request.

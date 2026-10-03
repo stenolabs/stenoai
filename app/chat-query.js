@@ -63,8 +63,6 @@ function runQuery({ spawn, backend, env, cwd, payload, send, onFinish, timeoutMs
           send('query-chunk', { chunk });
         } else if (line === 'CHAT_STREAM_COMPLETE') {
           finish(answerBytes > 0, answerBytes ? undefined : ERROR);
-        } else if (line === 'CHAT_STREAM_EMPTY_NOTES') {
-          finish(false, 'No notes in this scope. Choose another scope or record a meeting first.');
         } else if (line.startsWith('CHAT_STREAM_ERROR:')) {
           finish(false, ERROR);
         }

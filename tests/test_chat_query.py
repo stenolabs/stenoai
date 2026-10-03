@@ -114,14 +114,32 @@ class ChatQueryTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 validate_request({'scope': 'live', 'question': 'Q', **extra})
 
-    def test_empty_note_scopes_never_call_provider(self):
-        for folder in (None, 'empty-folder'):
-            raw = io.BytesIO(json.dumps({'scope': 'notes', 'folder': folder, 'question': 'Q'}).encode())
-            output = io.StringIO()
-            with patch('sys.stdin', Mock(buffer=raw)), patch('sys.stdout', output), patch('src.config.get_config', return_value=self.config), patch('src.summarizer.OllamaSummarizer') as model, self.assertRaises(SystemExit):
-                run_chat_query(Mock(), Mock(return_value=''))
-            model.assert_not_called()
-            self.assertEqual(output.getvalue(), 'CHAT_STREAM_EMPTY_NOTES\n')
+    def test_empty_context_still_answers_and_preserves_scope_and_history(self):
+        for context in ({'scope': 'live'}, {'scope': 'notes'},
+                        {'scope': 'notes', 'folder': 'empty-folder'},
+                        {'scope': 'meeting', 'file': 'empty.md'}):
+            with self.subTest(context=context):
+                raw = io.BytesIO(json.dumps({**context, 'question': 'Explain DNS',
+                    'history': [{'role': 'user', 'content': 'Hi'}]}).encode())
+                output = io.StringIO()
+                model = Mock()
+                model.stream_chat_prompt.return_value = iter(['DNS translates domain names.'])
+                with patch('sys.stdin', Mock(buffer=raw)), patch('sys.stdout', output), patch('src.config.get_config', return_value=self.config), patch('src.summarizer.OllamaSummarizer', return_value=model):
+                    run_chat_query(Mock(return_value={}), Mock(return_value=''))
+                prompt = model.stream_chat_prompt.call_args.args[0]
+                self.assertIn(f"CONTEXT SCOPE: {context['scope']}", prompt)
+                self.assertIn('(No meeting content attached.)', prompt)
+                self.assertIn('USER: Hi', prompt)
+                self.assertIn('Explain DNS', prompt)
+                self.assertIn('Answer general questions even when meeting context is empty or unrelated.', prompt)
+                self.assertIn('say when the supplied evidence is missing; never guess.', prompt)
+                self.assertIn('CHAT_STREAM_COMPLETE', output.getvalue())
+
+    def test_unavailable_context_does_not_silently_become_general_chat(self):
+        loader = Mock(side_effect=OSError('unavailable'))
+        with self.assertRaises(OSError):
+            build_prompt({'scope': 'meeting', 'file': 'missing.md', 'question': 'What was decided?'},
+                         self.config, loader, Mock())
 
     def test_protocol_splits_large_multibyte_chunks_and_sanitizes_errors(self):
         raw = io.BytesIO(json.dumps({'scope': 'general', 'question': 'Q'}).encode())

@@ -20,6 +20,36 @@ async function ask(page: Page, request: ChatRequest) {
   }), request);
 }
 
+test('Whisper recording allows general chat in the default meeting context', async ({ launchApp, userDataDir }) => {
+  const ollama = await startMockOllama({ port: 0, chatReply: 'Hello! How can I help?' });
+  try {
+    writeUserConfig(userDataDir, {
+      ai_provider: 'remote', remote_ollama_url: ollama.url, model: 'llama3.2:3b',
+      transcription_engine: 'whisper', system_audio_enabled: false,
+      auto_summarize_enabled: false, privacy_notice_seen: true,
+    });
+    const { page, app } = await launchApp({ fakeAudio: true });
+    await app.evaluate(({ ipcMain }) => {
+      ipcMain.on('system-audio-recording-state', (_event: unknown, active: boolean) => { (global as any).__chatCaptureActive = active; });
+    });
+    await page.evaluate(() => window.stenoai.recording.start('Note'));
+    await expect.poll(() => app.evaluate(() => (global as any).__chatCaptureActive)).toBe(true);
+    const composer = page.locator('[data-ask-bar]');
+    await expect(composer.getByRole('button', { name: 'Context: This meeting' })).toBeVisible();
+    await composer.getByPlaceholder('Ask anything…').fill('Hi');
+    await composer.getByRole('button', { name: 'Send', exact: true }).click();
+    await expect(composer.getByText('Hello! How can I help?', { exact: true })).toBeVisible();
+    expect(ollama.lastChatPrompt()).toContain('(No meeting content attached.)');
+    expect(ollama.lastChatPrompt()).toContain('QUESTION: Hi');
+    expect(await app.evaluate(() => (global as any).__chatCaptureActive)).toBe(true);
+    await expect.poll(() => {
+      try { return JSON.parse(readFileSync(path.join(userDataDir, 'chat_sessions_v2.json'), 'utf8')).sessions[0].messages.at(-1)?.content; }
+      catch { return null; }
+    }).toBe('Hello! How can I help?');
+    await page.evaluate(() => window.stenoai.recording.stop());
+  } finally { await ollama.close(); }
+});
+
 for (const format of ['md', 'json']) {
 test(`live context, saved notes and general chat work during capture and persist on its ${format} note`, async ({ launchApp, userDataDir }) => {
   test.setTimeout(150000);
@@ -55,11 +85,13 @@ test(`live context, saved notes and general chat work during capture and persist
       const original = ChildProcess.prototype.spawn;
       ChildProcess.prototype.spawn = function (options: any) {
         if (options.args?.includes('transcribe-stream')) {
+          (global as any).__emitChatSpeech = () => {
+            this.stdout.emit('data', Buffer.from('LIVE_SEG:' + JSON.stringify({ text: 'Current decision is Friday.', start: 0, end: 3, is_final: true, speaker: 'You' }) + '\n'));
+            this.stdout.emit('data', Buffer.from('LIVE_SEG:' + JSON.stringify({ text: 'UNFINALIZED SECRET', start: 3, end: 4, is_final: false, speaker: 'Others' }) + '\n'));
+          };
           options.file = process.execPath;
           options.args = [process.execPath, '-e', `
             console.log('LIVE_READY:ok');
-            console.log('LIVE_SEG:'+JSON.stringify({text:'Current decision is Friday.',start:0,end:3,is_final:true,speaker:'You'}));
-            console.log('LIVE_SEG:'+JSON.stringify({text:'UNFINALIZED SECRET',start:3,end:4,is_final:false,speaker:'Others'}));
             process.stdin.resume(); process.stdin.on('end',()=>process.exit(0));
           `];
           options.envPairs = options.envPairs.filter((p: string) => !p.startsWith('ELECTRON_RUN_AS_NODE='));
@@ -74,16 +106,22 @@ test(`live context, saved notes and general chat work during capture and persist
     await page.waitForSelector('[data-app-ready]');
     await page.evaluate(() => window.stenoai.recording.start('Note'));
     await expect.poll(async () => {
-      const state = await page.evaluate(() => window.stenoai.liveTranscript.getState());
-      return state.success && state.segments.some((s) => s.isFinal);
-    }).toBe(true);
-    await expect.poll(async () => {
       const queue = await page.evaluate(() => window.stenoai.recording.getQueue());
       return queue.success && !!queue.chatSummaryFile;
     }).toBe(true);
     await expect.poll(() => app.evaluate(() => (global as any).__chatCaptureActive)).toBe(true);
     const queue = await page.evaluate(() => window.stenoai.recording.getQueue());
     if (!queue.success) throw new Error('recording did not start');
+    const greeting = await ask(page, { scope: 'live', recordingId: queue.recordingId!, question: 'Hi' });
+    expect(greeting.error).toBeUndefined();
+    expect(greeting.text).toContain('Ship Friday');
+    expect(ollama.lastChatPrompt()).toContain('(No meeting content attached.)');
+    expect(ollama.lastChatPrompt()).toContain('QUESTION: Hi');
+    await app.evaluate(() => (global as any).__emitChatSpeech());
+    await expect.poll(async () => {
+      const state = await page.evaluate(() => window.stenoai.liveTranscript.getState());
+      return state.success && state.segments.some((s) => s.isFinal);
+    }).toBe(true);
     const live = await ask(page, { scope: 'live', recordingId: queue.recordingId!, question: 'What did we decide?' });
     expect(live.error).toBeUndefined();
     expect(live.text).toContain('Ship Friday');
@@ -109,11 +147,12 @@ test(`live context, saved notes and general chat work during capture and persist
     const notes = await ask(page, { scope: 'notes', question: 'What was the budget?' });
     expect(notes.error).toBeUndefined();
     expect(ollama.lastChatPrompt()).toContain('Prior budget is fifty thousand');
-    const previousPrompt = ollama.lastChatPrompt();
-    const empty = await ask(page, { scope: 'notes', folder: 'empty-folder', question: 'Any decisions?' });
-    expect(empty.error).toContain('No notes in this scope');
-    expect(empty.text).toBe('');
-    expect(ollama.lastChatPrompt()).toBe(previousPrompt);
+    const empty = await ask(page, { scope: 'notes', folder: 'empty-folder', question: 'Explain DNS' });
+    expect(empty.error).toBeUndefined();
+    expect(empty.text).toContain('Ship Friday');
+    expect(ollama.lastChatPrompt()).toContain('(No meeting content attached.)');
+    expect(ollama.lastChatPrompt()).toContain('QUESTION: Explain DNS');
+    expect(ollama.lastChatPrompt()).not.toContain('Prior budget');
     const general = await ask(page, { scope: 'general', question: 'Explain DNS' });
     expect(general.error).toBeUndefined();
     expect(ollama.lastChatPrompt()).not.toContain('Current decision');
@@ -139,6 +178,11 @@ test(`live context, saved notes and general chat work during capture and persist
 
     // Continue into either supported saved format, retaining prior speech.
     await page.evaluate((file) => window.stenoai.recording.start('Continued', 'manual', file), savedPath);
+    await expect.poll(async () => {
+      const state = await page.evaluate(() => window.stenoai.liveTranscript.getState());
+      return state.success && state.sessionName === 'Continued' && state.ready;
+    }).toBe(true);
+    await app.evaluate(() => (global as any).__emitChatSpeech());
     await expect.poll(async () => {
       const state = await page.evaluate(() => window.stenoai.liveTranscript.getState());
       return state.success && state.sessionName === 'Continued' && state.segments.some((s) => s.isFinal);

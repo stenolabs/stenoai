@@ -3628,7 +3628,6 @@ ipcMain.on('chat-context-stream', async (event, queryId, request) => {
       if (!systemAudioRecordingActive || request.recordingId !== String(recordingRuntimeState.startedAtMs)
           || !recordingRuntimeState.startedAtMs) throw new Error('This recording is no longer active.');
       payload.transcript = liveSnapshot(liveTranscriptState);
-      if (!payload.transcript) throw new Error('No finalized speech yet. Try again after someone speaks.');
       // A continued recording can start after a cold launch, with no in-memory
       // prior segments. Read its saved transcript via the validated note path.
       if (currentRecordingAppendTarget) {

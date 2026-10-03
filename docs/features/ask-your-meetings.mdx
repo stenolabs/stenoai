@@ -11,18 +11,20 @@ Use the ask bar while recording or when viewing a saved note. Questions use your
 2. Click the **Ask** bar at the bottom of the pane
 3. Type your question and press Return
 
-Choose a context from the scope menu:
+General questions work with any context, even before anyone speaks or when a folder is empty. The **Context** menu controls which meeting information accompanies your question:
 
 - **This meeting** uses the saved note, or a snapshot of finalized speech during recording.
 - **All notes** or a folder uses a bounded selection of saved meeting summaries.
-- **General** answers without attaching meeting content or conversation turns from another scope.
+- **No meeting context** answers without attaching meeting content or conversation turns from another context.
 - **Shared notes**, when signed in, queries your organisation's shared notes.
 
-You can ask general explanations within a meeting conversation too. Answers should distinguish general knowledge from what was said in the meeting.
+Answers should distinguish general knowledge from what was said in the meeting. When you ask about a meeting without enough evidence, the assistant should say what is missing.
 
 ## During recording
 
-Live meeting questions require live transcription (Parakeet). Wait for speech to be transcribed, then ask about the meeting so far. New speech becomes available to the next question; it does not change an answer already being generated.
+You can chat as soon as recording starts, including with Whisper or before speech has been transcribed. Keep **Context: This meeting** selected to include available meeting evidence alongside general questions.
+
+Parakeet adds finalized speech as the meeting progresses. Whisper transcribes after recording stops, so its current recording has no live transcript to reference. New speech becomes available to the next question; it does not change an answer already being generated.
 
 Recording continues while you chat. Pausing or stopping recording does not discard an answer in progress, and the conversation stays attached to the saved note. You can also chat with other notes or ask general questions when live transcription is unavailable.
 
@@ -41,21 +43,21 @@ Questions that reference specific details from the meeting work best. Vague ques
 
 ## What Steno reads
 
-The selected scope determines what Steno sends to your AI provider:
+The selected context determines what Steno sends to your AI provider:
 
-| Scope | Content |
+| Context | Content |
 |-------|---------|
 | This meeting, while recording | A snapshot of finalized speech, including earlier transcript when continuing a saved note |
 | This meeting, saved note | Summary, topics, key points, action items, personal notes, and transcript |
 | All notes or a folder | A bounded selection of recent saved summaries, titles, and key points |
 | Shared notes | Your organisation's shared-note content |
-| General | The question and recent conversation turns from General, without meeting content |
+| No meeting context | The question and recent conversation turns with this same selection, without meeting content |
 
 Recent follow-ups are bounded and kept within the selected scope. Long contexts are truncated; local and remote Ollama budgets depend on the configured model. Older meetings may fall outside the All notes budget, so open a specific note to ask about it directly.
 
 ## Privacy
 
-Chat follows your existing AI-provider setting. With local Ollama, questions stay on your device. A configured remote, cloud, or organisation provider receives the question and selected context. Selecting General excludes meeting content and conversation history from other scopes.
+Chat follows your existing AI-provider setting. With local Ollama, questions stay on your device. A configured remote, cloud, or organisation provider receives the question and selected context. Selecting **No meeting context** excludes meeting content and conversation history from other contexts.
 
 ---
 
