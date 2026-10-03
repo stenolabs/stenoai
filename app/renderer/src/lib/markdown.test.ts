@@ -100,4 +100,11 @@ describe('chat Markdown lists', () => {
       expect(parse(text).querySelectorAll('ol')).toHaveLength(1);
     }
   });
+  test('retains typographic bullets and preserves literal code examples', () => {
+    const root = parse('• First\n• **Second**\n\n```text\n• literal\n```\n\n    • indented code');
+    expect(root.querySelectorAll('ul > li')).toHaveLength(2);
+    expect(root.querySelector('li strong')?.textContent).toBe('Second');
+    expect(root.querySelectorAll('pre code')[0].textContent).toContain('• literal');
+    expect(root.querySelectorAll('pre code')[1].textContent).toContain('• indented code');
+  });
 });

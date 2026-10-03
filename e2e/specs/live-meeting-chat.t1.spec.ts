@@ -72,3 +72,28 @@ test('Chat tab renders numbered answers while recording continues', async ({ lau
   await expect(page.locator('.chat-bubble ol > li')).toHaveCount(3);
   await expect(page.getByTestId('transcription-pill')).toBeVisible();
 });
+
+test('an answer keeps its original conversation and scope after switching history', async ({ launchApp }) => {
+  const { page, app } = await launchApp({ mockIpc: true, env: { STENOAI_E2E_HOLD_CHAT: '1' } });
+  await page.evaluate(() => window.stenoai.chat.save({ sessions: [
+    { id: 'general', name: 'General chat', summaryFile: '__global__', scopeFolderId: '__general__', messages: [], createdAt: 1, updatedAt: 1 },
+    { id: 'notes', name: 'Notes chat', summaryFile: '__global__', scopeFolderId: null, messages: [], createdAt: 2, updatedAt: 2 },
+  ] }));
+  await page.reload();
+  await page.evaluate(() => { window.location.hash = '#/chat/general'; });
+  await expect(page.getByRole('button', { name: 'Scope: General' })).toBeVisible();
+  await page.getByRole('textbox').first().fill('Explain DNS');
+  await page.getByRole('textbox').first().press('Enter');
+  await expect(page.getByText('Thinking…', { exact: true })).toBeVisible();
+  await page.evaluate(() => { window.location.hash = '#/chat/notes'; });
+  await expect(page.getByRole('button', { name: 'Scope: All notes' })).toBeVisible();
+  await expect(page.getByText('Thinking…', { exact: true })).toHaveCount(0);
+  await app.evaluate(() => (global as any).__finishChat());
+  await expect.poll(async () => {
+    const saved = await page.evaluate(() => window.stenoai.chat.load());
+    return saved.success ? saved.data?.sessions.find((s) => s.id === 'general')?.messages.at(-1)?.role : null;
+  }).toBe('assistant');
+  const saved = await page.evaluate(() => window.stenoai.chat.load());
+  expect(saved.success && saved.data?.sessions.find((s) => s.id === 'general')?.messages.at(-1)?.context).toBe('__general__');
+  expect(saved.success && saved.data?.sessions.find((s) => s.id === 'notes')?.messages).toEqual([]);
+});

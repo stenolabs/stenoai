@@ -9,6 +9,10 @@ MAX_PAYLOAD = 1024 * 1024
 MAX_ANSWER = 1024 * 1024
 
 
+class EmptyNotesError(ValueError):
+    """A known context error, safe to report without provider details."""
+
+
 def validate_request(data):
     if not isinstance(data, dict):
         raise ValueError('Invalid request')
@@ -76,6 +80,8 @@ def build_prompt(data, config, load_note, load_corpus, resolve_language=None):
         context = context[-context_budget:] if context_budget else ''
     elif scope == 'notes':
         context = load_corpus(data.get('folder'), budget=context_budget)
+        if not context.strip():
+            raise EmptyNotesError('No notes in this scope. Choose another scope or record a meeting first.')
     language = config.get_language()
     if note and resolve_language:
         language = resolve_language(note.get('session_info', {}), note.get('transcript', ''), language)
@@ -121,6 +127,9 @@ def run_chat_query(load_note, load_corpus, resolve_language=None):
         if not answer_size:
             raise ValueError('Empty answer')
         print('CHAT_STREAM_COMPLETE', flush=True)
+    except EmptyNotesError:
+        print('CHAT_STREAM_EMPTY_NOTES', flush=True)
+        sys.exit(1)
     except Exception:
         print('CHAT_STREAM_ERROR:Unable to answer. Check your AI provider and try again.', flush=True)
         sys.exit(1)

@@ -57,6 +57,15 @@ class ChatQueryTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 validate_request({'scope': 'live', 'question': 'Q', **extra})
 
+    def test_empty_note_scopes_never_call_provider(self):
+        for folder in (None, 'empty-folder'):
+            raw = io.BytesIO(json.dumps({'scope': 'notes', 'folder': folder, 'question': 'Q'}).encode())
+            output = io.StringIO()
+            with patch('sys.stdin', Mock(buffer=raw)), patch('sys.stdout', output), patch('src.config.get_config', return_value=self.config), patch('src.summarizer.OllamaSummarizer') as model, self.assertRaises(SystemExit):
+                run_chat_query(Mock(), Mock(return_value=''))
+            model.assert_not_called()
+            self.assertEqual(output.getvalue(), 'CHAT_STREAM_EMPTY_NOTES\n')
+
     def test_protocol_splits_large_multibyte_chunks_and_sanitizes_errors(self):
         raw = io.BytesIO(json.dumps({'scope': 'general', 'question': 'Q'}).encode())
         output = io.StringIO()

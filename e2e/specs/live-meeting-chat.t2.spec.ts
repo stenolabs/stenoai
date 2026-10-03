@@ -87,6 +87,11 @@ test('live context, saved notes and general chat work during capture and persist
     const notes = await ask(page, { scope: 'notes', question: 'What was the budget?' });
     expect(notes.error).toBeUndefined();
     expect(ollama.lastChatPrompt()).toContain('Prior budget is fifty thousand');
+    const previousPrompt = ollama.lastChatPrompt();
+    const empty = await ask(page, { scope: 'notes', folder: 'empty-folder', question: 'Any decisions?' });
+    expect(empty.error).toContain('No notes in this scope');
+    expect(empty.text).toBe('');
+    expect(ollama.lastChatPrompt()).toBe(previousPrompt);
     const general = await ask(page, { scope: 'general', question: 'Explain DNS' });
     expect(general.error).toBeUndefined();
     expect(ollama.lastChatPrompt()).not.toContain('Current decision');

@@ -20,6 +20,21 @@ export function stripReasoning(text: string): string {
   return result;
 }
 
+// Some providers use typographic bullets rather than Markdown markers. Keep
+// those lists readable without changing literal examples inside code fences.
+function normalizeBullets(text: string): string {
+  let fence: string | null = null;
+  return text.split('\n').map((line) => {
+    const marker = line.match(/^\s*(`{3,}|~{3,})(.*)$/);
+    if (marker) {
+      if (!fence) fence = marker[1];
+      else if (marker[1][0] === fence[0] && marker[1].length >= fence.length && !marker[2].trim()) fence = null;
+      return line;
+    }
+    return fence ? line : line.replace(/^( {0,3})•[ \t]+/, '$1- ');
+  }).join('\n');
+}
+
 /** Shared safe Markdown rendering for saved and in-flight chat answers.
  * CommonMark keeps loose lists (blank lines between items) in a single ol,
  * preserves explicit starts and nesting, and handles incomplete streaming text.
@@ -30,7 +45,7 @@ export function renderMarkdown(text: string): React.ReactNode {
   return (
     <div className="chat-markdown">
       <ReactMarkdown remarkPlugins={[remarkGfm]} skipHtml>
-        {stripReasoning(text)}
+        {normalizeBullets(stripReasoning(text))}
       </ReactMarkdown>
     </div>
   );
