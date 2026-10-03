@@ -120,7 +120,7 @@ test('auto-summarize off writes a transcript-only note with no LLM call; the Gen
     expect(ollama.chatCalls()).toBe(0);
 
     // Phase 2 — real app: open the note, click "Generate notes", reprocess it.
-    const { page } = await launchApp();
+    const { page } = await launchApp({ releaseHighlightsSeen: true });
     await expect(page.locator('html')).toHaveAttribute('data-privacy-gate', 'true');
     const meetingHash = `/meetings/${encodeURIComponent(summaryPath)}`;
 

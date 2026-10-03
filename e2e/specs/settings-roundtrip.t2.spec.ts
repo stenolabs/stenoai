@@ -237,7 +237,7 @@ test('Advanced-tab Reset button clears the custom storage path (#304); real dir 
   userDataDir,
 }) => {
   const realDirBefore = fileSig(realUserDataDir());
-  const { page } = await launchApp();
+  const { page } = await launchApp({ releaseHighlightsSeen: true });
 
   // Setup (not under test): seed a custom path via the bridge so the Reset
   // button is rendered (it only shows when custom_path differs from default).

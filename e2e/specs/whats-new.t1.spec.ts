@@ -21,6 +21,19 @@ async function foreground(app: ElectronApplication) {
   });
 }
 
+test("an acknowledged release leaves Settings interactive and can be reopened", async ({ launchApp }) => {
+  const { app, page } = await launchApp({
+    mockIpc: true,
+    env,
+    releaseHighlightsSeen: true,
+  });
+  await foreground(app);
+  await page.evaluate(() => { location.hash = "#/settings?tab=about"; });
+  await expect(page.getByRole("dialog", { name: title })).toHaveCount(0);
+  await page.getByRole("button", { name: "View highlights" }).click();
+  await expect(page.getByRole("dialog", { name: title })).toBeVisible();
+});
+
 test("upgrade waits for foreground, dismisses across restarts, and reopens from About", async ({
   launchApp,
 }, testInfo) => {

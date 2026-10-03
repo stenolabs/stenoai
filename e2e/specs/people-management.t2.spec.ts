@@ -59,7 +59,7 @@ test('People settings sorts profiles and deletes one through the real backend', 
 }) => {
   const realDirBefore = fileSig(realUserDataDir());
   const configPath = path.join(userDataDir, 'config.json');
-  const { page } = await launchApp();
+  const { page } = await launchApp({ releaseHighlightsSeen: true });
 
   const zora = await page.evaluate(() =>
     (window as StenoWindow).stenoai.speakers.createProfile('Zora Quinn'),

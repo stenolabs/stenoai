@@ -9,12 +9,15 @@ import { mkdtempSync, rmSync } from 'fs';
 import { tmpdir } from 'os';
 import path from 'path';
 import { execSync } from 'child_process';
+import { version } from '../../app/package.json';
 
 // Repo-root/app — the Electron app dir (package.json main: main.js). Resolved
 // from this file so the helper works regardless of the cwd Playwright runs in.
 const APP_DIR = path.resolve(__dirname, '..', '..', 'app');
 
 type LaunchOptions = {
+  /** Start after the current release announcement has been acknowledged. */
+  releaseHighlightsSeen?: boolean;
   /** Install the deterministic mock IPC layer (T1, no backend). */
   mockIpc?: boolean;
   /**
@@ -115,6 +118,15 @@ export const test = base.extend<Fixtures>({
       // Deterministic launch gate — set in App.tsx's readiness effect. No
       // fixed timeouts anywhere in the suite.
       await page.waitForSelector('[data-app-ready]', { timeout: 30_000 });
+      if (opts.releaseHighlightsSeen) {
+        // Seed persisted user state, leaving the production announcement path
+        // intact. Release-specific specs omit this option to exercise that path.
+        await page.evaluate((currentVersion) => {
+          localStorage.setItem('steno-last-seen-release', currentVersion);
+        }, version);
+        await page.reload();
+        await page.waitForSelector('[data-app-ready]', { timeout: 30_000 });
+      }
       return { app, page };
     };
 
