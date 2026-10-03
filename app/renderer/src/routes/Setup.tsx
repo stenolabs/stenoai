@@ -6,7 +6,8 @@ import {
 } from '@/lib/parakeetProgress';
 import type { ParakeetPullProgressEvent, SpeakerModelsProgressEvent } from '@/lib/ipc';
 import { DownloadProgressBar } from '@/components/DownloadProgressBar';
-import { useSpeakerModelsStatus } from '@/hooks/useSpeakerModels';
+import { speakerModelsStatusKey, useSpeakerModelsStatus } from '@/hooks/useSpeakerModels';
+import { useQueryClient } from '@tanstack/react-query';
 import { t } from '@/i18n';
 import * as React from 'react';
 import { AudioLines, Check, Cloud, HardDrive, Mic, MessageSquare, Zap, X } from 'lucide-react';
@@ -168,12 +169,16 @@ export function Setup() {
   // Speaker separation is opt-in: its models are an extra ~250 MB most people
   // can skip, and Settings -> AI offers the same download later.
   const [includeSpeakers, setIncludeSpeakers] = React.useState(false);
-  // Models already on disk (e.g. downloaded from Settings): show it on.
+  // Models already on disk (e.g. downloaded from Settings): show it on --
+  // unless the user has already flipped the switch themselves, since the
+  // status check can take a few seconds to answer.
   const speakerStatus = useSpeakerModelsStatus();
   const speakersInstalled = isMac && speakerStatus.data?.success === true && speakerStatus.data.ready;
+  const speakerSwitchTouched = React.useRef(false);
   React.useEffect(() => {
-    if (speakersInstalled) setIncludeSpeakers(true);
+    if (speakersInstalled && !speakerSwitchTouched.current) setIncludeSpeakers(true);
   }, [speakersInstalled]);
+  const queryClient = useQueryClient();
 
   React.useEffect(() => {
     if (typeof window === 'undefined' || !window.stenoai) return;
@@ -389,6 +394,9 @@ export function Setup() {
             setStatus('speakers', 'running', 'Downloading speaker models...');
             await speakerModelsStep.mutateAsync();
             setSpeakerProgress(null);
+            // Settings reads the same cached status; don't let it show
+            // Download for models that are now installed.
+            void queryClient.invalidateQueries({ queryKey: speakerModelsStatusKey });
             setStatus('speakers', 'done', 'Speaker models ready');
           }
         } catch {
@@ -761,7 +769,10 @@ export function Setup() {
             </div>
             <Switch
               checked={includeSpeakers}
-              onCheckedChange={setIncludeSpeakers}
+              onCheckedChange={(on) => {
+                speakerSwitchTouched.current = true;
+                setIncludeSpeakers(on);
+              }}
               // Fixed once setup has run: Settings -> AI handles it from there.
               disabled={running || done || statuses.speakers === 'done'}
               aria-label={t('setup.speakers.optInTitle')}

@@ -144,7 +144,13 @@ test('the speaker switch starts on when the models are already installed', async
   await page.evaluate(() => {
     window.location.hash = '#/setup';
   });
-  await expect(page.getByRole('switch', { name: 'Separate individual speakers' })).toBeChecked();
+  const toggle = page.getByRole('switch', { name: 'Separate individual speakers' });
+  await expect(toggle).toBeChecked();
+  // The user's own choice wins over the installed state.
+  await toggle.click();
+  await expect(toggle).not.toBeChecked();
+  await page.waitForTimeout(500);
+  await expect(toggle).not.toBeChecked();
 });
 
 test('opted-in speaker download shows a real percent bar', async ({ launchApp }) => {

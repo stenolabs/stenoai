@@ -2,7 +2,8 @@ import * as React from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ipc, type SpeakerModelsProgressEvent } from '@/lib/ipc';
 
-const statusKey = ['speakerModels', 'status'] as const;
+export const speakerModelsStatusKey = ['speakerModels', 'status'] as const;
+const statusKey = speakerModelsStatusKey;
 
 /** macOS speaker-separation models: whether they are on disk, and a download
  *  that streams progress. main.js shares one download between onboarding and

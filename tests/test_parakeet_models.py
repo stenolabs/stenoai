@@ -272,6 +272,36 @@ class DownloadProgressTests(unittest.TestCase):
         self.assertFalse(any("total_bytes" in e for e in events))
 
 
+class SnapshotSizeFallbackTests(unittest.TestCase):
+    def _lookup(self, sha, infos):
+        import types
+        import sys
+
+        class Api:
+            def model_info(self, repo, token=None):
+                return types.SimpleNamespace(sha=sha)
+
+            def get_paths_info(self, repo, paths, revision=None, token=None):
+                return [types.SimpleNamespace(path=p, size=s) for p, s in infos]
+
+        hub = types.ModuleType("huggingface_hub")
+        hub.HfApi = Api
+        with patch.dict(sys.modules, {"huggingface_hub": hub}):
+            return parakeet_models._snapshot_file_sizes("repo", ("a.json", "b.bin"))
+
+    def test_complete_metadata_pins_revision_and_sizes(self):
+        self.assertEqual(self._lookup("abc", [("a.json", 1), ("b.bin", 2)]), ("abc", {"a.json": 1, "b.bin": 2}))
+
+    def test_incomplete_metadata_falls_back(self):
+        for sha, infos in [
+            (None, [("a.json", 1), ("b.bin", 2)]),   # no revision
+            ("abc", [("a.json", 1)]),                # a file missing
+            ("abc", [("a.json", 1), ("b.bin", 0)]),  # non-positive size
+        ]:
+            with self.subTest(sha=sha, infos=infos):
+                self.assertEqual(self._lookup(sha, infos), (None, None))
+
+
 class OfflineLoadTests(unittest.TestCase):
     def test_offline_sessions_restored_after_load_error(self):
         from huggingface_hub import constants
