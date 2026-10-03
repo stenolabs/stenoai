@@ -7,16 +7,21 @@ import {
 } from '@/components/ui/popover';
 import { useFolders } from '@/hooks/useFolders';
 import { useOrgSession } from '@/hooks/useOrg';
+import { t } from '@/i18n';
 import type { Folder } from '@/lib/ipc';
 
 /** Sentinel for "ask across the org-shared corpus instead of local notes".
  *  Comparable to a folder id so the picker / handoff plumbing doesn't have
  *  to carry a separate type. */
 export const ORG_SHARED_SCOPE = '__org_shared__';
+export const GENERAL_SCOPE = '__general__';
+export const MEETING_SCOPE = '__meeting__';
 
 interface FolderScopePickerProps {
   /** Selected folder ID, or ORG_SHARED_SCOPE for the org corpus. null = all local notes. */
   value: string | null;
+  includeMeeting?: boolean;
+  disabled?: boolean;
   onChange: (folderId: string | null) => void;
 }
 
@@ -26,14 +31,14 @@ interface FolderScopePickerProps {
  * Backend filter happens server-side; this just persists the choice and
  * passes it to startGlobalStream.
  */
-export function FolderScopePicker({ value, onChange }: FolderScopePickerProps) {
+export function FolderScopePicker({ value, onChange, includeMeeting = false, disabled = false }: FolderScopePickerProps) {
   const folders = useFolders();
   const orgSession = useOrgSession();
   const orgSignedIn = orgSession.data?.signedIn ?? false;
   const [open, setOpen] = React.useState(false);
 
   const folder = React.useMemo<Folder | null>(() => {
-    if (!value || value === ORG_SHARED_SCOPE) return null;
+    if (!value || [ORG_SHARED_SCOPE, GENERAL_SCOPE, MEETING_SCOPE].includes(value)) return null;
     return folders.data?.find((f) => f.id === value) ?? null;
   }, [folders.data, value]);
 
@@ -48,7 +53,7 @@ export function FolderScopePicker({ value, onChange }: FolderScopePickerProps) {
   // before the auth status has actually loaded.
   const orgSessionSettled = orgSession.isSuccess;
   React.useEffect(() => {
-    if (value && value !== ORG_SHARED_SCOPE && folders.data && !folder) {
+    if (value && ![ORG_SHARED_SCOPE, GENERAL_SCOPE, MEETING_SCOPE].includes(value) && folders.data && !folder) {
       onChange(null);
     }
     if (value === ORG_SHARED_SCOPE && orgSessionSettled && !orgSignedIn) {
@@ -57,13 +62,14 @@ export function FolderScopePicker({ value, onChange }: FolderScopePickerProps) {
   }, [value, folders.data, folder, orgSessionSettled, orgSignedIn, onChange]);
 
   const isOrg = value === ORG_SHARED_SCOPE;
-  const label = isOrg ? 'Shared notes' : folder ? folder.name : 'All notes';
+  const label = value === GENERAL_SCOPE ? t('chat.scope.general') : value === MEETING_SCOPE ? t('chat.scope.meeting') : isOrg ? 'Shared notes' : folder ? folder.name : 'All notes';
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <button
           type="button"
+          disabled={disabled}
           aria-label={`Scope: ${label}`}
           title={`Scope: ${label}`}
           className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[12px] transition-colors hover:bg-[color:var(--surface-hover)]"
@@ -99,6 +105,17 @@ export function FolderScopePicker({ value, onChange }: FolderScopePickerProps) {
           <Inbox className="size-[13px]" style={{ color: 'var(--fg-2)' }} />
           All notes
         </button>
+        {[GENERAL_SCOPE, ...(includeMeeting ? [MEETING_SCOPE] : [])].map((scope) => (
+          <button
+            key={scope}
+            type="button"
+            onClick={() => { onChange(scope); setOpen(false); }}
+            className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] hover:bg-[color:var(--surface-hover)]"
+            style={{ color: 'var(--fg-1)', background: value === scope ? 'var(--surface-active)' : undefined }}
+          >
+            {scope === GENERAL_SCOPE ? t('chat.scope.general') : t('chat.scope.meeting')}
+          </button>
+        ))}
         {orgSignedIn && (
           <button
             type="button"

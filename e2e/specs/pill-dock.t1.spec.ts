@@ -7,7 +7,7 @@ import type { Page } from '@playwright/test';
  * Granola-style pill (components/LiveDock.tsx: wave + elapsed +
  * expand chevron + stop glyph) docks LEFT of the Ask bar in the primary
  * bottom-dock row (components/PrimaryDock.tsx), the Ask bar renders
- * visible-but-disabled, and (Parakeet) the pill expands into the
+ * enabled, and (Parakeet) the pill expands into the
  * LiveTranscriptBar panel.
  *
  * There is NO manual pause anywhere — stop ends the segment ("stop is the
@@ -37,10 +37,10 @@ async function startInBackground(page: Page) {
   return pill;
 }
 
-test('recording coexists: pill docks next to a disabled Ask bar, expands, stops to processing', async ({
+test('recording coexists: pill docks next to an enabled Ask bar, expands, stops to processing', async ({
   launchApp,
 }) => {
-  const { page } = await launchApp({ mockIpc: true, env: PILL_ENV });
+  const { page } = await launchApp({ mockIpc: true, fakeAudio: true, env: PILL_ENV });
 
   const pill = await startInBackground(page);
 
@@ -50,11 +50,11 @@ test('recording coexists: pill docks next to a disabled Ask bar, expands, stops 
   expect(hash).not.toContain('/meetings/processing');
 
   // Adjacent row: pill + Ask bar share the primary dock row, and the Ask bar
-  // is visible but disabled with the recording hint.
+  // is visible and enabled.
   await expect(page.getByTestId('primary-dock-row')).toBeVisible();
-  const askInput = page.getByPlaceholder('Chat available after recording');
+  const askInput = page.getByRole('textbox', { name: 'Ask about this meeting' });
   await expect(askInput).toBeVisible();
-  await expect(askInput).toBeDisabled();
+  await expect(askInput).toBeEnabled();
 
   // Compact pill = wave + elapsed + expand + stop glyph. NO pause control —
   // stop is the new pause.
@@ -73,7 +73,7 @@ test('recording coexists: pill docks next to a disabled Ask bar, expands, stops 
     window.location.hash = '#/settings';
   });
   await expect(page.getByTestId('transcription-pill')).toBeVisible();
-  await expect(page.getByPlaceholder('Chat available after recording')).toHaveCount(0);
+  await expect(page.getByRole('textbox', { name: 'Ask about this meeting' })).toBeHidden();
 
   // Processing route: recording wins the slot (back-to-back notes) — the
   // pill + Stop stay reachable instead of being displaced by ProcessingDock.
@@ -92,7 +92,7 @@ test('recording coexists: pill docks next to a disabled Ask bar, expands, stops 
   await pill.getByRole('button', { name: 'Show transcript' }).click();
   const panel = page.getByTestId('live-transcript-panel');
   await expect(panel).toBeVisible();
-  await expect(page.getByTestId('primary-dock-row')).toHaveCount(0);
+  await expect(page.getByTestId('primary-dock-row')).toBeHidden();
   await expect(panel.getByRole('button', { name: 'Stop recording' })).toBeVisible();
   await expect(panel.getByRole('button', { name: 'Pause recording' })).toHaveCount(0);
   await panel.getByRole('button', { name: 'Minimize transcript' }).click();
@@ -112,7 +112,7 @@ test('recording coexists: pill docks next to a disabled Ask bar, expands, stops 
 test('New note: the toolbar button starts recording AND opens the live-note editor', async ({
   launchApp,
 }) => {
-  const { page } = await launchApp({ mockIpc: true, env: PILL_ENV });
+  const { page } = await launchApp({ mockIpc: true, fakeAudio: true, env: PILL_ENV });
 
   // Coexistence means the pill FOLLOWS you, not that you start nowhere: the
   // explicit New-note action lands the user on the live-note editor so they
@@ -127,7 +127,7 @@ test('New note: the toolbar button starts recording AND opens the live-note edit
 test('auto-pause rescue: Resume appears only when the system paused the recording', async ({
   launchApp,
 }) => {
-  const { page } = await launchApp({ mockIpc: true, env: PILL_ENV });
+  const { page } = await launchApp({ mockIpc: true, fakeAudio: true, env: PILL_ENV });
   const pill = await startInBackground(page);
 
   // No resume while recording normally.
@@ -154,7 +154,7 @@ test('resume: the live transcript panel shows the earlier bits carried over from
   // seeds them through the mock get-live-transcript-state (the real buffer is
   // model-populated — see live-transcript-fallback.t2).
   const { page } = await launchApp({
-    mockIpc: true,
+    mockIpc: true, fakeAudio: true,
     env: { ...PILL_ENV, STENOAI_E2E_SEED_PRIOR_SEGMENTS: '1' },
   });
   const pill = await startInBackground(page);
@@ -172,7 +172,7 @@ test('resume: the live transcript panel shows the earlier bits carried over from
 
 test('whisper variant: compact pill has no expand and no pause', async ({ launchApp }) => {
   const { page } = await launchApp({
-    mockIpc: true,
+    mockIpc: true, fakeAudio: true,
     env: { ...PILL_ENV, STENOAI_E2E_MOCK_ENGINE: 'whisper' },
   });
   const pill = await startInBackground(page);
@@ -190,7 +190,7 @@ test('continue-recording: the transcript panel footer offers Resume (Granola-sty
   // A summarised note. Resume lives in the transcript panel footer now — there
   // is no standalone dock mic.
   const { page } = await launchApp({
-    mockIpc: true,
+    mockIpc: true, fakeAudio: true,
     env: { ...PILL_ENV, STENOAI_E2E_SEED_MEETING: '1' },
   });
   await page.evaluate(() => {
@@ -205,11 +205,11 @@ test('continue-recording: the transcript panel footer offers Resume (Granola-sty
   await expect(resume).toBeVisible();
 
   // Resume starts a recording that appends to this note: the pill takes over
-  // and the Ask bar goes inert.
+  // and the Ask bar queries the live transcript.
   await resume.click();
   await expect(page.getByTestId('transcription-pill')).toBeVisible();
   await expect(page.getByTestId('resume-recording-button')).toHaveCount(0);
-  await expect(page.getByPlaceholder('Chat available after recording')).toBeDisabled();
+  await expect(page.getByRole('textbox', { name: 'Ask about this meeting' })).toBeEnabled();
 });
 
 test('stale note (continued): floating CTA reads Generate notes', async ({ launchApp }) => {
@@ -217,7 +217,7 @@ test('stale note (continued): floating CTA reads Generate notes', async ({ launc
   // never-summarised one — there is no separate "Regenerate" wording. Every
   // record/continue → stop leaves this one button.
   const { page } = await launchApp({
-    mockIpc: true,
+    mockIpc: true, fakeAudio: true,
     env: { ...PILL_ENV, STENOAI_E2E_SEED_STALE_NOTE: '1' },
   });
   await page.evaluate(() => {

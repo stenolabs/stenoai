@@ -4174,22 +4174,8 @@ def _chat_corpus_char_budget(ai_provider: str, model: str) -> int:
     return 400_000
 
 
-@cli.command(name='chat-global-streaming')
-@click.option('--question', '-q', required=True, help='Question to ask across notes')
-@click.option('--folder', '-f', default=None, help='Folder ID to scope the corpus to (default: all notes)')
-def chat_global_streaming(question, folder):
-    """Cross-note chat: gather meeting title + summary + key points, feed as
-    context to the configured LLM, stream the answer. Optionally scope to a
-    single folder; default queries every note.
-
-    Works with every provider — cloud / org adapter / local / remote Ollama.
-    The assembled corpus is capped to the active model's context window
-    (model-aware budget below), so a local model with a smaller window simply
-    answers over fewer (most-recent) notes rather than overflowing. We don't
-    have retrieval (RAG) yet, so older notes beyond the budget are omitted."""
-    import sys
-    import base64
-    from pathlib import Path
+def _build_chat_corpus(folder=None, budget=None):
+    """Bounded saved-note context, shared by global and recording-time chat."""
     from src.config import get_config, get_data_dirs
 
     config = get_config()
@@ -4228,11 +4214,7 @@ def chat_global_streaming(question, folder):
         ]
 
     if not summaries:
-        if folder and folder != 'all':
-            print("CHAT_STREAM_ERROR:No notes in this folder yet. Pick another or remove the filter.", flush=True)
-        else:
-            print("CHAT_STREAM_ERROR:No notes found yet. Record a meeting first.", flush=True)
-        return
+        return ""
 
     # Most-recent first so the model weights newer context higher when token
     # budget is tight. Each block is kept compact (title + summary + key
@@ -4245,7 +4227,7 @@ def chat_global_streaming(question, folder):
 
     # Cap the assembled corpus so a user with hundreds of meetings can't blow
     # past the active model's context window (see _chat_corpus_char_budget).
-    CORPUS_CHAR_BUDGET = _chat_corpus_char_budget(
+    CORPUS_CHAR_BUDGET = budget if budget is not None else _chat_corpus_char_budget(
         config.get_ai_provider(), config.get_model()
     )
     blocks = []
@@ -4290,6 +4272,34 @@ def chat_global_streaming(question, folder):
             " to pull it in directly._"
         )
 
+    return corpus
+
+
+@cli.command(name='chat-global-streaming')
+@click.option('--question', '-q', required=True, help='Question to ask across notes')
+@click.option('--folder', '-f', default=None, help='Folder ID to scope the corpus to (default: all notes)')
+def chat_global_streaming(question, folder):
+    """Cross-note chat: gather meeting title + summary + key points, feed as
+    context to the configured LLM, stream the answer. Optionally scope to a
+    single folder; default queries every note.
+
+    Works with every provider — cloud / org adapter / local / remote Ollama.
+    The assembled corpus is capped to the active model's context window
+    (model-aware budget below), so a local model with a smaller window simply
+    answers over fewer (most-recent) notes rather than overflowing. We don't
+    have retrieval (RAG) yet, so older notes beyond the budget are omitted."""
+    import sys
+    import base64
+    from src.config import get_config
+
+    config = get_config()
+    corpus = _build_chat_corpus(folder)
+    if not corpus:
+        error = ("No notes in this folder yet. Pick another or remove the filter."
+                 if folder and folder != 'all' else "No notes found yet. Record a meeting first.")
+        print(f"CHAT_STREAM_ERROR:{error}", flush=True)
+        return
+
     language = config.get_language()
     if language == "auto":
         language = "en"
@@ -4303,6 +4313,13 @@ def chat_global_streaming(question, folder):
         print("CHAT_STREAM_COMPLETE", flush=True)
     except Exception as e:
         print(f"CHAT_STREAM_ERROR:{e}", flush=True)
+
+
+@cli.command(name='chat-context-streaming')
+def chat_context_streaming():
+    """Chat over explicit context. Content travels over bounded stdin, never argv."""
+    from src.chat_query import run_chat_query
+    run_chat_query(_parse_meeting_markdown, _build_chat_corpus, resolve_persisted_output_language)
 
 
 @cli.command()

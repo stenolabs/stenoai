@@ -287,6 +287,8 @@ export function useRecording() {
      *  INTO — lets a detail view match by identity rather than the collidable
      *  display name. Null for a fresh new-note recording or when idle. */
     recordingSummaryFile: queue.data?.recordingSummaryFile ?? null,
+    recordingId: queue.data?.recordingId ?? null,
+    chatSummaryFile: queue.data?.chatSummaryFile ?? null,
     /** The real note file the live recording/processing session produces.
      *  useMeetings dedupes the synthetic live row against it so one recording
      *  never shows as two entries (#bug4). Only Parakeet writes the placeholder

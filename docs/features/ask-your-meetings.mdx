@@ -1,9 +1,9 @@
 ---
 title: "Ask your meetings"
-description: "Query any saved meeting note in plain English. Steno answers from your local transcript and summary -- no data leaves your Mac."
+description: "Ask about a live meeting, saved notes, or general topics using your configured AI provider."
 ---
 
-Every meeting note in Steno has an inline ask bar. Type a question in plain English and Steno answers from the saved transcript, summary, and key topics using the local language model.
+Use the ask bar while recording or when viewing a saved note. Questions use your configured AI provider, and follow-up questions include recent conversation history for the selected context.
 
 ## How to use it
 
@@ -11,7 +11,20 @@ Every meeting note in Steno has an inline ask bar. Type a question in plain Engl
 2. Click the **Ask** bar at the bottom of the pane
 3. Type your question and press Return
 
-Steno reads the saved `.md` files for that meeting -- the summary, key topics, and full transcript -- and passes them with your question to the local model. The answer streams inline below the ask bar.
+Choose a context from the scope menu:
+
+- **This meeting** uses the saved note, or a snapshot of finalized speech during recording.
+- **All notes** or a folder uses a bounded selection of saved meeting summaries.
+- **General** answers without attaching meeting content or conversation turns from another scope.
+- **Shared notes**, when signed in, queries your organisation's shared notes.
+
+You can ask general explanations within a meeting conversation too. Answers should distinguish general knowledge from what was said in the meeting.
+
+## During recording
+
+Live meeting questions require live transcription (Parakeet). Wait for speech to be transcribed, then ask about the meeting so far. New speech becomes available to the next question; it does not change an answer already being generated.
+
+Recording continues while you chat. Pausing or stopping recording does not discard an answer in progress, and the conversation stays attached to the saved note. You can also chat with other notes or ask general questions when live transcription is unavailable.
 
 ## What you can ask
 
@@ -40,7 +53,7 @@ The full transcript is included, bounded by the active model's context window. V
 
 ## Privacy
 
-All queries are processed by the local model on your Mac. Your questions and the meeting content are not sent to any external server unless you have configured a cloud model in Settings.
+Chat follows your existing AI-provider setting. With local Ollama, questions stay on your device. A configured remote, cloud, or organisation provider receives the question and selected context. Selecting General excludes meeting content and conversation history from other scopes.
 
 ---
 

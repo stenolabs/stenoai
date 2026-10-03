@@ -15,5 +15,13 @@
   "settings.ai.cloudAsr.keyEmptyDescription": "Stored encrypted on your device - never written to config or sent anywhere except your chosen endpoint.",
   "settings.ai.cloudAsr.apiUrlPlaceholder": "https://api.openai.com/v1",
   "settings.ai.cloudAsr.modelPlaceholder": "whisper-1",
-  "settings.ai.cloudAsr.apiKeyPlaceholder": "sk-…"
+  "settings.ai.cloudAsr.apiKeyPlaceholder": "sk-…",
+  "chat.scope.general": "General",
+  "chat.scope.meeting": "This meeting",
+  "chat.live.placeholder": "Ask about this meeting so far…",
+  "chat.general.placeholder": "Ask anything…",
+  "chat.notes.placeholder": "Ask across your notes…",
+  "chat.live.waiting": "Waiting for live transcription. You can still ask general questions or chat with other notes.",
+  "chat.error": "Unable to answer. Please try again.",
+  "chat.saveError": "Could not save this answer. Keep this window open and try again."
 }

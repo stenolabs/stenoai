@@ -31,6 +31,7 @@ import { useAiProvider } from '@/hooks/useAi';
 import { navigate } from '@/lib/router';
 import {
   GLOBAL_SCOPE,
+  boundedChatHistory,
   bucketKey,
   deriveSessionName,
   toBucketLabel,
@@ -98,6 +99,14 @@ export function ChatConversation({ sessionId }: ChatConversationProps) {
     return list.find((s) => s.id === sessionId) ?? null;
   }, [allSessions.data?.sessions, sessionId]);
 
+  const restoredScopeRef = React.useRef<string | null>(null);
+  React.useEffect(() => {
+    if (session && restoredScopeRef.current !== session.id) {
+      restoredScopeRef.current = session.id;
+      setScopeFolderId(session.scopeFolderId ?? null);
+    }
+  }, [session]);
+
   const otherSessions = React.useMemo(() => {
     const list = allSessions.data?.sessions ?? [];
     return list
@@ -142,6 +151,7 @@ export function ChatConversation({ sessionId }: ChatConversationProps) {
         : '(empty response)');
     const message: ChatMessage = {
       role: 'assistant',
+      context: scopeFolderId ?? 'notes',
       content,
       ts: Date.now(),
     };
@@ -199,20 +209,15 @@ export function ChatConversation({ sessionId }: ChatConversationProps) {
     try {
       await chat.appendMessage(session.id, {
         role: 'user',
+        context: scopeFolderId ?? 'notes',
         content: q,
         ts: Date.now(),
       });
       appended = true;
       setInput('');
 
-      // Hand the running history to the org backend so follow-ups have
-      // context. For local scope this third arg is ignored.
-      const history = isOrgScope(scopeFolderId)
-        ? (session.messages ?? []).map((m) => ({
-            role: m.role,
-            content: m.content,
-          }))
-        : undefined;
+      // Follow-ups include only bounded history from the selected context.
+      const history = boundedChatHistory(session.messages ?? [], scopeFolderId ?? 'notes', 'notes');
       const streamId = streaming.startGlobalStream(q, scopeFolderId, history);
       pendingPersistRef.current = session.id;
       setActiveStreamId(streamId);
@@ -472,7 +477,8 @@ export function ChatConversation({ sessionId }: ChatConversationProps) {
           />
           <div className="flex items-center justify-between gap-2 px-1">
             <div className="flex items-center gap-1">
-              <FolderScopePicker value={scopeFolderId} onChange={setScopeFolderId} />
+              <FolderScopePicker value={scopeFolderId} onChange={(scope) => { setScopeFolderId(scope); void chat.setScope(sessionId, scope); }}
+                  disabled={isStreaming} />
               <span
                 data-testid="chat-model-indicator"
                 className="text-[12px]"
