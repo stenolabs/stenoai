@@ -1,6 +1,7 @@
 import * as React from 'react';
 import {
   ChevronDown,
+  Blocks,
   Globe,
   HelpCircle,
   Home as HomeIcon,
@@ -20,6 +21,7 @@ import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip
 import { useUpdateFolderIcon } from '@/hooks/useFolders';
 import { useOrgLogout, useOrgSession, useSharedNotesGate } from '@/hooks/useOrg';
 import { useCommandPalette } from '@/components/CommandPalette';
+import { AGENTS_COPY } from '@/lib/agentSkills';
 
 export interface SidebarMeeting {
   summaryFile: string;
@@ -385,6 +387,16 @@ export function Sidebar({
           >
             <MessageSquare className="size-[14px]" />
             <span className="flex-1 truncate">Chat</span>
+          </button>
+
+          <button
+            type="button"
+            className={cn('sb-row', currentRoute === '/agents' && 'active')}
+            aria-current={currentRoute === '/agents' ? 'page' : undefined}
+            onClick={() => navigate('/agents')}
+          >
+            <Blocks className="size-[14px]" />
+            <span className="flex-1 truncate">{AGENTS_COPY.nav}</span>
           </button>
 
           {sharedNotes.enabled && (

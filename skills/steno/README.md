@@ -34,19 +34,47 @@ config or touches AWS.
 
 ## Install
 
+See [Use Steno with your agent](https://docs.stenoai.co/features/agents) for the
+setup guide, examples, and troubleshooting.
+
 There's no build or package step — the skill is a **self-contained folder**
 (`SKILL.md` + `scripts/steno.py`). "Installing" just means putting it where your
 agent looks for skills:
 
-- **Claude Code:** copy the `steno/` folder into `~/.claude/skills/` (personal,
-  available everywhere) or a project's `.claude/skills/` (that repo only):
-  ```bash
-  cp -r skills/steno ~/.claude/skills/steno
-  ```
-  Then run `/steno <request>`, or just mention your meetings and the agent uses
-  it automatically (it's matched by the description in `SKILL.md`).
-- **Any other agent / manually:** nothing to install — run `scripts/steno.py`
-  directly and point your agent at it.
+Open **Agents** in Steno's sidebar, copy the install prompt for your agent,
+and paste it into that agent running on the same computer as your notes.
+The agent downloads the skill; Steno does not install files into other apps.
+
+### Claude Code
+
+Paste this into Claude Code:
+
+```text
+Install the Steno skill from https://github.com/stenolabs/stenoai/tree/main/skills/steno into my personal Claude Code skills directory (~/.claude/skills/steno). Include the whole folder, including scripts and references. If it already exists, ask before replacing it. Then explain how to use /steno with my local meeting notes.
+```
+
+You can also copy the complete `skills/steno` folder from a checkout into
+`~/.claude/skills/steno`, or `.claude/skills/steno` for one project.
+Run `/steno <request>`. See [Claude Code skills](https://code.claude.com/docs/en/skills).
+
+### Codex
+
+Paste this into Codex:
+
+```text
+$skill-installer install the Steno skill from https://github.com/stenolabs/stenoai/tree/main/skills/steno. Include the whole folder, including scripts and references. If it already exists, ask before replacing it. Then explain how to use $steno with my local meeting notes.
+```
+
+For manual installation, copy the complete folder into `~/.agents/skills/steno`
+(personal) or `.agents/skills/steno` (one project). Invoke `$steno` in Codex CLI
+or the IDE extension, or select the skill in the app's skill picker. If the skill
+does not appear, restart Codex. See [OpenAI's skill documentation](https://developers.openai.com/codex/skills).
+
+### Other agents
+
+Point your agent at the complete skill folder, or run `scripts/steno.py` directly.
+The skill needs local file access to your Steno notes; a hosted agent without
+access to this computer cannot read them.
 
 ## Running the CLI (two equivalent ways)
 

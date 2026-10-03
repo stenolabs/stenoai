@@ -1,5 +1,8 @@
 import * as React from 'react';
 import { cn } from '@/lib/utils';
+import { CHART_COPY, parseChatChart } from '@/lib/chatChart';
+
+const ChatChart = React.lazy(() => import('@/components/ChatChart'));
 
 // Lightweight markdown → React renderer for chat bubbles. Handles the
 // formatting LLMs actually produce in answers: headings, paragraphs,
@@ -16,7 +19,7 @@ export function stripReasoning(text: string): string {
   // Consumes optional leading spaces on the line, the block, and one optional trailing newline.
   let result = text.replace(
     /(?:^[ \t]*)?<(think|thought|thinking|reasoning)>[\s\S]*?(?:<\/\1>|$(?![\s\S]))\n?/gim,
-    '',
+    ''
   );
 
   if (startsWithReasoning) {
@@ -51,8 +54,13 @@ export function renderMarkdown(text: string): React.ReactNode {
   // The separator row distinguishes a real table from a bunch of pipes
   // in regular text.
   const detectTable = (
-    i: number,
-  ): { end: number; header: string[]; rows: string[][]; align: ('left' | 'center' | 'right' | null)[] } | null => {
+    i: number
+  ): {
+    end: number;
+    header: string[];
+    rows: string[][];
+    align: ('left' | 'center' | 'right' | null)[];
+  } | null => {
     if (i + 1 >= lines.length) return null;
     const headerRaw = lines[i];
     const sepRaw = lines[i + 1];
@@ -86,37 +94,43 @@ export function renderMarkdown(text: string): React.ReactNode {
     nodes.push(
       <Tag
         key={key++}
-        className={cn(
-          'my-1.5 space-y-0.5 pl-5',
-          Tag === 'ul' ? 'list-disc' : 'list-decimal',
-        )}
+        className={cn('my-1.5 space-y-0.5 pl-5', Tag === 'ul' ? 'list-disc' : 'list-decimal')}
       >
         {listItems.map((item, i) => (
           <li key={i}>{renderInline(item)}</li>
         ))}
-      </Tag>,
+      </Tag>
     );
     listItems = [];
     listType = null;
     lastWasGap = false;
   };
 
-  const flushCode = () => {
+  const flushCode = (closed = false) => {
     if (!inCode) return;
-    nodes.push(
-      <pre
-        key={key++}
-        className="my-2 overflow-x-auto rounded-md px-3 py-2 text-[12.5px]"
-        style={{
-          background: 'var(--surface-active)',
-          fontFamily: 'var(--font-mono)',
-          color: 'var(--fg-1)',
-        }}
-        data-lang={codeLang || undefined}
-      >
-        <code>{codeLines.join('\n')}</code>
-      </pre>,
-    );
+    const spec = closed && codeLang === 'steno-chart' ? parseChatChart(codeLines.join('\n')) : null;
+    if (spec) {
+      nodes.push(
+        <React.Suspense key={key++} fallback={<p role="status">{CHART_COPY.loading}</p>}>
+          <ChatChart spec={spec} />
+        </React.Suspense>
+      );
+    } else {
+      nodes.push(
+        <pre
+          key={key++}
+          className="my-2 overflow-x-auto rounded-md px-3 py-2 text-[12.5px]"
+          style={{
+            background: 'var(--surface-active)',
+            fontFamily: 'var(--font-mono)',
+            color: 'var(--fg-1)',
+          }}
+          data-lang={codeLang || undefined}
+        >
+          <code>{codeLines.join('\n')}</code>
+        </pre>
+      );
+    }
     codeLines = [];
     codeLang = null;
     inCode = false;
@@ -126,10 +140,10 @@ export function renderMarkdown(text: string): React.ReactNode {
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
     // Fenced code block: ```lang ... ```
-    const fence = line.match(/^```(\w*)\s*$/);
+    const fence = line.match(/^```([\w-]*)\s*$/);
     if (fence) {
       if (inCode) {
-        flushCode();
+        flushCode(true);
       } else {
         flushList();
         inCode = true;
@@ -192,7 +206,7 @@ export function renderMarkdown(text: string): React.ReactNode {
                 ))}
               </tbody>
             </table>
-          </div>,
+          </div>
         );
         lastWasGap = false;
         i = tbl.end;
@@ -217,7 +231,7 @@ export function renderMarkdown(text: string): React.ReactNode {
       nodes.push(
         <div key={key++} className={sizeClass} style={{ color: 'var(--fg-1)' }}>
           {renderInline(content)}
-        </div>,
+        </div>
       );
       lastWasGap = false;
       continue;
@@ -245,7 +259,7 @@ export function renderMarkdown(text: string): React.ReactNode {
       nodes.push(
         <p key={key++} className="my-1.5">
           {renderInline(line)}
-        </p>,
+        </p>
       );
       lastWasGap = false;
     } else if (nodes.length > 0 && !lastWasGap) {
@@ -349,7 +363,7 @@ export function renderInline(text: string): React.ReactNode {
           }}
         >
           {tok.slice(1, -1)}
-        </code>,
+        </code>
       );
     } else if (tok.startsWith('**')) {
       out.push(<strong key={key++}>{tok.slice(2, -2)}</strong>);

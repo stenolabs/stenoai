@@ -56,7 +56,7 @@ export const test = base.extend<Fixtures>({
   // Factory so each spec decides when/how to launch (T1 passes mockIpc:true).
   // Every app launched through it is closed at teardown.
   launchApp: async ({ userDataDir }, use) => {
-    const launched: ElectronApplication[] = [];
+    const launched: { app: ElectronApplication; proc: ReturnType<ElectronApplication['process']> }[] = [];
 
     const launch = async (opts: LaunchOptions = {}): Promise<LaunchResult> => {
       const env: Record<string, string> = {
@@ -107,7 +107,9 @@ export const test = base.extend<Fixtures>({
         }
       }
       if (!app) throw lastErr;
-      launched.push(app);
+      // Capture before a restart spec closes the app; Playwright releases the
+      // process handle on close, so app.process() is unavailable afterward.
+      launched.push({ app, proc: app.process() });
 
       const page = await app.firstWindow();
       // Deterministic launch gate — set in App.tsx's readiness effect. No
@@ -118,14 +120,14 @@ export const test = base.extend<Fixtures>({
 
     await use(launch);
 
-    for (const app of launched) {
+    for (const { app, proc } of launched) {
       // app.close() can hang on Windows: the app spawns children (the backend
       // pipeline subprocess, a stray `ollama serve`) that keep the Electron main
       // process alive, so a graceful close never returns and Playwright's worker
       // teardown times out. Race the close with a grace window, then force-kill
       // the whole process tree. macOS closes well within the window, so the
       // fallback never fires there.
-      const proc = app.process();
+      if (proc.exitCode !== null || proc.signalCode !== null) continue;
       try {
         await Promise.race([
           app.close(),

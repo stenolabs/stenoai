@@ -6,6 +6,7 @@
 import { ipc } from '@/lib/ipc';
 import type { OrgMeetingSummary, OrgMeeting } from '@/lib/ipc';
 import { unwrap } from '@/lib/result';
+import { CHART_INSTRUCTIONS } from '@/lib/chatChart';
 
 interface OrgChatTurn {
   role: 'user' | 'assistant';
@@ -56,7 +57,7 @@ export async function buildOrgChatPayload(
   question: string,
 ) {
   const corpus = await loadOrgCorpus();
-  const system = `${SYSTEM_PREFIX}\n\n--- SHARED NOTES ---\n${corpus}`;
+  const system = `${SYSTEM_PREFIX}\n\n${CHART_INSTRUCTIONS}\n\n--- SHARED NOTES ---\n${corpus}`;
   const messages: OrgChatTurn[] = [
     ...history,
     { role: 'user', content: question },

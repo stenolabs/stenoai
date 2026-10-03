@@ -355,6 +355,19 @@ Releases are automated via `.github/workflows/build-release.yml`. Never create r
      - is vague about what actually broke ("Fixed an issue choosing X" → "Fixed an issue that could prevent choosing X").
    - Each bullet should read as one clear clause on first pass. If in doubt, read it aloud.
 4. **Bump version** in `app/package.json`.
+   - **Update the in-app What's new panel** in `app/renderer/src/lib/releaseHighlights.ts`
+     alongside the public changelog. Keep 2–4 short, user-facing highlights for
+     this release, with a working in-app destination for each. Remove the previous
+     release's highlights; the build binds this list to `app/package.json`'s version.
+     Reuse bundled logos where relevant (for example Anthropic/OpenAI for Agents),
+     and include a small local illustration or screenshot when it explains the feature.
+     Keep visuals optional, accessible, and readable in light and dark mode; do not
+     fetch release content or images on launch. For a maintenance release with no
+     highlights, use an empty list so no dialog is shown.
+   - Preview both themes and check: an upgrade shows the panel once when the app
+     is foregrounded and idle; dismissal survives restart; first-run setup and
+     recording are not interrupted; Settings → About can reopen it. Run
+     `npm run test:e2e -- --project=t1 whats-new.t1.spec.ts` from `app/`.
 5. **Commit and merge** the README + changelog + version bump to `main` (or push directly if explicitly authorised).
 6. **Draft release notes** as markdown — they become the GitHub Release body verbatim:
    - One-line summary at the top.

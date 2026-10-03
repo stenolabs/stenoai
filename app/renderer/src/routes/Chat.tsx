@@ -23,7 +23,7 @@ import { useUserName } from '@/hooks/useSettings';
 import { useOrgSession } from '@/hooks/useOrg';
 import { navigate } from '@/lib/router';
 import { GLOBAL_SCOPE, bucketKey, deriveSessionName, toBucketLabel, formatActiveModel, chatProviderReady } from '@/lib/chat';
-import { PRESETS, PresetGlyph, PRESET_COLORS } from '@/lib/chatPresets';
+import { PRESETS, PresetGlyph, PRESET_COLORS, CHAT_COMPOSER_LABEL } from '@/lib/chatPresets';
 
 function TypewriterPlaceholder({ index, setIndex }: { index: number, setIndex: React.Dispatch<React.SetStateAction<number>> }) {
   const [text, setText] = React.useState('');
@@ -71,7 +71,7 @@ function TypewriterPlaceholder({ index, setIndex }: { index: number, setIndex: R
   const presetColor = PRESET_COLORS[index % PRESET_COLORS.length];
 
   return (
-    <div className="pointer-events-none absolute left-3 top-[10px] flex items-center gap-2">
+    <div aria-hidden="true" className="pointer-events-none absolute left-3 top-[10px] flex items-center gap-2">
       <PresetGlyph color={presetColor} size={22} />
       <span style={{ color: 'var(--fg-muted)', fontSize: 16 }}>
         {prefersReducedMotion ? PRESETS[index].label : text}
@@ -287,6 +287,7 @@ export function Chat() {
                 {ready && !input && !presetsOpen && !isFocused && <TypewriterPlaceholder index={suggestedIndex} setIndex={setSuggestedIndex} />}
                 <input
                   ref={inputRef}
+                  aria-label={CHAT_COMPOSER_LABEL}
                   type="text"
                   value={input}
                   onFocus={() => setIsFocused(true)}
@@ -331,7 +332,7 @@ export function Chat() {
                     }
                   }}
                   disabled={!ready}
-                  placeholder={ready ? (typeof navigator !== 'undefined' && navigator.webdriver ? 'Summarise my meetings this week  /' : (isFocused && !input ? `/ ${PRESETS[suggestedIndex].label}` : '')) : 'Set up an AI provider in Settings to ask across notes'}
+                  placeholder={ready ? (isFocused && !input && !presetsOpen ? `/ ${PRESETS[suggestedIndex].label}` : '') : 'Set up an AI provider in Settings to ask across notes'}
                   className="block w-full bg-transparent px-3 pb-4 pt-2.5 outline-none disabled:cursor-not-allowed placeholder:text-[color:var(--fg-muted)]"
                   style={{ fontSize: 16, color: 'var(--fg-1)', fontFamily: 'var(--font-sans)', fontWeight: 400 }}
                 />

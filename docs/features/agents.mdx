@@ -1,0 +1,95 @@
+---
+title: "Use Steno with your agent"
+sidebarTitle: "Agents"
+description: "Connect Claude Code or Codex to your local Steno meeting notes with the Steno skill."
+---
+
+The Steno skill lets your agent find meeting notes, answer questions across
+conversations, and use those notes to draft recaps, plans, or follow-ups.
+Use an agent running on the same computer as your Steno notes.
+
+## Install the skill
+
+In Steno, open **Agents** in the sidebar. Choose **Claude Code** or **Codex**,
+click **Copy install prompt**, and paste it into your agent. The agent installs
+the skill and can help with any missing setup.
+
+You can also copy the prompts below. The source is available in the
+[Steno skill folder on GitHub](https://github.com/stenolabs/stenoai/tree/main/skills/steno).
+
+## Claude Code
+
+Paste this into Claude Code:
+
+```text
+Install the Steno skill from https://github.com/stenolabs/stenoai/tree/main/skills/steno into my personal Claude Code skills directory (~/.claude/skills/steno). Include the whole folder, including scripts and references. If it already exists, ask before replacing it. Then explain how to use /steno with my local meeting notes.
+```
+
+After installation, try:
+
+```text
+/steno recap this week's meetings and list my next steps
+```
+
+For manual installation, copy the complete `skills/steno` folder from the
+repository into `~/.claude/skills/steno`. Keep its `scripts` and `references`
+subfolders. See [Claude Code's skill documentation](https://code.claude.com/docs/en/skills)
+for project-specific installation and troubleshooting.
+
+## Codex
+
+Paste this into Codex:
+
+```text
+$skill-installer install the Steno skill from https://github.com/stenolabs/stenoai/tree/main/skills/steno. Include the whole folder, including scripts and references. If it already exists, ask before replacing it. Then explain how to use $steno with my local meeting notes.
+```
+
+In Codex CLI or the IDE extension, try:
+
+```text
+$steno what did we decide about pricing this week?
+```
+
+In the app, select the Steno skill in the skill picker. If the skill does not
+appear, restart Codex. For manual installation, copy the complete folder into
+`~/.agents/skills/steno` for personal use, or `.agents/skills/steno` in a project.
+See [OpenAI's skill documentation](https://developers.openai.com/codex/skills).
+
+## Check the connection
+
+Ask your agent to use the Steno skill to locate your notes and list your recent
+meetings. It should find the notes already saved by Steno. You can then ask it to:
+
+- Find decisions about a topic across meetings.
+- List action items and their owners from the past week.
+- Draft a follow-up based on a particular call.
+- Turn discovery calls into a product brief, with references to the source meetings.
+
+## Troubleshooting
+
+### The agent asks for Python
+
+The skill's helper needs Python 3.8 or later, or `uv`, and has no third-party
+Python dependencies. Ask the agent to check what is already installed and guide
+you through anything missing. Installing a runtime may require your approval.
+
+### The agent cannot find my notes
+
+Make sure you have saved a meeting in Steno and that the agent is running on the
+same computer. A hosted agent without access to your computer cannot read local
+notes. If you use a custom storage location, tell the agent where it is and ask
+it to run the skill's `locate` command with `--notes-dir` pointing to the folder
+containing `output/` and `transcripts/`.
+
+### The agent needs permission
+
+Your agent may ask to run the helper or read your notes folder. Check the
+requested command and location before approving it. If access is blocked, ask
+the agent to explain which permission is missing.
+
+## Privacy
+
+The skill's helper only reads local notes. It does not modify or delete your
+recordings, transcripts, or summaries. When your agent uses those notes, the
+content is handled according to that agent's model provider and privacy settings.
+Steno's local processing does not make an external agent's requests local.

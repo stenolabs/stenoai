@@ -9,7 +9,14 @@ export interface ChatPreset {
   description: string;
 }
 
+export const CHAT_COMPOSER_LABEL = 'Ask about your notes';
+
 export const PRESETS: ChatPreset[] = [
+  {
+    label: 'Chart my notes',
+    prompt: 'Create a bar chart of action item counts by meeting from my recent notes. Explain which notes are included and any missing information.',
+    description: 'Visualizes numbers supported by your meeting notes',
+  },
   {
     label: 'List recent todos',
     prompt: 'List my action items from the last week.',

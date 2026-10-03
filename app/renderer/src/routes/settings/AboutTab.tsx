@@ -4,6 +4,8 @@ import { Button } from '@/components/ui/button';
 import { ipc } from '@/lib/ipc';
 import { useAppVersion } from '@/hooks/useSettings';
 import { COMPACT_BTN, SettingRow } from './primitives';
+import { useWhatsNew } from '@/components/WhatsNew';
+import { WHATS_NEW_COPY } from '@/lib/releaseHighlights';
 
 /** Plain external-link text (matches TemplatesTab's "learn more" link) for
  *  rows that just navigate out, rather than a bordered Button — keeps the
@@ -45,6 +47,7 @@ type CheckState =
   | { kind: 'update-blocked-os'; version: string };
 
 export function AboutTab() {
+  const whatsNew = useWhatsNew();
   const version = useAppVersion();
   const [checkState, setCheckState] = React.useState<CheckState>({ kind: 'idle' });
   const [downloadPercent, setDownloadPercent] = React.useState<number | null>(null);
@@ -315,6 +318,12 @@ export function AboutTab() {
           onClick={() => void ipc().shell.openExternal(CHANGELOG_URL)}
         />
       </SettingRow>
+
+      {whatsNew.available && (
+        <SettingRow label={WHATS_NEW_COPY.settingsLabel} description={WHATS_NEW_COPY.settingsDescription}>
+          <Button variant="ghost" size="sm" onClick={whatsNew.show}>{WHATS_NEW_COPY.view}</Button>
+        </SettingRow>
+      )}
 
       <SettingRow label="Discord" description="Join the community, ask questions, share feedback">
         <ExternalLinkAction

@@ -576,7 +576,7 @@ function Bubble({
   return (
     <div className={isUser ? 'flex justify-end' : 'flex'}>
       <div
-        className={`chat-bubble max-w-[85%] rounded-2xl px-4 py-3 text-[14px] leading-[1.55] ${live ? 'animate-pulse' : ''}`}
+        className={`chat-bubble min-w-0 max-w-[85%] rounded-2xl px-4 py-3 text-[14px] leading-[1.55] has-[[data-chat-chart]]:w-full ${live ? 'animate-pulse' : ''}`}
         style={{
           background: isUser ? 'var(--surface-active)' : 'var(--surface-sunken)',
           color: 'var(--fg-1)',

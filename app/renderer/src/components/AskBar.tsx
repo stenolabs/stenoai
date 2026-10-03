@@ -674,7 +674,7 @@ function MessageList({ messages, liveText, streaming }: MessageListProps) {
       {streaming && (
         <div className="flex justify-start">
           {liveText ? (
-            <div className="max-w-[90%] text-sm leading-[1.7]" style={{ color: 'var(--fg-1)' }}>
+            <div className="min-w-0 max-w-[90%] text-sm leading-[1.7] has-[[data-chat-chart]]:w-full" style={{ color: 'var(--fg-1)' }}>
               {renderMarkdown(liveText)}
               <span className="ml-0.5 inline-block h-3.5 w-0.5 animate-pulse align-text-bottom" style={{ background: 'var(--fg-2)' }} />
             </div>
@@ -708,7 +708,7 @@ function MessageBubble({ message }: { message: ChatMessage }) {
           {message.content}
         </div>
       ) : (
-        <div className="max-w-[90%] text-sm leading-[1.7]" style={{ color: 'var(--fg-1)' }}>
+        <div className="min-w-0 max-w-[90%] text-sm leading-[1.7] has-[[data-chat-chart]]:w-full" style={{ color: 'var(--fg-1)' }}>
           {renderMarkdown(message.content)}
         </div>
       )}

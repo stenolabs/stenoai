@@ -26,6 +26,7 @@
 - [Summaries and notes](https://docs.stenoai.co/features/summaries): on-device summarization.
 - [Report templates](https://docs.stenoai.co/features/report-templates): editable, per-meeting note formats.
 - [Ask your meetings](https://docs.stenoai.co/features/ask-your-meetings): chat over one meeting or your whole library.
+- [Use Steno with your agent](https://docs.stenoai.co/features/agents): connect Claude Code or Codex to local meeting notes with the Steno skill.
 - [Speaker labels](https://docs.stenoai.co/features/speaker-labels): [You] / [Others] via stereo-channel diarization.
 - [Apple Shortcuts](https://docs.stenoai.co/features/apple-shortcuts): stenoai:// deep links for automation.
 

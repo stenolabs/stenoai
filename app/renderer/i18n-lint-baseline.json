@@ -1,5 +1,5 @@
 {
-  "total": 749,
+  "total": 748,
   "files": {
     "renderer/src/components/AskBar.tsx": 25,
     "renderer/src/components/ChatHistoryRow.tsx": 5,
@@ -24,7 +24,7 @@
     "renderer/src/components/ui/confirm-dialog.tsx": 1,
     "renderer/src/components/ui/dialog.tsx": 1,
     "renderer/src/main.tsx": 1,
-    "renderer/src/routes/Chat.tsx": 12,
+    "renderer/src/routes/Chat.tsx": 11,
     "renderer/src/routes/ChatConversation.tsx": 14,
     "renderer/src/routes/FolderDetail.tsx": 10,
     "renderer/src/routes/Home.tsx": 32,

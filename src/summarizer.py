@@ -1796,6 +1796,7 @@ TITLE:"""
             return None
 
     def _build_query_prompt(self, transcript: str, question: str, language: str = "en") -> str:
+        from .chat_charts import CHART_INSTRUCTIONS
         if language and language not in ("en", "auto"):
             from .config import get_config
             language_name = get_config().get_language_name(language)
@@ -1805,6 +1806,8 @@ TITLE:"""
         return f"""Answer the following question based on the meeting content below (summary, key topics, and transcript).
 Be concise and direct. If the answer requires inference from what was discussed, that's fine.
 Only say you don't know if the topic truly wasn't discussed at all.{query_lang_instruction}
+
+{CHART_INSTRUCTIONS}
 
 QUESTION: {question}
 

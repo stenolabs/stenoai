@@ -5,6 +5,7 @@ import { Sandbox } from '@/routes/Sandbox';
 import { Settings } from '@/routes/Settings';
 import { Setup } from '@/routes/Setup';
 import { Chat } from '@/routes/Chat';
+import { Agents } from '@/routes/Agents';
 import { ChatConversation } from '@/routes/ChatConversation';
 import { StreamingProvider } from '@/hooks/useStreamingQuery';
 import { Home } from '@/routes/Home';
@@ -36,6 +37,7 @@ import { navigate, useRoute, rememberNonSettingsRoute } from '@/lib/router';
 import { ipc } from '@/lib/ipc';
 import { primeDebugLogs } from '@/lib/debugLogs';
 import { useMeetingTransferEvents } from '@/hooks/useMeetingTransfer';
+import { WhatsNewProvider } from '@/components/WhatsNew';
 
 export function App() {
   useTheme();
@@ -155,6 +157,7 @@ export function App() {
   // route and never while recording/processing, so we don't yank the user out
   // of anything in flight. Runs once.
   const didSetupGateRef = React.useRef(false);
+  const [setupGateResolved, setSetupGateResolved] = React.useState(false);
   React.useEffect(() => {
     if (didSetupGateRef.current) return;
     if (recording.isLoading) return;
@@ -182,6 +185,8 @@ export function App() {
         }
       } catch {
         // Best-effort onboarding gate; never block the app on it.
+      } finally {
+        setSetupGateResolved(true);
       }
     })();
   }, [recording.isLoading, recording.status, route]);
@@ -199,6 +204,7 @@ export function App() {
   // would float over Settings/Setup and block clicks in that band; the
   // pill docks alone there instead.
   const isChromeRoute =
+    route === '/agents' ||
     route === '/settings' ||
     route.startsWith('/settings?') ||
     route === '/setup' ||
@@ -209,6 +215,12 @@ export function App() {
     recording.status === 'recording' || recording.status === 'paused';
 
   return (
+    <WhatsNewProvider
+      onboarding={route === '/setup'}
+      blocked={recording.isLoading || recordingActive || recording.status === 'processing' ||
+        privacyNotice.isPending || showPrivacyModal ||
+        (!setupGateResolved && (route === '/' || route === '' || route === '/meetings'))}
+    >
     <CommandPaletteProvider>
       <CommandPaletteHotkey />
       <StreamingProvider>
@@ -260,6 +272,7 @@ export function App() {
       </AskBarProvider>
       </StreamingProvider>
     </CommandPaletteProvider>
+    </WhatsNewProvider>
   );
 }
 
@@ -305,6 +318,7 @@ function RouteView({ route }: { route: string }) {
   if (route === '/setup') return <Setup />;
   if (route === '/recording') return <Recording />;
   if (route === '/chat') return <Chat />;
+  if (route === '/agents') return <Agents />;
   if (route.startsWith('/chat/')) {
     const sessionId = safeDecode(route.slice('/chat/'.length));
     return <ChatConversation sessionId={sessionId} />;
