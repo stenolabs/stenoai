@@ -1,5 +1,14 @@
-import { parakeetProgressLabel } from '@/lib/parakeetProgress';
-import type { ParakeetPullProgressEvent } from '@/lib/ipc';
+import {
+  parakeetProgressLabel,
+  parakeetProgressPercent,
+  speakerModelsProgressLabel,
+  speakerModelsProgressPercent,
+} from '@/lib/parakeetProgress';
+import type { ParakeetPullProgressEvent, SpeakerModelsProgressEvent } from '@/lib/ipc';
+import { DownloadProgressBar } from '@/components/DownloadProgressBar';
+import { speakerModelsStatusKey, useSpeakerModelsStatus } from '@/hooks/useSpeakerModels';
+import { useQueryClient } from '@tanstack/react-query';
+import { t } from '@/i18n';
 import * as React from 'react';
 import { AudioLines, Check, Cloud, HardDrive, Mic, MessageSquare, Zap, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -55,28 +64,13 @@ interface Step {
  *  begins - the status label carries the current phase so the bar never reads
  *  as a single misleading aggregate. */
 function OllamaProgressBar({ status, pct }: { status: string; pct: number }) {
-  const clamped = Math.max(0, Math.min(100, Math.round(pct)));
   return (
-    <div className="mt-2" data-setup-ollama-progress>
-      <div className="mb-1 flex items-center justify-between text-[11px] text-muted-foreground">
-        <span className="truncate">{status || 'Downloading model...'}</span>
-        <span className="tabular-nums">{clamped}%</span>
-      </div>
-      <div
-        className="h-1.5 overflow-hidden rounded-full"
-        style={{ background: 'var(--surface-sunken)' }}
-        role="progressbar"
-        aria-valuemin={0}
-        aria-valuemax={100}
-        aria-valuenow={clamped}
-        aria-label="Summarization model download progress"
-      >
-        <div
-          className="h-full rounded-full transition-[width] duration-300"
-          style={{ width: `${clamped}%`, background: 'var(--fg-1)' }}
-        />
-      </div>
-    </div>
+    <DownloadProgressBar
+      data-setup-ollama-progress
+      label={status || 'Downloading model...'}
+      percent={pct}
+      aria-label={t('downloads.ollama.ariaLabel')}
+    />
   );
 }
 
@@ -171,6 +165,20 @@ export function Setup() {
     status: string;
     pct: number;
   } | null>(null);
+  const [speakerProgress, setSpeakerProgress] = React.useState<SpeakerModelsProgressEvent | null>(null);
+  // Speaker separation is opt-in: its models are an extra ~250 MB most people
+  // can skip, and Settings -> AI offers the same download later.
+  const [includeSpeakers, setIncludeSpeakers] = React.useState(false);
+  // Models already on disk (e.g. downloaded from Settings): show it on --
+  // unless the user has already flipped the switch themselves, since the
+  // status check can take a few seconds to answer.
+  const speakerStatus = useSpeakerModelsStatus();
+  const speakersInstalled = isMac && speakerStatus.data?.success === true && speakerStatus.data.ready;
+  const speakerSwitchTouched = React.useRef(false);
+  React.useEffect(() => {
+    if (speakersInstalled && !speakerSwitchTouched.current) setIncludeSpeakers(true);
+  }, [speakersInstalled]);
+  const queryClient = useQueryClient();
 
   React.useEffect(() => {
     if (typeof window === 'undefined' || !window.stenoai) return;
@@ -200,9 +208,13 @@ export function Setup() {
     const offOllama = ipc().on.setupOllamaProgress(({ status, pct }) => {
       setOllamaProgress({ status, pct });
     });
+    const offSpeakers = ipc().on.speakerModelsProgress((progress) => {
+      setSpeakerProgress(progress);
+    });
     return () => {
       offParakeet();
       offOllama();
+      offSpeakers();
     };
   }, []);
 
@@ -315,6 +327,7 @@ export function Setup() {
     // starts from a clean bar rather than resuming a stale one.
     setParakeetStage(null);
     setOllamaProgress(null);
+    setSpeakerProgress(null);
     // Capture the snapshot so we can branch on what's already done. Skipping
     // completed steps keeps retries fast (no re-prompting for mic permission,
     // no re-initialising Whisper) when the user is just fixing a bad API key.
@@ -370,19 +383,24 @@ export function Setup() {
         }
       }
 
-      if (isMac && snapshot.speakers !== 'done') {
-        setStatus('speakers', 'running', 'Checking speaker diarization models...');
+      if (isMac && includeSpeakers && snapshot.speakers !== 'done') {
+        setStatus('speakers', 'running', 'Checking speaker models...');
         try {
           const status = await ipc().setup.speakerModelsStatus();
           if (!status.success) throw new Error(status.error);
           if (status.ready) {
-            setStatus('speakers', 'done', 'Speaker diarization models ready');
+            setStatus('speakers', 'done', 'Speaker models ready');
           } else {
-            setStatus('speakers', 'running', 'Downloading speaker diarization models...');
+            setStatus('speakers', 'running', 'Downloading speaker models...');
             await speakerModelsStep.mutateAsync();
-            setStatus('speakers', 'done', 'Speaker diarization models ready');
+            setSpeakerProgress(null);
+            // Settings reads the same cached status; don't let it show
+            // Download for models that are now installed.
+            void queryClient.invalidateQueries({ queryKey: speakerModelsStatusKey });
+            setStatus('speakers', 'done', 'Speaker models ready');
           }
         } catch {
+          setSpeakerProgress(null);
           setStatus('speakers', 'failed', 'Optional setup failed. You can retry later.');
         }
       }
@@ -447,6 +465,7 @@ export function Setup() {
       // error detail, not a frozen progress bar.
       setParakeetStage(null);
       setOllamaProgress(null);
+      setSpeakerProgress(null);
       setStatuses((prev) => {
         const failId = (Object.keys(prev) as Step['id'][]).find((k) => prev[k] === 'running');
         if (!failId) return prev;
@@ -476,7 +495,16 @@ export function Setup() {
       detail: details.transcription,
       progressNode:
         statuses.transcription === 'running' && parakeetStage !== null ? (
-          <IndeterminateBar label={parakeetProgressLabel(parakeetStage)} />
+          parakeetProgressPercent(parakeetStage) !== null ? (
+            <DownloadProgressBar
+              data-setup-transcription-progress
+              label={parakeetProgressLabel(parakeetStage)}
+              percent={parakeetProgressPercent(parakeetStage)!}
+              aria-label={t('downloads.parakeet.ariaLabel')}
+            />
+          ) : (
+            <IndeterminateBar label={parakeetProgressLabel(parakeetStage)} />
+          )
         ) : undefined,
     },
     {
@@ -496,16 +524,23 @@ export function Setup() {
     },
   ];
 
-  if (isMac) {
+  if (isMac && includeSpeakers) {
     steps.splice(2, 0, {
       id: 'speakers',
-      title: 'Speaker Diarization',
-      description: 'Separates individual speakers locally',
+      title: t('settings.ai.speakers.label'),
+      description: 'Separates the voices on each side of a call',
       icon: AudioLines,
       status: statuses.speakers,
       detail: details.speakers,
       progressNode:
-        statuses.speakers === 'running' && details.speakers?.startsWith('Downloading') ? (
+        statuses.speakers === 'running' && speakerProgress !== null ? (
+          <DownloadProgressBar
+            data-setup-speaker-progress
+            label={speakerModelsProgressLabel(speakerProgress)}
+            percent={speakerModelsProgressPercent(speakerProgress)}
+            aria-label={t('downloads.speakers.ariaLabel')}
+          />
+        ) : statuses.speakers === 'running' && details.speakers?.startsWith('Downloading') ? (
           <IndeterminateBar label="Downloading and preparing models..." kind="speakers" />
         ) : undefined,
     });
@@ -718,6 +753,30 @@ export function Setup() {
                 </div>
               </div>
             )}
+          </div>
+        )}
+
+        {isMac && (
+          <div
+            className="mt-3 flex items-start gap-4 rounded-md border border-border p-4"
+            data-setup-speakers-opt-in
+          >
+            <div className="min-w-0 flex-1">
+              <div className="text-sm font-medium text-foreground">
+                {t('setup.speakers.optInTitle')}
+              </div>
+              <Muted className="mt-0.5">{t('setup.speakers.optInDescription')}</Muted>
+            </div>
+            <Switch
+              checked={includeSpeakers}
+              onCheckedChange={(on) => {
+                speakerSwitchTouched.current = true;
+                setIncludeSpeakers(on);
+              }}
+              // Fixed once setup has run: Settings -> AI handles it from there.
+              disabled={running || done || statuses.speakers === 'done'}
+              aria-label={t('setup.speakers.optInTitle')}
+            />
           </div>
         )}
 

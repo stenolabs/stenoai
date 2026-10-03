@@ -32,7 +32,7 @@
     "renderer/src/routes/OrgShared.tsx": 20,
     "renderer/src/routes/Processing.tsx": 7,
     "renderer/src/routes/Recording.tsx": 7,
-    "renderer/src/routes/Setup.tsx": 41,
+    "renderer/src/routes/Setup.tsx": 40,
     "renderer/src/routes/settings/AboutTab.tsx": 16,
     "renderer/src/routes/settings/AdvancedTab.tsx": 19,
     "renderer/src/routes/settings/AiTab.tsx": 81,

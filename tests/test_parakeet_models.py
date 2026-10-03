@@ -216,6 +216,91 @@ class DownloadProgressTests(unittest.TestCase):
             self.assertEqual(any(e.get("file_bytes") == 100 for e in events), modern)
             self.assertEqual(events[-1]["completed_files"], len(calls))
 
+    @patch.dict(os.environ)
+    def test_snapshot_reports_measured_total_bytes(self):
+        import types
+        import sys
+        files = parakeet_models._REQUIRED_SNAPSHOT_FILES[parakeet_models.DEFAULT_MODEL_ID]
+        sizes = {name: 100 * (i + 1) for i, name in enumerate(files)}
+
+        def download(repo, filename, revision=None, token=None, tqdm_class=None):
+            calls.append((filename, revision))
+            with tqdm_class(total=sizes[filename], unit="B", mininterval=0, disable=None) as bar:
+                bar.update(sizes[filename] // 2)
+                bar.update(sizes[filename] - sizes[filename] // 2)
+            return "/synthetic/snapshots/abc123/" + filename
+
+        calls = []
+
+        class Api:
+            def model_info(self, repo, token=None):
+                return types.SimpleNamespace(sha="pinned123")
+
+            def get_paths_info(self, repo, paths, revision=None, token=None):
+                calls.append(("sizes", revision))
+                return [types.SimpleNamespace(path=p, size=sizes[p]) for p in paths]
+
+        hub = types.ModuleType("huggingface_hub")
+        hub.hf_hub_download, hub.HfApi = download, Api
+        events = []
+        with patch.dict(sys.modules, {"huggingface_hub": hub}):
+            parakeet_models._download_snapshot(parakeet_models.DEFAULT_MODEL_ID, events.append)
+        total = sum(sizes.values())
+        self.assertTrue(all(e["total_bytes"] == total for e in events))
+        downloaded = [e["downloaded_bytes"] for e in events]
+        self.assertEqual(downloaded, sorted(downloaded))
+        self.assertEqual(downloaded[-1], total)
+        # Sizes and every download describe the same pinned snapshot.
+        self.assertTrue(all(rev == "pinned123" for _, rev in calls), calls)
+
+    @patch.dict(os.environ)
+    def test_snapshot_without_size_metadata_omits_totals(self):
+        import types
+        import sys
+
+        class BrokenApi:
+            def model_info(self, *a, **k):
+                raise OSError("offline")
+
+        hub = types.ModuleType("huggingface_hub")
+        hub.hf_hub_download = lambda repo, filename, revision=None, token=None: "/s/snapshots/abc/" + filename
+        hub.HfApi = BrokenApi
+        events = []
+        with patch.dict(sys.modules, {"huggingface_hub": hub}):
+            parakeet_models._download_snapshot(parakeet_models.DEFAULT_MODEL_ID, events.append)
+        self.assertTrue(events)
+        self.assertFalse(any("total_bytes" in e for e in events))
+
+
+class SnapshotSizeFallbackTests(unittest.TestCase):
+    def _lookup(self, sha, infos):
+        import types
+        import sys
+
+        class Api:
+            def model_info(self, repo, token=None):
+                return types.SimpleNamespace(sha=sha)
+
+            def get_paths_info(self, repo, paths, revision=None, token=None):
+                return [types.SimpleNamespace(path=p, size=s) for p, s in infos]
+
+        hub = types.ModuleType("huggingface_hub")
+        hub.HfApi = Api
+        with patch.dict(sys.modules, {"huggingface_hub": hub}):
+            return parakeet_models._snapshot_file_sizes("repo", ("a.json", "b.bin"))
+
+    def test_complete_metadata_pins_revision_and_sizes(self):
+        self.assertEqual(self._lookup("abc", [("a.json", 1), ("b.bin", 2)]), ("abc", {"a.json": 1, "b.bin": 2}))
+
+    def test_incomplete_metadata_falls_back(self):
+        for sha, infos in [
+            (None, [("a.json", 1), ("b.bin", 2)]),   # no revision
+            ("abc", [("a.json", 1)]),                # a file missing
+            ("abc", [("a.json", 1), ("b.bin", 0)]),  # non-positive size
+        ]:
+            with self.subTest(sha=sha, infos=infos):
+                self.assertEqual(self._lookup(sha, infos), (None, None))
+
 
 class OfflineLoadTests(unittest.TestCase):
     def test_offline_sessions_restored_after_load_error(self):

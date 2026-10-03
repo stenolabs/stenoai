@@ -91,9 +91,9 @@ func cleanupStaleRawAudioTempFiles(now: Date = Date()) {
 // requires a full chunkLen+rightContext window -- 340+40 frames at 0.08s
 // each, 30.4s -- before it emits ANYTHING; audio shorter than that gets
 // ZERO segments, not degraded ones (confirmed empirically: a 12.25s test
-// clip returned {"speakers":{},"segments":[]} with highContextV2). This
-// threshold gives real margin above that hard minimum before switching
-// away from the always-safe .default config.
+// clip returned {"speakers":{},"segments":[]} with highContextV2). Shorter
+// recordings are padded with silence to this length, with real margin above
+// that hard minimum.
 let sortformerHighContextMinDuration: Double = 90.0
 
 func fail(_ message: String, code: Int32 = 1) -> Never {
@@ -454,6 +454,34 @@ func extractSortformerEmbeddings(
     }
 }
 
+/// Writes prepare-models progress to stderr as `STENO_PROGRESS {json}` lines,
+/// one per whole-percent or phase change. stderr, because stdout carries the
+/// single JSON status the caller parses (and CoreML's own noise). The Python
+/// wrapper relays these to the UI; see prepare_speaker_models.
+final class PrepareProgressReporter: @unchecked Sendable {
+    private let lock = NSLock()
+    private var lastPercent = -1
+    private var lastPhase = ""
+
+    func report(_ progress: DownloadUtils.DownloadProgress) {
+        let phase: String
+        switch progress.phase {
+        case .listing: phase = "listing"
+        case .downloading: phase = "downloading"
+        case .compiling: phase = "compiling"
+        }
+        let percent = Int((min(max(progress.fractionCompleted, 0), 1) * 100).rounded(.down))
+        lock.lock()
+        defer { lock.unlock() }
+        // Forward only: never step the bar or the label backwards.
+        guard percent > lastPercent || (percent == lastPercent && phase != lastPhase),
+              !(lastPhase == "compiling" && phase != "compiling") else { return }
+        lastPercent = percent
+        lastPhase = phase
+        fputs("STENO_PROGRESS {\"percent\":\(percent),\"phase\":\"\(phase)\"}\n", stderr)
+    }
+}
+
 // Keep the main run loop alive so dispatch sources (including the
 // process-exit source that drives terminationHandler) can fire normally.
 // sema.wait() blocks the main thread, which prevents dispatch delivery
@@ -462,7 +490,22 @@ Task {
     do {
         if isPrepareModels {
             fputs("steno-diarize: preparing speaker diarization models\n", stderr)
-            let status = try await ModelReadiness.prepare(computeUnits: resolveComputeUnits())
+            let reporter = PrepareProgressReporter()
+            let monitor = DownloadByteMonitor(
+                directory: FileManager.default.temporaryDirectory,
+                expectedBytes: ModelReadiness.approximateSortformerDownloadBytes
+            ) { fraction in
+                reporter.report(DownloadUtils.DownloadProgress(
+                    fractionCompleted: fraction,
+                    phase: .downloading(completedFiles: 0, totalFiles: 0)
+                ))
+            }
+            monitor.start()
+            defer { monitor.stop() }
+            let status = try await ModelReadiness.prepare(
+                computeUnits: resolveComputeUnits(),
+                progressHandler: { reporter.report($0) }
+            )
             try printJSON(status)
             exit(0)
         }
@@ -481,6 +524,9 @@ Task {
             )
         }
         ModelReadiness.enableOfflineOnly()
+        if cacheDirectory.path == ModelReadiness.cacheDirectory().path {
+            ModelReadiness.removeRetiredBundles(in: cacheDirectory)
+        }
 
         let samples = try await loadSamplesViaFfmpeg(path: inputPath)
 
@@ -498,10 +544,12 @@ Task {
         // (tuned for real-time responsiveness this app has no use for)
         // costs ~56x more CoreML invocations than .highContextV2's
         // 27.2s-per-invocation chunking on the same audio (measured:
-        // ~22,500 vs ~400 invocations for a 3-hour recording) — but
-        // highContextV2 needs a full ~30.4s window before it emits
-        // anything at all, so it's only used once the recording is
-        // comfortably longer than that (see sortformerHighContextMinDuration).
+        // ~22,500 vs ~400 invocations for a 3-hour recording). highContextV2
+        // needs a full ~30.4s window before it emits anything at all, so a
+        // shorter recording is padded with trailing silence up to
+        // sortformerHighContextMinDuration and its segments clipped back to
+        // the real length. That keeps ONE model for every recording, so the
+        // .default bundle (~230 MB) is never downloaded.
         // V2, not V2.1: FluidAudio's own docs note V2.1 "may degrade when
         // many speakers are talking simultaneously" — a real risk given
         // this app's crosstalk/echo findings from earlier this session.
@@ -510,8 +558,7 @@ Task {
         // sized from whatever config it's constructed with, independent of
         // which model weights get loaded.
         let durationSeconds = Double(samples.count) / 16000.0
-        let sortformerConfig: SortformerConfig =
-            durationSeconds >= sortformerHighContextMinDuration ? .highContextV2 : .default
+        let sortformerConfig = ModelReadiness.sortformerConfig
         let models = try await SortformerModels.loadFromHuggingFace(
             config: sortformerConfig,
             cacheDirectory: cacheDirectory,
@@ -520,7 +567,10 @@ Task {
         let diarizer = SortformerDiarizer(config: sortformerConfig)
         diarizer.initialize(models: models)
 
-        let timeline = try diarizer.processComplete(samples, sourceSampleRate: nil)
+        let paddedSamples = ShortRecording.padded(
+            samples, minDuration: sortformerHighContextMinDuration, sampleRate: 16000.0
+        )
+        let timeline = try diarizer.processComplete(paddedSamples, sourceSampleRate: nil)
 
         struct Segment: Encodable {
             let speakerId: String
@@ -532,15 +582,17 @@ Task {
             let speakers: [String: [Float]]
         }
 
+        // Clip to the real recording: nothing past the padded silence counts.
         let segments = timeline.speakers.values
             .flatMap { $0.finalizedSegments }
-            .filter { $0.duration >= minSegmentDurationSeconds }
-            .map { seg in
-                Segment(
-                    speakerId: "SPEAKER_\(seg.speakerIndex)",
+            .compactMap { seg -> Segment? in
+                guard let span = ShortRecording.clipped(
                     start: Double(seg.startTime),
-                    end: Double(seg.endTime)
-                )
+                    end: Double(seg.endTime),
+                    recordingDuration: durationSeconds,
+                    minSegment: Double(minSegmentDurationSeconds)
+                ) else { return nil }
+                return Segment(speakerId: "SPEAKER_\(seg.speakerIndex)", start: span.start, end: span.end)
             }
             .sorted { $0.start < $1.start }
 
@@ -548,6 +600,8 @@ Task {
         // extractSortformerEmbeddings never throws, returning [:] on any
         // failure so a voiceprint problem can never take down diarization
         // itself (the segments above are the load-bearing output).
+        // The real samples, not the padded buffer: the chunk loop is bounded by
+        // both audio and mask length, and silence must never feed a voiceprint.
         let speakers = await extractSortformerEmbeddings(
             audio: samples,
             timeline: timeline,
