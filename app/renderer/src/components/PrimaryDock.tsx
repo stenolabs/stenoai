@@ -49,7 +49,7 @@ export function PrimaryDock({ showAskBar }: { showAskBar: boolean }) {
         <TranscriptToggle />
       )}
       <div className="min-w-0 flex-1" style={{ display: showAskBar ? undefined : 'none' }}>
-        <AskBar />
+        <AskBar visible={showAskBar && !transcriptExpanded} />
       </div>
     </div>
     </>

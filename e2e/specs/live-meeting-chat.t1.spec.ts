@@ -31,6 +31,10 @@ test('live chat formats loose lists, keeps follow-ups, and allows general questi
   await expect(page.getByTestId('transcription-pill')).toBeVisible();
   await page.reload();
   await expect(page.locator('[data-ask-bar]').getByRole('button', { name: 'Scope: General' })).toBeVisible();
+  await composer.getByRole('button', { name: 'Scope: General' }).click();
+  await expect(page.getByText('Ask across…', { exact: true })).toBeVisible();
+  await page.evaluate(() => { window.location.hash = '#/chat'; });
+  await expect(page.getByText('Ask across…', { exact: true })).toHaveCount(0);
 });
 
 test('draft and answer survive transcript expansion and stopping the recording', async ({ launchApp }) => {

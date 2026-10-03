@@ -40,6 +40,7 @@ import {
 } from '@/lib/chat';
 import { consumePendingNewChat } from '@/routes/Chat';
 import { renderMarkdown } from '@/lib/markdown';
+import { t } from '@/i18n';
 
 interface ChatConversationProps {
   sessionId: string;
@@ -477,8 +478,14 @@ export function ChatConversation({ sessionId }: ChatConversationProps) {
           />
           <div className="flex items-center justify-between gap-2 px-1">
             <div className="flex items-center gap-1">
-              <FolderScopePicker value={scopeFolderId} onChange={(scope) => { setScopeFolderId(scope); void chat.setScope(sessionId, scope); }}
-                  disabled={isStreaming} />
+              <FolderScopePicker value={scopeFolderId} onChange={(scope) => {
+                if (!session) return;
+                setScopeFolderId(scope);
+                void chat.setScope(session.id, scope).catch(() => {
+                  setScopeFolderId(session.scopeFolderId ?? null);
+                  setSubmitError(t('chat.saveError'));
+                });
+              }} disabled={isStreaming || !session} />
               <span
                 data-testid="chat-model-indicator"
                 className="text-[12px]"

@@ -188,7 +188,8 @@ export function useChatSessions(summaryFile: string | null, meetingName?: string
 
   const setScope = React.useCallback(async (sessionId: string, scopeFolderId: string | null) => {
     const current = readLatest();
-    await persist({ sessions: current.sessions.map((s) => s.id === sessionId ? { ...s, scopeFolderId } : s) });
+    if (!current.sessions.some((s) => s.id === sessionId)) return;
+    await persist({ sessions: current.sessions.map((s) => s.id === sessionId ? { ...s, scopeFolderId, updatedAt: Date.now() } : s) });
   }, [persist, readLatest]);
 
   const renameSession = React.useCallback(

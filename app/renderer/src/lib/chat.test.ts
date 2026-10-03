@@ -17,5 +17,7 @@ describe('conversation history follows explicit context', () => {
     const history = boundedChatHistory(messages, 'notes', 'notes');
     expect(history).toHaveLength(3);
     expect(history.every((m) => m.content.length === 4000)).toBe(true);
+    const short = Array.from({ length: 10 }, (_, i) => ({ role: 'user' as const, content: String(i) }));
+    expect(boundedChatHistory(short, 'notes', 'notes').map((m) => m.content)).toEqual(['4', '5', '6', '7', '8', '9']);
   });
 });

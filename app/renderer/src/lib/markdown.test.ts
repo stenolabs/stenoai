@@ -94,6 +94,7 @@ describe('chat Markdown lists', () => {
     expect(root.querySelector('pre code')?.textContent).toContain('1. code');
     expect(root.querySelector('img')).toBeNull();
     expect(root.querySelector('script')).toBeNull();
+    expect(parse('Use <div> here').textContent).toContain('Use <div> here');
   });
   test('an incomplete response keeps the first items together as it grows', () => {
     for (const text of ['1. First\n\n2. Sec', '1. First\n\n2. Second\n\n3. Third']) {

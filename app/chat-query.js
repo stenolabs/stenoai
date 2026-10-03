@@ -8,7 +8,7 @@ function validateRequest(request) {
       || typeof request.question !== 'string' || !request.question.trim()
       || request.question.length > 2000) throw new Error('Enter a question of up to 2,000 characters.');
   const history = request.history ?? [];
-  if (!Array.isArray(history) || history.length > 6 || history.some((t) => !t
+  if (!Array.isArray(history) || history.length > 6 || Array.from(history).some((t) => !t
       || !['user', 'assistant'].includes(t.role) || typeof t.content !== 'string' || t.content.length > 4000)
       || history.reduce((sum, t) => sum + t.content.length, 0) > 12000) throw new Error('Invalid conversation history.');
   if (request.folder != null && (typeof request.folder !== 'string' || request.folder.length > 256)) throw new Error('Invalid folder.');

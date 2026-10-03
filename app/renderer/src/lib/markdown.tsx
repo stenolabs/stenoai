@@ -44,7 +44,7 @@ export function renderMarkdown(text: string): React.ReactNode {
   if (!text) return null;
   return (
     <div className="chat-markdown">
-      <ReactMarkdown remarkPlugins={[remarkGfm]} skipHtml>
+      <ReactMarkdown remarkPlugins={[remarkGfm]}>
         {normalizeBullets(stripReasoning(text))}
       </ReactMarkdown>
     </div>

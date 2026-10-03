@@ -23,5 +23,5 @@
   "chat.notes.placeholder": "Ask across your notes…",
   "chat.live.waiting": "Waiting for live transcription. You can still ask general questions or chat with other notes.",
   "chat.error": "Unable to answer. Please try again.",
-  "chat.saveError": "Could not save this answer. Keep this window open and try again."
+  "chat.saveError": "Could not save this chat update. Keep this window open and try again."
 }

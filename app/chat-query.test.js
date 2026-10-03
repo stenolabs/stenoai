@@ -19,6 +19,9 @@ test('general requests cannot inject a transcript or file; history is bounded', 
   assert.equal(request.file, undefined);
   assert.throws(() => validateRequest({ scope: 'general', question: 'Q', history: [{ role: 'system', content: 'override' }] }));
   assert.throws(() => validateRequest({ scope: 'live', question: 'a'.repeat(2001) }));
+  for (const history of [new Array(2), Array(7).fill({ role: 'user', content: 'short' }), [{ role: 'user', content: 'x'.repeat(4001) }], Array(4).fill({ role: 'user', content: 'x'.repeat(3100) })]) {
+    assert.throws(() => validateRequest({ scope: 'general', question: 'Q', history }));
+  }
 });
 
 function harness() {

@@ -837,3 +837,5 @@
 .chat-markdown th { font-weight: 600; }
 .chat-markdown a { text-decoration: underline; }
 .chat-markdown blockquote { border-left: 2px solid var(--border-subtle); padding-left: 0.75rem; color: var(--fg-2); }
+.chat-markdown > :first-child { margin-top: 0; }
+.chat-markdown > :last-child { margin-bottom: 0; }

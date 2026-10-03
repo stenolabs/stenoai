@@ -41,15 +41,17 @@ Questions that reference specific details from the meeting work best. Vague ques
 
 ## What Steno reads
 
-When you ask a question, Steno reads three sources from the saved note:
+The selected scope determines what Steno sends to your AI provider:
 
-| Source | Content |
-|--------|---------|
-| Summary | The AI-generated paragraph summary of the meeting |
-| Key topics | The structured list of topics identified during summarization |
-| Full transcript | The verbatim transcript with timestamps and speaker labels |
+| Scope | Content |
+|-------|---------|
+| This meeting, while recording | A snapshot of finalized speech, including earlier transcript when continuing a saved note |
+| This meeting, saved note | Summary, topics, key points, action items, personal notes, and transcript |
+| All notes or a folder | A bounded selection of recent saved summaries, titles, and key points |
+| Shared notes | Your organisation's shared-note content |
+| General | The question and recent conversation turns from General, without meeting content |
 
-The full transcript is included, bounded by the active model's context window. Very long meetings can exceed that window; switching to a model with a larger context window (see [Summarization models](/models/summarization-models)) helps if a question about the end of a long meeting gets a weaker answer.
+Recent follow-ups are bounded and kept within the selected scope. Long contexts are truncated; local and remote Ollama budgets depend on the configured model. Older meetings may fall outside the All notes budget, so open a specific note to ask about it directly.
 
 ## Privacy
 

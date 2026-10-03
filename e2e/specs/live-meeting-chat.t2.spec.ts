@@ -36,7 +36,8 @@ test('live context, saved notes and general chat work during capture and persist
     // Replace only the ASR sidecar with a deterministic producer. The real main
     // stdout parser, recording lifecycle, preload bridge, bundled query CLI,
     // provider HTTP call and chat persistence all stay in the loop.
-    await app.evaluate(() => {
+    await app.evaluate(({ ipcMain }) => {
+      ipcMain.on('system-audio-recording-state', (_event: unknown, active: boolean) => { (global as any).__chatCaptureActive = active; });
       const { ChildProcess } = process.getBuiltinModule('child_process');
       const original = ChildProcess.prototype.spawn;
       ChildProcess.prototype.spawn = function (options: any) {
@@ -67,6 +68,7 @@ test('live context, saved notes and general chat work during capture and persist
       const queue = await page.evaluate(() => window.stenoai.recording.getQueue());
       return queue.success && !!queue.chatSummaryFile;
     }).toBe(true);
+    await expect.poll(() => app.evaluate(() => (global as any).__chatCaptureActive)).toBe(true);
     const queue = await page.evaluate(() => window.stenoai.recording.getQueue());
     if (!queue.success) throw new Error('recording did not start');
     const live = await ask(page, { scope: 'live', recordingId: queue.recordingId!, question: 'What did we decide?' });
@@ -111,6 +113,9 @@ test('live context, saved notes and general chat work during capture and persist
     const blob = JSON.parse(readFileSync(path.join(userDataDir, 'chat_sessions_v2.json'), 'utf8'));
     expect(blob.sessions[0].summaryFile).toBe(queue.chatSummaryFile);
     expect(stopped.success && stopped.summaryFile).toBe(queue.chatSummaryFile);
+    // Wait for the renderer to finish flushing capture before starting another
+    // recording; the stop IPC returns before MediaRecorder's async onstop.
+    await expect.poll(() => app.evaluate(() => (global as any).__chatCaptureActive)).toBe(false);
 
     // Continue into an existing Markdown note: include its saved transcript.
     await page.evaluate((file) => window.stenoai.recording.start('Continued', 'manual', file), savedPath);
@@ -118,12 +123,22 @@ test('live context, saved notes and general chat work during capture and persist
       const state = await page.evaluate(() => window.stenoai.liveTranscript.getState());
       return state.success && state.sessionName === 'Continued' && state.segments.some((s) => s.isFinal);
     }).toBe(true);
+    await expect.poll(() => app.evaluate(() => (global as any).__chatCaptureActive)).toBe(true);
     const continued = await page.evaluate(() => window.stenoai.recording.getQueue());
     if (!continued.success) throw new Error('continuation failed');
     const result = await ask(page, { scope: 'live', recordingId: continued.recordingId!, question: 'What changed since earlier?' });
     expect(result.error).toBeUndefined();
     expect(ollama.lastChatPrompt()).toContain('Earlier milestone is Tuesday');
     expect(ollama.lastChatPrompt()).toContain('Current decision is Friday');
+    await page.evaluate((file) => { window.location.hash = `#/meetings/${encodeURIComponent(file)}`; }, savedPath);
+    await composer.getByRole('textbox').fill('Summarize the continued meeting');
+    await composer.getByRole('button', { name: 'Send', exact: true }).click();
+    await expect.poll(() => {
+      const saved = JSON.parse(readFileSync(path.join(userDataDir, 'chat_sessions_v2.json'), 'utf8'));
+      return saved.sessions.find((s: any) => s.summaryFile === savedPath)?.messages.length;
+    }).toBe(2);
     await page.evaluate(() => window.stenoai.recording.stop());
+    const continuedChats = JSON.parse(readFileSync(path.join(userDataDir, 'chat_sessions_v2.json'), 'utf8'));
+    expect(continuedChats.sessions.find((s: any) => s.summaryFile === savedPath)?.messages[1].role).toBe('assistant');
   } finally { await ollama.close(); }
 });

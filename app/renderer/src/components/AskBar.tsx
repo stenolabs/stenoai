@@ -209,7 +209,7 @@ export function TranscriptToggle() {
 }
 
 /** Floating composer; recording and question generation have separate lifetimes. */
-export function AskBar() {
+export function AskBar({ visible = true }: { visible?: boolean }) {
   const { activeSummaryFile, activeMeetingName, activeOrgMeeting, transcriptOpen, setTranscriptOpen } = useAskBar();
   const recording = useRecording();
   const recordingActive = recording.status === 'recording' || recording.status === 'paused';
@@ -251,7 +251,10 @@ export function AskBar() {
   }, [selectedSessionId, selectedScope, sessionKey]);
   const changeScope = (value: string | null) => {
     setScope(value);
-    if (session) void chat.setScope(session.id, value).catch(() => setSubmitError(t('chat.saveError')));
+    if (session) void chat.setScope(session.id, value).catch(() => {
+      setScope(session.scopeFolderId === undefined ? MEETING_SCOPE : session.scopeFolderId);
+      setSubmitError(t('chat.saveError'));
+    });
   };
   const hasMessages = (session?.messages.length ?? 0) > 0;
   const hidden = !activeSummaryFile && !activeOrgMeeting && !recordingActive;
@@ -470,7 +473,7 @@ export function AskBar() {
       {submitError && <p role="alert" className="text-xs" style={{ color: 'var(--danger)' }}>{submitError}</p>}
       {disabled && liveContext && <p className="text-xs" style={{ color: 'var(--fg-2)' }}>{t('chat.live.waiting')}</p>}
       <div className="flex items-center justify-between" style={{ background: 'var(--page)', borderRadius: 8 }}>
-        <FolderScopePicker value={scope} onChange={changeScope} includeMeeting disabled={isStreaming || submitting} />
+        <FolderScopePicker value={scope} onChange={changeScope} includeMeeting disabled={!visible || hidden || isStreaming || submitting} />
       </div>
       {/* Chat composer */}
       <form

@@ -36,6 +36,9 @@ export function FolderScopePicker({ value, onChange, includeMeeting = false, dis
   const orgSession = useOrgSession();
   const orgSignedIn = orgSession.data?.signedIn ?? false;
   const [open, setOpen] = React.useState(false);
+  React.useEffect(() => {
+    if (disabled) setOpen(false);
+  }, [disabled]);
 
   const folder = React.useMemo<Folder | null>(() => {
     if (!value || [ORG_SHARED_SCOPE, GENERAL_SCOPE, MEETING_SCOPE].includes(value)) return null;
@@ -65,7 +68,7 @@ export function FolderScopePicker({ value, onChange, includeMeeting = false, dis
   const label = value === GENERAL_SCOPE ? t('chat.scope.general') : value === MEETING_SCOPE ? t('chat.scope.meeting') : isOrg ? 'Shared notes' : folder ? folder.name : 'All notes';
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover open={open && !disabled} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <button
           type="button"
