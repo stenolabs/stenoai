@@ -7,9 +7,9 @@ runs on a few-MB onnxruntime CPU build. We pay only the runtime cost.
 
 This module exposes two layers:
 
-* ``SileroVAD`` — the raw ONNX model wrapped in a stateful predict() that
-  consumes 512-sample float32 chunks at 16 kHz (the model's native chunk
-  size) and returns a speech probability.
+* ``SileroVAD`` — the model (numpy on macOS, ONNX Runtime elsewhere) wrapped
+  in a stateful predict() that consumes 512-sample float32 chunks at 16 kHz
+  (the model's native chunk size) and returns a speech probability.
 * ``SileroProcessor`` — a higher-level state machine that turns a stream
   of arbitrary-size audio buffers into ``SpeechStart`` / ``SpeechEnd``
   events. Mirrors the silero-rs / FluidAudio VadManager contract: hysteresis

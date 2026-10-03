@@ -3,9 +3,12 @@
 The macOS bundle ships an audio-only ffmpeg (scripts/build-ffmpeg-minimal.sh)
 compiled with an explicit list of demuxers, decoders, filters and muxers. A
 component missing from that list only fails at runtime, so this exercises the
-real pipeline invocations against bin/ffmpeg. Fixtures are made with macOS's
-own `say` and `afconvert`, so no second ffmpeg is needed. A full ffmpeg (an
-older dev checkout) passes too -- it is a superset.
+real pipeline invocations against bin/ffmpeg over one sample of every import
+format (app/main.js IMPORT_AUDIO_EXTENSIONS). wav/aiff/caf/m4a are made at test
+time with macOS's own `say` and `afconvert`; the formats afconvert cannot
+write (mp3, aac, webm, ogg vorbis/opus, flac, mp4, mov) are committed one-second
+stereo tones in tests/fixtures/ffmpeg_formats, generated once with a full
+ffmpeg. A full ffmpeg (an older dev checkout) passes too -- it is a superset.
 """
 
 import shutil
@@ -23,6 +26,7 @@ from src.transcriber import (
 )
 
 FFMPEG = Path(__file__).resolve().parents[1] / "bin" / "ffmpeg"
+COMMITTED_FIXTURES = Path(__file__).resolve().parent / "fixtures" / "ffmpeg_formats"
 
 # Components named explicitly by an ffmpeg invocation in src/, simple_recorder.py
 # or app/meeting-transfer-audio.js, or required for an import format.
@@ -58,6 +62,8 @@ class BundledFfmpegTests(unittest.TestCase):
             out = cls.tmp / name
             subprocess.run(["afconvert", "-f", fmt, "-d", data, str(stereo), str(out)], check=True)
             cls.fixtures[name] = out
+        for path in sorted(COMMITTED_FIXTURES.iterdir()):
+            cls.fixtures[path.name] = path
 
     @classmethod
     def tearDownClass(cls):

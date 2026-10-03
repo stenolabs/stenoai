@@ -23,6 +23,10 @@ FFMPEG_SHA256="733984395e0dbbe5c046abda2dc49a5544e7e0e1e2366bba849222ae9e3a03b1"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 OUTPUT="${1:-$ROOT_DIR/bin/ffmpeg}"
+# Absolute before the cd below, or a relative path would land in the temp
+# source tree and be deleted by the exit trap.
+mkdir -p "$(dirname "$OUTPUT")"
+OUTPUT="$(cd "$(dirname "$OUTPUT")" && pwd)/$(basename "$OUTPUT")"
 
 if [ "$(uname -s)" != "Darwin" ] || [ "$(uname -m)" != "arm64" ]; then
     echo "build-ffmpeg-minimal.sh targets macOS arm64 only (got $(uname -s) $(uname -m))" >&2
