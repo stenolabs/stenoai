@@ -39,6 +39,37 @@ def validate_request(data):
     return data
 
 
+def _load_saved_note(file, load_markdown):
+    path = Path(file)
+    if path.suffix.lower() == '.json':
+        with path.open(encoding='utf-8') as stream:
+            return json.load(stream)
+    return load_markdown(path)
+
+
+def _saved_meeting_context(note, budget):
+    """Keep structured evidence alongside the most recent transcript text."""
+    transcript = str(note.get('transcript') or '')
+    sections = [f'{label}:\n{note[key]}' for key, label in (
+        ('summary', 'SUMMARY'), ('discussion_areas', 'TOPICS'),
+        ('key_points', 'KEY POINTS'), ('action_items', 'ACTION ITEMS'),
+        ('user_notes', 'USER NOTES'),
+    ) if note.get(key)]
+    # Reserve up to half for notes when speech is present. If notes themselves
+    # exceed that allowance, share it across sections so a huge summary cannot
+    # evict action items or the user's notes. Unused space goes to the transcript.
+    notes_budget = budget // 2 if transcript else budget
+    notes = '\n\n'.join(sections)
+    if len(notes) > notes_budget:
+        per_section = max(0, notes_budget - 2 * (len(sections) - 1)) // len(sections)
+        notes = '\n\n'.join(section[:per_section] for section in sections) if per_section else ''
+    header = ('\n\n' if notes else '') + 'TRANSCRIPT (most recent text):\n'
+    transcript_budget = max(0, budget - len(notes) - len(header))
+    if transcript and transcript_budget:
+        return notes + header + transcript[-transcript_budget:]
+    return notes
+
+
 def build_prompt(data, config, load_note, load_corpus, resolve_language=None):
     from src.summarizer import resolve_num_ctx
     # Reserve room for instruction overhead, the question and model output.
@@ -62,7 +93,7 @@ def build_prompt(data, config, load_note, load_corpus, resolve_language=None):
     if scope == 'live':
         context = data.get('transcript', '')
         if data.get('file'):
-            note = load_note(Path(data['file']))
+            note = _load_saved_note(data['file'], load_note)
             context = f"EARLIER IN THIS MEETING:\n{note.get('transcript') or ''}\n\n{context}"
         context = context[-context_budget:] if context_budget else ''
         if not context.strip():
@@ -71,13 +102,8 @@ def build_prompt(data, config, load_note, load_corpus, resolve_language=None):
         file = data.get('file')
         if not file:
             raise ValueError('Missing note')
-        if file.endswith('.json'):
-            with open(file, encoding='utf-8') as stream:
-                note = json.load(stream)
-        else:
-            note = load_note(Path(file))
-        context = '\n\n'.join(str(note.get(k) or '') for k in ('summary', 'discussion_areas', 'key_points', 'action_items', 'user_notes', 'transcript'))
-        context = context[-context_budget:] if context_budget else ''
+        note = _load_saved_note(file, load_note)
+        context = _saved_meeting_context(note, context_budget)
     elif scope == 'notes':
         context = load_corpus(data.get('folder'), budget=context_budget)
         if not context.strip():

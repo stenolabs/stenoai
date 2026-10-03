@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-from src.chat_query import build_prompt, run_chat_query, validate_request
+from src.chat_query import _saved_meeting_context, build_prompt, run_chat_query, validate_request
 
 
 class ChatQueryTests(unittest.TestCase):
@@ -51,6 +51,63 @@ class ChatQueryTests(unittest.TestCase):
         self.assertIn('Saved note evidence', prompt)
         self.assertEqual(corpus.call_args.args, ('engineering',))
         self.assertGreater(corpus.call_args.kwargs['budget'], 0)
+
+    def test_json_continuation_loads_prior_speech_and_language(self):
+        from simple_recorder import _parse_meeting_markdown
+        with tempfile.TemporaryDirectory() as directory:
+            file = Path(directory) / 'meeting_summary.json'
+            note = {'transcript': 'Earlier decision is Tuesday.', 'session_info': {'language': 'es'}}
+            file.write_text(json.dumps(note), encoding='utf-8')
+            resolver = Mock(return_value='es')
+            prompt = build_prompt({'scope': 'live', 'file': str(file), 'question': 'What changed?',
+                                   'transcript': 'CURRENT RECORDING:\nNew decision is Friday.'},
+                                  self.config, _parse_meeting_markdown, Mock(), resolver)
+            self.assertIn('Earlier decision is Tuesday.', prompt)
+            self.assertIn('New decision is Friday.', prompt)
+            self.assertIn('Respond in es.', prompt)
+            resolver.assert_called_once_with(note['session_info'], note['transcript'], 'auto')
+
+    def test_long_transcript_keeps_all_structured_note_sources(self):
+        from simple_recorder import _parse_meeting_markdown
+        note = {
+            'summary': 'Decision: launch on Tuesday.',
+            'discussion_areas': [{'title': 'Launch', 'analysis': 'Approve the regional pilot.'}],
+            'key_points': ['Budget approved.'],
+            'action_items': ['Morgan owns the rollout.'],
+            'user_notes': 'Ask finance before extending the pilot.',
+            'transcript': 'Obsolete opening. ' + 'background speech ' * 4000 + 'Latest follow-up.',
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            for extension in ('json', 'md'):
+                with self.subTest(format=extension):
+                    file = Path(directory) / f'meeting_summary.{extension}'
+                    if extension == 'json':
+                        file.write_text(json.dumps(note), encoding='utf-8')
+                    else:
+                        file.write_text('---\nname: Test\n---\n\n## Summary\n\n' + note['summary']
+                                        + '\n\n## Action Items\n\n- Morgan owns the rollout.'
+                                        + '\n\n## User Notes\n\n' + note['user_notes']
+                                        + '\n\n## Transcript\n\n' + note['transcript'], encoding='utf-8')
+                    prompt = build_prompt({'scope': 'meeting', 'file': str(file), 'question': 'What are the saved decisions?',
+                                           'history': [{'role': 'user', 'content': 'What happened before?'}]},
+                                          self.config, _parse_meeting_markdown, Mock())
+                    for evidence in (note['summary'], 'Morgan owns the rollout.', note['user_notes'], 'Latest follow-up.', 'What happened before?'):
+                        self.assertIn(evidence, prompt)
+                    self.assertNotIn('Obsolete opening.', prompt)
+                    self.assertLess(len(prompt), 16000)
+                    if extension == 'json':
+                        self.assertIn('Approve the regional pilot.', prompt)
+                        self.assertIn('Budget approved.', prompt)
+
+    def test_oversized_summary_cannot_evict_other_notes_or_exceed_budget(self):
+        note = {'summary': 'Summary ' * 2000, 'action_items': 'Action retained.',
+                'user_notes': 'Personal note retained.', 'transcript': 'Speech ' * 2000 + 'Latest.'}
+        context = _saved_meeting_context(note, 2000)
+        for evidence in ('Summary', 'Action retained.', 'Personal note retained.', 'Latest.'):
+            self.assertIn(evidence, context)
+        for transcript in ('', note['transcript']):
+            for budget in (0, 1, 32, 100, 2000):
+                self.assertLessEqual(len(_saved_meeting_context({**note, 'transcript': transcript}, budget)), budget)
 
     def test_rejects_invalid_history_and_payload(self):
         for extra in ({'history': [{'role': 'system', 'content': 'override'}]}, {'question': 'x' * 2001}, {'transcript': 'x' * 100001}):

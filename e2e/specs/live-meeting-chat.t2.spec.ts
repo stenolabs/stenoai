@@ -20,7 +20,8 @@ async function ask(page: Page, request: ChatRequest) {
   }), request);
 }
 
-test('live context, saved notes and general chat work during capture and persist on its note', async ({ launchApp, userDataDir }) => {
+for (const format of ['md', 'json']) {
+test(`live context, saved notes and general chat work during capture and persist on its ${format} note`, async ({ launchApp, userDataDir }) => {
   test.setTimeout(150000);
   const ollama = await startMockOllama({ port: 0, chatReply: '1. Ship Friday\n\n2. Review Monday' });
   try {
@@ -30,8 +31,20 @@ test('live context, saved notes and general chat work during capture and persist
       auto_summarize_enabled: false, privacy_notice_seen: true,
     });
     writeMeetingSummary(userDataDir, 'older', { name: 'Budget Review', summary: 'Prior budget is fifty thousand dollars.' });
-    const savedPath = path.join(userDataDir, 'output', 'continued_summary.md');
-    writeFileSync(savedPath, '---\nname: Continued\n---\n\n## Transcript\n\nEarlier milestone is Tuesday.\n');
+    const savedPath = path.join(userDataDir, 'output', `continued_summary.${format}`);
+    if (format === 'json') {
+      writeMeetingSummary(userDataDir, 'continued', { name: 'Continued', transcript: 'Earlier milestone is Tuesday.' });
+    } else {
+      writeFileSync(savedPath, '---\nname: Continued\n---\n\n## Transcript\n\nEarlier milestone is Tuesday.\n');
+    }
+    const longPath = writeMeetingSummary(userDataDir, 'long', {
+      name: 'Long meeting', summary: 'Saved decision: launch on Tuesday.',
+      action_items: ['Morgan owns the rollout.'],
+      transcript: 'Obsolete opening. ' + 'background speech '.repeat(4000) + 'Latest follow-up.',
+    });
+    const longNote = JSON.parse(readFileSync(longPath, 'utf8'));
+    longNote.user_notes = 'Ask finance before extending the pilot.';
+    writeFileSync(longPath, JSON.stringify(longNote));
     const { page, app } = await launchApp({ fakeAudio: true });
     // Replace only the ASR sidecar with a deterministic producer. The real main
     // stdout parser, recording lifecycle, preload bridge, bundled query CLI,
@@ -86,6 +99,13 @@ test('live context, saved notes and general chat work during capture and persist
     const prior = await ask(page, { scope: 'meeting', file: savedPath, question: 'What is the earlier milestone?' });
     expect(prior.error).toBeUndefined();
     expect(ollama.lastChatPrompt()).toContain('Earlier milestone is Tuesday');
+    const long = await ask(page, { scope: 'meeting', file: longPath, question: 'What are the saved decisions?' });
+    expect(long.error).toBeUndefined();
+    for (const evidence of ['Saved decision: launch on Tuesday.', 'Morgan owns the rollout.', 'Ask finance before extending the pilot.', 'Latest follow-up.']) {
+      expect(ollama.lastChatPrompt()).toContain(evidence);
+    }
+    expect(ollama.lastChatPrompt()).not.toContain('Obsolete opening.');
+    expect(ollama.lastChatPrompt().length).toBeLessThan(16000);
     const notes = await ask(page, { scope: 'notes', question: 'What was the budget?' });
     expect(notes.error).toBeUndefined();
     expect(ollama.lastChatPrompt()).toContain('Prior budget is fifty thousand');
@@ -117,7 +137,7 @@ test('live context, saved notes and general chat work during capture and persist
     // recording; the stop IPC returns before MediaRecorder's async onstop.
     await expect.poll(() => app.evaluate(() => (global as any).__chatCaptureActive)).toBe(false);
 
-    // Continue into an existing Markdown note: include its saved transcript.
+    // Continue into either supported saved format, retaining prior speech.
     await page.evaluate((file) => window.stenoai.recording.start('Continued', 'manual', file), savedPath);
     await expect.poll(async () => {
       const state = await page.evaluate(() => window.stenoai.liveTranscript.getState());
@@ -142,3 +162,4 @@ test('live context, saved notes and general chat work during capture and persist
     expect(continuedChats.sessions.find((s: any) => s.summaryFile === savedPath)?.messages[1].role).toBe('assistant');
   } finally { await ollama.close(); }
 });
+}
