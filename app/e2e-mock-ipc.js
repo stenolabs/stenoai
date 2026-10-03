@@ -311,6 +311,8 @@ const AUDIO_SEED_MEETINGS = [
 function install({ ipcMain }) {
   // Renderer tests can save and reopen chat turns without a backend or disk.
   let chatSessions = { sessions: [] };
+  let privacyNoticeSeen = true;
+  let delayPrivacyNotice = process.env.STENOAI_E2E_DELAY_PRIVACY_NOTICE === '1';
   // In-memory stand-in for the org session + provider config that the real
   // handlers persist to disk. Mutated by the org-login / org-logout / set-ai
   // mocks so a test can assert the UI reacts to its own actions.
@@ -509,6 +511,23 @@ function install({ ipcMain }) {
   // real ipcMain.handle callback. Mirror the real handlers' return shapes from
   // app/main.js (get-ai-provider ~5950, org-* ~7990).
   const MOCKS = {
+    'get-privacy-notice-seen': async () => {
+      if (delayPrivacyNotice) {
+        delayPrivacyNotice = false;
+        return new Promise(resolve => {
+          // Let the modal-stacking spec resolve the initial query explicitly.
+          global.__resolvePrivacyNotice = seen => {
+            privacyNoticeSeen = seen;
+            resolve({ success: true, privacy_notice_seen: seen });
+          };
+        });
+      }
+      return { success: true, privacy_notice_seen: privacyNoticeSeen };
+    },
+    'set-privacy-notice-seen': async () => {
+      privacyNoticeSeen = true;
+      return { success: true };
+    },
     'load-chat-sessions': async () => ({ success: true, data: chatSessions }),
     'save-chat-sessions': async (_event, data) => {
       chatSessions = data;

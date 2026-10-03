@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { parseChatChart, CHART_INSTRUCTIONS } from './chatChart';
+import { parseChatChart, chartTickFormatter, CHART_INSTRUCTIONS } from './chatChart';
 import { renderMarkdown } from './markdown';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -14,6 +14,15 @@ const spec = {
 };
 
 describe('chat chart boundary', () => {
+  test('small adjacent ticks keep consistent notation and meaningful precision', () => {
+    const format = chartTickFormatter([{ label: 'A', value: 0.011 }]);
+    expect(format(0.00995)).toBe('0.00995');
+    expect(format(0.01)).toBe('0.01');
+    expect(format(0.011)).toBe('0.011');
+    const tiny = chartTickFormatter([{ label: 'A', value: 1e-12 }]);
+    expect(tiny(5e-13)).toMatch(/5E-13/i);
+    expect(tiny(1e-12)).toMatch(/1E-12/i);
+  });
   test('accepts bar and line charts, including zero and negative values', () => {
     for (const type of ['bar', 'line']) {
       const chart = {
@@ -63,7 +72,9 @@ describe('chat chart boundary', () => {
     expect(python).toContain(CHART_INSTRUCTIONS);
   });
   test('a chart language fence inside code stays literal until a bare closing fence', () => {
-    const html = renderToStaticMarkup(renderMarkdown('```text\n```steno-chart\n' + JSON.stringify(spec) + '\n```'));
+    const html = renderToStaticMarkup(
+      renderMarkdown('```text\n```steno-chart\n' + JSON.stringify(spec) + '\n```')
+    );
     expect(html).toContain('data-lang="text"');
     expect(html).toContain('```steno-chart');
     expect(html).not.toContain('Loading chart');

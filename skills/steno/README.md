@@ -47,11 +47,7 @@ The agent downloads the skill; Steno does not install files into other apps.
 
 ### Claude Code
 
-Paste this into Claude Code:
-
-```text
-Install the Steno skill from https://github.com/stenolabs/stenoai/tree/main/skills/steno into my personal Claude Code skills directory (~/.claude/skills/steno). Include the whole folder, including scripts and references. If it already exists, ask before replacing it. Then explain how to use /steno with my local meeting notes.
-```
+Copy the install prompt from [the Claude Code setup guide](https://docs.stenoai.co/features/agents#claude-code).
 
 You can also copy the complete `skills/steno` folder from a checkout into
 `~/.claude/skills/steno`, or `.claude/skills/steno` for one project.
@@ -59,11 +55,7 @@ Run `/steno <request>`. See [Claude Code skills](https://code.claude.com/docs/en
 
 ### Codex
 
-Paste this into Codex:
-
-```text
-$skill-installer install the Steno skill from https://github.com/stenolabs/stenoai/tree/main/skills/steno. Include the whole folder, including scripts and references. If it already exists, ask before replacing it. Then explain how to use $steno with my local meeting notes.
-```
+Copy the install prompt from [the Codex setup guide](https://docs.stenoai.co/features/agents#codex).
 
 For manual installation, copy the complete folder into `~/.agents/skills/steno`
 (personal) or `.agents/skills/steno` (one project). Invoke `$steno` in Codex CLI

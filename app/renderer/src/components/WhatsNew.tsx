@@ -50,15 +50,18 @@ export function WhatsNewProvider({
   blocked,
   onboarding,
   initializeBaseline,
+  suppressed,
 }: {
   children: React.ReactNode;
   blocked: boolean;
   onboarding: boolean;
   initializeBaseline: boolean;
+  suppressed: boolean;
 }) {
   const version = useAppVersion().data?.version;
   const [seen, setSeen] = React.useState(readSeenRelease);
   const [manual, setManual] = React.useState(false);
+  const [automaticallyOpened, setAutomaticallyOpened] = React.useState(false);
   const [error, setError] = React.useState('');
   const foreground = React.useSyncExternalStore(
     subscribeForeground,
@@ -82,25 +85,32 @@ export function WhatsNewProvider({
 
   // Fresh installs see onboarding; establish a baseline without another popup.
   React.useEffect(() => {
-    if (onboarding && initializeBaseline && version && !readSeenRelease()) {
+    if (initializeBaseline && version && !readSeenRelease()) {
       try {
         localStorage.setItem(LAST_SEEN_RELEASE_KEY, version);
       } catch {
         /* Best effort. */
       }
     }
-  }, [onboarding, initializeBaseline, version]);
+  }, [initializeBaseline, version]);
 
   const automatic =
     available &&
     !onboarding &&
+    !suppressed &&
     !blocked &&
-    foreground &&
+    !(initializeBaseline && !readSeenRelease()) &&
     isUnseenRelease(version, seen) &&
     isUnseenRelease(version, readSeenRelease());
+  // Foreground is the initial trigger. Retain the open dialog across Alt-Tab
+  // without acknowledging the release or restarting its entry animation.
+  if (automatic && foreground && !automaticallyOpened) {
+    setAutomaticallyOpened(true);
+  }
   // An explicit About click can open immediately even during a recording.
   // Only unsolicited announcements wait for idle.
-  const open = available && !onboarding && (manual || automatic);
+  const open =
+    available && !onboarding && !suppressed && (manual || (automatic && automaticallyOpened));
   const context = React.useMemo(
     () => ({
       available,

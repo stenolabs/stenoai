@@ -8,6 +8,15 @@ export interface ChatChartSpec {
 
 export const CHART_COPY = { loading: 'Loading chart…', data: 'View data' };
 
+/** Pick one notation for the whole axis, including ticks near zero. */
+export function chartTickFormatter(data: ChatChartSpec['data']) {
+  const magnitude = Math.max(...data.map(({ value }) => Math.abs(value)));
+  return new Intl.NumberFormat(undefined, {
+    notation: magnitude > 0 && magnitude < 0.0001 ? 'scientific' : 'compact',
+    maximumSignificantDigits: 4,
+  }).format;
+}
+
 // Keep in sync with src/chat_charts.py. Only inline data is accepted; model
 // output never becomes executable code, a URL, or arbitrary chart props.
 export const CHART_INSTRUCTIONS = `When the user asks for a chart and the supplied notes contain enough numeric data, include a fenced steno-chart JSON block with this shape:

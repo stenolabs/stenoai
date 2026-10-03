@@ -1,6 +1,7 @@
 import * as React from 'react';
 import { cn } from '@/lib/utils';
 import { CHART_COPY, parseChatChart } from '@/lib/chatChart';
+import { ChartErrorBoundary } from '@/components/ChartErrorBoundary';
 
 const ChatChart = React.lazy(() => import('@/components/ChatChart'));
 
@@ -109,27 +110,30 @@ export function renderMarkdown(text: string): React.ReactNode {
   const flushCode = (closed = false) => {
     if (!inCode) return;
     const spec = closed && codeLang === 'steno-chart' ? parseChatChart(codeLines.join('\n')) : null;
+    const code = (
+      <pre
+        key={key++}
+        className="my-2 overflow-x-auto rounded-md px-3 py-2 text-[12.5px]"
+        style={{
+          background: 'var(--surface-active)',
+          fontFamily: 'var(--font-mono)',
+          color: 'var(--fg-1)',
+        }}
+        data-lang={codeLang || undefined}
+      >
+        <code>{codeLines.join('\n')}</code>
+      </pre>
+    );
     if (spec) {
       nodes.push(
-        <React.Suspense key={key++} fallback={<p role="status">{CHART_COPY.loading}</p>}>
-          <ChatChart spec={spec} />
-        </React.Suspense>
+        <ChartErrorBoundary key={code.key} fallback={code}>
+          <React.Suspense fallback={<p role="status">{CHART_COPY.loading}</p>}>
+            <ChatChart spec={spec} />
+          </React.Suspense>
+        </ChartErrorBoundary>
       );
     } else {
-      nodes.push(
-        <pre
-          key={key++}
-          className="my-2 overflow-x-auto rounded-md px-3 py-2 text-[12.5px]"
-          style={{
-            background: 'var(--surface-active)',
-            fontFamily: 'var(--font-mono)',
-            color: 'var(--fg-1)',
-          }}
-          data-lang={codeLang || undefined}
-        >
-          <code>{codeLines.join('\n')}</code>
-        </pre>
-      );
+      nodes.push(code);
     }
     codeLines = [];
     codeLang = null;

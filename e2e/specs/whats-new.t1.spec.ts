@@ -43,6 +43,21 @@ test("upgrade waits for foreground, dismisses across restarts, and reopens from 
     dialog.getByRole("button", { name: "Try Agents" }),
   ).toBeVisible();
   await expect(dialog.getByRole("button", { name: "Open Chat" })).toBeVisible();
+  await dialog.evaluate((node) =>
+    node.setAttribute("data-persistence-probe", "retained"),
+  );
+  await first.app.evaluate(({ BrowserWindow }) =>
+    BrowserWindow.getAllWindows().forEach((win) => win.hide()),
+  );
+  await expect
+    .poll(() => first.page.evaluate(() => document.hasFocus()))
+    .toBe(false);
+  await expect(dialog).toHaveAttribute("data-state", "open");
+  expect(
+    await first.page.evaluate((key) => localStorage.getItem(key), seenKey),
+  ).toBe("0.0.1");
+  await foreground(first.app);
+  await expect(dialog).toHaveAttribute("data-persistence-probe", "retained");
   await first.page.screenshot({
     path: testInfo.outputPath("whats-new-light.png"),
     animations: "disabled",
@@ -168,4 +183,47 @@ test("an explicit About request opens highlights immediately during recording", 
   });
   await page.getByRole("button", { name: "View highlights" }).click();
   await expect(page.getByRole("dialog", { name: title })).toBeVisible();
+});
+
+test("fresh install entering Settings establishes its baseline without interrupting the route", async ({
+  launchApp,
+}) => {
+  const { app, page } = await launchApp({
+    mockIpc: true,
+    env: { STENOAI_E2E_APP_VERSION: version },
+  });
+  await page.addInitScript((key) => localStorage.removeItem(key), seenKey);
+  await page.evaluate(() => {
+    location.hash = "#/settings?tab=about";
+  });
+  await page.reload();
+  await foreground(app);
+  await expect(page.locator('[data-settings-tab="about"]')).toBeVisible();
+  await expect
+    .poll(() => page.evaluate((key) => localStorage.getItem(key), seenKey))
+    .toBe(version);
+  await expect(page.getByRole("dialog", { name: title })).toHaveCount(0);
+});
+
+test("a manual request waits for privacy disclosure without stacking dialogs", async ({
+  launchApp,
+}) => {
+  const { app, page } = await launchApp({ mockIpc: true, env: { ...env, STENOAI_E2E_DELAY_PRIVACY_NOTICE: '1' } });
+  await page.evaluate(() => {
+    location.hash = "#/settings?tab=about";
+  });
+  await foreground(app);
+  await page.getByRole("button", { name: "View highlights" }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await app.evaluate(() => {
+    (
+      globalThis as unknown as { __resolvePrivacyNotice: (seen: boolean) => void }
+    ).__resolvePrivacyNotice(false);
+  });
+  const privacy = page.getByRole("dialog", { name: "A quick note on privacy" });
+  await expect(privacy).toBeVisible();
+  await expect(page.getByRole("dialog", { name: title })).toHaveCount(0);
+  await privacy.getByRole("button", { name: "Got it" }).click();
+  await expect(page.getByRole("dialog", { name: title })).toBeVisible();
+  await expect(privacy).toHaveCount(0);
 });

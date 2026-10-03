@@ -155,19 +155,15 @@ export function App() {
   // whisper-list read on-disk state (no running service needed), so it's a
   // reliable "needs setup" signal. We only redirect from a neutral landing
   // route and never while recording/processing, so we don't yank the user out
-  // of anything in flight. Runs once.
+  // of anything in flight. Check on every entry route so release announcements
+  // can wait for this decision even when the app opens directly into Settings.
   const didSetupGateRef = React.useRef(false);
+  const didSetupRedirectRef = React.useRef(false);
   const [setupGateResolved, setSetupGateResolved] = React.useState(false);
   const [initialSetup, setInitialSetup] = React.useState(false);
   React.useEffect(() => {
     if (didSetupGateRef.current) return;
     if (recording.isLoading) return;
-    const onNeutralRoute = route === '/' || route === '' || route === '/meetings';
-    const busy =
-      recording.status === 'recording' ||
-      recording.status === 'paused' ||
-      recording.status === 'processing';
-    if (!onNeutralRoute || busy) return;
     didSetupGateRef.current = true;
     (async () => {
       try {
@@ -183,7 +179,6 @@ export function App() {
           );
         if (!parakeetInstalled && !anyWhisperInstalled) {
           setInitialSetup(true);
-          navigate('/setup');
         }
       } catch {
         // Best-effort onboarding gate; never block the app on it.
@@ -191,7 +186,17 @@ export function App() {
         setSetupGateResolved(true);
       }
     })();
-  }, [recording.isLoading, recording.status, route]);
+  }, [recording.isLoading]);
+
+  React.useEffect(() => {
+    if (!setupGateResolved || !initialSetup || didSetupRedirectRef.current) return;
+    const onNeutralRoute = route === '/' || route === '' || route === '/meetings';
+    const busy = recording.isLoading || recording.status === 'recording' ||
+      recording.status === 'paused' || recording.status === 'processing';
+    if (!onNeutralRoute || busy) return;
+    didSetupRedirectRef.current = true;
+    navigate('/setup');
+  }, [setupGateResolved, initialSetup, recording.isLoading, recording.status, route]);
 
   const isProcessingRoute = route === '/meetings/processing';
   // The /chat page has its own large composer, so the floating AskBar dock
@@ -220,9 +225,8 @@ export function App() {
     <WhatsNewProvider
       onboarding={route === '/setup'}
       initializeBaseline={initialSetup}
-      blocked={recording.isLoading || recordingActive || recording.status === 'processing' ||
-        privacyNotice.isPending || showPrivacyModal ||
-        (!setupGateResolved && (route === '/' || route === '' || route === '/meetings'))}
+      suppressed={!setupGateResolved || privacyNotice.isPending || showPrivacyModal}
+      blocked={recording.isLoading || recordingActive || recording.status === 'processing'}
     >
     <CommandPaletteProvider>
       <CommandPaletteHotkey />
