@@ -1903,6 +1903,7 @@ def download_parakeet_model_cmd(model_id):
         DEFAULT_MODEL_ID,
         SUPPORTED_PARAKEET_MODELS,
         download,
+        get_last_download_error,
         is_installed,
     )
     target = model_id or DEFAULT_MODEL_ID
@@ -1920,7 +1921,7 @@ def download_parakeet_model_cmd(model_id):
     if ok:
         print(json.dumps({"success": True, "model": target}))
     else:
-        print(json.dumps({"success": False, "error": "Download failed"}))
+        print(json.dumps({"success": False, "error": get_last_download_error() or "Download failed"}))
 
 
 @cli.command(name='get-keep-recordings')

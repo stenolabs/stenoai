@@ -19,8 +19,10 @@ import importlib
 import os
 import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 import certifi
 
@@ -52,9 +54,10 @@ class TlsBootstrapTests(unittest.TestCase):
 
         self._reimport()
 
-        self.assertEqual(os.environ["SSL_CERT_FILE"], certifi.where())
-        self.assertEqual(os.environ["REQUESTS_CA_BUNDLE"], certifi.where())
-        self.assertTrue(os.path.isfile(os.environ["SSL_CERT_FILE"]))
+        ca_file = os.environ["SSL_CERT_FILE"]
+        self.assertEqual(os.environ["REQUESTS_CA_BUNDLE"], ca_file)
+        self.assertTrue(os.path.isfile(ca_file))
+        self.assertIn(Path(certifi.where()).read_bytes().splitlines()[0], Path(ca_file).read_bytes())
 
     def test_configure_overrides_a_broken_inherited_value(self):
         # The customer's bundle effectively starts with a broken cert path
@@ -66,8 +69,37 @@ class TlsBootstrapTests(unittest.TestCase):
 
         self._reimport()
 
-        self.assertEqual(os.environ["SSL_CERT_FILE"], certifi.where())
-        self.assertEqual(os.environ["REQUESTS_CA_BUNDLE"], certifi.where())
+        ca_file = os.environ["SSL_CERT_FILE"]
+        self.assertNotEqual(ca_file, "/nonexistent/cert.pem")
+        self.assertEqual(os.environ["REQUESTS_CA_BUNDLE"], ca_file)
+        self.assertTrue(os.path.isfile(ca_file))
+
+    def test_combined_bundle_includes_keychain_pem_when_available(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            certifi_bundle = Path(tmp) / "certifi.pem"
+            certifi_bundle.write_bytes(b"-----BEGIN CERTIFICATE-----\nCERTIFI\n-----END CERTIFICATE-----\n")
+            extra = b"-----BEGIN CERTIFICATE-----\nKEYCHAIN\n-----END CERTIFICATE-----\n"
+
+            module = self._reimport()
+            combined = module._combined_ca_bundle(str(certifi_bundle), extra)
+
+            self.assertNotEqual(combined, str(certifi_bundle))
+            content = Path(combined).read_bytes()
+            self.assertIn(b"CERTIFI", content)
+            self.assertIn(b"KEYCHAIN", content)
+
+    def test_configure_uses_combined_bundle_from_macos_keychain(self):
+        os.environ.pop("SSL_CERT_FILE", None)
+        os.environ.pop("REQUESTS_CA_BUNDLE", None)
+        extra = b"-----BEGIN CERTIFICATE-----\nKEYCHAIN\n-----END CERTIFICATE-----\n"
+
+        module = self._reimport()
+        with mock.patch.object(module, "_macos_keychain_pem", return_value=extra):
+            module.configure()
+
+        ca_file = Path(os.environ["SSL_CERT_FILE"])
+        self.assertEqual(os.environ["REQUESTS_CA_BUNDLE"], str(ca_file))
+        self.assertIn(b"KEYCHAIN", ca_file.read_bytes())
 
     def test_default_ssl_context_trusts_certifi_after_bootstrap(self):
         # Run in a subprocess with SSL_CERT_FILE / DIR explicitly pointed
