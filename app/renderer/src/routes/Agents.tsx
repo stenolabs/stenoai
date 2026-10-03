@@ -51,6 +51,7 @@ export function Agents() {
 function AgentCard({ agent }: { agent: (typeof AGENT_SKILLS)[number] }) {
   const [copied, setCopied] = React.useState(false);
   const [error, setError] = React.useState('');
+  const [promptOpen, setPromptOpen] = React.useState(false);
   React.useEffect(() => {
     if (!copied) return;
     const timer = setTimeout(() => setCopied(false), 2500);
@@ -63,6 +64,7 @@ function AgentCard({ agent }: { agent: (typeof AGENT_SKILLS)[number] }) {
       setCopied(true);
     } catch {
       setError(copy.copyError);
+      setPromptOpen(true);
     }
   };
   const openDocs = async () => {
@@ -97,7 +99,11 @@ function AgentCard({ agent }: { agent: (typeof AGENT_SKILLS)[number] }) {
           {copy.docs}
         </Button>
       </div>
-      <details className="mt-4 text-xs" open={error === copy.copyError || undefined}>
+      <details
+        className="mt-4 text-xs"
+        open={promptOpen}
+        onToggle={(event) => setPromptOpen(event.currentTarget.open)}
+      >
         <summary className="cursor-pointer" style={{ color: 'var(--fg-2)' }}>
           {copy.viewPrompt}
         </summary>

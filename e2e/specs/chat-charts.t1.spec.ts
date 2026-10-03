@@ -15,7 +15,7 @@ for (const type of ["bar", "line"]) {
       yLabel: "Action items",
       data: [
         { label: "Planning", value: 3 },
-        { label: "Review", value: 5 },
+        { label: "Review", value: type === "line" ? 1000000000000 : 5 },
       ],
     };
     const answer =
@@ -56,8 +56,15 @@ for (const type of ["bar", "line"]) {
       chart.getByRole("cell", { name: "Planning", exact: true }),
     ).toBeVisible();
     await expect(
-      chart.getByRole("cell", { name: "5", exact: true }),
+      chart.getByRole("cell", {
+        name: type === "line" ? "1000000000000" : "5",
+        exact: true,
+      }),
     ).toBeVisible();
+    if (type === "line") {
+      const compact = await page.evaluate(() => new Intl.NumberFormat(undefined, { notation: 'compact', maximumSignificantDigits: 3 }).format(1e12));
+      await expect(chart.locator(".recharts-surface")).toContainText(compact);
+    }
     await expect(page.locator('pre[data-lang="steno-chart"]')).toContainText(
       "unsupported",
     );

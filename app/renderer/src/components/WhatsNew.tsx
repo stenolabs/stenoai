@@ -49,10 +49,12 @@ export function WhatsNewProvider({
   children,
   blocked,
   onboarding,
+  initializeBaseline,
 }: {
   children: React.ReactNode;
   blocked: boolean;
   onboarding: boolean;
+  initializeBaseline: boolean;
 }) {
   const version = useAppVersion().data?.version;
   const [seen, setSeen] = React.useState(readSeenRelease);
@@ -80,14 +82,14 @@ export function WhatsNewProvider({
 
   // Fresh installs see onboarding; establish a baseline without another popup.
   React.useEffect(() => {
-    if (onboarding && version && !readSeenRelease()) {
+    if (onboarding && initializeBaseline && version && !readSeenRelease()) {
       try {
         localStorage.setItem(LAST_SEEN_RELEASE_KEY, version);
       } catch {
         /* Best effort. */
       }
     }
-  }, [onboarding, version]);
+  }, [onboarding, initializeBaseline, version]);
 
   const automatic =
     available &&
@@ -96,7 +98,9 @@ export function WhatsNewProvider({
     foreground &&
     isUnseenRelease(version, seen) &&
     isUnseenRelease(version, readSeenRelease());
-  const open = available && !onboarding && !blocked && (manual || automatic);
+  // An explicit About click can open immediately even during a recording.
+  // Only unsolicited announcements wait for idle.
+  const open = available && !onboarding && (manual || automatic);
   const context = React.useMemo(
     () => ({
       available,

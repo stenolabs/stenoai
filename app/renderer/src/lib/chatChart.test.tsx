@@ -58,8 +58,15 @@ describe('chat chart boundary', () => {
       'data-lang="json"'
     );
   });
-  test('Python and org adapters advertise the same chart contract', () => {
+  test('Python and TypeScript share the same chart contract', () => {
     const python = readFileSync(resolve(__dirname, '../../../../src/chat_charts.py'), 'utf8');
     expect(python).toContain(CHART_INSTRUCTIONS);
+  });
+  test('a complete valid fence selects the lazy chart renderer', () => {
+    const html = renderToStaticMarkup(
+      renderMarkdown('```steno-chart\n' + JSON.stringify(spec) + '\n```')
+    );
+    expect(html).toContain('Loading chart');
+    expect(html).not.toContain('<pre');
   });
 });

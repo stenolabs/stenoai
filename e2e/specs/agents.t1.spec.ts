@@ -3,11 +3,16 @@ import { test, expect } from "../fixtures/electron";
 test("Agents exposes both install prompts and opens the selected setup guide", async ({
   launchApp,
 }, testInfo) => {
-  const { page, app } = await launchApp({ mockIpc: true, env: { STENOAI_E2E_OPEN_EXTERNAL: '1' } });
+  const { page, app } = await launchApp({
+    mockIpc: true,
+    env: { STENOAI_E2E_OPEN_EXTERNAL: "1" },
+  });
   await app.evaluate(({ shell }) => {
     const state = globalThis as unknown as { openedUrls: string[] };
     state.openedUrls = [];
-    shell.openExternal = async (url) => { state.openedUrls.push(url); };
+    shell.openExternal = async (url) => {
+      state.openedUrls.push(url);
+    };
   });
   await page.evaluate(() => {
     window.location.hash = "#/chat";
@@ -29,20 +34,38 @@ test("Agents exposes both install prompts and opens the selected setup guide", a
     expect(text).toContain(
       name === "Codex" ? "$skill-installer" : "~/.claude/skills/steno",
     );
-    await card.getByRole('button', { name: 'Setup instructions' }).click();
+    await card.getByRole("button", { name: "Setup instructions" }).click();
   }
-  await expect.poll(() => app.evaluate(() =>
-    (globalThis as unknown as { openedUrls: string[] }).openedUrls
-  )).toEqual([
-    'https://docs.stenoai.co/features/agents#claude-code',
-    'https://docs.stenoai.co/features/agents#codex',
-  ]);
+  await expect
+    .poll(() =>
+      app.evaluate(
+        () => (globalThis as unknown as { openedUrls: string[] }).openedUrls,
+      ),
+    )
+    .toEqual([
+      "https://docs.stenoai.co/features/agents#claude-code",
+      "https://docs.stenoai.co/features/agents#codex",
+    ]);
   await app.evaluate(({ shell }) => {
-    shell.openExternal = async () => { throw new Error('Browser unavailable'); };
+    shell.openExternal = async () => {
+      throw new Error("Browser unavailable");
+    };
   });
-  const codex = page.getByRole('region', { name: 'Codex', exact: true });
-  await codex.getByRole('button', { name: 'Setup instructions' }).click();
-  await expect(codex.getByRole('status')).toHaveText('Could not open the instructions. Try again.');
+  const codex = page.getByRole("region", { name: "Codex", exact: true });
+  await page.evaluate(() => {
+    navigator.clipboard.writeText = async () => {
+      throw new Error("Clipboard unavailable");
+    };
+  });
+  await codex
+    .getByRole("button", { name: /Copy install prompt|Copied/ })
+    .click();
+  await expect(codex.locator("details")).toHaveAttribute("open", "");
+  await codex.getByRole("button", { name: "Setup instructions" }).click();
+  await expect(codex.getByRole("status")).toHaveText(
+    "Could not open the instructions. Try again.",
+  );
+  await expect(codex.locator("details")).toHaveAttribute("open", "");
   await page.screenshot({ path: testInfo.outputPath("agents.png") });
   await page.getByRole("button", { name: "Chat", exact: true }).click();
   await page.getByRole("textbox").press("/");

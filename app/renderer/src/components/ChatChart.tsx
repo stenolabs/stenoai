@@ -12,7 +12,12 @@ import {
 } from 'recharts';
 import { CHART_COPY, type ChatChartSpec } from '@/lib/chatChart';
 
-export default React.memo(function ChatChart({ spec }: { spec: ChatChartSpec }) {
+const compactNumber = new Intl.NumberFormat(undefined, {
+  notation: 'compact',
+  maximumSignificantDigits: 3,
+});
+
+export default function ChatChart({ spec }: { spec: ChatChartSpec }) {
   const titleId = React.useId();
   const Chart = spec.type === 'bar' ? BarChart : LineChart;
   return (
@@ -46,6 +51,11 @@ export default React.memo(function ChatChart({ spec }: { spec: ChatChartSpec }) 
               }
             />
             <YAxis
+              tickFormatter={(value: number) =>
+                value !== 0 && Math.abs(value) < 0.01
+                  ? value.toExponential(1)
+                  : compactNumber.format(value)
+              }
               tick={{ fill: 'var(--fg-2)', fontSize: 11 }}
               tickLine={false}
               axisLine={false}
@@ -116,4 +126,4 @@ export default React.memo(function ChatChart({ spec }: { spec: ChatChartSpec }) 
       </details>
     </figure>
   );
-});
+}

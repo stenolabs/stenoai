@@ -128,3 +128,44 @@ for (const state of ["recording", "paused", "processing"]) {
     });
   });
 }
+
+test("manually revisiting setup does not acknowledge an unseen release", async ({
+  launchApp,
+}) => {
+  const { app, page } = await launchApp({ mockIpc: true, env });
+  await page.evaluate(() => {
+    location.hash = "#/setup";
+  });
+  await expect.poll(() => page.evaluate(() => location.hash)).toBe("#/setup");
+  await expect(page.getByRole("dialog", { name: title })).toHaveCount(0);
+  expect(
+    await page.evaluate((key) => localStorage.getItem(key), seenKey),
+  ).toBeNull();
+  await page.evaluate(() => {
+    location.hash = "#/chat";
+  });
+  await foreground(app);
+  await expect(page.getByRole("dialog", { name: title })).toBeVisible();
+});
+
+test("an explicit About request opens highlights immediately during recording", async ({
+  launchApp,
+  userDataDir,
+}) => {
+  const queuePath = path.join(userDataDir, "queue.json");
+  writeFileSync(
+    queuePath,
+    JSON.stringify({ hasRecording: true, sessionName: "Test note" }),
+  );
+  const { app, page } = await launchApp({
+    mockIpc: true,
+    env: { ...env, STENOAI_E2E_QUEUE_STATE_PATH: queuePath },
+  });
+  await foreground(app);
+  await expect(page.getByRole("dialog", { name: title })).toHaveCount(0);
+  await page.evaluate(() => {
+    location.hash = "#/settings?tab=about";
+  });
+  await page.getByRole("button", { name: "View highlights" }).click();
+  await expect(page.getByRole("dialog", { name: title })).toBeVisible();
+});

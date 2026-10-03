@@ -158,6 +158,7 @@ export function App() {
   // of anything in flight. Runs once.
   const didSetupGateRef = React.useRef(false);
   const [setupGateResolved, setSetupGateResolved] = React.useState(false);
+  const [initialSetup, setInitialSetup] = React.useState(false);
   React.useEffect(() => {
     if (didSetupGateRef.current) return;
     if (recording.isLoading) return;
@@ -181,6 +182,7 @@ export function App() {
             (m) => (m as { installed?: boolean }).installed === true,
           );
         if (!parakeetInstalled && !anyWhisperInstalled) {
+          setInitialSetup(true);
           navigate('/setup');
         }
       } catch {
@@ -217,6 +219,7 @@ export function App() {
   return (
     <WhatsNewProvider
       onboarding={route === '/setup'}
+      initializeBaseline={initialSetup}
       blocked={recording.isLoading || recordingActive || recording.status === 'processing' ||
         privacyNotice.isPending || showPrivacyModal ||
         (!setupGateResolved && (route === '/' || route === '' || route === '/meetings'))}
