@@ -943,9 +943,10 @@ export interface ParakeetPullProgressEvent {
   downloaded_bytes?: number;
   total_bytes?: number;
 }
-/** Speaker-diarization model download ('setup-speaker-models'). One overall
- *  bar across the sidecar's loads: percent and phase only ever move forward
- *  (downloading, then compiling once past the main model's download). */
+/** Speaker-diarization model download ('setup-speaker-models'). While
+ *  `downloading`, percent is the measured share of the model download; once
+ *  `compiling` (CoreML optimising for this Mac, then the small embedding
+ *  models) there is nothing to measure. Phase only ever moves forward. */
 export interface SpeakerModelsProgressEvent {
   percent: number;
   phase: 'listing' | 'downloading' | 'compiling';

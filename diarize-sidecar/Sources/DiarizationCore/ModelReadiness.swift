@@ -100,21 +100,23 @@ public enum ModelReadiness {
         DownloadUtils.enforceOffline = false
         try FileManager.default.createDirectory(at: cacheDirectory, withIntermediateDirectories: true)
 
-        // Each FluidAudio load reports downloading as its 0...0.5 and
-        // compiling as 0.5...1, whatever the bytes. Map each half onto its own
-        // band of one overall bar, sized by real cost: the ~243 MB Sortformer
-        // download dominates, then its CoreML compile, then the ~13 MB
-        // embedding models.
+        // Only the Sortformer download is measurable (bytes; see
+        // DownloadByteMonitor), so it alone fills the bar. Everything after it
+        // -- the CoreML compile for this Mac (over a minute on an M3 Max) and
+        // the ~13 MB embedding models -- reports as the "compiling" phase,
+        // which the UI shows as activity rather than an invented percentage.
+        // FluidAudio reports downloading as each load's 0...0.5 and compiling
+        // as 0.5...1.
         _ = try await SortformerModels.loadFromHuggingFace(
             config: sortformerConfig,
             cacheDirectory: cacheDirectory,
             computeUnits: computeUnits,
-            progressHandler: banded(progressHandler, download: 0.0...0.85, compile: 0.85...0.95)
+            progressHandler: banded(progressHandler, download: 0.0...1.0, compile: 1.0...1.0)
         )
         _ = try await DiarizerModels.downloadIfNeeded(
             to: cacheDirectory.appendingPathComponent("speaker-diarization", isDirectory: true),
             configuration: MLModelConfigurationUtils.defaultConfiguration(computeUnits: computeUnits),
-            progressHandler: banded(progressHandler, download: 0.95...0.975, compile: 0.975...1.0)
+            progressHandler: banded(progressHandler, download: 1.0...1.0, compile: 1.0...1.0)
         )
         removeRetiredBundles(in: cacheDirectory)
 
@@ -135,7 +137,12 @@ public enum ModelReadiness {
     /// Overall progress at or past this point is reported as preparing, so
     /// the label only ever moves forward (download, then prepare) even though
     /// the small embedding models still download after Sortformer compiles.
-    public static let preparingFrom = 0.85
+    public static let preparingFrom = 1.0
+
+    /// Size of the Sortformer bundle download, for DownloadByteMonitor's
+    /// fraction. Approximate by design: the monitor caps below 100%, and the
+    /// band only completes on FluidAudio's own end-of-download event.
+    public static let approximateSortformerDownloadBytes: Double = 243_000_000
 
     /// Where one FluidAudio load's own fraction lands on the overall bar.
     public static func overallFraction(

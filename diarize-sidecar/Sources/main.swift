@@ -491,6 +491,17 @@ Task {
         if isPrepareModels {
             fputs("steno-diarize: preparing speaker diarization models\n", stderr)
             let reporter = PrepareProgressReporter()
+            let monitor = DownloadByteMonitor(
+                directory: FileManager.default.temporaryDirectory,
+                expectedBytes: ModelReadiness.approximateSortformerDownloadBytes
+            ) { fraction in
+                reporter.report(DownloadUtils.DownloadProgress(
+                    fractionCompleted: fraction,
+                    phase: .downloading(completedFiles: 0, totalFiles: 0)
+                ))
+            }
+            monitor.start()
+            defer { monitor.stop() }
             let status = try await ModelReadiness.prepare(
                 computeUnits: resolveComputeUnits(),
                 progressHandler: { reporter.report($0) }

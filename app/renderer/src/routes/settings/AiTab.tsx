@@ -1,4 +1,8 @@
-import { parakeetProgressLabel, speakerModelsProgressLabel } from '@/lib/parakeetProgress';
+import {
+  parakeetProgressLabel,
+  speakerModelsProgressLabel,
+  speakerModelsProgressPercent,
+} from '@/lib/parakeetProgress';
 import { DownloadProgressBar } from '@/components/DownloadProgressBar';
 import { useSpeakerModels } from '@/hooks/useSpeakerModels';
 import * as React from 'react';
@@ -189,7 +193,7 @@ export function SpeakerSeparationSetting() {
         className="w-[200px]"
         data-testid="speaker-models-progress"
         label={speakerModelsProgressLabel(progress)}
-        percent={progress.percent}
+        percent={speakerModelsProgressPercent(progress)}
         aria-label={t('downloads.speakers.ariaLabel')}
       />
     ) : (

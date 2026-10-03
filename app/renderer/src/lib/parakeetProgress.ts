@@ -40,9 +40,13 @@ export function parakeetProgressLabel(progress?: ParakeetPullProgressEvent | nul
   return `Downloading model…${files}${bytes}`;
 }
 
-/** FluidAudio fills 0-50% while downloading and 50-100% while compiling the
- *  models for this Mac; say which, so a slow second half isn't mistaken for
- *  a stalled download. */
+/** The percent measures the download only. Compiling the models for this
+ *  Mac (often over a minute) has nothing to measure, so it reports null and
+ *  the bar shows activity instead of a made-up number. */
+export function speakerModelsProgressPercent(progress: SpeakerModelsProgressEvent): number | null {
+  return progress.phase === 'compiling' ? null : progress.percent;
+}
+
 export function speakerModelsProgressLabel(progress: SpeakerModelsProgressEvent): string {
   return progress.phase === 'compiling'
     ? t('downloads.speakers.preparing')

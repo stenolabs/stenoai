@@ -2,6 +2,7 @@ import {
   parakeetProgressLabel,
   parakeetProgressPercent,
   speakerModelsProgressLabel,
+  speakerModelsProgressPercent,
 } from '@/lib/parakeetProgress';
 import type { ParakeetPullProgressEvent, SpeakerModelsProgressEvent } from '@/lib/ipc';
 import { DownloadProgressBar } from '@/components/DownloadProgressBar';
@@ -521,7 +522,7 @@ export function Setup() {
           <DownloadProgressBar
             data-setup-speaker-progress
             label={speakerModelsProgressLabel(speakerProgress)}
-            percent={speakerProgress.percent}
+            percent={speakerModelsProgressPercent(speakerProgress)}
             aria-label={t('downloads.speakers.ariaLabel')}
           />
         ) : statuses.speakers === 'running' && details.speakers?.startsWith('Downloading') ? (

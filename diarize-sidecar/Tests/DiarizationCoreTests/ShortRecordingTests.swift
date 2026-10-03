@@ -29,10 +29,10 @@ struct ShortRecordingTests {
         #expect(ShortRecording.clipped(start: 9.9, end: 30, recordingDuration: 10, minSegment: 0.25) == nil)
     }
 
-    @Test("Each FluidAudio load maps onto its own band and the bar only moves forward")
+    @Test("Only the Sortformer download fills the bar, and it only moves forward")
     func progressBands() {
-        let sortformer = (download: 0.0...0.85, compile: 0.85...0.95)
-        let embeddings = (download: 0.95...0.975, compile: 0.975...1.0)
+        let sortformer = (download: 0.0...1.0, compile: 1.0...1.0)
+        let embeddings = (download: 1.0...1.0, compile: 1.0...1.0)
         // FluidAudio: downloading fills 0...0.5 of a load, compiling 0.5...1.
         let sequence: [(Double, Bool, (download: ClosedRange<Double>, compile: ClosedRange<Double>))] = [
             (0.0, false, sortformer), (0.25, false, sortformer), (0.5, false, sortformer),
@@ -43,10 +43,32 @@ struct ShortRecordingTests {
             ModelReadiness.overallFraction($0.0, compiling: $0.1, download: $0.2.download, compile: $0.2.compile)
         }
         #expect(overall == overall.sorted())
-        #expect(abs(overall[1] - 0.425) < 1e-9)
-        #expect(abs(overall[2] - 0.85) < 1e-9)
-        #expect(abs(overall.last! - 1.0) < 1e-9)
-        #expect(ModelReadiness.overallFraction(2, compiling: false, download: 0...0.85, compile: 0.85...0.95) == 0.85)
+        #expect(abs(overall[1] - 0.5) < 1e-9)
+        #expect(abs(overall[2] - ModelReadiness.preparingFrom) < 1e-9)
+        #expect(overall.dropFirst(2).allSatisfy { $0 >= ModelReadiness.preparingFrom })
+        #expect(ModelReadiness.overallFraction(2, compiling: false, download: 0...1, compile: 1...1) == 1.0)
+    }
+
+    @Test("The byte monitor counts only new URLSession temp files, capped below 100%")
+    func byteMonitor() throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("steno-monitor-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        try Data(count: 500).write(to: dir.appendingPathComponent("unrelated.tmp"))
+
+        let seen = Locked<[Double]>([])
+        let monitor = DownloadByteMonitor(directory: dir, expectedBytes: 1000) { f in seen.update { $0.append(f) } }
+        monitor.start(interval: 3600)
+        defer { monitor.stop() }
+        monitor.poll()
+        #expect(seen.value.isEmpty)
+
+        try Data(count: 400).write(to: dir.appendingPathComponent("CFNetworkDownload_a.tmp"))
+        monitor.poll()
+        try Data(count: 5000).write(to: dir.appendingPathComponent("CFNetworkDownload_a.tmp"))
+        monitor.poll()
+        #expect(seen.value == [0.4, 0.99])
     }
 
     @Test("Prepare cleanup removes only the retired Sortformer bundle")
@@ -66,4 +88,13 @@ struct ShortRecordingTests {
         #expect(!FileManager.default.fileExists(atPath: sortformer.appendingPathComponent(retired).path))
         #expect(FileManager.default.fileExists(atPath: sortformer.appendingPathComponent(kept).path))
     }
+}
+
+/// Minimal lock box for collecting values from a @Sendable callback in tests.
+final class Locked<Value>: @unchecked Sendable {
+    private let lock = NSLock()
+    private var stored: Value
+    init(_ value: Value) { stored = value }
+    var value: Value { lock.lock(); defer { lock.unlock() }; return stored }
+    func update(_ body: (inout Value) -> Void) { lock.lock(); defer { lock.unlock() }; body(&stored) }
 }

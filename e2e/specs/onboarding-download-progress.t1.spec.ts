@@ -159,10 +159,12 @@ test('opted-in speaker download shows a real percent bar', async ({ launchApp })
   await expect(speakerStep.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '37');
 
   await app.evaluate(({ BrowserWindow }) => {
-    BrowserWindow.getAllWindows()[0].webContents.send('speaker-models-progress', { percent: 81, phase: 'compiling' });
+    BrowserWindow.getAllWindows()[0].webContents.send('speaker-models-progress', { percent: 100, phase: 'compiling' });
   });
-  await expect(bar.getByText('Preparing speaker models…')).toBeVisible();
-  await expect(bar.getByText('81%')).toBeVisible();
+  // Compiling has nothing to measure: an activity bar, no percentage.
+  await expect(bar.getByText('Optimising speaker models for this Mac. This can take a minute or two…')).toBeVisible();
+  await expect(bar.getByText('%')).toHaveCount(0);
+  await expect(speakerStep.getByRole('progressbar')).not.toHaveAttribute('aria-valuenow');
 
   await app.evaluate(() => (global as { __speakerModels?: { finish: () => void } }).__speakerModels!.finish());
   await expect(speakerStep).toHaveAttribute('data-setup-status', 'done');
