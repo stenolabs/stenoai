@@ -269,6 +269,13 @@ if os.path.exists(ollama_bin_dir):
             rel_fs = rel.replace(os.sep, '/').lower()
             if should_prune_ollama_gpu_path(rel_fs, platform=sys.platform):
                 continue  # Windows only: skip GPU runner libs
+            if _IS_DARWIN and rel_fs.startswith('mlx_metal_v4/'):
+                # Ollama ships two MLX runners: v3 (macOS 14+) and v4 (macOS
+                # 26.2+, Metal 4 shaders), preferring v4 when the OS allows.
+                # v3 runs every macOS we support (14.4+) and measured the same
+                # NVFP4 speed as v4 on an M3 Max (106 tok/s both), so v4's
+                # ~170 MB is left out. Revisit if M5-class GPUs show a real gap.
+                continue
             rel_dir = os.path.dirname(rel)
             base = os.path.basename(filename).lower()
             if base == 'steno-audio-encode':
