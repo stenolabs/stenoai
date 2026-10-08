@@ -265,11 +265,19 @@ public enum ModelReadiness {
 
     /// Reclaim the Sortformer bundles earlier releases downloaded into Steno's
     /// own model cache (see `retiredSortformerBundles`). Deliberately not the
-    /// legacy shared FluidAudio cache, which other apps on the Mac may be
-    /// using. Best-effort: a failure leaves disk used, nothing else. Run by
-    /// prepare and by each diarization, since a user whose models are already
-    /// prepared never re-runs prepare.
-    public static func removeRetiredBundles(in root: URL = cacheDirectory()) {
+    /// legacy shared FluidAudio cache, nor a `STENOAI_DIARIZE_MODEL_DIR`
+    /// override, either of which other apps on the Mac may be using.
+    /// Best-effort: a failure leaves disk used, nothing else. Run by prepare
+    /// and by each diarization, since a user whose models are already
+    /// prepared never re-runs prepare. Diarization only gets here once the
+    /// cache is ready, so an upgraded cache keeps its retired bundles until a
+    /// prepare succeeds -- the app looks for them to re-download after an
+    /// upgrade.
+    public static func removeRetiredBundles(
+        in root: URL = cacheDirectory(),
+        environment: [String: String] = ProcessInfo.processInfo.environment
+    ) {
+        guard nonEmpty(environment[modelDirectoryEnvironmentKey]) == nil else { return }
         for bundle in retiredSortformerBundles {
             let url = root
                 .appendingPathComponent("sortformer", isDirectory: true)

@@ -180,6 +180,8 @@ config/
 *.env
 *_config.json
 config.json
+# Its file lock: running the backend from source keeps config.json at the repo root.
+config.json.lock
 !app/package*.json
 
 # Local documentation and review notes

@@ -1,5 +1,5 @@
 import { test, expect } from '../fixtures/electron';
-import { chmodSync, existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
@@ -130,4 +130,47 @@ test('a download prepares the engine Settings asked for, not the saved one', asy
     (window as StenoWindow).stenoai.setup.speakerModels('pyannote'),
   );
   expect(rejected).toMatchObject({ success: false, ready: false });
+});
+
+test('an install upgraded from FluidAudio 0.15 downloads its speaker models again on launch', async ({
+  launchApp,
+  userDataDir,
+}) => {
+  test.skip(process.platform !== 'darwin', 'speaker diarization models are macOS-only');
+
+  // What a user who opted in on a FluidAudio 0.15 build has: the old
+  // root-level Sortformer bundle, which 0.17 no longer loads.
+  const cache = path.join(userDataDir, 'models', 'speaker-diarization');
+  mkdirSync(path.join(cache, 'sortformer', 'SortformerNvidiaHigh_v2.mlmodelc'), { recursive: true });
+  const prepared = path.join(userDataDir, 'prepared-after-upgrade');
+  const status = (ready: boolean) => JSON.stringify({
+    ready,
+    cache_directory: cache,
+    required_models: ['sortformer/v3/fp16/SortformerNvidiaHigh_v2.mlmodelc'],
+    missing_models: ready ? [] : ['sortformer/v3/fp16/SortformerNvidiaHigh_v2.mlmodelc'],
+  });
+  const fixtureDir = mkdtempSync(path.join(tmpdir(), 'stenoai-e2e-speaker-upgrade-'));
+  const script = path.join(fixtureDir, 'mock-steno-diarize.sh');
+  writeFileSync(script, [
+    '#!/usr/bin/env bash',
+    'set -euo pipefail',
+    'case "$1" in',
+    '  model-status)',
+    `    if [ -f '${prepared}' ]; then echo '${status(true)}'; exit 0; fi`,
+    `    echo '${status(false)}'; exit 3 ;;`,
+    '  prepare-models)',
+    `    touch '${prepared}'`,
+    `    echo '${status(true)}' ;;`,
+    '  *) exit 2 ;;',
+    'esac',
+    '',
+  ].join('\n'));
+  chmodSync(script, 0o755);
+
+  // Nothing in the renderer asks for it: the launch itself must start it.
+  await launchApp({
+    env: { STENOAI_DIARIZE_SIDECAR_PATH: script, STENOAI_E2E_SPEAKER_UPGRADE: '1' },
+  });
+
+  await expect.poll(() => existsSync(prepared), { timeout: 30_000 }).toBe(true);
 });

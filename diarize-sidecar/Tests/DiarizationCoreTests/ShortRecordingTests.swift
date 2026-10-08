@@ -68,11 +68,25 @@ struct ShortRecordingTests {
                 at: sortformer.appendingPathComponent(name), withIntermediateDirectories: true
             )
         }
-        ModelReadiness.removeRetiredBundles(in: root)
+        ModelReadiness.removeRetiredBundles(in: root, environment: [:])
         for name in retired {
             #expect(!FileManager.default.fileExists(atPath: sortformer.appendingPathComponent(name).path))
         }
         #expect(FileManager.default.fileExists(atPath: sortformer.appendingPathComponent(kept).path))
     }
-}
 
+    @Test("Cleanup never touches a STENOAI_DIARIZE_MODEL_DIR override")
+    func retiredBundleCleanupSkipsOverride() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("steno-override-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        // An override may point at a FluidAudio cache another app still uses.
+        let shared = root.appendingPathComponent("sortformer/SortformerNvidiaHigh_v2.mlmodelc")
+        try FileManager.default.createDirectory(at: shared, withIntermediateDirectories: true)
+
+        ModelReadiness.removeRetiredBundles(
+            in: root, environment: ["STENOAI_DIARIZE_MODEL_DIR": root.path]
+        )
+        #expect(FileManager.default.fileExists(atPath: shared.path))
+    }
+}
