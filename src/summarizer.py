@@ -37,6 +37,30 @@ def _strip_leading_timestamps(transcript: str) -> str:
     return _LEADING_TIMESTAMP_RE.sub('', transcript)
 
 
+def _openai_content_text(content) -> str:
+    """Answer text from an OpenAI-compatible ``message.content`` / ``delta.content``.
+
+    Most providers send a string, but some (Mistral's reasoning-capable models)
+    send a list of typed chunks: ``{"type": "thinking", ...}`` holding the
+    reasoning and ``{"type": "text", "text": ...}`` holding the answer. Only the
+    text chunks belong in a summary, so thinking chunks are dropped.
+    """
+    if content is None:
+        return ""
+    if isinstance(content, str):
+        return content
+    parts = []
+    for part in content:
+        if isinstance(part, str):
+            parts.append(part)
+            continue
+        if not isinstance(part, dict):
+            part = part.model_dump() if hasattr(part, "model_dump") else vars(part)
+        if part.get("type", "text") == "text" and isinstance(part.get("text"), str):
+            parts.append(part["text"])
+    return "".join(parts)
+
+
 def bedrock_converse_url(region: str, target_id: str) -> str:
     """Build the Bedrock Converse REST URL for a region + model/profile id.
 
@@ -792,7 +816,7 @@ class OllamaSummarizer:
                     messages=[{"role": "user", "content": prompt}],
                     timeout=timeout_seconds,
                 )
-                return response.choices[0].message.content.strip()
+                return _openai_content_text(response.choices[0].message.content).strip()
 
             except Exception as e:
                 logger.error(f"Cloud API attempt {attempt + 1} failed: {e}")
@@ -1526,7 +1550,7 @@ TRANSCRIPT:
                     for chunk in response:
                         if not chunk.choices:
                             continue
-                        content = chunk.choices[0].delta.content or ""
+                        content = _openai_content_text(chunk.choices[0].delta.content)
                         if content:
                             yield content
                 except Exception as e:
@@ -1864,7 +1888,7 @@ ANSWER:"""
                     # Some providers emit usage-only chunks with no choices.
                     if not chunk.choices:
                         continue
-                    content = chunk.choices[0].delta.content
+                    content = _openai_content_text(chunk.choices[0].delta.content)
                     if content:
                         yield content
             return
