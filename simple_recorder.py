@@ -1684,6 +1684,51 @@ def set_transcription_engine_cmd(engine: str):
         }))
 
 
+@cli.command(name='get-diarization-engine')
+def get_diarization_engine_cmd():
+    """Get the macOS speaker-diarization engine ('sortformer' or 'nemotron3')."""
+    from src.config import get_config
+    config = get_config()
+    print(json.dumps({
+        "engine": config.get_diarization_engine(),
+        "valid_engines": list(config.VALID_DIARIZATION_ENGINES),
+    }))
+
+
+@cli.command(name='set-diarization-engine')
+@click.argument('engine')
+def set_diarization_engine_cmd(engine: str):
+    """Set the speaker-diarization engine. Used by Settings -> Transcribe.
+
+    Anything but the Sortformer default is only saved once its models are
+    ready: meeting processing never downloads models, so saving an engine
+    whose models are missing would silently degrade every later meeting to
+    channel-only "You"/"Others" labels.
+    """
+    from src.config import get_config
+    config = get_config()
+    if engine not in config.VALID_DIARIZATION_ENGINES:
+        print(json.dumps({
+            "success": False,
+            "error": f"Invalid engine: {engine}",
+            "valid_engines": list(config.VALID_DIARIZATION_ENGINES),
+        }))
+        return
+    if engine != "sortformer":
+        status = _run_speaker_model_command("model-status", timeout=15, engine=engine)
+        if not (status.get("success") and status.get("ready")):
+            print(json.dumps({
+                "success": False,
+                "models_ready": False,
+                "error": "The models for this speaker detection engine are not downloaded",
+            }))
+            return
+    if config.set_diarization_engine(engine):
+        print(json.dumps({"success": True, "engine": engine}))
+    else:
+        print(json.dumps({"success": False, "error": "Failed to persist setting"}))
+
+
 @cli.command(name='list-parakeet-models')
 def list_parakeet_models_cmd():
     """List Parakeet models with metadata + installed status (UI)."""
@@ -4423,7 +4468,7 @@ def _parse_speaker_progress_line(line: str) -> Optional[dict]:
     return {"percent": percent, "phase": phase}
 
 
-def _run_sidecar_with_progress(args: list, timeout: int, on_progress):
+def _run_sidecar_with_progress(args: list, timeout: int, on_progress, env=None):
     """Like ``subprocess.run(capture_output=True)`` but relays progress lines
     from stderr to ``on_progress`` while the sidecar runs."""
     import subprocess
@@ -4431,7 +4476,9 @@ def _run_sidecar_with_progress(args: list, timeout: int, on_progress):
 
     stdout_chunks: list = []
     stderr_lines: list = []
-    with subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True) as proc:
+    with subprocess.Popen(
+        args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env
+    ) as proc:
         def pump_stderr():
             for line in proc.stderr:
                 stderr_lines.append(line)
@@ -4458,16 +4505,22 @@ def _run_sidecar_with_progress(args: list, timeout: int, on_progress):
     return subprocess.CompletedProcess(args, proc.returncode, "".join(stdout_chunks), "".join(stderr_lines))
 
 
-def _run_speaker_model_command(command: str, timeout: int, on_progress=None) -> dict:
+def _run_speaker_model_command(
+    command: str, timeout: int, engine: Optional[str] = None, on_progress=None
+) -> dict:
     """Run a non-audio command on the macOS diarization sidecar.
 
     The sidecar is the single authority for its FluidAudio cache layout. Keep
     this wrapper deliberately narrow and return only validated JSON so stderr
     from model loaders never crosses the renderer IPC boundary. With
     ``on_progress``, validated download progress is relayed as it arrives.
+
+    ``engine`` targets a specific diarization engine's models (Settings
+    preparing a choice before it is saved); unset uses the saved setting, the
+    same engine meeting processing will run.
     """
     import subprocess
-    from src.transcriber import _resolve_steno_diarize
+    from src.transcriber import _resolve_steno_diarize, _steno_diarize_env
 
     binary = _resolve_steno_diarize()
     if not binary:
@@ -4477,6 +4530,7 @@ def _run_speaker_model_command(command: str, timeout: int, on_progress=None) -> 
             "error": "Speaker diarization is unavailable on this system",
         }
     try:
+        env = _steno_diarize_env(engine=engine)
         if on_progress is None:
             result = subprocess.run(
                 [binary, command],
@@ -4484,9 +4538,10 @@ def _run_speaker_model_command(command: str, timeout: int, on_progress=None) -> 
                 text=True,
                 timeout=timeout,
                 check=False,
+                env=env,
             )
         else:
-            result = _run_sidecar_with_progress([binary, command], timeout, on_progress)
+            result = _run_sidecar_with_progress([binary, command], timeout, on_progress, env=env)
     except (OSError, subprocess.TimeoutExpired):
         logger.warning("Speaker diarization model command could not complete")
         return {
@@ -4533,14 +4588,24 @@ def _run_speaker_model_command(command: str, timeout: int, on_progress=None) -> 
     return {"success": True, **payload}
 
 
+_DIARIZATION_ENGINE_OPTION = click.option(
+    "--engine",
+    type=click.Choice(["sortformer", "nemotron3"]),
+    default=None,
+    help="Diarization engine whose models to target (default: the saved setting).",
+)
+
+
 @cli.command(name="speaker-model-status")
-def speaker_model_status():
+@_DIARIZATION_ENGINE_OPTION
+def speaker_model_status(engine: Optional[str]):
     """Report whether the local speaker-diarization models are ready."""
-    print(json.dumps(_run_speaker_model_command("model-status", timeout=15)))
+    print(json.dumps(_run_speaker_model_command("model-status", timeout=15, engine=engine)))
 
 
 @cli.command(name="prepare-speaker-models")
-def prepare_speaker_models():
+@_DIARIZATION_ENGINE_OPTION
+def prepare_speaker_models(engine: Optional[str]):
     """Download and compile the macOS speaker-diarization models.
 
     Prints ``SPEAKER_MODELS_PROGRESS:{"percent": n, "phase": ...}`` lines while
@@ -4549,7 +4614,9 @@ def prepare_speaker_models():
     def relay(event):
         print(f"SPEAKER_MODELS_PROGRESS:{json.dumps(event)}", flush=True)
 
-    payload = _run_speaker_model_command("prepare-models", timeout=60 * 60, on_progress=relay)
+    payload = _run_speaker_model_command(
+        "prepare-models", timeout=60 * 60, engine=engine, on_progress=relay
+    )
     print(json.dumps(payload))
     if not payload.get("success") or not payload.get("ready"):
         sys.exit(1)

@@ -21,8 +21,16 @@ swift build \
     -c release \
     --arch "$ARCH"
 
-BUILD_BIN="$PKG/.build/${ARCH}-apple-macosx/release/diarize-sidecar"
+# Ask SPM for the real product directory instead of hardcoding the legacy
+# .build/<triple>/release layout -- Swift 6.4's build system moved products
+# (e.g. .build/out/Products/Release, with .build/release as a symlink), and
+# a stale hardcoded path silently copied a months-old binary into bin/.
+BIN_DIR="$(swift build -c release --arch "$ARCH" --show-bin-path)"
+BUILD_BIN="$BIN_DIR/diarize-sidecar"
+test -x "$BUILD_BIN"
 cp "$BUILD_BIN" "$OUT"
+# cp onto an existing file keeps the destination's mode, so check the copy
+# too -- the release workflow ships $OUT, not the build product.
 test -x "$OUT"
 
 # Ad-hoc signature so the binary runs locally; CI re-signs with the Developer

@@ -1,5 +1,5 @@
 // diarize-sidecar — offline speaker diarization + voiceprint embeddings via
-// FluidAudio's Sortformer + WeSpeaker.
+// FluidAudio's Sortformer or Nemotron 3 (both CoreML) + WeSpeaker.
 //
 // Usage:
 //   steno-diarize diarize <audio-file>
@@ -8,9 +8,27 @@
 //
 // `steno-diarize <audio-file>` remains accepted for compatibility.
 //
-// Sortformer has a fixed 4-speaker-slot architecture (SortformerConfig.numSpeakers
-// is hardcoded to 4) — there is no speaker-count hint to pass, unlike the
-// previous OfflineDiarizerManager-based version of this tool.
+// Diarization engine (STENOAI_DIARIZE_ENGINE):
+//   sortformer (default) — 4-speaker-slot streaming Sortformer.
+//     SortformerConfig.numSpeakers is hardcoded to 4; there is no
+//     speaker-count hint to pass, unlike the previous
+//     OfflineDiarizerManager-based version of this tool.
+//   nemotron3 — NVIDIA's 8-speaker streaming Sortformer (100M params, 10 ms
+//     output resolution), CoreML conversion
+//     FluidInference/nemotron-3-diarization-coreml. Streaming preset via
+//     STENOAI_DIARIZE_NEMOTRON_PRESET (default "c128-split-w8a8", the
+//     model card's batch pick: 100% ANE-resident split graph, 95 MB, best
+//     speaker-counting accuracy of the lineup; see the model card for the
+//     full preset table).
+//
+//     Compute units: split presets (the default) force the ANE route
+//     (.cpuAndNeuralEngine — verified on an M3 Max, macOS 27.0); monolithic
+//     presets default to .all, because their graphs fail the ANE compiler
+//     on the M3-generation chip and .cpuAndNeuralEngine then rejects the
+//     pre-allocated fp16 output backings at the first prediction ("Output
+//     backing ... is not compatible...", FluidAudio issue #951). All of it
+//     is overridable via STENOAI_DIARIZE_COMPUTE_UNITS — see
+//     resolveDiarizerComputeUnits below.
 //
 // Output (stdout): one JSON line on success
 //   {"segments":[{"speakerId":"SPEAKER_0","start":0.0,"end":3.2}, ...],
@@ -33,12 +51,13 @@
 // separate ONNX model. This mirrors the proven approach in
 // github.com/pasrom/meeting-transcriber (verified via GitHub's raw content
 // API directly, not a fetched summary): overlap-excluded per-speaker
-// activity masks from Sortformer's own frame-level predictions (so
-// crosstalk never contaminates an embedding), chunked into 10s windows to
-// match WeSpeaker's fixed input shape, embeddings averaged (L2-normalized
-// mean) across all chunks into one centroid per speaker. A single-clip,
-// no-overlap-exclusion embedding (an earlier, simpler attempt) proved too
-// easily confused between genuinely different speakers in real testing.
+// activity masks from the diarization engine's own frame-level predictions
+// (so crosstalk never contaminates an embedding), chunked into 10s windows
+// to match WeSpeaker's fixed input shape, embeddings averaged
+// (L2-normalized mean) across all chunks into one centroid per speaker. A
+// single-clip, no-overlap-exclusion embedding (an earlier, simpler attempt)
+// proved too easily confused between genuinely different speakers in real
+// testing.
 
 import CoreML
 import DiarizationCore
@@ -111,24 +130,79 @@ func printJSON<T: Encodable>(_ value: T) throws {
 
 // Compute-unit override, primarily for one-off bulk backfill runs where
 // throughput matters more than the power/thermal cost of spinning up the
-// GPU (unlike live recording, where the default below is deliberately
-// power-efficient). Unset -> unchanged default (.cpuAndNeuralEngine, see
-// the call sites below for why that's forced rather than left at .all).
+// GPU (unlike live recording, where the defaults below are deliberately
+// power-efficient for Sortformer). Unset -> engine default.
 // STENOAI_DIARIZE_COMPUTE_UNITS: "all" | "cpuAndGPU" | "cpuOnly" |
-// "cpuAndNeuralEngine" (default).
-func resolveComputeUnits() -> MLComputeUnits {
+// "cpuAndNeuralEngine".
+private func computeUnitsOverride() -> MLComputeUnits? {
     switch ProcessInfo.processInfo.environment["STENOAI_DIARIZE_COMPUTE_UNITS"] {
     case "all": return .all
     case "cpuAndGPU": return .cpuAndGPU
     case "cpuOnly": return .cpuOnly
-    default: return .cpuAndNeuralEngine
+    case "cpuAndNeuralEngine": return .cpuAndNeuralEngine
+    default: return nil
     }
+}
+
+// WeSpeaker/pyannote embedding models keep the power-efficient ANE
+// default.
+func resolveComputeUnits() -> MLComputeUnits {
+    computeUnitsOverride() ?? .cpuAndNeuralEngine
+}
+
+// The diarizer model itself needs an engine/preset-specific default:
+// - Sortformer: .cpuAndNeuralEngine forces genuine ANE execution — the
+//   default .all silently routes Sortformer to GPU instead (confirmed via
+//   Activity Monitor during evaluation).
+// - Nemotron 3 split-graph presets (the default): .cpuAndNeuralEngine. The
+//   pure-fp transformer+head is built for 100% ANE residency, and forcing
+//   the ANE route is verified to work on the M3-generation chip
+//   (macOS 27.0, M3 Max) — E5RT produces a main_ane specialization and the
+//   run is the fastest route measured locally.
+// - Nemotron 3 monolithic presets: .all. Those graphs fail ANECCompile on
+//   the M3-generation ANE outright (the ANE specialization never exists;
+//   forcing .cpuAndNeuralEngine then rejects the pre-allocated fp16 output
+//   backings at the first prediction — "Output backing for feature named
+//   'speaker_preds' is not compatible...", see FluidAudio issue #951), so
+//   .all lets CoreML schedule them on the GPU, which works everywhere.
+//   This is also FluidAudio's own default for Nemotron3Models.
+func resolveDiarizerComputeUnits(
+    engine: DiarizationEngine,
+    nemotron3Config: Nemotron3Config? = nil
+) -> MLComputeUnits {
+    guard let override = computeUnitsOverride() else {
+        switch engine {
+        case .sortformer:
+            return .cpuAndNeuralEngine
+        case .nemotron3:
+            return (nemotron3Config?.splitGraph ?? false) ? .cpuAndNeuralEngine : .all
+        }
+    }
+    return override
 }
 
 let commandArguments = Array(CommandLine.arguments.dropFirst())
 
+// Engine selection must happen before every command: `model-status`,
+// `prepare-models`, and `diarize` all need to agree on which model bundles
+// are required, and an unrecognized value fails loudly here rather than
+// silently diarizing (or preparing) with the wrong backend.
+let engine: DiarizationEngine
+if let resolved = EngineSelection.engine() {
+    engine = resolved
+} else {
+    fail("unknown STENOAI_DIARIZE_ENGINE value (expected \"sortformer\" or \"nemotron3\")")
+}
+var nemotron3Config: Nemotron3Config? = nil
+if engine == .nemotron3 {
+    guard let resolved = EngineSelection.nemotron3Config() else {
+        fail("unknown STENOAI_DIARIZE_NEMOTRON_PRESET value (see Nemotron3Config.preset)")
+    }
+    nemotron3Config = resolved
+}
+
 if commandArguments == ["model-status"] {
-    let status = ModelReadiness.status()
+    let status = ModelReadiness.status(engine: engine, nemotron3Config: nemotron3Config)
     do {
         try printJSON(status)
     } catch {
@@ -261,9 +335,12 @@ func loadSamplesViaFfmpeg(path: String) async throws -> [Float] {
 /// unproven complexity.
 ///
 /// - Parameters:
-///   - predictions: flat [numFrames x numSpeakers] from DiarizerTimeline.finalizedPredictions.
-///   - numSpeakers: speaker-slot count (Sortformer hardcodes 4).
-///   - threshold: activity threshold (timeline.config.onsetThreshold).
+///   - predictions: flat [numFrames x numSpeakers] engine probabilities
+///     (Sortformer: DiarizerTimeline.finalizedPredictions; Nemotron 3:
+///     processComplete's 10 ms output).
+///   - numSpeakers: speaker-slot count (Sortformer hardcodes 4, Nemotron 3: 8).
+///   - threshold: activity threshold (Sortformer: timeline.config.onsetThreshold;
+///     Nemotron 3: nemotron3EmbeddingMaskThreshold).
 /// - Returns: [numSpeakers] arrays of length numFrames.
 func buildOverlapExcludedMasks(
     predictions: [Float],
@@ -292,7 +369,8 @@ func buildOverlapExcludedMasks(
 }
 
 /// Nearest-neighbour resample a per-frame activity mask onto a target frame
-/// grid. Bridges Sortformer's 12.5 Hz output (~125 frames/10s) to
+/// grid. Bridges the engine's output frame rate (Sortformer: 12.5 Hz,
+/// ~125 frames/10s; Nemotron 3: 100 Hz, 1000 frames/10s) to
 /// WeSpeaker's expected segmentation-frame count (typically 589/10s).
 func resampleMask(_ mask: [Float], to targetCount: Int) -> [Float] {
     guard !mask.isEmpty, targetCount > 0 else {
@@ -328,9 +406,9 @@ func aggregateCentroids(
 
 /// Walk the audio in 10s chunks, run WeSpeaker on the top-3 active speakers
 /// per chunk (the model's mask shape only fits 3), accumulate running sums
-/// + counts per global Sortformer speaker slot. Sortformer's 4th speaker
-/// (when present) gets covered in chunks where they rank in the top-3 of
-/// that window.
+/// + counts per global speaker slot. Speakers beyond a chunk's top-3
+/// (Sortformer's 4th slot, Nemotron 3's slots 4-8) get covered in chunks
+/// where they rank in the top-3 of that window.
 func accumulateChunkEmbeddings(
     audio: [Float],
     masks: [[Float]],
@@ -401,14 +479,26 @@ func accumulateChunkEmbeddings(
     return (sums, counts)
 }
 
-/// Extract one voiceprint centroid per active Sortformer speaker from
-/// `timeline`'s frame-level predictions and the already-decoded 16kHz
-/// audio samples. Returns an empty dict (never throws) on any embedding
-/// failure — voiceprint identification is a best-effort enhancement, the
-/// diarization segments themselves are the load-bearing output.
-func extractSortformerEmbeddings(
+/// Activity threshold for building per-speaker embedding masks from Nemotron 3
+/// predictions. Matches the 0.5 Nemotron3Diarizer.segments uses for its own
+/// segment decisions, so a frame only contributes to a speaker's voiceprint
+/// when the model attributes that frame to the speaker in the transcript too.
+let nemotron3EmbeddingMaskThreshold: Float = 0.5
+
+/// Extract one voiceprint centroid per active speaker slot from the engine's
+/// frame-level predictions and the already-decoded 16kHz audio samples.
+/// Works for any engine that exposes flat [numFrames * numSpeakers]
+/// probabilities (Sortformer: 12.5 Hz frames, 4 slots, onset threshold;
+/// Nemotron 3: 10 ms frames, 8 slots, 0.5 threshold). Returns an empty dict
+/// (never throws) on any embedding failure — voiceprint identification is a
+/// best-effort enhancement, the diarization segments themselves are the
+/// load-bearing output.
+func extractSpeakerEmbeddings(
     audio: [Float],
-    timeline: DiarizerTimeline,
+    predictions: [Float],
+    numSpeakers: Int,
+    threshold: Float,
+    frameDuration: Double,
     cacheDirectory: URL
 ) async -> [String: [Float]] {
     do {
@@ -433,9 +523,9 @@ func extractSortformerEmbeddings(
         let weSpeakerFrameCount = segShape[1].intValue
 
         let masks = buildOverlapExcludedMasks(
-            predictions: timeline.finalizedPredictions,
-            numSpeakers: timeline.config.numSpeakers,
-            threshold: timeline.config.onsetThreshold
+            predictions: predictions,
+            numSpeakers: numSpeakers,
+            threshold: threshold
         )
         let maskFrameCount = masks.first?.count ?? 0
         guard maskFrameCount > 0 else { return [:] }
@@ -443,7 +533,7 @@ func extractSortformerEmbeddings(
         let (sums, counts) = accumulateChunkEmbeddings(
             audio: audio,
             masks: masks,
-            frameDuration: Double(timeline.config.frameDurationSeconds),
+            frameDuration: frameDuration,
             weSpeakerFrameCount: weSpeakerFrameCount,
             extractor: extractor
         )
@@ -463,7 +553,7 @@ final class PrepareProgressReporter: @unchecked Sendable {
     private var lastPercent = -1
     private var lastPhase = ""
 
-    func report(_ progress: DownloadUtils.DownloadProgress) {
+    func report(_ progress: DownloadProgress) {
         let phase: String
         switch progress.phase {
         case .listing: phase = "listing"
@@ -491,19 +581,12 @@ Task {
         if isPrepareModels {
             fputs("steno-diarize: preparing speaker diarization models\n", stderr)
             let reporter = PrepareProgressReporter()
-            let monitor = DownloadByteMonitor(
-                directory: FileManager.default.temporaryDirectory,
-                expectedBytes: ModelReadiness.approximateSortformerDownloadBytes
-            ) { fraction in
-                reporter.report(DownloadUtils.DownloadProgress(
-                    fractionCompleted: fraction,
-                    phase: .downloading(completedFiles: 0, totalFiles: 0)
-                ))
-            }
-            monitor.start()
-            defer { monitor.stop() }
             let status = try await ModelReadiness.prepare(
-                computeUnits: resolveComputeUnits(),
+                engine: engine,
+                nemotron3Config: nemotron3Config,
+                computeUnits: resolveDiarizerComputeUnits(
+                    engine: engine, nemotron3Config: nemotron3Config
+                ),
                 progressHandler: { reporter.report($0) }
             )
             try printJSON(status)
@@ -514,8 +597,12 @@ Task {
             fail("missing audio file")
         }
 
-        let cacheDirectory = ModelReadiness.runtimeCacheDirectory()
-        let modelStatus = ModelReadiness.status(cacheDirectory: cacheDirectory)
+        let cacheDirectory = ModelReadiness.runtimeCacheDirectory(
+            engine: engine, nemotron3Config: nemotron3Config
+        )
+        let modelStatus = ModelReadiness.status(
+            cacheDirectory: cacheDirectory, engine: engine, nemotron3Config: nemotron3Config
+        )
         guard modelStatus.ready else {
             try printJSON(modelStatus)
             fail(
@@ -530,48 +617,6 @@ Task {
 
         let samples = try await loadSamplesViaFfmpeg(path: inputPath)
 
-        // .cpuAndNeuralEngine forces genuine ANE execution — the default
-        // .all silently routes Sortformer to GPU instead (confirmed via
-        // Activity Monitor during evaluation). resolveComputeUnits() keeps
-        // that as the default but allows STENOAI_DIARIZE_COMPUTE_UNITS=all
-        // (or =cpuAndGPU) to opt into GPU for one-off bulk backfill runs
-        // where throughput matters more than the live-recording-path's
-        // power/thermal efficiency.
-        //
-        // Sortformer config: this app only ever diarizes a fully-recorded,
-        // already-finished channel (no live/streaming diarization exists
-        // yet), so .default's low-latency 0.48s-per-invocation chunking
-        // (tuned for real-time responsiveness this app has no use for)
-        // costs ~56x more CoreML invocations than .highContextV2's
-        // 27.2s-per-invocation chunking on the same audio (measured:
-        // ~22,500 vs ~400 invocations for a 3-hour recording). highContextV2
-        // needs a full ~30.4s window before it emits anything at all, so a
-        // shorter recording is padded with trailing silence up to
-        // sortformerHighContextMinDuration and its segments clipped back to
-        // the real length. That keeps ONE model for every recording, so the
-        // .default bundle (~230 MB) is never downloaded.
-        // V2, not V2.1: FluidAudio's own docs note V2.1 "may degrade when
-        // many speakers are talking simultaneously" — a real risk given
-        // this app's crosstalk/echo findings from earlier this session.
-        // Both the model-loading config below AND SortformerDiarizer's own
-        // config must match — its internal chunk/fifo/spkcache buffers are
-        // sized from whatever config it's constructed with, independent of
-        // which model weights get loaded.
-        let durationSeconds = Double(samples.count) / 16000.0
-        let sortformerConfig = ModelReadiness.sortformerConfig
-        let models = try await SortformerModels.loadFromHuggingFace(
-            config: sortformerConfig,
-            cacheDirectory: cacheDirectory,
-            computeUnits: resolveComputeUnits()
-        )
-        let diarizer = SortformerDiarizer(config: sortformerConfig)
-        diarizer.initialize(models: models)
-
-        let paddedSamples = ShortRecording.padded(
-            samples, minDuration: sortformerHighContextMinDuration, sampleRate: 16000.0
-        )
-        let timeline = try diarizer.processComplete(paddedSamples, sourceSampleRate: nil)
-
         struct Segment: Encodable {
             let speakerId: String
             let start: Double
@@ -582,31 +627,123 @@ Task {
             let speakers: [String: [Float]]
         }
 
-        // Clip to the real recording: nothing past the padded silence counts.
-        let segments = timeline.speakers.values
-            .flatMap { $0.finalizedSegments }
-            .compactMap { seg -> Segment? in
-                guard let span = ShortRecording.clipped(
-                    start: Double(seg.startTime),
-                    end: Double(seg.endTime),
-                    recordingDuration: durationSeconds,
-                    minSegment: Double(minSegmentDurationSeconds)
-                ) else { return nil }
-                return Segment(speakerId: "SPEAKER_\(seg.speakerIndex)", start: span.start, end: span.end)
-            }
-            .sorted { $0.start < $1.start }
+        // Both engines produce the same contract: arrival-ordered segments
+        // (each >= minSegmentDurationSeconds) plus a best-effort voiceprint
+        // centroid map. Speaker ids are slot numbers ("SPEAKER_N"), which the
+        // Python side already treats as opaque per-run cluster labels.
+        let segments: [Segment]
+        let speakers: [String: [Float]]
+        switch engine {
+        case .sortformer:
+            // .cpuAndNeuralEngine forces genuine ANE execution — the default
+            // .all silently routes Sortformer to GPU instead (confirmed via
+            // Activity Monitor during evaluation).
+            // resolveDiarizerComputeUnits(engine:nemotron3Config:) keeps that
+            // as the default but allows STENOAI_DIARIZE_COMPUTE_UNITS=all
+            // (or =cpuAndGPU) to opt into GPU for one-off bulk backfill runs
+            // where throughput matters more than the live-recording-path's
+            // power/thermal efficiency.
+            //
+            // Sortformer config: this app only ever diarizes a fully-recorded,
+            // already-finished channel (no live/streaming diarization exists
+            // yet), so .default's low-latency 0.48s-per-invocation chunking
+            // (tuned for real-time responsiveness this app has no use for)
+            // costs ~56x more CoreML invocations than .highContextV2's
+            // 27.2s-per-invocation chunking on the same audio (measured:
+            // ~22,500 vs ~400 invocations for a 3-hour recording). highContextV2
+            // needs a full ~30.4s window before it emits anything at all, so a
+            // shorter recording is padded with trailing silence up to
+            // sortformerHighContextMinDuration and its segments clipped back to
+            // the real length. That keeps ONE model for every recording, so the
+            // .default bundle (~230 MB) is never downloaded.
+            // V2, not V2.1: FluidAudio's own docs note V2.1 "may degrade when
+            // many speakers are talking simultaneously" — a real risk given
+            // this app's crosstalk/echo findings from earlier this session.
+            // Both the model-loading config below AND SortformerDiarizer's own
+            // config must match — its internal chunk/fifo/spkcache buffers are
+            // sized from whatever config it's constructed with, independent of
+            // which model weights get loaded.
+            let durationSeconds = Double(samples.count) / 16000.0
+            let sortformerConfig = ModelReadiness.sortformerConfig
+            let models = try await SortformerModels.loadFromHuggingFace(
+                config: sortformerConfig,
+                cacheDirectory: cacheDirectory,
+                computeUnits: resolveDiarizerComputeUnits(
+                    engine: .sortformer, nemotron3Config: nil
+                )
+            )
+            let diarizer = SortformerDiarizer(config: sortformerConfig)
+            diarizer.initialize(models: models)
 
-        // Voiceprint centroids, one per active speaker slot. Best-effort:
-        // extractSortformerEmbeddings never throws, returning [:] on any
-        // failure so a voiceprint problem can never take down diarization
-        // itself (the segments above are the load-bearing output).
-        // The real samples, not the padded buffer: the chunk loop is bounded by
-        // both audio and mask length, and silence must never feed a voiceprint.
-        let speakers = await extractSortformerEmbeddings(
-            audio: samples,
-            timeline: timeline,
-            cacheDirectory: cacheDirectory
-        )
+            let paddedSamples = ShortRecording.padded(
+                samples, minDuration: sortformerHighContextMinDuration, sampleRate: 16000.0
+            )
+            let timeline = try diarizer.processComplete(paddedSamples, sourceSampleRate: nil)
+
+            // Clip to the real recording: nothing past the padded silence counts.
+            segments = timeline.speakers.values
+                .flatMap { $0.finalizedSegments }
+                .compactMap { seg -> Segment? in
+                    guard let span = ShortRecording.clipped(
+                        start: Double(seg.startTime),
+                        end: Double(seg.endTime),
+                        recordingDuration: durationSeconds,
+                        minSegment: Double(minSegmentDurationSeconds)
+                    ) else { return nil }
+                    return Segment(
+                        speakerId: "SPEAKER_\(seg.speakerIndex)", start: span.start, end: span.end
+                    )
+                }
+                .sorted { $0.start < $1.start }
+            // The real samples, not the padded buffer: the chunk loop is
+            // bounded by both audio and mask length, and silence must never
+            // feed a voiceprint.
+            speakers = await extractSpeakerEmbeddings(
+                audio: samples,
+                predictions: timeline.finalizedPredictions,
+                numSpeakers: timeline.config.numSpeakers,
+                threshold: timeline.config.onsetThreshold,
+                frameDuration: Double(timeline.config.frameDurationSeconds),
+                cacheDirectory: cacheDirectory
+            )
+        case .nemotron3:
+            guard let nemotron3Config else {
+                fail("nemotron3 engine selected without a resolved preset")
+            }
+            let models = try await Nemotron3Models.loadFromHuggingFace(
+                config: nemotron3Config,
+                cacheDirectory: cacheDirectory,
+                computeUnits: resolveDiarizerComputeUnits(
+                    engine: .nemotron3, nemotron3Config: nemotron3Config
+                )
+            )
+            let diarizer = Nemotron3Diarizer(config: nemotron3Config, models: models)
+
+            let (probabilities, frameCount) = try diarizer.processComplete(samples)
+
+            // Nemotron3Diarizer.segments already emits arrival-ordered
+            // segments (its own 0.2s minimum applies); the sidecar's shared
+            // minSegmentDurationSeconds filter still applies on top.
+            segments = Nemotron3Diarizer.segments(
+                probabilities: probabilities, frameCount: frameCount
+            )
+            .filter { $0.endSeconds - $0.startSeconds >= minSegmentDurationSeconds }
+            .map { seg in
+                Segment(
+                    speakerId: "SPEAKER_\(seg.speakerIndex)",
+                    start: Double(seg.startSeconds),
+                    end: Double(seg.endSeconds)
+                )
+            }
+            speakers = await extractSpeakerEmbeddings(
+                audio: samples,
+                predictions: probabilities,
+                numSpeakers: nemotron3Config.numSpeakers,
+                threshold: nemotron3EmbeddingMaskThreshold,
+                frameDuration: Double(nemotron3Config.outputFrameSeconds),
+                cacheDirectory: cacheDirectory
+            )
+        }
 
         let output = Output(segments: segments, speakers: speakers)
         try printJSON(output)

@@ -216,6 +216,40 @@ def _non_asr_subprocess_env(extra_env: Optional[dict[str, str]] = None) -> dict[
     }
 
 
+def _steno_diarize_env(
+    extra_env: Optional[dict[str, str]] = None,
+    engine: Optional[str] = None,
+) -> dict[str, str]:
+    """Environment for every steno-diarize invocation.
+
+    Selects the sidecar's diarization engine (STENOAI_DIARIZE_ENGINE) so
+    ``model-status``, ``prepare-models`` and ``diarize`` always agree on which
+    model bundles are required. Precedence: an explicit ``engine`` argument
+    (Settings preparing a not-yet-saved choice), then an already-set
+    STENOAI_DIARIZE_ENGINE in the inherited environment (a developer
+    override), then the persisted ``diarization_engine`` setting. A config
+    read failure leaves the variable unset, which the sidecar resolves to its
+    Sortformer default.
+    """
+    engine_env: dict[str, str] = {}
+    if engine:
+        engine_env["STENOAI_DIARIZE_ENGINE"] = engine
+    elif not os.environ.get("STENOAI_DIARIZE_ENGINE", "").strip():
+        try:
+            from src.config import get_config
+            engine_env["STENOAI_DIARIZE_ENGINE"] = get_config().get_diarization_engine()
+        except Exception as exc:
+            # get_config() already recovers from a corrupt file, so anything
+            # landing here is unexpected -- log it, because the fallback
+            # silently diarizes with Sortformer whatever the user picked.
+            logger.warning(
+                "Could not read the diarization engine setting (%s); "
+                "steno-diarize will use its Sortformer default",
+                type(exc).__name__,
+            )
+    return _non_asr_subprocess_env({**engine_env, **(extra_env or {})})
+
+
 def _validate_openai_asr_api_key(api_key: str) -> str:
     """Accept only a bounded visible-ASCII bearer token without echoing it."""
     if (
@@ -1071,7 +1105,7 @@ def _run_steno_diarize(
         proc = subprocess.Popen(
             [binary, "diarize", str(channel_path)],
             stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-            env=_non_asr_subprocess_env(extra_env),
+            env=_steno_diarize_env(extra_env),
             **process_group_options,
         )
         stdout_chunks: list[bytes] = []

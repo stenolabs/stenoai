@@ -458,6 +458,10 @@ class Config:
     }
 
     VALID_TRANSCRIPTION_ENGINES = ("parakeet", "whisper", "openai-asr")
+    # Speaker-diarization engines the macOS steno-diarize sidecar accepts
+    # (its STENOAI_DIARIZE_ENGINE values). Sortformer (4 speaker slots) is the
+    # default; Nemotron 3 (8 slots) is opt-in and needs its own model download.
+    VALID_DIARIZATION_ENGINES = ("sortformer", "nemotron3")
 
     def __init__(self, config_path: Optional[Path] = None):
         """
@@ -1100,6 +1104,10 @@ class Config:
                 self.IDENTITY_MATCHING_PRIVACY_DEFAULT_VERSION,
             "whisper_model": "large-v3-turbo",
             "transcription_engine": "parakeet",
+            # macOS speaker diarization engine, see VALID_DIARIZATION_ENGINES.
+            # Settings -> Transcribe only persists "nemotron3" after its
+            # models are prepared, because meeting processing never downloads.
+            "diarization_engine": "sortformer",
             # OpenAI-compatible ASR endpoint settings.
             # api_url: base URL of any OpenAI Speech-to-Text compatible server
             #   (e.g. https://api.openai.com/v1 or Groq).
@@ -2256,6 +2264,28 @@ class Config:
             )
             return False
         self._config["transcription_engine"] = engine
+        return self._save()
+
+    def get_diarization_engine(self) -> str:
+        """Return the macOS speaker-diarization engine.
+
+        One of VALID_DIARIZATION_ENGINES. Falls back to 'sortformer' for
+        missing or unknown values so a hand-edited config can never select a
+        backend the sidecar rejects (it fails loudly on unknown engines).
+        """
+        value = self._config.get("diarization_engine", "sortformer")
+        return value if value in self.VALID_DIARIZATION_ENGINES else "sortformer"
+
+    def set_diarization_engine(self, engine: str) -> bool:
+        """Persist the speaker-diarization engine. Validates against
+        VALID_DIARIZATION_ENGINES."""
+        if engine not in self.VALID_DIARIZATION_ENGINES:
+            logger.error(
+                f"Invalid diarization engine: {engine}. "
+                f"Must be one of {self.VALID_DIARIZATION_ENGINES}"
+            )
+            return False
+        self._config["diarization_engine"] = engine
         return self._save()
 
     def get_whisper_model(self) -> str:

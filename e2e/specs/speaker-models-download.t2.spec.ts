@@ -1,5 +1,5 @@
 import { test, expect } from '../fixtures/electron';
-import { chmodSync, existsSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
@@ -18,7 +18,10 @@ type Status = { success: boolean; ready: boolean; error?: string };
 type Progress = { percent: number; phase: string };
 type StenoWindow = Window & {
   stenoai: {
-    setup: { speakerModelsStatus: () => Promise<Status>; speakerModels: () => Promise<Status> };
+    setup: {
+      speakerModelsStatus: () => Promise<Status>;
+      speakerModels: (engine?: string) => Promise<Status>;
+    };
     on: { speakerModelsProgress: (cb: (p: Progress) => void) => () => void };
   };
   __speakerProgress?: Progress[];
@@ -81,4 +84,50 @@ test('speaker model download relays sidecar progress and ends ready', async ({ l
   expect(existsSync(marker)).toBe(true);
   const after = await page.evaluate(() => (window as StenoWindow).stenoai.setup.speakerModelsStatus());
   expect(after).toMatchObject({ success: true, ready: true });
+});
+
+test('a download prepares the engine Settings asked for, not the saved one', async ({
+  launchApp,
+  userDataDir,
+}) => {
+  test.skip(process.platform !== 'darwin', 'speaker diarization models are macOS-only');
+
+  // The sidecar records the engine its environment selected. Downloads stream
+  // progress through their own runner, so this pins the engine reaching the
+  // sidecar on that path: renderer -> main.js -> CLI --engine -> sidecar env.
+  const engineFile = path.join(userDataDir, 'prepared-engine');
+  const ready = JSON.stringify({
+    ready: true,
+    cache_directory: path.join(userDataDir, 'models', 'speaker-diarization'),
+    required_models: [],
+    missing_models: [],
+  });
+  const fixtureDir = mkdtempSync(path.join(tmpdir(), 'stenoai-e2e-speaker-engine-'));
+  const script = path.join(fixtureDir, 'mock-steno-diarize.sh');
+  writeFileSync(script, [
+    '#!/usr/bin/env bash',
+    'set -euo pipefail',
+    'case "$1" in',
+    '  prepare-models)',
+    `    echo 'STENO_PROGRESS {"percent":10,"phase":"downloading"}' >&2`,
+    `    printf '%s' "\${STENOAI_DIARIZE_ENGINE:-}" > '${engineFile}'`,
+    `    echo '${ready}' ;;`,
+    '  *) exit 2 ;;',
+    'esac',
+    '',
+  ].join('\n'));
+  chmodSync(script, 0o755);
+
+  const { page } = await launchApp({ env: { STENOAI_DIARIZE_SIDECAR_PATH: script } });
+
+  const result = await page.evaluate(() =>
+    (window as StenoWindow).stenoai.setup.speakerModels('nemotron3'),
+  );
+  expect(result).toMatchObject({ success: true, ready: true });
+  expect(readFileSync(engineFile, 'utf8')).toBe('nemotron3');
+
+  const rejected = await page.evaluate(() =>
+    (window as StenoWindow).stenoai.setup.speakerModels('pyannote'),
+  );
+  expect(rejected).toMatchObject({ success: false, ready: false });
 });

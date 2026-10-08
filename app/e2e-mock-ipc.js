@@ -326,6 +326,13 @@ function install({ ipcMain }) {
     remoteUrl: '', // remote Ollama URL (empty = not configured)
     autoInstallWhenIdle: true, // idle auto-install toggle (config default on)
     transcriptionEngine: process.env.STENOAI_E2E_MOCK_ENGINE || 'parakeet',
+    diarizationEngine: 'sortformer',
+    // STENOAI_E2E_SPEAKER_MODELS_MISSING=1 simulates an upgraded install whose
+    // speaker models predate the current cache layout: every engine reports
+    // its models missing until setup-speaker-models prepares THAT engine.
+    speakerModelsMissing: new Set(
+      process.env.STENOAI_E2E_SPEAKER_MODELS_MISSING === '1' ? ['sortformer', 'nemotron3'] : [],
+    ),
     openAiAsrUrl: 'https://api.openai.com/v1',
     openAiAsrModel: 'whisper-1',
     openAiAsrKeySet: process.env.STENOAI_E2E_OAI_ASR_KEY_SET === '1',
@@ -677,6 +684,20 @@ function install({ ipcMain }) {
       return { success: true, engine };
     },
 
+    'get-diarization-engine': async () => (
+      process.env.STENOAI_E2E_DIARIZATION_ENGINE_READ_FAILURE === '1'
+        ? { success: false, error: 'synthetic speaker detection setting read failure' }
+        : {
+            success: true,
+            engine: state.diarizationEngine,
+            valid_engines: ['sortformer', 'nemotron3'],
+          }
+    ),
+    'set-diarization-engine': async (_event, engine) => {
+      state.diarizationEngine = engine;
+      return { success: true, engine };
+    },
+
     // OpenAI-compatible ASR config. Shape-only for first paint; the real
     // set/get round-trip + key storage is covered by cloud-asr-config.t2.
     'get-openai-asr-config': async () => ({
@@ -1024,15 +1045,18 @@ function install({ ipcMain }) {
       }
       return { success: true, message: 'Parakeet model ready' };
     },
-    // Speaker models. STENOAI_E2E_SPEAKER_MODEL_FAILURE: missing, and the
-    // download fails. STENOAI_E2E_SPEAKER_MODELS_MISSING: missing, and the
-    // download emits a progress event then waits until the spec resolves it
-    // through global.__speakerModels.finish() (calls counts downloads, so a
-    // spec can assert that onboarding did not start one).
-    'speaker-model-status': async () => {
-      const state = global.__speakerModels ||= { calls: 0, ready: false, finish: null };
-      const missing = process.env.STENOAI_E2E_SPEAKER_MODEL_FAILURE === '1'
-        || (process.env.STENOAI_E2E_SPEAKER_MODELS_MISSING === '1' && !state.ready);
+    // Speaker models, per engine (state.speakerModelsMissing). Like the real
+    // CLI, no engine argument means the saved engine.
+    // STENOAI_E2E_SPEAKER_MODEL_FAILURE: the status check and the download
+    // both fail. STENOAI_E2E_SPEAKER_MODELS_MISSING: every engine starts
+    // missing, and a download emits a progress event then waits until the
+    // spec resolves it through global.__speakerModels.finish() (calls counts
+    // downloads, so a spec can assert that onboarding did not start one).
+    'speaker-model-status': async (_event, engine) => {
+      if (process.env.STENOAI_E2E_SPEAKER_MODEL_FAILURE === '1') {
+        return { success: false, ready: false, error: 'synthetic model status failure' };
+      }
+      const missing = state.speakerModelsMissing.has(engine || state.diarizationEngine);
       return {
         success: true,
         ready: !missing,
@@ -1041,12 +1065,13 @@ function install({ ipcMain }) {
         missing_models: missing ? ['model'] : [],
       };
     },
-    'setup-speaker-models': async (event) => {
-      const state = global.__speakerModels ||= { calls: 0, ready: false, finish: null };
-      state.calls++;
+    'setup-speaker-models': async (event, engine) => {
+      const downloads = global.__speakerModels ||= { calls: 0, finish: null, inFlight: new Map() };
+      downloads.calls++;
       if (process.env.STENOAI_E2E_SPEAKER_MODEL_FAILURE === '1') {
         return { success: false, ready: false, error: 'synthetic model setup failure' };
       }
+      const target = engine || state.diarizationEngine;
       const ready = {
         success: true,
         ready: true,
@@ -1054,14 +1079,20 @@ function install({ ipcMain }) {
         required_models: [],
         missing_models: [],
       };
-      if (process.env.STENOAI_E2E_SPEAKER_MODELS_MISSING !== '1') return ready;
+      if (!state.speakerModelsMissing.has(target)) return ready;
       const wc = event && event.sender;
       if (wc && !wc.isDestroyed()) wc.send('speaker-models-progress', { percent: 37, phase: 'downloading' });
-      // Like main.js, concurrent callers share one in-flight download.
-      state.inFlight ||= new Promise((resolve) => {
-        state.finish = () => { state.ready = true; state.inFlight = null; resolve(ready); };
-      });
-      return state.inFlight;
+      // Like main.js, concurrent callers for one engine share its download.
+      if (!downloads.inFlight.has(target)) {
+        downloads.inFlight.set(target, new Promise((resolve) => {
+          downloads.finish = () => {
+            state.speakerModelsMissing.delete(target);
+            downloads.inFlight.delete(target);
+            resolve(ready);
+          };
+        }));
+      }
+      return downloads.inFlight.get(target);
     },
     'setup-ollama-and-model': async (event) => {
       if (process.env.STENOAI_E2E_SETUP_PROGRESS === '1') {

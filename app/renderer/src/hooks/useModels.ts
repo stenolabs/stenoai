@@ -1,7 +1,15 @@
 import * as React from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ipc, type ListedModel, type TranscriptionEngine, type ParakeetPullProgressEvent } from '@/lib/ipc';
+import {
+  ipc,
+  type DiarizationEngine,
+  type ListedModel,
+  type TranscriptionEngine,
+  type ParakeetPullProgressEvent,
+  type SpeakerModelsProgressEvent,
+} from '@/lib/ipc';
 import { unwrap } from '@/lib/result';
+import { speakerModelsStatusKey } from '@/hooks/useSpeakerModels';
 import { PARAKEET_LANGUAGE_CODES } from '@/lib/transcription-languages';
 
 export const modelsKeys = {
@@ -25,6 +33,14 @@ export const parakeetKeys = {
 export const transcriptionEngineKeys = {
   all: ['transcriptionEngine'] as const,
   current: () => [...transcriptionEngineKeys.all, 'current'] as const,
+};
+
+export const diarizationEngineKeys = {
+  all: ['diarizationEngine'] as const,
+  current: () => [...diarizationEngineKeys.all, 'current'] as const,
+  // Under the shared speaker-models status prefix, so onboarding's
+  // invalidation after its download also refreshes Settings.
+  models: (engine: DiarizationEngine) => [...speakerModelsStatusKey, engine] as const,
 };
 
 export const openaiAsrKeys = {
@@ -549,6 +565,118 @@ export function useTranscriptionEngine() {
     queryFn: async (): Promise<TranscriptionEngine> => {
       const raw = unwrap(await ipc().transcriptionEngine.get());
       return raw.engine;
+    },
+  });
+}
+
+export function useDiarizationEngine() {
+  return useQuery({
+    queryKey: diarizationEngineKeys.current(),
+    queryFn: async (): Promise<DiarizationEngine> =>
+      unwrap(await ipc().diarizationEngine.get()).engine,
+  });
+}
+
+/**
+ * Whether `engine`'s speaker-detection models are on disk: 'unavailable'
+ * when this build has no speaker sidecar, 'unknown' when the check itself
+ * failed (a download, which re-checks, can still be offered). Read-only: it
+ * never downloads anything.
+ */
+export type DiarizationModelsState = 'ready' | 'missing' | 'unavailable' | 'unknown';
+
+const SPEAKER_SIDECAR_UNAVAILABLE = 'Speaker diarization is unavailable on this system';
+
+export function useDiarizationModelsState(engine: DiarizationEngine | undefined) {
+  return useQuery({
+    queryKey: diarizationEngineKeys.models(engine ?? 'sortformer'),
+    enabled: engine !== undefined,
+    queryFn: async (): Promise<DiarizationModelsState> => {
+      const status = await ipc().setup.speakerModelsStatus(engine);
+      if (status.success) return status.ready ? 'ready' : 'missing';
+      return status.error === SPEAKER_SIDECAR_UNAVAILABLE ? 'unavailable' : 'unknown';
+    },
+    // Each check spawns the backend and the sidecar; the answer only changes
+    // when a download finishes, which updates it directly.
+    staleTime: 5 * 60_000,
+    refetchOnWindowFocus: false,
+  });
+}
+
+/**
+ * Download one engine's speaker-detection models, streaming
+ * 'speaker-models-progress' events while it runs. main.js shares one download
+ * per engine between onboarding and Settings, so starting it twice is
+ * harmless. `progress` also reflects a download useSetDiarizationEngine
+ * starts; call `clearProgress` before starting one so a finished run's last
+ * event never shows.
+ */
+export function useDownloadDiarizationModels() {
+  const qc = useQueryClient();
+  const [progress, setProgress] = React.useState<SpeakerModelsProgressEvent | null>(null);
+  React.useEffect(() => ipc().on.speakerModelsProgress(setProgress), []);
+  const clearProgress = React.useCallback(() => setProgress(null), []);
+
+  const download = useMutation({
+    mutationFn: async (engine: DiarizationEngine) => {
+      setProgress(null);
+      const res = await ipc().setup.speakerModels(engine);
+      if (!res.success || !res.ready) throw new Error(res.success ? 'not ready' : res.error);
+      return res;
+    },
+    // Ready immediately, so the Download button can't flash back while the
+    // refetch is in flight.
+    onSuccess: (_res, engine) => qc.setQueryData(diarizationEngineKeys.models(engine), 'ready'),
+    onSettled: () => {
+      setProgress(null);
+      void qc.invalidateQueries({ queryKey: speakerModelsStatusKey });
+    },
+  });
+
+  return { progress, clearProgress, download };
+}
+
+/**
+ * Switch the macOS speaker-diarization engine, or re-prepare the current one.
+ * Meeting processing never downloads models, so whenever the target engine's
+ * models are missing they are downloaded first -- for Nemotron 3, and also for
+ * Sortformer, whose cache moved to FluidAudio 0.17's `sortformer/v3/fp16/`
+ * layout and must be re-downloaded by anyone upgrading from an older build.
+ * The choice is only saved once the models are ready; the backend refuses a
+ * non-default engine otherwise, so a failed download leaves the previous
+ * engine active.
+ */
+export function useSetDiarizationEngine() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (
+      engine: DiarizationEngine,
+    ): Promise<{ engine: DiarizationEngine; modelsConfirmed: boolean }> => {
+      const status = await ipc().setup.speakerModelsStatus(engine);
+      // A failed status check (no sidecar in a dev build) must not block the
+      // Sortformer default the backend accepts without models; Nemotron 3
+      // still goes through prepare, which fails loudly in that case.
+      const missing = status.success ? !status.ready : engine !== 'sortformer';
+      let modelsConfirmed = status.success && status.ready;
+      if (missing) {
+        const prepared = unwrap(await ipc().setup.speakerModels(engine));
+        if (!prepared.ready) throw new Error('Speaker detection models are not ready');
+        modelsConfirmed = true;
+      }
+      const saved = unwrap(await ipc().diarizationEngine.set(engine)).engine;
+      return { engine: saved, modelsConfirmed };
+    },
+    onSuccess: ({ engine, modelsConfirmed }) => {
+      qc.setQueryData(diarizationEngineKeys.current(), engine);
+      // Only cache readiness a status check or download actually confirmed;
+      // a Sortformer save past an unavailable sidecar proves nothing.
+      if (modelsConfirmed) {
+        qc.setQueryData(diarizationEngineKeys.models(engine), 'ready');
+      } else {
+        void qc.invalidateQueries({ queryKey: diarizationEngineKeys.models(engine) });
+      }
+      // Onboarding's status follows the saved engine, which just changed.
+      void qc.invalidateQueries({ queryKey: speakerModelsStatusKey, exact: true });
     },
   });
 }

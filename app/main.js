@@ -6646,7 +6646,18 @@ ipcMain.handle('startup-setup-check', async () => {
   }
 });
 
-async function runSpeakerModelCommand(command) {
+// Speaker-diarization engines the steno-diarize sidecar accepts. Mirrors
+// Config.VALID_DIARIZATION_ENGINES; checked here so a renderer-supplied value
+// can never reach the CLI argv as anything but a known engine name.
+const DIARIZATION_ENGINES = ['sortformer', 'nemotron3'];
+
+function isDiarizationEngine(value) {
+  return typeof value === 'string' && DIARIZATION_ENGINES.includes(value);
+}
+
+// `engine` (optional) targets that engine's models instead of the saved
+// setting -- Settings prepares a choice before persisting it.
+async function runSpeakerModelCommand(command, engine) {
   if (process.platform !== 'darwin') {
     return {
       success: false,
@@ -6654,13 +6665,20 @@ async function runSpeakerModelCommand(command) {
       error: 'Speaker diarization is unavailable on this system',
     };
   }
-  const output = await runPythonScript('simple_recorder.py', [command]);
+  const args = [command];
+  if (engine !== undefined && engine !== null) {
+    if (!isDiarizationEngine(engine)) {
+      return { success: false, ready: false, error: 'Unknown speaker detection engine' };
+    }
+    args.push('--engine', engine);
+  }
+  const output = await runPythonScript('simple_recorder.py', args);
   return parseSpeakerModelStatusOutput(output);
 }
 
-ipcMain.handle('speaker-model-status', async () => {
+ipcMain.handle('speaker-model-status', async (event, engine) => {
   try {
-    return await runSpeakerModelCommand('speaker-model-status');
+    return await runSpeakerModelCommand('speaker-model-status', engine);
   } catch {
     sendDebugLog('Speaker diarization model status check failed');
     return {
@@ -6687,9 +6705,14 @@ const prepareSpeakerModels = createSpeakerModelPreparer({
   },
 });
 
-ipcMain.handle('setup-speaker-models', async () => {
+// `engine` (optional) downloads that engine's models instead of the saved
+// setting's -- Settings prepares a choice before persisting it.
+ipcMain.handle('setup-speaker-models', async (event, engine) => {
+  if (engine !== undefined && engine !== null && !isDiarizationEngine(engine)) {
+    return { success: false, ready: false, error: 'Unknown speaker detection engine' };
+  }
   sendDebugLog('Preparing local speaker diarization models...');
-  const result = await prepareSpeakerModels();
+  const result = await prepareSpeakerModels(engine ?? undefined);
   sendDebugLog(result.success && result.ready
     ? 'Speaker diarization models ready'
     : 'Speaker diarization model setup failed');
@@ -8237,6 +8260,31 @@ ipcMain.handle('set-transcription-engine', async (event, engine) => {
     const result = await runPythonScript('simple_recorder.py', ['set-transcription-engine', engine]);
     const jsonData = JSON.parse(result.trim());
     trackEvent('model_changed', { model: engine, kind: 'transcription_engine' });
+    return { success: true, ...jsonData };
+  } catch (e) { return { success: false, error: e.message }; }
+});
+
+ipcMain.handle('get-diarization-engine', async () => {
+  try {
+    const result = await runPythonScript('simple_recorder.py', ['get-diarization-engine'], true);
+    const jsonData = JSON.parse(result.trim());
+    return { success: true, ...jsonData };
+  } catch (e) { return { success: false, error: e.message }; }
+});
+
+// The CLI refuses to save a non-default engine whose models are not ready
+// (success: false, models_ready: false); the renderer prepares them first
+// via setup-speaker-models.
+ipcMain.handle('set-diarization-engine', async (event, engine) => {
+  if (!isDiarizationEngine(engine)) {
+    return { success: false, error: 'Unknown speaker detection engine' };
+  }
+  try {
+    const result = await runPythonScript('simple_recorder.py', ['set-diarization-engine', engine]);
+    const jsonData = JSON.parse(result.trim());
+    if (jsonData.success) {
+      trackEvent('model_changed', { model: engine, kind: 'diarization_engine' });
+    }
     return { success: true, ...jsonData };
   } catch (e) { return { success: false, error: e.message }; }
 });

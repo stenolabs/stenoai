@@ -2548,5 +2548,53 @@ class RunStenoDiarizeTests(unittest.TestCase):
         self.assertIsNotNone(result)
 
 
+
+class StenoDiarizeEngineEnvTests(unittest.TestCase):
+    """Every steno-diarize invocation carries the engine the user picked, so
+    model-status, prepare-models and diarize agree on the required models."""
+
+    def setUp(self):
+        env = patch.dict(os.environ, {}, clear=False)
+        env.start()
+        self.addCleanup(env.stop)
+        os.environ.pop("STENOAI_DIARIZE_ENGINE", None)
+
+    def test_saved_engine_is_passed_to_the_sidecar(self):
+        with patch("src.config.get_config") as get_config:
+            get_config.return_value.get_diarization_engine.return_value = "nemotron3"
+            env = transcriber_mod._steno_diarize_env()
+        self.assertEqual(env["STENOAI_DIARIZE_ENGINE"], "nemotron3")
+
+    def test_explicit_engine_wins_over_saved_setting_and_environment(self):
+        os.environ["STENOAI_DIARIZE_ENGINE"] = "sortformer"
+        with patch("src.config.get_config") as get_config:
+            get_config.return_value.get_diarization_engine.return_value = "sortformer"
+            env = transcriber_mod._steno_diarize_env(engine="nemotron3")
+        self.assertEqual(env["STENOAI_DIARIZE_ENGINE"], "nemotron3")
+
+    def test_developer_environment_override_wins_over_saved_setting(self):
+        os.environ["STENOAI_DIARIZE_ENGINE"] = "nemotron3"
+        with patch("src.config.get_config") as get_config:
+            get_config.return_value.get_diarization_engine.return_value = "sortformer"
+            env = transcriber_mod._steno_diarize_env()
+        self.assertEqual(env["STENOAI_DIARIZE_ENGINE"], "nemotron3")
+
+    def test_config_read_failure_leaves_the_sidecar_default_and_is_logged(self):
+        with patch("src.config.get_config", side_effect=OSError("unreadable config")), \
+             self.assertLogs(transcriber_mod.logger, level="WARNING") as logs:
+            env = transcriber_mod._steno_diarize_env()
+        self.assertNotIn("STENOAI_DIARIZE_ENGINE", env)
+        self.assertIn("Sortformer default", logs.output[0])
+
+    def test_extra_env_is_merged_and_cloud_credentials_are_stripped(self):
+        os.environ["STENOAI_OAI_API_KEY"] = "sk-secret"
+        with patch("src.config.get_config") as get_config:
+            get_config.return_value.get_diarization_engine.return_value = "sortformer"
+            env = transcriber_mod._steno_diarize_env({"STENOAI_DIARIZE_COMPUTE_UNITS": "cpuAndGPU"})
+        self.assertEqual(env["STENOAI_DIARIZE_COMPUTE_UNITS"], "cpuAndGPU")
+        self.assertEqual(env["STENOAI_DIARIZE_ENGINE"], "sortformer")
+        self.assertNotIn("STENOAI_OAI_API_KEY", env)
+
+
 if __name__ == '__main__':
     unittest.main()

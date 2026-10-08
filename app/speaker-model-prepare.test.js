@@ -22,9 +22,10 @@ function setup(platform = 'darwin') {
     getBackendPath: () => '/synthetic/backend',
     getBackendCwd: () => '/synthetic',
     spawn: (_bin, args, opts) => {
-      assert.deepEqual(args, ['prepare-speaker-models']);
+      assert.equal(args[0], 'prepare-speaker-models');
       assert.equal(opts.cwd, '/synthetic');
       const proc = new EventEmitter();
+      proc.args = args;
       proc.stdout = new EventEmitter();
       proc.stderr = new EventEmitter();
       procs.push(proc);
@@ -97,6 +98,35 @@ test('concurrent requests share one download; a later request starts a new one',
   assert.equal(procs.length, 2);
   procs[1].emit('close', 1);
   assert.equal((await third).success, false);
+});
+
+test('the engine reaches the backend; omitted means the saved setting', async () => {
+  const { prepare, procs } = setup();
+  const saved = prepare();
+  assert.deepEqual(procs[0].args, ['prepare-speaker-models']);
+  procs[0].emit('close', 0);
+  await saved;
+  const nemotron = prepare('nemotron3');
+  assert.deepEqual(procs[1].args, ['prepare-speaker-models', '--engine', 'nemotron3']);
+  procs[1].emit('close', 0);
+  await nemotron;
+});
+
+test('a different engine waits for the running download instead of racing it', async () => {
+  const { prepare, procs } = setup();
+  const sortformer = prepare('sortformer');
+  const nemotron = prepare('nemotron3');
+  const nemotronAgain = prepare('nemotron3');
+  assert.equal(procs.length, 1);
+  procs[0].stdout.emit('data', Buffer.from(`${READY}\n`));
+  procs[0].emit('close', 0);
+  assert.equal((await sortformer).ready, true);
+  await new Promise(setImmediate);
+  assert.equal(procs.length, 2);
+  assert.deepEqual(procs[1].args, ['prepare-speaker-models', '--engine', 'nemotron3']);
+  procs[1].emit('close', 1);
+  assert.equal(await nemotron, await nemotronAgain);
+  assert.equal((await nemotron).success, false);
 });
 
 test('non-macOS never spawns the backend', async () => {

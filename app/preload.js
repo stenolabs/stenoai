@@ -92,8 +92,8 @@ const stenoai = {
     check: () => invoke('startup-setup-check'),
     ollamaAndModel: () => invoke('setup-ollama-and-model'),
     parakeet: () => invoke('setup-parakeet'),
-    speakerModelsStatus: () => invoke('speaker-model-status'),
-    speakerModels: () => invoke('setup-speaker-models'),
+    speakerModelsStatus: (engine) => invoke('speaker-model-status', engine ?? null),
+    speakerModels: (engine) => invoke('setup-speaker-models', engine ?? null),
     test: () => invoke('setup-test'),
     triggerWizard: () => invoke('trigger-setup-wizard'),
   },
@@ -270,6 +270,11 @@ const stenoai = {
   transcriptionEngine: {
     get: () => invoke('get-transcription-engine'),
     set: (engine) => invoke('set-transcription-engine', engine),
+  },
+
+  diarizationEngine: {
+    get: () => invoke('get-diarization-engine'),
+    set: (engine) => invoke('set-diarization-engine', engine),
   },
 
   openaiAsr: {

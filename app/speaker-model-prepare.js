@@ -13,17 +13,20 @@ function isProgress(value) {
 
 /**
  * Runs `prepare-speaker-models` and relays its SPEAKER_MODELS_PROGRESS lines
- * through `onProgress` ({ percent, phase }). Only one download runs at a time:
- * a second call while one is in flight (onboarding and Settings both offer the
- * download) shares the same promise instead of racing two writers into the
- * same model cache.
+ * through `onProgress` ({ percent, phase }). `engine` (a validated engine name,
+ * or omitted for the saved setting) picks whose models to download. Only one
+ * download runs at a time, because every engine also writes the shared
+ * embedding models: a second call for the same engine while one is in flight
+ * (onboarding and Settings both offer the download) shares its promise, and a
+ * call for a different engine waits for it to finish.
  */
 function createSpeakerModelPreparer({
   spawn, getBackendPath, getBackendCwd, makeLineReader, onProgress, onLog = () => {}, platform,
 }) {
-  let inFlight = null;
+  const inFlight = new Map();
+  let queue = null;
 
-  function run() {
+  function run(engine) {
     if (platform !== 'darwin') {
       return Promise.resolve({
         success: false,
@@ -32,7 +35,8 @@ function createSpeakerModelPreparer({
       });
     }
     return new Promise((resolve) => {
-      const proc = spawn(getBackendPath(), ['prepare-speaker-models'], { stdio: 'pipe', cwd: getBackendCwd() });
+      const args = engine ? ['prepare-speaker-models', '--engine', engine] : ['prepare-speaker-models'];
+      const proc = spawn(getBackendPath(), args, { stdio: 'pipe', cwd: getBackendCwd() });
       const reader = makeLineReader();
       let stdout = '';
       proc.stdout.on('data', (data) => {
@@ -64,11 +68,17 @@ function createSpeakerModelPreparer({
     });
   }
 
-  return function prepare() {
-    if (!inFlight) {
-      inFlight = run().finally(() => { inFlight = null; });
+  return function prepare(engine) {
+    const key = engine || '';
+    if (!inFlight.has(key)) {
+      // Start right away when idle. run() never rejects, so a queued
+      // download can't stall behind a failed one.
+      const started = inFlight.size === 0 ? run(engine) : queue.then(() => run(engine));
+      const pending = started.finally(() => inFlight.delete(key));
+      inFlight.set(key, pending);
+      queue = pending;
     }
-    return inFlight;
+    return inFlight.get(key);
   };
 }
 

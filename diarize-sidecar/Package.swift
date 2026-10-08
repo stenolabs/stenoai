@@ -5,7 +5,7 @@ let package = Package(
     name: "diarize-sidecar",
     platforms: [.macOS(.v14)],
     dependencies: [
-        .package(url: "https://github.com/FluidInference/FluidAudio.git", from: "0.15.2"),
+        .package(url: "https://github.com/FluidInference/FluidAudio.git", from: "0.17.1"),
     ],
     targets: [
         .target(
@@ -26,7 +26,10 @@ let package = Package(
         ),
         .testTarget(
             name: "DiarizationCoreTests",
-            dependencies: ["DiarizationCore"],
+            dependencies: [
+                "DiarizationCore",
+                .product(name: "FluidAudio", package: "FluidAudio"),
+            ],
             path: "Tests/DiarizationCoreTests"
         ),
     ]

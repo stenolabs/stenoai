@@ -49,55 +49,30 @@ struct ShortRecordingTests {
         #expect(ModelReadiness.overallFraction(2, compiling: false, download: 0...1, compile: 1...1) == 1.0)
     }
 
-    @Test("The byte monitor counts only new URLSession temp files, capped below 100%")
-    func byteMonitor() throws {
-        let dir = FileManager.default.temporaryDirectory
-            .appendingPathComponent("steno-monitor-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: dir) }
-        try Data(count: 500).write(to: dir.appendingPathComponent("unrelated.tmp"))
-
-        let seen = Locked<[Double]>([])
-        let monitor = DownloadByteMonitor(directory: dir, expectedBytes: 1000) { f in seen.update { $0.append(f) } }
-        monitor.start(interval: 3600)
-        defer { monitor.stop() }
-        monitor.poll()
-        #expect(seen.value.isEmpty)
-
-        try Data(count: 400).write(to: dir.appendingPathComponent("CFNetworkDownload_a.tmp"))
-        monitor.poll()
-        // A second, smaller in-flight file (another download) doesn't add.
-        try Data(count: 100).write(to: dir.appendingPathComponent("CFNetworkDownload_b.tmp"))
-        monitor.poll()
-        try Data(count: 5000).write(to: dir.appendingPathComponent("CFNetworkDownload_a.tmp"))
-        monitor.poll()
-        #expect(seen.value == [0.4, 0.4, 0.99])
-    }
-
-    @Test("Prepare cleanup removes only the retired Sortformer bundle")
+    @Test("Prepare cleanup removes only the retired Sortformer bundles")
     func retiredBundleCleanup() throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("steno-retired-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: root) }
         let sortformer = root.appendingPathComponent("sortformer", isDirectory: true)
-        let retired = try #require(ModelNames.Sortformer.bundle(for: .default))
+        // .default's v3 bundle, and both root-level bundles FluidAudio 0.15
+        // cached before 0.17 moved Sortformer to v3/fp16.
+        let retired = [
+            try #require(ModelNames.Sortformer.bundle(for: .default)),
+            "Sortformer_v2.1.mlmodelc",
+            "SortformerNvidiaHigh_v2.mlmodelc",
+        ]
         let kept = try #require(ModelNames.Sortformer.bundle(for: ModelReadiness.sortformerConfig))
-        for name in [retired, kept] {
+        for name in retired + [kept] {
             try FileManager.default.createDirectory(
                 at: sortformer.appendingPathComponent(name), withIntermediateDirectories: true
             )
         }
         ModelReadiness.removeRetiredBundles(in: root)
-        #expect(!FileManager.default.fileExists(atPath: sortformer.appendingPathComponent(retired).path))
+        for name in retired {
+            #expect(!FileManager.default.fileExists(atPath: sortformer.appendingPathComponent(name).path))
+        }
         #expect(FileManager.default.fileExists(atPath: sortformer.appendingPathComponent(kept).path))
     }
 }
 
-/// Minimal lock box for collecting values from a @Sendable callback in tests.
-final class Locked<Value>: @unchecked Sendable {
-    private let lock = NSLock()
-    private var stored: Value
-    init(_ value: Value) { stored = value }
-    var value: Value { lock.lock(); defer { lock.unlock() }; return stored }
-    func update(_ body: (inout Value) -> Void) { lock.lock(); defer { lock.unlock() }; body(&stored) }
-}

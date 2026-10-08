@@ -1,46 +1,19 @@
-import * as React from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ipc, type SpeakerModelsProgressEvent } from '@/lib/ipc';
+import { useQuery } from '@tanstack/react-query';
+import { ipc } from '@/lib/ipc';
 
+/** Prefix of every speaker-models status query: this hook's (the saved
+ *  engine's) and Settings' per-engine ones (diarizationEngineKeys.models), so
+ *  one invalidation refreshes them all. */
 export const speakerModelsStatusKey = ['speakerModels', 'status'] as const;
-const statusKey = speakerModelsStatusKey;
 
-/** macOS speaker-separation models: whether they are on disk, and a download
- *  that streams progress. main.js shares one download between onboarding and
- *  Settings, so starting it twice is harmless. */
+/** Whether the saved engine's macOS speaker models are on disk (onboarding). */
 export function useSpeakerModelsStatus() {
   return useQuery({
-    queryKey: statusKey,
+    queryKey: speakerModelsStatusKey,
     queryFn: () => ipc().setup.speakerModelsStatus(),
     // Each check spawns the backend and the sidecar; the answer only changes
-    // when a download finishes, which updates it below.
+    // when a download finishes, which invalidates it.
     staleTime: 5 * 60_000,
     refetchOnWindowFocus: false,
   });
-}
-
-export function useSpeakerModels() {
-  const queryClient = useQueryClient();
-  const status = useSpeakerModelsStatus();
-
-  const [progress, setProgress] = React.useState<SpeakerModelsProgressEvent | null>(null);
-  React.useEffect(() => ipc().on.speakerModelsProgress(setProgress), []);
-
-  const download = useMutation({
-    mutationFn: async () => {
-      setProgress(null);
-      const res = await ipc().setup.speakerModels();
-      if (!res.success || !res.ready) throw new Error(res.success ? 'not ready' : res.error);
-      return res;
-    },
-    // Ready immediately, so the Download button can't flash back while the
-    // refetch is in flight.
-    onSuccess: (res) => queryClient.setQueryData(statusKey, res),
-    onSettled: () => {
-      setProgress(null);
-      void queryClient.invalidateQueries({ queryKey: statusKey });
-    },
-  });
-
-  return { status, progress, download };
 }
