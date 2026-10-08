@@ -1,5 +1,5 @@
 'use strict';
-const { test } = require('node:test');
+const { after, test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -9,8 +9,14 @@ const {
   reprepareSpeakerModelsAfterUpgrade,
 } = require('./speaker-model-upgrade');
 
+const fixtures = [];
+after(() => {
+  for (const dir of fixtures) fs.rmSync(dir, { recursive: true, force: true });
+});
+
 function userData({ legacy }) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'steno-upgrade-'));
+  fixtures.push(dir);
   if (legacy) {
     fs.mkdirSync(
       path.join(dir, 'models', 'speaker-diarization', 'sortformer', 'SortformerNvidiaHigh_v2.mlmodelc'),
@@ -26,7 +32,7 @@ function run(overrides) {
   const calls = { status: 0, prepare: 0 };
   const promise = reprepareSpeakerModelsAfterUpgrade({
     platform: 'darwin',
-    userDataDir: userData({ legacy: true }),
+    userDataDir: overrides.userDataDir ?? userData({ legacy: true }),
     env: {},
     checkStatus: async () => { calls.status++; return MISSING; },
     prepare: async () => { calls.prepare++; return { success: true, ready: true }; },
@@ -59,9 +65,15 @@ test('ready models, a failed check, or a failed status call download nothing', a
   }
 });
 
-test('a failed download reports false so the next launch retries', async () => {
-  const { promise } = run({ prepare: async () => ({ success: false, ready: false, error: 'offline' }) });
-  assert.equal(await promise, false);
+test('a failed or throwing download reports false so the next launch retries', async () => {
+  for (const prepare of [
+    async () => ({ success: false, ready: false, error: 'offline' }),
+    // Startup discards the promise and main.js exits on unhandled rejections.
+    async () => { throw new Error('spawn EACCES'); },
+  ]) {
+    const { promise } = run({ prepare });
+    assert.equal(await promise, false);
+  }
 });
 
 test('off macOS, or under a model-dir override, nothing runs', async () => {

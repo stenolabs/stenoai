@@ -31,7 +31,7 @@ function hasLegacySpeakerModelCache(userDataDir, env = process.env) {
  * in Settings. A cheap file check comes first, so installs without the old
  * cache never start the backend; the sidecar's own status then decides. A
  * failed download leaves the old bundle in place, so the next launch retries.
- * Resolves to whether a download ran and ended ready.
+ * Resolves to whether a download ran and ended ready; never rejects.
  */
 async function reprepareSpeakerModelsAfterUpgrade({
   platform, userDataDir, env, checkStatus, prepare, onLog = () => {},
@@ -45,7 +45,14 @@ async function reprepareSpeakerModelsAfterUpgrade({
   }
   if (!status || !status.success || status.ready) return false;
   onLog('Speaker models predate this version; downloading them again in the background');
-  const result = await prepare();
+  // Never reject: startup discards this promise, and main.js exits the app
+  // on an unhandled rejection. A failure here is just a retry next launch.
+  let result;
+  try {
+    result = await prepare();
+  } catch (_) {
+    result = null;
+  }
   const ready = Boolean(result && result.success && result.ready);
   onLog(ready
     ? 'Speaker models downloaded again after the upgrade'
