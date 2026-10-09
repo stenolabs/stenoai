@@ -241,6 +241,11 @@ export function useSystemAudioCapture() {
         let noInputDeviceErr: DOMException | null = null;
         const isNoInputDevice = (e: unknown): e is DOMException =>
           e instanceof DOMException && e.name === 'NotFoundError';
+        // Linux only: lets the pw-record onEnded handler tell "the only source
+        // died mid-recording" (stop it) from "died while still starting" (fail
+        // the start).
+        let recorderStarted = false;
+        let onlySourceEndedEarly = false;
         try {
           micStream = await navigator.mediaDevices.getUserMedia({
             audio: {
@@ -325,8 +330,14 @@ export function useSystemAudioCapture() {
                 // System-audio-only: that was the ONLY source, so from here on
                 // the recording would be pure silence, indefinitely if silence
                 // auto-stop is off. Stop it the normal way instead, which keeps
-                // and processes what was captured so far.
+                // and processes what was captured so far. Before the recorder
+                // is running there is nothing to keep, and a global stop would
+                // race this start; flag it and let the start fail below.
                 if (cancelled() || !activeRef.current) return;
+                if (!recorderStarted) {
+                  onlySourceEndedEarly = true;
+                  return;
+                }
                 appendDebugLog('[linux-loopback] only audio source lost; stopping the recording');
                 void bridge.recording.stop().catch(() => { /* logged by main */ });
               },
@@ -549,6 +560,10 @@ export function useSystemAudioCapture() {
         if (!opened.success) {
           throw new Error(opened.error || 'Could not open recording file');
         }
+        // The only source (Linux pw-record, system-audio-only) died while we
+        // were still starting: nothing left to record, so this is the no-mic,
+        // no-system-audio case after all. The catch below closes the file.
+        if (onlySourceEndedEarly && noInputDeviceErr) throw noInputDeviceErr;
 
         const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
           ? 'audio/webm;codecs=opus'
@@ -594,6 +609,7 @@ export function useSystemAudioCapture() {
         // 1s timeslice so a crash mid-recording loses at most ~1s of audio.
         recorder.start(1_000);
         recorderRef.current = recorder;
+        recorderStarted = true;
 
         // 5. Silence-auto-stop detector. Taps each pre-merge source with its
         //    own AnalyserNode so we can distinguish "mic active" from

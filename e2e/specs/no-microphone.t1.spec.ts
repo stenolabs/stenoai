@@ -38,16 +38,17 @@ const ipcSends = (app: import('@playwright/test').ElectronApplication) =>
 const sendsOn = (sends: Send[], channel: string) => sends.filter((s) => s.channel === channel);
 
 /**
- * Replace the capture getUserMedia with one that rejects with `micError`, and
- * getDisplayMedia with either a synthetic loopback stream or a rejection.
- * Non-capture getUserMedia calls (if any) pass through untouched.
+ * Replace getUserMedia with one that rejects every audio request with
+ * `micError`, and getDisplayMedia with either a synthetic loopback stream or a
+ * rejection. Every audio request, not just the capture one: the level meter
+ * (useAudioLevel) asks too, and passing it through would reach the host's real
+ * microphone. Only the capture requests are logged.
  */
 async function stubMedia(
   page: import('@playwright/test').Page,
   opts: { micError: string; loopback: 'available' | 'denied'; pinnedError?: string }
 ) {
   await page.evaluate(({ micError, loopback, pinnedError }) => {
-    const original = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
     Object.defineProperty(navigator.mediaDevices, 'getUserMedia', {
       configurable: true,
       value: (constraints?: MediaStreamConstraints) => {
@@ -57,7 +58,9 @@ async function stubMedia(
           audio !== null &&
           audio.echoCancellation === true &&
           audio.noiseSuppression === false;
-        if (!isCaptureRequest) return original(constraints);
+        if (!isCaptureRequest) {
+          return Promise.reject(new DOMException('Requested device not found', micError));
+        }
         const log = ((window as typeof window & { __micRequests?: boolean[] }).__micRequests ??= []);
         log.push('deviceId' in audio);
         // A request for the pinned device (exact deviceId) can fail
@@ -210,4 +213,51 @@ test('on Linux, losing the only audio source stops a system-audio-only recording
   // would be false here, is not shown.
   await expect.poll(async () => ipcCalls(app)).toContain('stop-recording-ui');
   expect(await ipcCalls(app)).not.toContain('show-system-audio-mic-only-notification');
+});
+
+test('on Linux, losing the only audio source while still starting fails the start', async ({
+  launchApp,
+}) => {
+  const { app, page } = await launchApp({
+    mockIpc: true,
+    env: { ...WIN_ENV, STENOAI_E2E_RENDERER_PLATFORM: 'linux' },
+  });
+  await stubMedia(page, { micError: 'NotFoundError', loopback: 'available' });
+  // Park the start after loopback is up but before a recorder exists.
+  await app.evaluate(() => {
+    (global as unknown as { __holdNextOpenSystemAudioFile: boolean }).__holdNextOpenSystemAudioFile =
+      true;
+  });
+
+  await page.evaluate(() => window.stenoai.recording.start('Linux early end note'));
+  await expect
+    .poll(() =>
+      app.evaluate(() =>
+        Boolean((global as unknown as { __releaseOpenSystemAudioFile?: () => void })
+          .__releaseOpenSystemAudioFile)
+      )
+    )
+    .toBe(true);
+
+  await emitLoopbackEnded(app, { code: 1, signal: null });
+  await app.evaluate(() =>
+    (global as unknown as { __releaseOpenSystemAudioFile: () => void }).__releaseOpenSystemAudioFile()
+  );
+
+  // No global stop racing the start: the start itself fails, naming the
+  // missing microphone, and cleans up after itself.
+  // The inactive report is the start's LAST step, so wait for it.
+  await expect
+    .poll(async () =>
+      sendsOn(await ipcSends(app), 'system-audio-recording-state').map((s) => s.args[0])
+    )
+    .toEqual([false]);
+  const sends = await ipcSends(app);
+  expect(sendsOn(sends, 'recording-capture-error')).toHaveLength(1);
+  expect(sendsOn(sends, 'recording-capture-error')[0].args[1]).toBe('NotFoundError');
+  expect(sendsOn(sends, 'live-transcribe-stop')).toHaveLength(1);
+  const calls = await ipcCalls(app);
+  expect(calls).not.toContain('stop-recording-ui');
+  expect(calls).toContain('close-system-audio-file');
+  expect(calls).not.toContain('show-system-audio-only-notification');
 });

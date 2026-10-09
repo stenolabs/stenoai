@@ -569,6 +569,15 @@ function install({ ipcMain }) {
     // undefined, making the renderer's bytesPerFrame NaN. Mirror the real
     // handler's shape (main.js start-linux-loopback) instead.
     'start-linux-loopback': async () => ({ success: true, sampleRate: 48000, channels: 2 }),
+    // A spec sets global.__holdNextOpenSystemAudioFile (via app.evaluate) to
+    // park a capture start mid-way, then calls global.__releaseOpenSystemAudioFile.
+    'open-system-audio-file': async () => {
+      if (!global.__holdNextOpenSystemAudioFile) return { success: true };
+      global.__holdNextOpenSystemAudioFile = false;
+      return new Promise((resolve) => {
+        global.__releaseOpenSystemAudioFile = () => resolve({ success: true });
+      });
+    },
     'start-recording-ui': async (_event, name, _trigger, appendTo) => {
       rec.active = true;
       rec.paused = false;
