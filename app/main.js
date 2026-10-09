@@ -9060,6 +9060,34 @@ ipcMain.handle('show-system-audio-mic-only-notification', async () => {
   }
 });
 
+// The mirror image (#517): no audio input device at all, so the recording runs
+// on system audio alone. Fired by useSystemAudioCapture.ts only once the
+// recorder is actually running; with no system audio either, the start fails
+// through recording-capture-error instead. Same notifications_enabled gate and
+// Settings click-through as the mic-only notice above.
+ipcMain.handle('show-system-audio-only-notification', async () => {
+  try {
+    if (!(await notificationsEnabled())) return { success: true, shown: false };
+    const notif = new Notification({
+      title: 'Recording system audio only',
+      body: "Steno couldn't find a microphone, so your own voice isn't being recorded.",
+      iconType: 'alert',
+    });
+    notif.on('click', () => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        exposeMainWindow();
+        mainWindow.webContents.send('tray-open-settings');
+      }
+    });
+    trackNotificationLifecycle(notif, 'system_audio_only');
+    notif.show();
+    return { success: true, shown: true };
+  } catch (e) {
+    sendDebugLog(`Failed to show system-audio-only notification: ${e.message}`);
+    return { success: false, error: e.message };
+  }
+});
+
 // Fired by the renderer's processing-complete handler when we skipped
 // auto-navigate (user was on a route other than /meetings/processing).
 // Clicking the banner is an explicit "take me there" from the user (unlike

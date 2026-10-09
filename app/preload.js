@@ -322,6 +322,7 @@ const stenoai = {
     showNoteReadyNotification: (payload) => invoke('show-note-ready-notification', payload),
     showTranscriptReadyNotification: (payload) => invoke('show-transcript-ready-notification', payload),
     showSystemAudioMicOnlyNotification: () => invoke('show-system-audio-mic-only-notification'),
+    showSystemAudioOnlyNotification: () => invoke('show-system-audio-only-notification'),
     // Design-for-test seam: the production fire path is the main-side scheduler
     // timer; this lets e2e drive the gate + suppression deterministically.
     showPremeetingNotification: (payload) => invoke('show-premeeting-notification', payload),

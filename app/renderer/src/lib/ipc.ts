@@ -1378,6 +1378,9 @@ export interface StenoaiBridge {
     /** Fired when an enabled loopback acquisition genuinely fails; not fired
      *  for the toggle-off or OS-unsupported cases. */
     showSystemAudioMicOnlyNotification: RequestFn<[], Result<Record<string, never>>>;
+    /** Fired when a recording starts with no audio input device and continues
+     *  on system audio alone (#517). */
+    showSystemAudioOnlyNotification: RequestFn<[], Result<Record<string, never>>>;
     showNoteReadyNotification: RequestFn<
       [
         payload: {
