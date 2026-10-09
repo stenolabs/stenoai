@@ -318,9 +318,17 @@ export function useSystemAudioCapture() {
               // below uses; the debug line above is the ungated record.
               onEnded: ({ code, signal }) => {
                 appendDebugLog(`[linux-loopback] capture ended (code=${code}, signal=${signal})`);
-                // "Continuing with the microphone only" would be false on a
-                // system-audio-only recording; the debug line is the record.
-                if (!noInputDeviceErr) void bridge.settings.showSystemAudioMicOnlyNotification();
+                if (!noInputDeviceErr) {
+                  void bridge.settings.showSystemAudioMicOnlyNotification();
+                  return;
+                }
+                // System-audio-only: that was the ONLY source, so from here on
+                // the recording would be pure silence, indefinitely if silence
+                // auto-stop is off. Stop it the normal way instead, which keeps
+                // and processes what was captured so far.
+                if (cancelled() || !activeRef.current) return;
+                appendDebugLog('[linux-loopback] only audio source lost; stopping the recording');
+                void bridge.recording.stop().catch(() => { /* logged by main */ });
               },
             });
             if (cancelled()) { void linuxLoopback.stop(); stopAcquired(); return; }

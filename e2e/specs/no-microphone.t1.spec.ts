@@ -1,4 +1,5 @@
 import { test, expect } from '../fixtures/electron';
+import { emitLoopbackChunks, emitLoopbackEnded, pcmChunk } from '../fixtures/linux-loopback';
 
 /**
  * T1 — renderer-only, mock IPC. A machine with no audio input device (#517).
@@ -157,7 +158,9 @@ test('no microphone and no system audio fails the start and stops live transcrip
   const [, name, phase] = sendsOn(sends, 'recording-capture-error')[0].args;
   expect(name).toBe('NotFoundError');
   expect(phase).toBe('start');
-  // #517 part 2: the sidecar main spawned on start-recording-ui is torn down.
+  // #517 part 2: the renderer sends the stop signal main's live-transcribe-stop
+  // handler uses to end the sidecar. This pins the RENDERER half only; the mock
+  // spawns no process, so stopLiveTranscribe() itself is not exercised here.
   expect(sendsOn(sends, 'live-transcribe-stop')).toHaveLength(1);
   expect(sendsOn(sends, 'system-audio-recording-state').map((s) => s.args[0])).toEqual([false]);
   // Neither the system-audio-only nor the mic-only notice: nothing is recording.
@@ -182,4 +185,29 @@ test('a microphone held by another app still fails the start', async ({ launchAp
   expect(await ipcCalls(app)).not.toContain('show-system-audio-only-notification');
   // The fallback must not even try loopback for a mic the user can fix.
   expect(await ipcCalls(app)).not.toContain('enable-loopback-audio');
+});
+
+test('on Linux, losing the only audio source stops a system-audio-only recording', async ({
+  launchApp,
+}) => {
+  const { app, page } = await launchApp({
+    mockIpc: true,
+    env: { ...WIN_ENV, STENOAI_E2E_RENDERER_PLATFORM: 'linux' },
+  });
+  // loopback here is the pw-record bridge, not getDisplayMedia; the stub's
+  // getDisplayMedia half is unused.
+  await stubMedia(page, { micError: 'NotFoundError', loopback: 'available' });
+
+  await page.evaluate(() => window.stenoai.recording.start('Linux no mic note'));
+  await expect.poll(async () => ipcCalls(app)).toContain('show-system-audio-only-notification');
+  await emitLoopbackChunks(app, [pcmChunk(256)]);
+  expect(await ipcCalls(app)).not.toContain('stop-recording-ui');
+
+  await emitLoopbackEnded(app, { code: 1, signal: null });
+
+  // Recording on would capture nothing but silence. It is stopped (and so
+  // processed) instead, and the "continuing with the microphone" notice, which
+  // would be false here, is not shown.
+  await expect.poll(async () => ipcCalls(app)).toContain('stop-recording-ui');
+  expect(await ipcCalls(app)).not.toContain('show-system-audio-mic-only-notification');
 });
