@@ -1,6 +1,7 @@
 import * as React from 'react';
 import { Search } from 'lucide-react';
-import { useMeetings, LIVE_SUMMARY_PREFIX } from '@/hooks/useMeetings';
+import { useMeetings } from '@/hooks/useMeetings';
+import { isLiveRowFile } from '@/lib/liveMeetingRow';
 import { searchNotes, snippet } from '@/lib/noteSearch';
 import { navigate, useRoute } from '@/lib/router';
 import { isMac } from '@/lib/utils';
@@ -128,7 +129,7 @@ function CommandPalette({ onClose }: { onClose: () => void }) {
         // opening one would navigate to a detail route that doesn't exist on
         // disk. Real notes being reprocessed keep their real summary_file and
         // stay searchable.
-        .filter((m) => !m.is_recording && !m.session_info.summary_file.startsWith(LIVE_SUMMARY_PREFIX))
+        .filter((m) => !m.is_recording && !isLiveRowFile(m.session_info.summary_file))
         .slice()
         .sort((a, b) => recencyMs(b) - recencyMs(a)),
     [meetings.data],
