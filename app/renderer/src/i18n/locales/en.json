@@ -91,5 +91,8 @@
   "noteShare.notesPdf": "Share notes as PDF…",
   "noteShare.notesMarkdown": "Share notes as .md…",
   "noteShare.transcript": "Share transcript…",
-  "noteShare.saveNotesMarkdown": "Save notes as .md…"
+  "noteShare.saveNotesMarkdown": "Save notes as .md…",
+  "report.properties.toggle": "Properties",
+  "report.properties.yes": "yes",
+  "report.properties.no": "no"
 }

@@ -191,6 +191,22 @@ const SEED_REPORT = {
   created_at: '2026-06-19T13:00:00Z',
 };
 
+// A report whose template asks for YAML frontmatter, attached instead when
+// STENOAI_E2E_SEED_REPORT=frontmatter (report-properties T1). The title and
+// date repeat the note's own and are left out of the properties.
+const SEED_FRONTMATTER_REPORT = {
+  id: 'rep_e2e_frontmatter',
+  template_id: 'tpl_e2e_client_call',
+  template_name: 'Client Call',
+  model: 'mock-model',
+  content:
+    '---\ntitle: "Erika Mustermann: Empty Bcc field"\ndate: 2026-06-19\n'
+    + 'client: Erika Mustermann\norganisation: Example Ltd\nissue: Empty Bcc field\n'
+    + 'symptoms:\n  - Bcc stays empty on send\nresolved: true\n---\n\n'
+    + '## Summary\nThe Bcc field stayed empty until the signature was recreated.',
+  created_at: '2026-06-19T13:00:00Z',
+};
+
 // Mutable so the stateful set-active-report mock below persists the pill
 // switch across the invalidate → get-meeting refetch, like the real sidecar.
 let seedActiveReport = null;
@@ -205,6 +221,9 @@ const seededMeeting = () => {
           '[00:00] [You] We should ship Friday.\n[00:02] [You] I will prepare the release.\n[00:06] [Others] Sounds good.',
       }
     : SEED_MEETING;
+  if (process.env.STENOAI_E2E_SEED_REPORT === 'frontmatter') {
+    return { ...meeting, reports: [SEED_FRONTMATTER_REPORT], active_report: seedActiveReport };
+  }
   return process.env.STENOAI_E2E_SEED_REPORT === '1'
     ? { ...meeting, reports: [SEED_REPORT], active_report: seedActiveReport }
     : meeting;

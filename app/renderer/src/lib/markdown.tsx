@@ -3,6 +3,8 @@ import ReactMarkdown, { type ExtraProps } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { CHART_COPY, parseChatChart } from '@/lib/chatChart';
 import { ChartErrorBoundary } from '@/components/ChartErrorBoundary';
+import yaml from 'js-yaml';
+import { t } from '@/i18n';
 
 const ChatChart = React.lazy(() => import('@/components/ChatChart'));
 const MarkdownSource = React.createContext('');
@@ -101,5 +103,103 @@ export function renderMarkdown(text: string): React.ReactNode {
         </ReactMarkdown>
       </div>
     </MarkdownSource.Provider>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Report frontmatter
+// ---------------------------------------------------------------------------
+
+// A report template can ask for output that OPENS with YAML frontmatter.
+// Markdown has no concept of it. Handed the whole document, react-markdown
+// turns the opening `---` into a horizontal rule, and the closing one either
+// underlines every key above it into a single heading or, after a list,
+// becomes a second rule — which is what the report view showed.
+//
+// The keys every note already carries in its own frontmatter are dropped
+// rather than repeated: the header shows the title, date and duration a few
+// pixels above, and the language is the note's, not the report's.
+const HEADER_DUPLICATE_KEYS = new Set(['title', 'date', 'duration_seconds', 'duration', 'language']);
+
+export type ReportProperty = [string, unknown];
+
+/**
+ * Split leading YAML frontmatter from a report.
+ *
+ * Parsed with js-yaml rather than by hand: a colon inside a value, quoting
+ * and lists are where hand-rolled frontmatter parsing goes wrong.
+ *
+ * Returns no properties for ordinary reports, which have no frontmatter, so
+ * the caller renders exactly what it always did.
+ */
+export function splitFrontmatter(text: string): { properties: ReportProperty[]; body: string } {
+  const empty = { properties: [] as ReportProperty[], body: text ?? '' };
+  if (!text || !text.startsWith('---\n')) return empty;
+  const end = text.indexOf('\n---', 3);
+  if (end === -1) return empty;
+  const raw = text.slice(4, end + 1);
+  const body = text.slice(end + 4).replace(/^\n+/, '');
+  let parsed: unknown;
+  try {
+    parsed = yaml.load(raw);
+  } catch {
+    // Unparseable frontmatter is left in the body rather than thrown away:
+    // showing it badly beats losing it silently.
+    return empty;
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return empty;
+  const properties = Object.entries(parsed as Record<string, unknown>).filter(
+    ([k, v]) => !HEADER_DUPLICATE_KEYS.has(k) && v !== null && v !== undefined && v !== '' &&
+      !(Array.isArray(v) && v.length === 0),
+  );
+  return { properties, body };
+}
+
+function PropertyValue({ value }: { value: unknown }): React.ReactElement {
+  if (Array.isArray(value)) {
+    return (
+      <div className="flex flex-col gap-0.5">
+        {value.map((v, i) => (
+          <div key={i}>{String(v)}</div>
+        ))}
+      </div>
+    );
+  }
+  if (typeof value === 'boolean') {
+    return <span>{value ? t('report.properties.yes') : t('report.properties.no')}</span>;
+  }
+  return <span>{String(value)}</span>;
+}
+
+/** The structured half of a report, as a compact key/value header. The `id`
+ *  lets the on-screen disclosure point at it (aria-controls). */
+export function ReportProperties({
+  properties,
+  id,
+}: {
+  properties: ReportProperty[];
+  id?: string;
+}): React.ReactElement | null {
+  if (!properties.length) return null;
+  return (
+    <dl
+      id={id}
+      className="grid gap-x-4 gap-y-1 rounded-lg px-3 py-2.5 text-[13px]"
+      style={{
+        gridTemplateColumns: 'minmax(6rem, max-content) 1fr',
+        background: 'var(--surface-raised)',
+        border: '1px solid var(--border-subtle)',
+      }}
+      data-testid="report-properties"
+    >
+      {properties.map(([key, value]) => (
+        <React.Fragment key={key}>
+          <dt style={{ color: 'var(--fg-2)' }}>{key}</dt>
+          <dd className="min-w-0" style={{ color: 'var(--fg-1)' }}>
+            <PropertyValue value={value} />
+          </dd>
+        </React.Fragment>
+      ))}
+    </dl>
   );
 }

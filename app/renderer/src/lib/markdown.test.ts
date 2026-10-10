@@ -1,6 +1,6 @@
 import { describe, test, expect } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { stripReasoning, renderMarkdown } from '@/lib/markdown';
+import { renderMarkdown, splitFrontmatter, stripReasoning } from '@/lib/markdown';
 
 /**
  * Unit coverage for stripReasoning — the guard that removes `<think>` /
@@ -107,5 +107,54 @@ describe('chat Markdown lists', () => {
     expect(root.querySelector('li strong')?.textContent).toBe('Second');
     expect(root.querySelectorAll('pre code')[0].textContent).toContain('• literal');
     expect(root.querySelectorAll('pre code')[1].textContent).toContain('• indented code');
+  });
+});
+
+/**
+ * splitFrontmatter — a template can produce a report opening with YAML
+ * frontmatter. Fed whole to react-markdown, the opening `---` becomes a
+ * horizontal rule and the closing one turns the keys into a heading, which is
+ * what the report view showed.
+ */
+describe('splitFrontmatter', () => {
+  test('splits frontmatter from the body', () => {
+    const input = '---\nclient: Erika Mustermann\nissue: Empty Bcc field\n---\n\n## Summary\nIt went well.';
+    const { properties, body } = splitFrontmatter(input);
+    expect(properties).toEqual([
+      ['client', 'Erika Mustermann'],
+      ['issue', 'Empty Bcc field'],
+    ]);
+    expect(body).toBe('## Summary\nIt went well.');
+  });
+
+  test('a report without frontmatter is returned untouched', () => {
+    const input = '## Summary\nNothing structured here.';
+    const { properties, body } = splitFrontmatter(input);
+    expect(properties).toEqual([]);
+    expect(body).toBe(input);
+  });
+
+  test('keeps a colon inside a value, which a hand-rolled parser splits', () => {
+    const { properties } = splitFrontmatter('---\nissue: "Outlook: access denied"\n---\n\nprose');
+    expect(properties).toEqual([['issue', 'Outlook: access denied']]);
+  });
+
+  test('lists survive as arrays', () => {
+    const { properties } = splitFrontmatter('---\nsymptoms:\n  - one\n  - two\n---\n\nprose');
+    expect(properties).toEqual([['symptoms', ['one', 'two']]]);
+  });
+
+  test('drops keys the meeting header already shows, and empty values', () => {
+    const input = '---\ntitle: Something broke\ndate: 2026-09-06\nduration: "0:10"\nduration_seconds: 587\n'
+      + 'language: de\nclient: null\nsystems: []\nissue: Something\n---\n\nprose';
+    const { properties } = splitFrontmatter(input);
+    expect(properties).toEqual([['issue', 'Something']]);
+  });
+
+  test('unparseable frontmatter is left in the body rather than lost', () => {
+    const input = '---\nclient: a: b: c\n---\n\nprose';
+    const { properties, body } = splitFrontmatter(input);
+    expect(properties).toEqual([]);
+    expect(body).toBe(input);
   });
 });

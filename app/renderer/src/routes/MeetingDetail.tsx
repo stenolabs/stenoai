@@ -91,7 +91,13 @@ import { buildNotesHtml, hasNotesContent } from '@/lib/notesPdf';
 import { unwrap } from '@/lib/result';
 import { cn } from '@/lib/utils';
 import { navigate, setNavigationGuard } from '@/lib/router';
-import { stripReasoning } from '@/lib/markdown';
+import { ReportProperties, splitFrontmatter, stripReasoning } from '@/lib/markdown';
+import {
+  PROPERTIES_OPEN_KEY,
+  PROPERTIES_PANEL_ID,
+  PropertiesToggle,
+  useStoredFlag,
+} from '@/components/ReportPropertiesDisclosure';
 import { asStringArray } from '@/lib/completionNotification';
 import { pendingTitleRegens, streamCache, type StreamPhase } from '@/lib/meetingDetailState';
 import { useReprocessBridge } from '@/hooks/reprocessBridgeStore';
@@ -751,8 +757,20 @@ function DetailContent({
   // built lazily on click in saveNotesPdf, not on every render. An open report
   // counts on its own: a transcript-only note (auto-summarise off) has no
   // structured sections but can still have a generated report on screen.
+  // A report can OPEN with YAML frontmatter (a template that asks for it).
+  // Markdown has no concept of it, so react-markdown renders the delimiters as
+  // a rule and a heading underline (see splitFrontmatter). Split once here,
+  // and both the view and the PDF render the same two halves.
+  const reportParts = React.useMemo(
+    () => splitFrontmatter(activeReport ? stripReasoning(activeReport.content) : ''),
+    [activeReport],
+  );
+  // On screen the properties fold away behind a disclosure (see
+  // ReportPropertiesDisclosure); the PDF always has them.
+  const [propertiesOpen, toggleProperties] = useStoredFlag(PROPERTIES_OPEN_KEY);
+
   const canExportNotesPdf = activeReport
-    ? Boolean(stripReasoning(activeReport.content).trim())
+    ? Boolean(reportParts.body.trim() || reportParts.properties.length)
     : hasNotesContent(noteSections);
 
   // Branded PDF of whichever note is on screen — the open template report when
@@ -773,7 +791,10 @@ function DetailContent({
         ? {
             templateName: activeReport.template_name,
             contentHtml: renderToStaticMarkup(
-              <ReactMarkdown>{stripReasoning(activeReport.content)}</ReactMarkdown>,
+              <>
+                <ReportProperties properties={reportParts.properties} />
+                <ReactMarkdown>{reportParts.body}</ReactMarkdown>
+              </>,
             ),
           }
         : null
@@ -1070,6 +1091,14 @@ function DetailContent({
   const [tab, setTab] = React.useState<'summary' | 'notes'>(() =>
     meeting.steno_transfer && !summary && hasUserNotes ? 'notes' : 'summary'
   );
+
+  // Only a generated report that opens with frontmatter has properties.
+  const showProperties =
+    tab === 'summary' &&
+    !!activeReport &&
+    !editing &&
+    streamPhase === 'idle' &&
+    reportParts.properties.length > 0;
 
   return (
     <article data-testid="meeting-detail" className="space-y-9">
@@ -1572,19 +1601,35 @@ function DetailContent({
         )}
       </header>
 
-      <NoteViewToggle
-        tab={tab}
-        onTab={setTab}
-        hasNotes={hasUserNotes}
-        activeReportId={activeReportId}
-        reports={reports}
-        templates={reportTemplates}
-        onSelectReport={onSelectReport}
-        onDeleteReport={onDeleteReport}
-        onGenerate={onGenerateReport}
-        generating={generateReport.isPending}
-        disabled={editing}
-      />
+      <div className="flex flex-col gap-3">
+        <div className="flex items-center justify-between gap-3">
+          <NoteViewToggle
+            tab={tab}
+            onTab={setTab}
+            hasNotes={hasUserNotes}
+            activeReportId={activeReportId}
+            reports={reports}
+            templates={reportTemplates}
+            onSelectReport={onSelectReport}
+            onDeleteReport={onDeleteReport}
+            onGenerate={onGenerateReport}
+            generating={generateReport.isPending}
+            disabled={editing}
+          />
+          {showProperties && (
+            <PropertiesToggle
+              count={reportParts.properties.length}
+              open={propertiesOpen}
+              onToggle={toggleProperties}
+            />
+          )}
+        </div>
+        {/* Outside the report's 72ch column, so the box is as wide as the row
+            its toggle sits in. */}
+        {showProperties && propertiesOpen && (
+          <ReportProperties id={PROPERTIES_PANEL_ID} properties={reportParts.properties} />
+        )}
+      </div>
 
       {tab === 'summary' && (
         <>
@@ -1634,7 +1679,7 @@ function DetailContent({
               data-testid="report-content"
               style={{ color: 'var(--fg-1)', maxWidth: '72ch' }}
             >
-              <ReactMarkdown>{stripReasoning(activeReport.content)}</ReactMarkdown>
+              <ReactMarkdown>{reportParts.body}</ReactMarkdown>
             </section>
           ) : (
             <div className="flex flex-col gap-9">
