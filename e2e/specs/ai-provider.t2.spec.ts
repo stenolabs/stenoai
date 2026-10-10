@@ -52,6 +52,10 @@ test('provider switch + cloud/bedrock config persist and round-trip through get-
   launchApp,
   userDataDir,
 }) => {
+  // Well over a dozen backend calls run back to back here, each with its own
+  // PyInstaller cold start. On a slow macOS runner (~2 s each) that alone
+  // exceeds the 30 s default, so give the sequence room (#574).
+  test.setTimeout(90_000);
   const realDirBefore = fileSig(realUserDataDir());
   const { page } = await launchApp();
 
