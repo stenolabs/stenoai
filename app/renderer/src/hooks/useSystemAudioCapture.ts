@@ -1033,6 +1033,13 @@ export function useSystemAudioCapture() {
       if (hadOpenFile) {
         activeRef.current = false;
         void bridge.recording.disableLoopbackAudio();
+        // End the live-transcribe sidecar main spawned for this recording
+        // (#568). Nothing else will: a start still awaiting media sees
+        // cancelled() and skips its failure path (which does send this), and
+        // main does not stop the sidecar on an inactive state report, so it
+        // would otherwise run on, blocking Parakeet re-warm and idle update
+        // installs, until the next recording replaces it.
+        bridge.liveTranscript.stop();
         bridge.recording.reportSystemAudioState(false);
       }
     };
