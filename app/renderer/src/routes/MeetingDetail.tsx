@@ -62,6 +62,8 @@ import {
   keepNoteGenerationCause,
   noteGenerationErrorFromResult,
   noteGenerationErrorMessage,
+  noteGenerationErrorTitle,
+  isRetranscribeError,
   type NoteGenerationErrorCode,
 } from '@/lib/noteGenerationError';
 import {
@@ -362,6 +364,7 @@ function DetailContent({
   );
   const [reprocessError, setReprocessError] = React.useState<NoteGenerationErrorCode | null>(null);
   const reprocessFailed = reprocessError !== null;
+  const reprocessErrorCode: NoteGenerationErrorCode = reprocessError ?? 'generation_failed';
   const qc = useQueryClient();
 
   // Note editing (D9): the generated note is a document until the user asks to
@@ -1599,24 +1602,26 @@ function DetailContent({
               role="alert"
             >
               <div className="text-[15px] font-medium" style={{ color: 'var(--fg-1)' }}>
-                Notes weren’t generated
+                {noteGenerationErrorTitle(reprocessErrorCode)}
               </div>
               <p
                 className="text-[14px] leading-[1.6]"
                 style={{ color: 'var(--fg-2)', maxWidth: '64ch' }}
               >
-                {noteGenerationErrorMessage(reprocessError ?? 'generation_failed')}
+                {noteGenerationErrorMessage(reprocessErrorCode)}
               </p>
-              <Button
-                className="mt-1"
-                onClick={startReprocess}
-                // This banner renders above the editor rather than being
-                // replaced by it, so it needs the same editing lock as the
-                // header's Generate-notes button.
-                disabled={reprocess.isPending || streamPhase !== 'idle' || editing}
-              >
-                Generate notes
-              </Button>
+              {!isRetranscribeError(reprocessErrorCode) && (
+                <Button
+                  className="mt-1"
+                  onClick={startReprocess}
+                  // This banner renders above the editor rather than being
+                  // replaced by it, so it needs the same editing lock as the
+                  // header's Generate-notes button.
+                  disabled={reprocess.isPending || streamPhase !== 'idle' || editing}
+                >
+                  Generate notes
+                </Button>
+              )}
             </section>
           )}
           {editing ? (

@@ -5,6 +5,10 @@
 // in the existing debug log. Unknown failures must never become UI copy.
 function classifyReprocessError(error) {
   const message = String(error?.message || error || '').trim();
+  // Re-transcribe refusals (simple_recorder reprocess --retranscribe). Exact
+  // markers: nothing else may map to them.
+  if (message === 'RETRANSCRIBE_NO_AUDIO') return 'retranscribe_no_audio';
+  if (message === 'RETRANSCRIBE_UNLINKED_SEGMENTS') return 'retranscribe_unlinked_segments';
   if (/^Connection error\.$|No route to host|Connection refused|ConnectError|ECONNREFUSED|EHOSTUNREACH|ENETUNREACH|Failed to connect to Ollama|Failed to start Ollama service|Name or service not known|nodename nor servname/i.test(message)) {
     return 'generation_connection_failed';
   }

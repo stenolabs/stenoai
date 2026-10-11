@@ -3484,8 +3484,10 @@ def reprocess(summary_file, regenerate_title, retranscribe):
             # More separators than listed segments means a segment appended
             # before continued_recordings existed: its audio can't be found,
             # so refuse rather than drop that part of the transcript.
-            if (recording is None or None in continued
-                    or len(old_separators) > len(continued_stems)):
+            if len(old_separators) > len(continued_stems):
+                print("STREAM_ERROR:RETRANSCRIBE_UNLINKED_SEGMENTS", flush=True)
+                sys.exit(1)
+            if recording is None or None in continued:
                 # Distinct marker so the renderer surfaces "recording no longer
                 # available" rather than a generic failure — nothing is written.
                 print("STREAM_ERROR:RETRANSCRIBE_NO_AUDIO", flush=True)

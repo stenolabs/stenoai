@@ -20,6 +20,9 @@ const cases = [
   ['ReadTimeout: timed out', 'generation_timeout'],
   ['model requires more system memory than is available', 'generation_out_of_memory'],
   ['Remote Ollama URL is not configured.', 'generation_not_configured'],
+  ['RETRANSCRIBE_NO_AUDIO', 'retranscribe_no_audio'],
+  ['RETRANSCRIBE_UNLINKED_SEGMENTS', 'retranscribe_unlinked_segments'],
+  ['Failed: RETRANSCRIBE_NO_AUDIO in a longer diagnostic', 'generation_failed'],
   ['unrecognized failure with synthetic private content', 'generation_failed'],
 ];
 for (const [input, code] of cases) {

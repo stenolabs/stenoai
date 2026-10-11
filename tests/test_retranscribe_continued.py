@@ -118,7 +118,7 @@ class RetranscribeContinuedNoteTests(unittest.TestCase):
             res = self._invoke(note, {"first": "new first", "second": "new second"})
 
             self.assertNotEqual(res.exit_code, 0, res.output)
-            self.assertIn("STREAM_ERROR:RETRANSCRIBE_NO_AUDIO", res.output)
+            self.assertIn("STREAM_ERROR:RETRANSCRIBE_UNLINKED_SEGMENTS", res.output)
             self.assertEqual(note.read_text(), before)
 
     def test_missing_continued_recording_is_refused(self):
