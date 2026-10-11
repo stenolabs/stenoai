@@ -59,6 +59,17 @@ class MistralChunkStreamingTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             "".join(s.summarize_transcript_streaming("Speaker: hi.", 0, "en", None))
 
+    def test_streaming_chat_yields_only_text_chunks(self):
+        # The interactive query path (Ask AI / chat) streams separately.
+        s = _cloud_summarizer()
+        s.cloud_client.chat.completions.create.return_value = iter([
+            _chunk([_THINKING]),
+            _chunk([{"type": "text", "text": "The answer"}]),
+            _chunk(" is 42."),
+            _chunk(None),
+        ])
+        self.assertEqual(list(s.stream_chat_prompt("prompt")), ["The answer", " is 42."])
+
     def test_non_streaming_chat_accepts_list_content(self):
         s = _cloud_summarizer()
         message = SimpleNamespace(content=[_THINKING, {"type": "text", "text": " Title "}])
