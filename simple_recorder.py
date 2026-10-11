@@ -3538,15 +3538,17 @@ def reprocess(summary_file, regenerate_title, retranscribe):
 
             fresh_transcript = _segment_text(transcribe_result)
             # Rejoin continued segments the way _append_segment_to_note joined
-            # them, keeping their original "Resumed HH:MM" separators. A
-            # segment that now comes back silent is left out, as the append
-            # path leaves out a silent continuation.
-            segment_texts = [_segment_text(r).strip() for r in results[1:]]
+            # them, keeping their original "Resumed HH:MM" separators. Every
+            # segment keeps its place, even one that now comes back silent:
+            # dropping it would silently delete a part of the meeting the note
+            # already had, and would leave fewer separators than listed
+            # recordings for the next re-transcribe. A silent part reads as the
+            # silence sentinel, as a silent first recording already does.
+            segment_texts = [_segment_text(r).strip() or _SILENCE_SENTINEL for r in results[1:]]
             if len(old_separators) != len(segment_texts):
                 old_separators = ["--- Resumed ---"] * len(segment_texts)
             for separator, text in zip(old_separators, segment_texts):
-                if text and text != _SILENCE_SENTINEL:
-                    fresh_transcript = f"{fresh_transcript.rstrip()}\n\n{separator}\n\n{text}"
+                fresh_transcript = f"{fresh_transcript.rstrip()}\n\n{separator}\n\n{text}"
             existing_data['transcript'] = fresh_transcript
             existing_data['is_diarised'] = transcribe_result.get("is_diarised", False)
             existing_data['diarised_text'] = (

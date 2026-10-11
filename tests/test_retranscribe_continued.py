@@ -72,13 +72,19 @@ class AppendRecordsRecordingTests(unittest.TestCase):
 
 
 class RetranscribeContinuedNoteTests(unittest.TestCase):
-    def _setup(self, tmp, recordings):
+    def _setup(self, tmp, recordings, suffix=".md"):
         rec_dir = Path(tmp) / "recordings"
         rec_dir.mkdir()
         for name in recordings:
             (rec_dir / name).write_bytes(b"audio")
-        note = Path(tmp) / "first_summary.md"
-        note.write_text(_MD)
+        note = Path(tmp) / f"first_summary{suffix}"
+        if suffix == ".md":
+            note.write_text(_MD)
+        else:
+            note.write_text(json.dumps({
+                "session_info": {"name": "Sync", "duration_seconds": 600},
+                "transcript": "first part",
+            }))
         return note
 
     def _invoke(self, note, texts):
@@ -107,6 +113,38 @@ class RetranscribeContinuedNoteTests(unittest.TestCase):
             )
             # A later re-transcribe must still find the continued segment.
             self.assertEqual(meeting["continued_recordings"], ["second"])
+
+    def test_json_note_is_retranscribed_and_keeps_its_list(self):
+        with tempfile.TemporaryDirectory() as tmp, \
+                mock.patch.dict(os.environ, {"STENOAI_USER_DATA_DIR": tmp}):
+            note = self._setup(tmp, ["first.webm", "second.webm"], suffix=".json")
+            simple_recorder._append_segment_to_note(note, "old second", 60, recording_stem="second")
+            separator = json.loads(note.read_text())["transcript"].split("\n\n")[1]
+
+            res = self._invoke(note, {"first": "new first", "second": "new second"})
+
+            self.assertEqual(res.exit_code, 0, res.output)
+            data = json.loads(note.read_text())
+            self.assertEqual(data["transcript"], f"new first\n\n{separator}\n\nnew second")
+            self.assertEqual(data["continued_recordings"], ["second"])
+
+    def test_a_part_that_now_comes_back_silent_keeps_its_place(self):
+        # Dropping it would delete a part of the meeting the note already had.
+        with tempfile.TemporaryDirectory() as tmp, \
+                mock.patch.dict(os.environ, {"STENOAI_USER_DATA_DIR": tmp}):
+            note = self._setup(tmp, ["first.webm", "second.webm"])
+            simple_recorder._append_segment_to_note(note, "old second", 60, recording_stem="second")
+            separator = next(
+                ln for ln in note.read_text().splitlines() if ln.startswith("--- Resumed")
+            )
+
+            res = self._invoke(note, {"first": "new first", "second": ""})
+
+            self.assertEqual(res.exit_code, 0, res.output)
+            self.assertEqual(
+                simple_recorder._parse_meeting_markdown(note)["transcript"],
+                f"new first\n\n{separator}\n\n{simple_recorder._SILENCE_SENTINEL}",
+            )
 
     def test_note_continued_before_the_list_existed_is_refused(self):
         with tempfile.TemporaryDirectory() as tmp, \

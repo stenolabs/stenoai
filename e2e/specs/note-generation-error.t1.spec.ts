@@ -103,6 +103,9 @@ for (const scenario of [
     await page.getByTestId('retranscribe-action').click();
     await page.getByRole('button', { name: 'Re-transcribe', exact: true }).click();
     await expect.poll(() => app.evaluate(() => (globalThis as any).__reprocessTest.calls)).toBe(1);
+    // It must be a re-transcribe, not an ordinary regenerate.
+    expect(await app.evaluate(() => (globalThis as any).__stenoaiE2eReprocessCalls.map((c: any) => c.retranscribe)))
+      .toEqual([true]);
     await app.evaluate((_electron, code) => {
       (globalThis as any).__reprocessTest.finish({ success: false, error: 'Synthetic failure', error_code: code });
     }, scenario.code);
