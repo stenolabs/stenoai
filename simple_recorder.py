@@ -1121,7 +1121,24 @@ def _unusable_batch_reason(
     return None
 
 
-def _append_segment_to_note(target: Path, new_text: str, duration_seconds):
+# The separator _append_segment_to_note writes between a note's recordings.
+_RESUMED_SEPARATOR_RE = re.compile(r'^--- Resumed\b.*---$', re.MULTILINE)
+
+
+def _parse_continued_recordings(frontmatter: str) -> list:
+    """The `continued_recordings` list from a .md note's raw frontmatter."""
+    for line in frontmatter.split('\n'):
+        if line.startswith('continued_recordings:'):
+            try:
+                value = json.loads(line.partition(':')[2].strip())
+            except ValueError:
+                return []
+            return [v for v in value if isinstance(v, str)] if isinstance(value, list) else []
+    return []
+
+
+def _append_segment_to_note(target: Path, new_text: str, duration_seconds,
+                            recording_stem: Optional[str] = None):
     """Fold a continue-recording segment into an existing note.
 
     Appends `new_text` (with a resumed-at separator) to the note's Transcript
@@ -1129,6 +1146,10 @@ def _append_segment_to_note(target: Path, new_text: str, duration_seconds):
     "Regenerate notes"), and extends duration_seconds. Supports both note
     formats: .md (frontmatter surgery, summary body untouched) and legacy
     .json. `reprocess` clears the stale flag when it rewrites the note.
+
+    `recording_stem` (the continuation's recording filename stem) is added to
+    the note's `continued_recordings` list, so re-transcribe can find every
+    segment's audio: the note's own stem only matches the first recording.
     """
     if not target.exists():
         raise FileNotFoundError(f"append target not found: {target}")
@@ -1150,7 +1171,9 @@ def _append_segment_to_note(target: Path, new_text: str, duration_seconds):
             fm_lines = [
                 ln for ln in mid.strip().split('\n')
                 if not ln.startswith('notes_stale:')
+                and not ln.startswith('continued_recordings:')
             ]
+            continued = _parse_continued_recordings(mid)
             for i, ln in enumerate(fm_lines):
                 if ln.startswith('duration_seconds:'):
                     try:
@@ -1160,6 +1183,10 @@ def _append_segment_to_note(target: Path, new_text: str, duration_seconds):
                         pass
                     break
             fm_lines.append('notes_stale: true')
+            if recording_stem:
+                fm_lines.append(
+                    f'continued_recordings: {json.dumps(continued + [recording_stem])}'
+                )
             content = f"---\n{chr(10).join(fm_lines)}\n---{rest}"
         # (A .md note without frontmatter shouldn't exist; append-only below.)
 
@@ -1179,6 +1206,10 @@ def _append_segment_to_note(target: Path, new_text: str, duration_seconds):
         data['transcript'] = (data.get('transcript') or '').rstrip('\n') + segment
         si = data.setdefault('session_info', {})
         si['notes_stale'] = True
+        if recording_stem:
+            data['continued_recordings'] = (
+                list(data.get('continued_recordings') or []) + [recording_stem]
+            )
         if added_seconds and isinstance(si.get('duration_seconds'), int):
             si['duration_seconds'] += added_seconds
         _atomic_write_json(target, data)
@@ -1441,6 +1472,7 @@ def process_streaming(audio_file, name, notes, live_transcript, append_to):
                 Path(append_to),
                 segment_text,
                 duration_seconds,
+                recording_stem=Path(audio_file).stem,
             )
             audio_path = Path(audio_file)
             if not is_live_transcript and not _get_config().get_keep_recordings():
@@ -3179,6 +3211,13 @@ def _parse_meeting_markdown(md_path):
         'diarised_text': sections.get('transcript', '') if meta.get('is_diarised') else None,
         'user_notes': sections.get('user notes'),
         'folders': meta.get('folders', []),
+        # Recording stems of continue-recording segments, in order (see
+        # _append_segment_to_note). Re-transcribe needs them to find every
+        # segment's audio.
+        'continued_recordings': (
+            meta['continued_recordings']
+            if isinstance(meta.get('continued_recordings'), list) else []
+        ),
     }
 
 
@@ -3431,13 +3470,27 @@ def reprocess(summary_file, regenerate_title, retranscribe):
             if stem.endswith('_summary'):
                 stem = stem[:-len('_summary')]
             recording = _find_recording_for_stem(recorder.recordings_dir, stem)
-            if recording is None:
+            # A continued note (continue-recording) spans several recordings:
+            # the note's stem names only the first, the rest are listed in
+            # continued_recordings. Every segment is re-transcribed, or the
+            # rewrite below would replace the whole transcript with the first
+            # segment's and drop the rest.
+            continued_stems = existing_data.get('continued_recordings') or []
+            continued = [
+                _find_recording_for_stem(recorder.recordings_dir, s)
+                for s in continued_stems
+            ]
+            old_separators = _RESUMED_SEPARATOR_RE.findall(existing_data.get('transcript') or '')
+            # More separators than listed segments means a segment appended
+            # before continued_recordings existed: its audio can't be found,
+            # so refuse rather than drop that part of the transcript.
+            if (recording is None or None in continued
+                    or len(old_separators) > len(continued_stems)):
                 # Distinct marker so the renderer surfaces "recording no longer
                 # available" rather than a generic failure — nothing is written.
                 print("STREAM_ERROR:RETRANSCRIBE_NO_AUDIO", flush=True)
                 sys.exit(1)
 
-            print(f"Re-transcribing recording: {recording.name}", flush=True)
             # Keep the Electron inactivity watchdog alive across ASR using the
             # backend's REAL per-chunk progress signal — the same mechanism
             # process-streaming uses (not the capped summary heartbeat, which
@@ -3455,32 +3508,48 @@ def reprocess(summary_file, regenerate_title, retranscribe):
                 sys.stdout.write(f"HEARTBEAT:transcribe:{done}/{total}\n")
                 sys.stdout.flush()
 
-            print("HEARTBEAT:transcribe:start", flush=True)
-            set_chunk_heartbeat(_transcribe_heartbeat)
-            try:
-                transcribe_result = asyncio.run(
-                    recorder.transcribe_audio(str(recording), session_name)
-                )
-            finally:
-                set_chunk_heartbeat(None)
+            results = []
+            for segment_recording in [recording] + continued:
+                print(f"Re-transcribing recording: {segment_recording.name}", flush=True)
+                print("HEARTBEAT:transcribe:start", flush=True)
+                set_chunk_heartbeat(_transcribe_heartbeat)
+                try:
+                    segment_result = asyncio.run(
+                        recorder.transcribe_audio(str(segment_recording), session_name)
+                    )
+                finally:
+                    set_chunk_heartbeat(None)
 
-            if transcribe_result.get("transcription_failed"):
-                err_msg = str(
-                    transcribe_result.get("error") or "transcription failed"
-                ).replace('\n', ' ').replace('\r', ' ')
-                print(f"STREAM_ERROR:{err_msg}", flush=True)
-                sys.exit(1)
+                if segment_result.get("transcription_failed"):
+                    err_msg = str(
+                        segment_result.get("error") or "transcription failed"
+                    ).replace('\n', ' ').replace('\r', ' ')
+                    print(f"STREAM_ERROR:{err_msg}", flush=True)
+                    sys.exit(1)
+                results.append(segment_result)
+            transcribe_result = results[0]
 
             # Mirror process_streaming's `## Transcript` content exactly:
             # diarised text when diarisation ran, else the flat transcript.
-            fresh_transcript = (
-                transcribe_result.get("diarised_text")
-                or transcribe_result.get("transcript_text")
-                or ""
-            )
+            def _segment_text(result):
+                return result.get("diarised_text") or result.get("transcript_text") or ""
+
+            fresh_transcript = _segment_text(transcribe_result)
+            # Rejoin continued segments the way _append_segment_to_note joined
+            # them, keeping their original "Resumed HH:MM" separators. A
+            # segment that now comes back silent is left out, as the append
+            # path leaves out a silent continuation.
+            segment_texts = [_segment_text(r).strip() for r in results[1:]]
+            if len(old_separators) != len(segment_texts):
+                old_separators = ["--- Resumed ---"] * len(segment_texts)
+            for separator, text in zip(old_separators, segment_texts):
+                if text and text != _SILENCE_SENTINEL:
+                    fresh_transcript = f"{fresh_transcript.rstrip()}\n\n{separator}\n\n{text}"
             existing_data['transcript'] = fresh_transcript
             existing_data['is_diarised'] = transcribe_result.get("is_diarised", False)
-            existing_data['diarised_text'] = transcribe_result.get("diarised_text")
+            existing_data['diarised_text'] = (
+                fresh_transcript if existing_data['is_diarised'] else None
+            )
             # Refresh language provenance from the NEW transcribe result — the
             # transcript changed, so the persisted configured/detected/output
             # values no longer describe it. resolve_persisted_output_language
@@ -3516,6 +3585,11 @@ def reprocess(summary_file, regenerate_title, retranscribe):
             # get_data_dirs()["output"] and nowhere else, so a sidecar
             # beside a summary living anywhere else would be written and
             # then never found by anything.
+            #
+            # Only the first segment's clusters go to the sidecar: the
+            # continue-recording path never wrote a continued segment's
+            # clusters either, so the Speakers panel keeps describing the
+            # same part of the meeting it did before.
             from src.config import get_data_dirs as _get_data_dirs
             _persist_speaker_sidecar(_get_data_dirs()["output"], stem, transcribe_result)
 
@@ -3663,6 +3737,10 @@ def reprocess(summary_file, regenerate_title, retranscribe):
             # "only set when true, never explicit false" pattern used elsewhere.
             if existing_data.get('session_info', {}).get('is_live_transcript'):
                 md_meta['is_live_transcript'] = True
+            # Keep the continued segments' recordings findable for a later
+            # re-transcribe; only written for a continued note.
+            if existing_data.get('continued_recordings'):
+                md_meta['continued_recordings'] = existing_data['continued_recordings']
             for k, v in md_meta.items():
                 if v is None:
                     md_lines.append(f'{k}: null')

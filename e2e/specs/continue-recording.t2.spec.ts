@@ -115,6 +115,8 @@ test('append folds a second segment into the note, marks it stale, and reprocess
   expect(md).toContain('--- Resumed');
   expect(md).toContain(SEGMENT_TWO);
   expect(md).toMatch(/notes_stale:\s*true/);
+  // The continuation's recording is listed so a later re-transcribe can find it.
+  expect(md).toContain('continued_recordings: ["segment2"]');
   // No second note was created for the continuation.
   const notes = readdirSync(path.join(userDataDir, 'output')).filter((f) =>
     f.endsWith('_summary.md'),
@@ -137,6 +139,7 @@ test('append folds a second segment into the note, marks it stale, and reprocess
     // The combined transcript survives the rewrite.
     expect(md).toContain(SEGMENT_ONE);
     expect(md).toContain(SEGMENT_TWO);
+    expect(md).toContain('continued_recordings: ["segment2"]');
   } finally {
     await ollama.close();
   }
