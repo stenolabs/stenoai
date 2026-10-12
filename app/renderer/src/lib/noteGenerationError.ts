@@ -10,7 +10,7 @@ const messages = {
   generation_out_of_memory: 'There was not enough memory to generate notes. Choose a smaller model in Settings or free up memory, then try again.',
   generation_not_configured: 'The AI service is not configured. Complete its setup in Settings, then try again.',
   generation_failed: 'Notes could not be generated. Try again. If the problem continues, check the AI settings and debug logs.',
-  retranscribe_no_audio: 'The recording for this note, or for part of it, is no longer on this Mac, so it cannot be transcribed again. The note is unchanged.',
+  retranscribe_no_audio: 'The recording for this note, or for part of it, is no longer on this computer, so it cannot be transcribed again. The note is unchanged.',
   retranscribe_unlinked_segments: 'This note was continued in an earlier version of StenoAI, which did not save which recordings belong to it. Transcribing it again would lose the continued part, so the note is unchanged.',
 } as const;
 
