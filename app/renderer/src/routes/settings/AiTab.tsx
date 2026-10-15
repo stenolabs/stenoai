@@ -80,17 +80,15 @@ import { LANGUAGES_PARAKEET, LANGUAGES_WHISPER } from './languages';
 export function AiTab() {
   return (
     <section data-settings-tab="ai">
-      <SectionHeading>Transcription</SectionHeading>
+      <SectionHeading>{t('settings.ai.transcription.heading')}</SectionHeading>
       <TranscriptionSection />
 
-      <SectionHeading>Summarisation &amp; Chat</SectionHeading>
+      <SectionHeading>{t('settings.ai.summarisation.heading')}</SectionHeading>
       <p
         className="text-[13px] leading-[1.5]"
         style={{ color: 'var(--fg-2)', marginBottom: 4 }}
       >
-        Turns your transcript into notes and answers your questions. This is
-        the one step that can run locally or in the cloud — if you choose a
-        cloud provider, only the text transcript is sent, never audio.
+        {t('settings.ai.summarisation.description')}
       </p>
       <SummarisationSection />
     </section>
@@ -128,11 +126,11 @@ function TranscriptionSection() {
       >
         {engine === 'openai-asr'
           ? t('settings.ai.cloudAsr.disclosure')
-          : 'Speech-to-text always runs on your device \u2014 your audio never leaves your computer.'}
+          : t('settings.ai.transcription.onDeviceNote')}
       </p>
       <SettingRow
-        label="Language"
-        description="Auto-detects by default. Pick one to pin it."
+        label={t('settings.ai.language.label')}
+        description={t('settings.ai.language.description')}
       >
         <Select
           value={displayValue}
@@ -156,8 +154,8 @@ function TranscriptionSection() {
       </SettingRow>
 
       <SettingRow
-        label="Save recordings"
-        description="Save audio files to your storage location (see Advanced) after processing. Uses 1–10 MB per minute depending on capture mode."
+        label={t('settings.ai.saveRecordings.label')}
+        description={t('settings.ai.saveRecordings.description')}
       >
         <Switch
           checked={keepRecordings.data ?? false}
@@ -326,12 +324,12 @@ export function SpeakerIdentificationSetting() {
   const setEnabled = useSetIdentityMatchingEnabled();
   return (
     <SettingRow
-      label="Speaker identification"
-      description="Optional and off by default."
+      label={t('settings.ai.speakerIdentification.label')}
+      description={t('settings.ai.speakerIdentification.description')}
       descriptionId="speaker-identification-description"
     >
       <Switch
-        aria-label="Speaker identification"
+        aria-label={t('settings.ai.speakerIdentification.label')}
         aria-describedby="speaker-identification-description"
         checked={enabled.data ?? false}
         onCheckedChange={(value) => setEnabled.mutate(value)}
@@ -347,8 +345,12 @@ export function SpeakerIdentificationSetting() {
 // one supported model today (see SUPPORTED_PARAKEET_MODELS /
 // SUPPORTED_WHISPER_MODELS in the Python registries).
 const ENGINE_TAGLINE: Record<Exclude<TranscriptionEngine, 'openai-asr'>, string> = {
-  parakeet: 'Fastest — English + European languages',
-  whisper: 'Most accurate — 99 languages',
+  get parakeet() {
+    return t('settings.ai.engineTagline.parakeet');
+  },
+  get whisper() {
+    return t('settings.ai.engineTagline.whisper');
+  },
 };
 
 /**
@@ -386,8 +388,8 @@ function TranscriptionModelList() {
   if (isLoading) {
     return (
       <SettingRow
-        label="Model"
-        description="Which speech-to-text model transcribes your recordings."
+        label={t('settings.ai.model.label')}
+        description={t('settings.ai.model.description')}
         noBorder
       >
         <div
@@ -395,7 +397,7 @@ function TranscriptionModelList() {
           style={{ color: 'var(--fg-muted)' }}
         >
           <Loader2 className="size-3.5 shrink-0 animate-spin" />
-          <span className="truncate">Loading models…</span>
+          <span className="truncate">{t('settings.ai.model.loading')}</span>
         </div>
       </SettingRow>
     );
@@ -403,12 +405,12 @@ function TranscriptionModelList() {
   if (isError) {
     return (
       <SettingRow
-        label="Model"
-        description="Which speech-to-text model transcribes your recordings."
+        label={t('settings.ai.model.label')}
+        description={t('settings.ai.model.description')}
         noBorder
       >
         <div className={cn(COMPACT_TRIGGER, 'w-[190px] flex items-center')} style={{ color: 'var(--fg-2)' }}>
-          <span className="truncate">Could not load models.</span>
+          <span className="truncate">{t('settings.ai.model.loadError')}</span>
         </div>
       </SettingRow>
     );
@@ -469,8 +471,8 @@ function TranscriptionModelList() {
   return (
     <>
       <SettingRow
-        label="Model"
-        description="Which speech-to-text model transcribes your recordings."
+        label={t('settings.ai.model.label')}
+        description={t('settings.ai.model.description')}
         noBorder={activeEngine !== 'openai-asr'}
       >
         <Select value={value} onValueChange={onValueChange} disabled={isDownloading}>
@@ -761,8 +763,8 @@ function SummarisationSection() {
   return (
     <>
       <SettingRow
-        label="Generate notes automatically"
-        description="Summarise each recording right after transcription. Turn off to stop at a transcript and generate notes on demand."
+        label={t('settings.ai.autoSummarize.label')}
+        description={t('settings.ai.autoSummarize.description')}
       >
         <Switch
           checked={autoSummarize.data ?? true}
@@ -772,11 +774,11 @@ function SummarisationSection() {
       </SettingRow>
 
       <SettingRow
-        label="AI provider"
+        label={t('settings.ai.provider.label')}
         description={
           orgSignedIn
-            ? "Managed by your organisation while you're signed in. Sign out under Settings > Organisation to change it."
-            : 'Where models run. Local keeps all data on your device.'
+            ? t('settings.ai.provider.managedByOrganisation')
+            : t('settings.ai.provider.description')
         }
         // The Model section right below (local provider) has no divider of
         // its own — Remote/Cloud/Adapter's config blocks do (their own
@@ -799,23 +801,23 @@ function SummarisationSection() {
             <SelectItem
               value="local"
               icon={<Laptop className="size-4" />}
-              description="Runs entirely on your device. Private and free, no internet required."
+              description={t('settings.ai.provider.local.description')}
             >
-              Local (on-device)
+              {t('settings.ai.provider.local.label')}
             </SelectItem>
             <SelectItem
               value="remote"
               icon={<Server className="size-4" />}
-              description="Connect to your own Ollama server. Data stays within your network."
+              description={t('settings.ai.provider.privateServer.description')}
             >
-              Private Server
+              {t('settings.ai.provider.privateServer.label')}
             </SelectItem>
             <SelectItem
               value="cloud"
               icon={<Cloud className="size-4" />}
-              description="Use OpenAI, Anthropic, or a compatible API. Best quality, requires a paid key."
+              description={t('settings.ai.provider.cloud.description')}
             >
-              Cloud API
+              {t('settings.ai.provider.cloud.label')}
             </SelectItem>
             <SelectItem
               value="adapter"
@@ -823,11 +825,11 @@ function SummarisationSection() {
               icon={<Building2 className="size-4" />}
               description={
                 orgSignedIn
-                  ? "Uses your organisation's AI key. No setup needed."
-                  : 'Sign in to your organisation to enable this option.'
+                  ? t('settings.ai.provider.organisation.description')
+                  : t('settings.ai.provider.organisation.signedOut')
               }
             >
-              Organisation
+              {t('settings.ai.provider.organisation.label')}
             </SelectItem>
           </SelectContent>
         </Select>
@@ -848,10 +850,10 @@ function SummarisationSection() {
       {current !== 'cloud' && current !== 'adapter' && !orgSignedIn && (
         <div style={{ marginTop: '20px' }}>
           <div className="text-[14px] font-normal" style={{ color: 'var(--fg-1)', marginBottom: 2 }}>
-            Model
+            {t('settings.ai.model.label')}
           </div>
           <p className="text-[13px] leading-[1.5]" style={{ color: 'var(--fg-2)', marginBottom: 8 }}>
-            Which model generates your summaries, titles, and chat answers.
+            {t('settings.ai.summaryModel.description')}
           </p>
           <ModelList />
         </div>
@@ -872,15 +874,12 @@ function AdapterProviderInfo({ signedIn }: { signedIn: boolean }) {
     >
       {signedIn ? (
         <p>
-          Summaries, titles, and chat are routed through your organisation's
-          adapter. The model and API key are configured by your organisation
-          — no setup needed here.
+          {t('settings.ai.organisation.routedNote')}
         </p>
       ) : (
         <p style={{ color: 'var(--accent-danger, var(--fg-1))' }}>
-          You are not signed in to an organisation. Sign in under{' '}
-          <strong>Settings &gt; Organisation</strong>, or switch this provider
-          back to Local / Private Server / Cloud API.
+          {t('settings.ai.organisation.notSignedIn.beforeLink')}{' '}
+          <strong>{t('settings.ai.organisation.notSignedIn.link')}</strong>{t('settings.ai.organisation.notSignedIn.afterLink')}
         </p>
       )}
     </div>
@@ -909,12 +908,12 @@ function RemoteProviderConfig() {
           className="mb-1 block text-[12px] font-medium uppercase"
           style={{ letterSpacing: '0.06em', color: 'var(--fg-muted)' }}
         >
-          Ollama server URL
+          {t('settings.ai.privateServer.urlLabel')}
         </label>
         <Input
           value={url}
           onChange={(e) => setLocalUrl(e.target.value)}
-          placeholder="http://192.168.1.100:11434"
+          placeholder={t('settings.ai.privateServer.urlPlaceholder')}
           onBlur={() => url && setUrl.mutate(url)}
           className="h-[30px] bg-[color:var(--surface-raised)] text-[13px]"
         />
@@ -927,7 +926,7 @@ function RemoteProviderConfig() {
           onClick={() => testConnection.mutate(url)}
           disabled={!url || testConnection.isPending}
         >
-          {testConnection.isPending ? 'Testing…' : 'Test connection'}
+          {testConnection.isPending ? t('settings.ai.testing') : t('settings.ai.testConnection')}
         </Button>
         <ConnectionStatus
           ok={testConnection.isSuccess ? testConnection.data?.ok ?? true : testConnection.isError ? false : undefined}
@@ -935,7 +934,7 @@ function RemoteProviderConfig() {
             testConnection.isError
               ? testConnection.error instanceof Error
                 ? testConnection.error.message
-                : 'Failed'
+                : t('settings.ai.failed')
               : testConnection.data?.message
           }
         />
@@ -1047,7 +1046,7 @@ function CloudProviderConfig() {
           className="mb-1 block text-[12px] font-medium uppercase"
           style={{ letterSpacing: '0.06em', color: 'var(--fg-muted)' }}
         >
-          Service
+          {t('settings.ai.cloud.service')}
         </label>
         <Select
           value={cloudProvider}
@@ -1066,16 +1065,16 @@ function CloudProviderConfig() {
             <SelectItem value="anthropic">
               <span className="inline-flex items-center gap-1.5">
                 {CLOUD_SERVICE_ICON.anthropic}
-                Anthropic (Claude)
+                {t('settings.ai.cloud.serviceAnthropic')}
               </span>
             </SelectItem>
             <SelectItem value="bedrock">
               <span className="inline-flex items-center gap-1.5">
                 {CLOUD_SERVICE_ICON.bedrock}
-                AWS Bedrock (Claude)
+                {t('settings.ai.cloud.serviceBedrock')}
               </span>
             </SelectItem>
-            <SelectItem value="custom">Custom (OpenAI-compatible)</SelectItem>
+            <SelectItem value="custom">{t('settings.ai.cloud.customService')}</SelectItem>
           </SelectContent>
         </Select>
       </div>
@@ -1086,12 +1085,12 @@ function CloudProviderConfig() {
               className="mb-1 block text-[12px] font-medium uppercase"
               style={{ letterSpacing: '0.06em', color: 'var(--fg-muted)' }}
             >
-              AWS region
+              {t('settings.ai.cloud.awsRegion')}
             </label>
             <Input
               value={bedrockRegion}
               onChange={(e) => setBedrockRegionState(e.target.value)}
-              placeholder="us-east-1"
+              placeholder={t('settings.ai.cloud.awsRegionPlaceholder')}
               onBlur={() =>
                 bedrockRegion && setBedrockRegion.mutate(bedrockRegion)
               }
@@ -1103,12 +1102,12 @@ function CloudProviderConfig() {
               className="mb-1 block text-[12px] font-medium uppercase"
               style={{ letterSpacing: '0.06em', color: 'var(--fg-muted)' }}
             >
-              Inference profile (optional)
+              {t('settings.ai.cloud.inferenceProfile')}
             </label>
             <Input
               value={bedrockProfile}
               onChange={(e) => setBedrockProfileState(e.target.value)}
-              placeholder="us.anthropic.claude-…"
+              placeholder={t('settings.ai.cloud.inferenceProfilePlaceholder')}
               onBlur={() => setBedrockProfile.mutate(bedrockProfile.trim())}
               className={COMPACT_INPUT}
             />
@@ -1121,12 +1120,12 @@ function CloudProviderConfig() {
             className="mb-1 block text-[12px] font-medium uppercase"
             style={{ letterSpacing: '0.06em', color: 'var(--fg-muted)' }}
           >
-            API base URL
+            {t('settings.ai.cloud.baseUrl')}
           </label>
           <Input
             value={apiUrl}
             onChange={(e) => setApiUrl(e.target.value)}
-            placeholder="https://api.example.com/v1"
+            placeholder={t('settings.ai.cloud.baseUrlPlaceholder')}
             onBlur={() => apiUrl && setCloudUrl.mutate(apiUrl)}
             className={COMPACT_INPUT}
           />
@@ -1137,7 +1136,7 @@ function CloudProviderConfig() {
           className="mb-1 block text-[12px] font-medium uppercase"
           style={{ letterSpacing: '0.06em', color: 'var(--fg-muted)' }}
         >
-          API key
+          {t('settings.ai.cloud.apiKey')}
         </label>
         <Input
           type="password"
@@ -1147,10 +1146,10 @@ function CloudProviderConfig() {
             provider.data?.cloud_api_key_set
               ? '••••••••'
               : cloudProvider === 'bedrock'
-                ? 'Bedrock API key (bearer token)'
+                ? t('settings.ai.cloud.bedrockKeyPlaceholder')
                 : cloudProvider === 'anthropic'
-                  ? 'sk-ant-…'
-                  : 'sk-…'
+                  ? t('settings.ai.cloud.anthropicKeyPlaceholder')
+                  : t('settings.ai.cloud.openaiKeyPlaceholder')
           }
           onBlur={() => apiKey && setCloudKey.mutate(apiKey)}
           className={COMPACT_INPUT}
@@ -1161,12 +1160,12 @@ function CloudProviderConfig() {
           className="mb-1 block text-[12px] font-medium uppercase"
           style={{ letterSpacing: '0.06em', color: 'var(--fg-muted)' }}
         >
-          Model
+          {t('settings.ai.model.label')}
         </label>
         {showModelDropdown ? (
           <Select value={model} onValueChange={onModelSelect}>
             <SelectTrigger className={COMPACT_INPUT}>
-              <SelectValue placeholder="Select a model" />
+              <SelectValue placeholder={t('settings.ai.cloud.modelPlaceholder')} />
             </SelectTrigger>
             <SelectContent>
               {/* If the persisted model isn't in the fetched list (e.g. a
@@ -1180,7 +1179,7 @@ function CloudProviderConfig() {
                   {m}
                 </SelectItem>
               ))}
-              <SelectItem value="__custom__">Custom…</SelectItem>
+              <SelectItem value="__custom__">{t('settings.ai.cloud.customModel')}</SelectItem>
             </SelectContent>
           </Select>
         ) : (
@@ -1190,10 +1189,10 @@ function CloudProviderConfig() {
               onChange={(e) => setModel(e.target.value)}
               placeholder={
                 cloudProvider === 'bedrock'
-                  ? 'anthropic.claude-…-v1:0'
+                  ? t('settings.ai.cloud.bedrockModelPlaceholder')
                   : cloudProvider === 'anthropic'
-                    ? 'claude-…'
-                    : 'gpt-…'
+                    ? t('settings.ai.cloud.anthropicModelPlaceholder')
+                    : t('settings.ai.cloud.openaiModelPlaceholder')
               }
               onBlur={() => model && setCloudModel.mutate(model)}
               className={COMPACT_INPUT}
@@ -1205,14 +1204,14 @@ function CloudProviderConfig() {
                 className={COMPACT_BTN}
                 onClick={() => setCustomModelMode(false)}
               >
-                Pick from list
+                {t('settings.ai.cloud.pickFromList')}
               </Button>
             )}
           </div>
         )}
         {availableModels.length === 0 && cloudProvider !== 'bedrock' && (
           <div className="mt-1 text-[11.5px]" style={{ color: 'var(--fg-muted)' }}>
-            Test connection to load the list of available models.
+            {t('settings.ai.cloud.testToLoadModels')}
           </div>
         )}
       </div>
@@ -1224,7 +1223,7 @@ function CloudProviderConfig() {
           onClick={onTest}
           disabled={testConnection.isPending}
         >
-          {testConnection.isPending ? 'Testing…' : 'Test connection'}
+          {testConnection.isPending ? t('settings.ai.testing') : t('settings.ai.testConnection')}
         </Button>
         <ConnectionStatus
           ok={testConnection.isSuccess ? true : testConnection.isError ? false : undefined}
@@ -1232,16 +1231,15 @@ function CloudProviderConfig() {
             testConnection.isError
               ? testConnection.error instanceof Error
                 ? testConnection.error.message
-                : 'Failed'
+                : t('settings.ai.failed')
               : testConnection.isSuccess && testConnection.data?.models
-                ? `${testConnection.data.models.length} models available`
+                ? t('settings.ai.cloud.modelsAvailable', { count: testConnection.data.models.length })
                 : undefined
           }
         />
       </div>
       <div className="text-[12px]" style={{ color: 'var(--fg-2)' }}>
-        Transcripts will be sent to a third-party cloud service. No audio files
-        leave your device.
+        {t('settings.ai.cloud.thirdPartyNote')}
       </div>
     </div>
   );
@@ -1261,7 +1259,7 @@ function ConnectionStatus({
       style={{ color: ok ? 'var(--fg-1)' : 'var(--danger)' }}
     >
       {ok ? <Check className="size-3.5" /> : <X className="size-3.5" />}
-      {message ?? (ok ? 'Connected' : 'Failed')}
+      {message ?? (ok ? t('settings.ai.connected') : t('settings.ai.failed'))}
     </span>
   );
 }
@@ -1299,7 +1297,10 @@ function ModelList() {
     if (match) {
       setDeleteCandidate({
         tags: [match.name],
-        description: `${match.name} (${formatModelSize(match.size_gb) ?? 'unknown size'}) is no longer needed now that the faster build is active. Delete it to free up disk space?`,
+        description: t('settings.ai.fasterBuildDelete.description', {
+          name: match.name,
+          size: formatModelSize(match.size_gb) ?? t('settings.ai.unknownSize'),
+        }),
       });
     }
   });
@@ -1311,21 +1312,21 @@ function ModelList() {
         style={{ color: 'var(--fg-2)' }}
       >
         <Loader2 className="size-3.5 animate-spin" />
-        Loading models…
+        {t('settings.ai.model.loading')}
       </div>
     );
   }
   if (models.isError) {
     return (
       <div className="text-[13px]" style={{ color: 'var(--fg-2)' }}>
-        Could not reach Ollama. Run the setup wizard.
+        {t('settings.ai.couldNotReach')}
       </div>
     );
   }
   if (!models.data?.models?.length) {
     return (
       <div className="text-[13px]" style={{ color: 'var(--fg-2)' }}>
-        No models available.
+        {t('settings.ai.noModelsAvailable')}
       </div>
     );
   }
@@ -1369,8 +1370,8 @@ function ModelList() {
       note = m.description;
     } else if (!isRemote) {
       const parts: string[] = [];
-      if (m.speed) parts.push(`${m.speed} speed`);
-      if (m.quality) parts.push(`${m.quality} quality`);
+      if (m.speed) parts.push(t('settings.ai.speed', { speed: m.speed }));
+      if (m.quality) parts.push(t('settings.ai.quality', { quality: m.quality }));
       note = parts.length ? parts.join(' · ') : undefined;
     }
 
@@ -1405,11 +1406,20 @@ function ModelList() {
       if (m.ggufInstalled) tags.push(m.name);
       if (m.mlxInstalled && m.mlxTag) tags.push(m.mlxTag);
       if (tags.length === 0) return;
-      const label = tags.length > 1 ? `${m.name} and its faster build` : tags[0];
-      const pronoun = tags.length > 1 ? 'them' : 'it';
+      const label =
+        tags.length > 1 ? t('settings.ai.deleteModel.multiLabel', { name: m.name }) : tags[0];
       setDeleteCandidate({
         tags,
-        description: `Delete ${label} (${sizeLabel ?? 'unknown size'}) to free up disk space? You can re-download ${pronoun} anytime.`,
+        description:
+          tags.length > 1
+            ? t('settings.ai.deleteModel.description.other', {
+                label,
+                size: sizeLabel ?? t('settings.ai.unknownSize'),
+              })
+            : t('settings.ai.deleteModel.description.one', {
+                label,
+                size: sizeLabel ?? t('settings.ai.unknownSize'),
+              }),
       });
     };
 
@@ -1464,7 +1474,8 @@ function ModelList() {
             ) : (
               <ChevronRight size={12} />
             )}
-            {showDeprecated ? 'Hide' : 'Show'} deprecated models
+            {showDeprecated ? t('settings.ai.deprecated.hide') : t('settings.ai.deprecated.show')}{' '}
+            {t('settings.ai.deprecated.models')}
           </button>
 
           {showDeprecated && (
@@ -1482,9 +1493,9 @@ function ModelList() {
               fasterBuild.reset();
             }
           }}
-          title="Delete model?"
+          title={t('settings.ai.deleteModel.title')}
           description={deleteCandidate.description}
-          confirmLabel="Delete"
+          confirmLabel={t('settings.ai.deleteModel.action')}
           destructive
           onConfirm={async () => {
             // finally, not just a trailing statement: a delete call

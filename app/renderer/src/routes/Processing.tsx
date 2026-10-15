@@ -16,6 +16,7 @@ import { getLiveDraft, useLiveDraftStore } from '@/hooks/liveDraftStore';
 import { ipc } from '@/lib/ipc';
 import { stripReasoning } from '@/lib/markdown';
 import { UI_LOCALE } from '@/lib/locale';
+import { t } from '@/i18n';
 
 type ProcessingStage = 'transcribing' | 'diarizing' | 'summarizing' | 'finalizing' | 'error';
 
@@ -33,11 +34,21 @@ const useProcessingWatchdogStore = create<{
 }));
 
 const STAGE_LABEL: Record<ProcessingStage, string> = {
-  transcribing: 'Analyzing transcript',
-  diarizing: 'Identifying speakers',
-  summarizing: 'Generating notes',
-  finalizing: 'Almost done…',
-  error: 'Couldn’t process this recording.',
+  get transcribing() {
+    return t('processing.stage.transcribing');
+  },
+  get diarizing() {
+    return t('processing.stage.diarizing');
+  },
+  get summarizing() {
+    return t('processing.stage.summarizing');
+  },
+  get finalizing() {
+    return t('processing.stage.finalizing');
+  },
+  get error() {
+    return t('processing.stage.error');
+  },
 };
 
 // PROGRESS: lines carry raw counts whose units vary by stage (ASR sample
@@ -51,10 +62,10 @@ function fractionToPercent(numerator: number, denominator: number): number | nul
 }
 
 function formatElapsedSeconds(totalSeconds: number): string {
-  if (totalSeconds < 60) return `${totalSeconds}s`;
+  if (totalSeconds < 60) return t('processing.elapsed.seconds', { seconds: totalSeconds });
   const m = Math.floor(totalSeconds / 60);
   const s = totalSeconds % 60;
-  return `${m}m ${s}s`;
+  return t('processing.elapsed.minutesSeconds', { minutes: m, seconds: s });
 }
 
 // Queue-state watchdog (issue #343). Stopping a recording navigates here
@@ -259,11 +270,11 @@ export function Processing() {
         if (e.line.startsWith('PROGRESS:summarize:')) {
           const raw = e.line.slice('PROGRESS:summarize:'.length);
           if (raw === 'reducing') {
-            setChunkProgress('Merging summaries…');
+            setChunkProgress(t('processing.progress.mergingSummaries'));
           } else {
             const [step, total] = raw.split('/').map(Number);
             const p = fractionToPercent(step, total);
-            if (p !== null) setChunkProgress(`Summarizing… ${p}%`);
+            if (p !== null) setChunkProgress(t('processing.progress.summarizing', { percent: p }));
           }
           setStage((s) => (s === 'transcribing' || s === 'diarizing' ? 'summarizing' : s));
         } else if (e.line.startsWith('PROGRESS:transcribe:')) {
@@ -272,7 +283,7 @@ export function Processing() {
           // done/total are raw sample counts, not chunk counts -- can be in
           // the tens of millions, so only a percentage is ever useful here.
           const p = fractionToPercent(done, total);
-          if (p !== null) setChunkProgress(`Transcribing… ${p}%`);
+          if (p !== null) setChunkProgress(t('processing.progress.transcribing', { percent: p }));
         } else if (e.line.startsWith('PROGRESS:diarize:')) {
           const rest = e.line.slice('PROGRESS:diarize:'.length);
           const [label, kind, fraction] = rest.split(':');
@@ -281,7 +292,7 @@ export function Processing() {
             clearDiarizeTimer();
             diarizeHasPercentRef.current = false;
             diarizeStartedAtRef.current = Date.now();
-            setChunkProgress(`Diarizing ${label} channel…`);
+            setChunkProgress(t('processing.progress.diarizingStart', { channel: label }));
             // Segmentation (before the embedding loop starts ticking below)
             // has no per-chunk checkpoint to report a percentage from -- a
             // real ~21-minute recording measured 100+ seconds of dead air
@@ -290,7 +301,7 @@ export function Processing() {
             diarizeTimerRef.current = setInterval(() => {
               if (diarizeHasPercentRef.current || diarizeStartedAtRef.current === null) return;
               const elapsedS = Math.floor((Date.now() - diarizeStartedAtRef.current) / 1000);
-              setChunkProgress(`Diarizing ${label} channel… (${formatElapsedSeconds(elapsedS)})`);
+              setChunkProgress(t('processing.progress.diarizingElapsed', { channel: label, elapsed: formatElapsedSeconds(elapsedS) }));
             }, 1000);
           } else if (kind === 'embedding' && fraction) {
             const [i, n] = fraction.split('/').map(Number);
@@ -298,7 +309,7 @@ export function Processing() {
             if (p !== null) {
               diarizeHasPercentRef.current = true;
               clearDiarizeTimer();
-              setChunkProgress(`Diarizing ${label} channel… ${p}%`);
+              setChunkProgress(t('processing.progress.diarizingPercent', { channel: label, percent: p }));
             }
           } else if (kind === 'done') {
             // Stop the elapsed ticker; no other UI action needed -- the
@@ -411,7 +422,7 @@ export function Processing() {
     try {
       const res = await ipc().recording.processFile(retryAudioFile, activeSession);
       if (!res.success) {
-        setRetryError(res.error || 'Couldn’t restart processing. Please try again.');
+        setRetryError(res.error || t('processing.restartFailed'));
         return;
       }
       pendingChunkRef.current = '';
@@ -422,7 +433,7 @@ export function Processing() {
       setStage('transcribing');
     } catch (err) {
       setRetryError(
-        err instanceof Error ? err.message : 'Couldn’t restart processing. Please try again.',
+        err instanceof Error ? err.message : t('processing.restartFailed'),
       );
     } finally {
       setRetrying(false);
@@ -430,7 +441,7 @@ export function Processing() {
   }, [retryAudioFile, activeSession, retrying]);
 
   const displayTitle =
-    streamedTitle ?? draft?.title ?? activeSession ?? 'Note';
+    streamedTitle ?? draft?.title ?? activeSession ?? t('processing.defaultTitle');
 
   return (
     <MeetingsShell activeSummaryFile={null}>
@@ -441,10 +452,10 @@ export function Processing() {
             onClick={() => navigate('/')}
             className="mb-6 inline-flex cursor-pointer items-center gap-1 rounded-md border-0 bg-transparent px-2 py-1 text-[13px] transition-colors hover:bg-[color:var(--surface-hover)] hover:text-[color:var(--fg-1)]"
             style={{ color: 'var(--fg-2)' }}
-            aria-label="Back to home"
+            aria-label={t('processing.backHomeAria')}
           >
             <ChevronLeft size={15} />
-            Home
+            {t('processing.backHome')}
           </button>
 
           <h1
@@ -495,7 +506,7 @@ export function Processing() {
               style={{ color: 'var(--fg-2)' }}
             >
               <PencilLine size={13} />
-              My notes
+              {t('processing.myNotes')}
             </div>
             <div
               className="whitespace-pre-wrap text-[15px]"
@@ -636,12 +647,12 @@ function ErrorPanel({
 }) {
   // The watchdog case is not a failure — nothing was lost because nothing was
   // captured — so it gets a calmer heading and copy than the hard-crash path.
-  const heading = nothingRecorded ? 'Nothing to process' : STAGE_LABEL.error;
+  const heading = nothingRecorded ? t('processing.failure.nothingTitle') : STAGE_LABEL.error;
   const detail = nothingRecorded
-    ? 'This recording didn’t capture any audio, so there’s nothing to process. Nothing was lost. Head back to Home to start a new note.'
+    ? t('processing.failure.nothingDetail')
     : canRetry
-      ? 'Try again to re-run processing on this recording.'
-      : 'This recording couldn’t be recovered automatically. Try importing the audio file again from Home.';
+      ? t('processing.failure.retryDetail')
+      : t('processing.failure.unrecoverableDetail');
   return (
     <div className="py-3">
       <p
@@ -676,7 +687,7 @@ function ErrorPanel({
         }}
       >
         {retrying && <Loader2 className="animate-spin" size={14} />}
-        {retrying ? 'Retrying…' : 'Try again'}
+        {retrying ? t('processing.retrying') : t('processing.tryAgain')}
       </button>
     </div>
   );
@@ -694,7 +705,7 @@ function ProcessingChip() {
       }}
     >
       <Loader2 className="animate-spin" size={11} />
-      Processing
+      {t('processing.heading')}
     </span>
   );
 }
@@ -758,7 +769,7 @@ export function ProcessingDock() {
             size={14}
             style={{ color: 'var(--fg-2)' }}
           />
-          <span style={{ color: 'var(--fg-2)' }}>Processing</span>
+          <span style={{ color: 'var(--fg-2)' }}>{t('processing.heading')}</span>
           <span
             className="tabular-nums"
             style={{
@@ -804,11 +815,11 @@ function formatDate(d: Date): string {
 
 /** Plain-English duration ("12 min", "1 h 4 min"). Mono is reserved for the live timer. */
 function formatDurationEnglish(seconds: number): string {
-  if (seconds < 60) return `${seconds} sec`;
+  if (seconds < 60) return t('processing.duration.seconds', { seconds });
   const totalMinutes = Math.floor(seconds / 60);
-  if (totalMinutes < 60) return `${totalMinutes} min`;
+  if (totalMinutes < 60) return t('processing.duration.minutes', { minutes: totalMinutes });
   const h = Math.floor(totalMinutes / 60);
   const m = totalMinutes % 60;
-  if (m === 0) return `${h} h`;
-  return `${h} h ${m} min`;
+  if (m === 0) return t('processing.duration.hours', { hours: h });
+  return t('processing.duration.hoursMinutes', { hours: h, minutes: m });
 }

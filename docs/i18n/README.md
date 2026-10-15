@@ -18,6 +18,9 @@ The app remains English-only until locale selection and additional catalogues la
 Translation keys must be static string literals.
 The inventory resolves those calls against the English catalogue and records the English value under the calling source file, so moving a literal behind `t()` does not rewrite or shrink the copy inventory.
 Missing or dynamic keys fail the inventory check instead of silently dropping copy.
+`locales/zh-TW.json` holds the Traditional Chinese (Taiwan) translations, keyed like `en.json`.
+Nothing loads it yet; that arrives with locale selection.
+A key missing from it is not an error, but a key that `en.json` lacks, or a translation whose `{{placeholders}}` differ from the English, fails `catalogues.test.ts`.
 
 ## What it is for
 

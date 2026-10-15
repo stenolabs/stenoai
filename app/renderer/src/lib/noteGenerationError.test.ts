@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { ResultError } from './result';
-import { isRetranscribeError, keepNoteGenerationCause, noteGenerationErrorCode, noteGenerationErrorFromResult, noteGenerationErrorMessage, noteGenerationErrorTitle } from './noteGenerationError';
+import { isRetranscribeError, keepNoteGenerationCause, noteGenerationErrorCode, noteGenerationErrorFromResult, noteGenerationErrorMessage } from './noteGenerationError';
 
 describe('note generation error copy', () => {
   it('uses only known codes, never raw diagnostics or inherited object keys', () => {
@@ -23,10 +23,8 @@ describe('note generation error copy', () => {
     for (const code of ['retranscribe_no_audio', 'retranscribe_unlinked_segments'] as const) {
       expect(noteGenerationErrorCode(code)).toBe(code);
       expect(isRetranscribeError(code)).toBe(true);
-      expect(noteGenerationErrorTitle(code)).toBe('Note wasn’t transcribed again');
       expect(noteGenerationErrorMessage(code)).toMatch(/note is unchanged\.$/);
     }
     expect(isRetranscribeError('generation_failed')).toBe(false);
-    expect(noteGenerationErrorTitle('generation_failed')).toBe('Notes weren’t generated');
   });
 });

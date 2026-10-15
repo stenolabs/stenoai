@@ -6,6 +6,7 @@ import { useRecording } from '@/hooks/useRecording';
 import { useLiveTranscriptStatus } from '@/hooks/useLiveTranscript';
 import { useLiveTranscriptOpen } from '@/hooks/liveTranscriptOpenStore';
 import { useLiveTranscriptAvailable } from '@/hooks/useModels';
+import { t } from '@/i18n';
 
 /**
  * Compact (Granola-style) transcription pill shown whenever a recording is
@@ -57,8 +58,8 @@ export function LiveDock() {
   }, [loadingModel]);
   const prepareLabel = showPreparing
     ? live.slow
-      ? 'Still preparing…'
-      : 'Preparing…'
+      ? t('liveDock.stillPreparing')
+      : t('liveDock.preparing')
     : null;
 
   const onResume = () => {
@@ -81,7 +82,7 @@ export function LiveDock() {
     >
       <span
         style={{ color: 'var(--recording)' }}
-        title={paused ? 'Paused' : 'Recording'}
+        title={paused ? t('liveDock.paused') : t('liveDock.recording')}
         aria-hidden="true"
       >
         <AudioWave
@@ -112,14 +113,14 @@ export function LiveDock() {
             <button
               type="button"
               onClick={onResume}
-              aria-label="Resume recording"
+              aria-label={t('liveDock.resumeRecording')}
               className="inline-flex size-7 cursor-pointer items-center justify-center rounded-full border-0 transition-colors hover:bg-[color:var(--surface-hover)]"
               style={{ background: 'transparent', color: 'var(--fg-1)' }}
             >
               <Play size={13} />
             </button>
           </TooltipTrigger>
-          <TooltipContent side="top">Resume recording</TooltipContent>
+          <TooltipContent side="top">{t('liveDock.resumeRecording')}</TooltipContent>
         </Tooltip>
       )}
       {/* Expand — Parakeet only. Whisper recordings have no live drawer
@@ -133,7 +134,7 @@ export function LiveDock() {
               type="button"
               onClick={toggleTranscript}
               disabled={stopped}
-              aria-label={transcriptOpen ? 'Hide transcript' : 'Show transcript'}
+              aria-label={transcriptOpen ? t('liveDock.hideTranscript') : t('liveDock.showTranscript')}
               aria-pressed={transcriptOpen}
               className="inline-flex size-7 cursor-pointer items-center justify-center rounded-full border-0 transition-colors hover:bg-[color:var(--surface-hover)] disabled:cursor-not-allowed disabled:opacity-50"
               style={{ background: 'transparent', color: 'var(--fg-1)' }}
@@ -141,7 +142,7 @@ export function LiveDock() {
               <ChevronUp size={14} />
             </button>
           </TooltipTrigger>
-          <TooltipContent side="top">{transcriptOpen ? 'Hide transcript' : 'Show transcript'}</TooltipContent>
+          <TooltipContent side="top">{transcriptOpen ? t('liveDock.hideTranscript') : t('liveDock.showTranscript')}</TooltipContent>
         </Tooltip>
       )}
       <Tooltip>
@@ -150,14 +151,14 @@ export function LiveDock() {
             type="button"
             onClick={onStop}
             disabled={stopped}
-            aria-label="Stop recording"
+            aria-label={t('liveDock.stopRecording')}
             className="inline-flex size-7 cursor-pointer items-center justify-center rounded-full border-0 transition-colors hover:bg-[color:var(--surface-hover)] disabled:cursor-not-allowed disabled:opacity-50"
             style={{ background: 'transparent', color: 'var(--recording)' }}
           >
             <Square size={12} fill="currentColor" stroke="currentColor" />
           </button>
         </TooltipTrigger>
-        <TooltipContent side="top">Stop recording</TooltipContent>
+        <TooltipContent side="top">{t('liveDock.stopRecording')}</TooltipContent>
       </Tooltip>
     </div>
   );

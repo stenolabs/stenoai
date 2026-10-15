@@ -18,6 +18,7 @@ import {
   useSetTelemetry,
   useTelemetrySetting,
 } from '@/hooks/useSettings';
+import { t } from '@/i18n';
 
 /**
  * One-time, soft privacy disclosure for existing installs upgrading into the
@@ -69,38 +70,35 @@ export function PrivacyConsentModal({ open }: { open: boolean }) {
     >
       <DialogContent className="max-w-md" data-privacy-consent>
         <DialogHeader>
-          <DialogTitle>A quick note on privacy</DialogTitle>
+          <DialogTitle>{t('privacyConsent.title')}</DialogTitle>
           <DialogDescription>
-            To help find and fix failures, Steno sends anonymous usage data —
-            never your recordings, transcripts, or notes. Steno also starts
-            automatically when you log in. Both are on by default and you can
-            change either one anytime in Settings.
+            {t('privacyConsent.body')}
           </DialogDescription>
         </DialogHeader>
 
         <div className="mt-1">
           <SettingRow
-            label="Anonymous usage data"
-            description="Crash and usage signals only. Meeting content is never sent."
+            label={t('privacyConsent.analytics.label')}
+            description={t('privacyConsent.analytics.description')}
           >
             <Switch
               checked={telemetryEnabled}
               onCheckedChange={(v) => setTelemetry.mutate({ enabled: v, source: 'consent' })}
               disabled={telemetry.data === undefined}
-              aria-label="Anonymous usage data"
+              aria-label={t('privacyConsent.analytics.label')}
               data-privacy-telemetry
             />
           </SettingRow>
           <SettingRow
-            label="Launch on login"
-            description="Start Steno automatically when you log in (hidden in the menu bar)."
+            label={t('privacyConsent.launchAtLogin.label')}
+            description={t('privacyConsent.launchAtLogin.description')}
             noBorder
           >
             <Switch
               checked={launchOnLoginEnabled}
               onCheckedChange={(v) => setLaunchOnLogin.mutate(v)}
               disabled={launchOnLogin.data === undefined}
-              aria-label="Launch on login"
+              aria-label={t('privacyConsent.launchAtLogin.label')}
               data-privacy-launch
             />
           </SettingRow>
@@ -108,7 +106,7 @@ export function PrivacyConsentModal({ open }: { open: boolean }) {
 
         <DialogFooter>
           <Button onClick={() => void acknowledge()} data-privacy-ack>
-            Got it
+            {t('privacyConsent.confirm')}
           </Button>
         </DialogFooter>
       </DialogContent>

@@ -62,7 +62,6 @@ import {
   keepNoteGenerationCause,
   noteGenerationErrorFromResult,
   noteGenerationErrorMessage,
-  noteGenerationErrorTitle,
   isRetranscribeError,
   type NoteGenerationErrorCode,
 } from '@/lib/noteGenerationError';
@@ -196,26 +195,26 @@ export function MeetingDetail({ summaryFile }: MeetingDetailProps) {
     <MeetingsShell activeSummaryFile={summaryFile}>
       {meeting.isLoading || (meeting.isFetching && !meeting.data) ? (
         <div className="flex min-h-[40vh] items-center justify-center text-[color:var(--fg-2)]">
-          Loading meeting…
+          {t('meeting.loading')}
         </div>
       ) : meeting.isError ? (
         <div className="space-y-4 text-center">
-          <h1 className="mv-title">Couldn't load note.</h1>
+          <h1 className="mv-title">{t('meeting.loadError.title')}</h1>
           <p className="text-[17px] leading-[1.55]" style={{ color: 'var(--fg-2)' }}>
-            {(meeting.error as Error)?.message ?? 'An error occurred loading this note.'}
+            {(meeting.error as Error)?.message ?? t('meeting.loadError.fallback')}
           </p>
           <button type="button" className="mv-chip" onClick={() => navigate('/meetings')}>
-            Back to meetings
+            {t('meeting.backToMeetings')}
           </button>
         </div>
       ) : !meeting.data ? (
         <div className="space-y-4 text-center">
-          <h1 className="mv-title">Note not found.</h1>
+          <h1 className="mv-title">{t('meeting.notFound.title')}</h1>
           <p className="text-[17px] leading-[1.55]" style={{ color: 'var(--fg-2)' }}>
-            This recording may have been deleted. Pick another from the sidebar.
+            {t('meeting.notFound.detail')}
           </p>
           <button type="button" className="mv-chip" onClick={() => navigate('/meetings')}>
-            Back to meetings
+            {t('meeting.backToMeetings')}
           </button>
         </div>
       ) : (
@@ -281,7 +280,7 @@ function DetailContent({
 
   const onShareToOrg = async () => {
     setShareError(null);
-    const title = meeting.session_info.name || 'Untitled note';
+    const title = meeting.session_info.name || t('meeting.untitledNote');
     // Body = structured summary markdown (same as local detail page).
     // Transcript ships as a separate S3 artifact so the org viewer can
     // toggle it via the side panel rather than rendering it inline below
@@ -364,6 +363,8 @@ function DetailContent({
   );
   const [reprocessError, setReprocessError] = React.useState<NoteGenerationErrorCode | null>(null);
   const reprocessFailed = reprocessError !== null;
+  // Error-code fallback for the message lookup below. Hoisted out of JSX so the
+  // i18n gate does not read the code as user-facing copy.
   const reprocessErrorCode: NoteGenerationErrorCode = reprocessError ?? 'generation_failed';
   const qc = useQueryClient();
 
@@ -706,7 +707,7 @@ function DetailContent({
       setTimeout(() => setCopiedTranscript(false), 1500);
       return true;
     } catch (error) {
-      setExportError(`Couldn't copy transcript: ${getErrorMessage(error)}`);
+      setExportError(t('meeting.copyTranscriptFailed', { error: getErrorMessage(error) }));
       return false;
     }
   };
@@ -723,10 +724,12 @@ function DetailContent({
         transcriptBundle
       );
       if (!res.success && res.error !== EXPORT_CANCELED_ERROR) {
-        setExportError(`Couldn't save transcript: ${res.error || 'unknown error'}`);
+        setExportError(
+          t('meeting.saveTranscriptFailed', { error: res.error || t('meeting.unknownError') })
+        );
       }
     } catch (error) {
-      setExportError(`Couldn't save transcript: ${getErrorMessage(error)}`);
+      setExportError(t('meeting.saveTranscriptFailed', { error: getErrorMessage(error) }));
     }
   };
 
@@ -792,10 +795,12 @@ function DetailContent({
         buildNotesPdfHtml()
       );
       if (!res.success && res.error !== EXPORT_CANCELED_ERROR) {
-        setExportError(`Couldn't save notes: ${res.error || 'unknown error'}`);
+        setExportError(
+          t('meeting.saveNotesFailed', { error: res.error || t('meeting.unknownError') })
+        );
       }
     } catch (error) {
-      setExportError(`Couldn't save notes: ${getErrorMessage(error)}`);
+      setExportError(t('meeting.saveNotesFailed', { error: getErrorMessage(error) }));
     }
   };
 
@@ -1048,7 +1053,7 @@ function DetailContent({
         streaming: reprocessStreaming,
         // Always "Generate notes" — no separate Regenerate wording. Every
         // record/continue → stop leaves this one CTA.
-        label: 'Generate notes',
+        label: t('meeting.generateNotes'),
         start: stableStartReprocess,
       });
     } else {
@@ -1084,12 +1089,12 @@ function DetailContent({
           <button
             type="button"
             onClick={leaveDetail}
-            aria-label="Back to home"
+            aria-label={t('meeting.backHomeAria')}
             className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[12.5px] transition-colors hover:bg-[color:var(--surface-hover)] hover:text-[color:var(--fg-1)]"
             style={{ color: 'var(--fg-2)' }}
           >
             <ChevronLeft className="size-[15px]" />
-            Home
+            {t('meeting.home')}
           </button>
           <div className="flex items-center gap-1">
             {/* Edit the generated note (D9). Only for the Standard structured
@@ -1117,7 +1122,7 @@ function DetailContent({
               <Tooltip>
                 <TooltipTrigger asChild>
                   <ActionIconButton
-                    label="Generate notes"
+                    label={t('meeting.generateNotes')}
                     onClick={startReprocess}
                     // Disable while a recording is live on THIS note — same
                     // reason the floating CTA hides: don't summarise a
@@ -1142,7 +1147,7 @@ function DetailContent({
                     />
                   </ActionIconButton>
                 </TooltipTrigger>
-                <TooltipContent side="bottom">Generate notes</TooltipContent>
+                <TooltipContent side="bottom">{t('meeting.generateNotes')}</TooltipContent>
               </Tooltip>
             )}
             {/* Everything that carries this note OUT of the app, in one place:
@@ -1177,7 +1182,7 @@ function DetailContent({
                   disabled={notesExportBlocked}
                 >
                   <Copy className="size-[13px] shrink-0" style={{ color: 'var(--fg-2)' }} />
-                  {copied ? 'Copied' : 'Copy notes'}
+                  {copied ? t('meeting.copied') : t('meeting.copyNotes')}
                 </button>
                 <button
                   type="button"
@@ -1195,7 +1200,7 @@ function DetailContent({
                   disabled={!transcriptBundle}
                 >
                   <FileText className="size-[13px] shrink-0" style={{ color: 'var(--fg-2)' }} />
-                  {copiedTranscript ? 'Copied' : 'Copy transcript'}
+                  {copiedTranscript ? t('meeting.copied') : t('meeting.copyTranscript')}
                 </button>
                 <MenuDivider />
                 <button
@@ -1206,7 +1211,7 @@ function DetailContent({
                   disabled={!canExportNotesPdf || notesExportBlocked}
                 >
                   <FileDown className="size-[13px] shrink-0" style={{ color: 'var(--fg-2)' }} />
-                  Save notes as PDF…
+                  {t('meeting.saveNotesAs')}
                 </button>
                 <button
                   type="button"
@@ -1226,7 +1231,7 @@ function DetailContent({
                   disabled={!transcriptBundle}
                 >
                   <Download className="size-[13px] shrink-0" style={{ color: 'var(--fg-2)' }} />
-                  Save transcript as .md…
+                  {t('meeting.saveTranscriptAs')}
                 </button>
                 {/* Native share sheet (AirDrop, Mail, Messages, Notes). macOS
                     only, and rendered only when the main process says a sheet
@@ -1302,8 +1307,8 @@ function DetailContent({
               <PopoverTrigger asChild>
                 <button
                   type="button"
-                  aria-label="More options"
-                  title="More options"
+                  aria-label={t('meeting.moreOptions')}
+                  title={t('meeting.moreOptions')}
                   className="inline-flex size-7 items-center justify-center rounded-md transition-colors hover:bg-[color:var(--surface-hover)] hover:text-[color:var(--fg-1)]"
                   style={{ color: 'var(--fg-2)' }}
                 >
@@ -1321,7 +1326,7 @@ function DetailContent({
                   }}
                 >
                   <FolderIcon className="size-[13px] shrink-0" style={{ color: 'var(--fg-2)' }} />
-                  View containing folder
+                  {t('meeting.viewContainingFolder')}
                 </button>
                 {ipc().app.platform === 'darwin' && (
                   <button
@@ -1373,7 +1378,7 @@ function DetailContent({
                     }
                   >
                     <Mic className="size-[13px] shrink-0" style={{ color: 'var(--fg-2)' }} />
-                    Re-transcribe recording
+                    {t('meeting.retranscribeAction')}
                   </button>
                 )}
                 {orgSession.data?.signedIn &&
@@ -1384,10 +1389,10 @@ function DetailContent({
                       style={{ color: 'var(--fg-1)' }}
                       onClick={() => setUnshareOpen(true)}
                       disabled={isUnsharing}
-                      title={`Unshare from ${orgSession.data.orgId}`}
+                      title={t('meeting.unshareFrom', { org: orgSession.data.orgId })}
                     >
                       <Globe className="size-[13px] shrink-0" style={{ color: 'var(--fg-2)' }} />
-                      {`Unshare from ${orgSession.data.orgId}`}
+                      {t('meeting.unshareFrom', { org: orgSession.data.orgId })}
                     </button>
                   ) : (
                     <button
@@ -1400,14 +1405,14 @@ function DetailContent({
                       // mount would treat the note as "not shared" and
                       // upload a duplicate against an already-shared note.
                       disabled={isSharing || backupState.isLoading}
-                      title={`Share with ${orgSession.data.orgId}`}
+                      title={t('meeting.shareWith', { org: orgSession.data.orgId })}
                     >
                       <Globe className="size-[13px] shrink-0" style={{ color: 'var(--fg-2)' }} />
                       {isSharing
-                        ? 'Sharing…'
+                        ? t('meeting.sharing')
                         : shareError
-                          ? `Share failed: ${shareError}`
-                          : `Share with ${orgSession.data.orgId}`}
+                          ? t('meeting.shareFailed', { error: shareError })
+                          : t('meeting.shareWith', { org: orgSession.data.orgId })}
                     </button>
                   ))}
                 {/* Deletes straight away, no confirm step: the delete is a
@@ -1427,7 +1432,9 @@ function DetailContent({
                       await deleteMeeting.mutateAsync(meeting);
                     } catch (err) {
                       setDeleteError(
-                        `Delete failed: ${err instanceof Error ? err.message : String(err)}`,
+                        t('meeting.deleteFailed', {
+                          error: err instanceof Error ? err.message : String(err),
+                        }),
                       );
                       return;
                     }
@@ -1437,7 +1444,7 @@ function DetailContent({
                   }}
                 >
                   <Trash2 className="size-[13px] shrink-0" />
-                  Delete note
+                  {t('meeting.deleteNote')}
                 </button>
               </PopoverContent>
             </Popover>
@@ -1487,8 +1494,8 @@ function DetailContent({
             disabled={
               titleRegening || reprocess.isPending || streamPhase !== 'idle' || isEditingTitle
             }
-            aria-label="Regenerate title"
-            title="Regenerate title"
+            aria-label={t('meeting.regenerateTitleAria')}
+            title={t('meeting.regenerateTitleAria')}
             className={cn(
               'inline-flex items-center justify-center opacity-0 transition-opacity group-hover:opacity-100 disabled:pointer-events-none',
               titleRegening && 'opacity-100'
@@ -1547,7 +1554,9 @@ function DetailContent({
           />
           {participants.length > 0 && (
             <ChipV2 icon={<Users className="size-[11px]" />}>
-              {participants.length} {participants.length === 1 ? 'person' : 'people'}
+              {participants.length === 1
+                ? t('meeting.participantCount.one', { count: participants.length })
+                : t('meeting.participantCount.other', { count: participants.length })}
             </ChipV2>
           )}
           {/* Quiet, non-alarming backup status for org users — a calm
@@ -1559,11 +1568,11 @@ function DetailContent({
               onClick={() => void onShareToOrg()}
               title={
                 backupError
-                  ? `Last backup failed: ${backupError}. Click to retry.`
-                  : 'This note has not been backed up. Click to retry.'
+                  ? t('meeting.backup.failedTooltip', { error: backupError })
+                  : t('meeting.backup.notBackedUpTooltip')
               }
             >
-              {isSharing ? 'Backing up…' : 'Not backed up'}
+              {isSharing ? t('meeting.backingUp') : t('meeting.notBackedUp')}
             </ChipV2>
           )}
         </div>
@@ -1602,7 +1611,9 @@ function DetailContent({
               role="alert"
             >
               <div className="text-[15px] font-medium" style={{ color: 'var(--fg-1)' }}>
-                {noteGenerationErrorTitle(reprocessErrorCode)}
+                {isRetranscribeError(reprocessErrorCode)
+                  ? t('meeting.noteNotRetranscribed')
+                  : t('meeting.notesNotGenerated')}
               </div>
               <p
                 className="text-[14px] leading-[1.6]"
@@ -1619,7 +1630,7 @@ function DetailContent({
                   // header's Generate-notes button.
                   disabled={reprocess.isPending || streamPhase !== 'idle' || editing}
                 >
-                  Generate notes
+                  {t('meeting.generateNotes')}
                 </Button>
               )}
             </section>
@@ -1653,21 +1664,20 @@ function DetailContent({
                   data-testid="transcription-failed-notice"
                 >
                   <div className="text-[15px] font-medium" style={{ color: 'var(--fg-1)' }}>
-                    Transcription failed
+                    {t('meeting.transcriptionFailed')}
                   </div>
                   <p
                     className="text-[14px] leading-[1.6]"
                     style={{ color: 'var(--fg-2)', maxWidth: '64ch' }}
                   >
-                    No notes could be generated for this recording. Your audio was preserved (not
-                    deleted), so nothing was lost.
+                    {t('meeting.transcriptionFailedDetail')}
                   </p>
                   {transcriptionError && (
                     <p
                       className="text-[12.5px] leading-[1.5]"
                       style={{ color: 'var(--fg-2)', opacity: 0.8 }}
                     >
-                      Details: {transcriptionError}
+                      {t('meeting.errorDetails', { error: transcriptionError })}
                     </p>
                   )}
                 </section>
@@ -1684,7 +1694,7 @@ function DetailContent({
                     className="flex items-center gap-1.5 text-[15px] font-medium"
                     style={{ color: 'var(--fg-1)' }}
                   >
-                    Finishing up
+                    {t('meeting.finishingUp')}
                     <span className="thinking-dot" />
                     <span className="thinking-dot" />
                     <span className="thinking-dot" />
@@ -1695,20 +1705,19 @@ function DetailContent({
                   >
                     {willGenerateNotes ? (
                       <>
-                        Finishing your transcript in the background, then generating notes. You can
-                        read and edit <strong>My notes</strong> now.
+                        {t('meeting.transcriptFinishing.withNotes.beforeStrong')}{' '}<strong>{t('meeting.myNotes')}</strong>{' '}{t('meeting.transcriptFinishing.withNotes.afterStrong')}
                       </>
                     ) : (
                       <>
-                        Finishing your transcript in the background. You can read and edit{' '}
-                        <strong>My notes</strong> now, and generate notes when it's done.
+                        {t('meeting.transcriptFinishing.readNotes.beforeStrong')}{' '}
+                        <strong>{t('meeting.myNotes')}</strong>{' '}{t('meeting.transcriptFinishing.readNotes.afterStrong')}
                       </>
                     )}
                   </p>
                 </section>
               ) : summary ? (
                 <section className="flex flex-col gap-3">
-                  <SectionTitle>Summary</SectionTitle>
+                  <SectionTitle>{t('meeting.summary')}</SectionTitle>
                   <div data-testid="tab-summary-content">
                     {stripReasoning(summary)
                       .split(/\n{2,}/)
@@ -1733,26 +1742,24 @@ function DetailContent({
                   data-testid="no-notes-yet"
                 >
                   <div className="text-[15px] font-medium" style={{ color: 'var(--fg-1)' }}>
-                    No notes yet
+                    {t('meeting.noNotesYet')}
                   </div>
                   <p
                     className="text-[14px] leading-[1.6]"
                     style={{ color: 'var(--fg-2)', maxWidth: '64ch' }}
                   >
-                    This recording was transcribed but notes were not generated automatically. Use
-                    the <strong>Generate notes</strong> button below to create them, or copy or save
-                    the transcript from the actions above.
+                    {t('meeting.noNotesAuto.beforeAction')}{' '}<strong>{t('meeting.noNotesAuto.actionName')}</strong>{' '}{t('meeting.noNotesAuto.afterAction')}
                   </p>
                 </section>
               ) : (
                 <p className="py-2 text-sm" style={{ color: 'var(--fg-2)' }}>
-                  No summary available for this meeting.
+                  {t('meeting.noSummary')}
                 </p>
               )}
 
               {discussionAreas.length > 0 && (
                 <section className="flex flex-col gap-3">
-                  <SectionTitle>Key topics</SectionTitle>
+                  <SectionTitle>{t('meeting.keyTopics')}</SectionTitle>
                   <div className="mv-topics">
                     {discussionAreas.map((area, i) => (
                       <div key={i} className="flex flex-col gap-1">
@@ -1766,7 +1773,7 @@ function DetailContent({
 
               {keyPoints.length > 0 && (
                 <section className="flex flex-col gap-3">
-                  <SectionTitle>Key points</SectionTitle>
+                  <SectionTitle>{t('meeting.keyPoints')}</SectionTitle>
                   <ul className="mv-bullets">
                     {keyPoints.map((p, i) => (
                       <li key={i}>{p}</li>
@@ -1777,7 +1784,7 @@ function DetailContent({
 
               {actionItems.length > 0 && (
                 <section className="flex flex-col gap-3">
-                  <SectionTitle>Action items</SectionTitle>
+                  <SectionTitle>{t('meeting.actionItems')}</SectionTitle>
                   <ul className="mv-bullets">
                     {actionItems.map((a, i) => (
                       <li key={i}>{a}</li>
@@ -1788,7 +1795,7 @@ function DetailContent({
 
               {participants.length > 0 && (
                 <section className="flex flex-col gap-3">
-                  <SectionTitle>Participants</SectionTitle>
+                  <SectionTitle>{t('meeting.participantsTitle')}</SectionTitle>
                   <div className="flex flex-wrap gap-1.5">
                     {participants.map((p, i) => (
                       <ChipV2 key={i}>{p}</ChipV2>
@@ -1815,11 +1822,14 @@ function DetailContent({
         <DialogContent className="max-w-sm">
           <DialogHeader>
             <DialogTitle>
-              Unshare from {orgSession.data?.signedIn ? orgSession.data.orgId : 'your org'}?
+              {t('meeting.unshareConfirm.title', {
+                org: orgSession.data?.signedIn
+                  ? orgSession.data.orgId
+                  : t('meeting.unshareConfirm.yourOrg'),
+              })}
             </DialogTitle>
             <DialogDescription>
-              The shared copy will be removed from your organisation. Your local note stays on this
-              device. You can re-share at any time.
+              {t('meeting.unshareConfirm.description')}
             </DialogDescription>
           </DialogHeader>
           {shareError && (
@@ -1829,14 +1839,14 @@ function DetailContent({
           )}
           <DialogFooter>
             <DialogClose asChild>
-              <Button variant="ghost">Cancel</Button>
+              <Button variant="ghost">{t('meeting.cancel')}</Button>
             </DialogClose>
             <Button
               variant="destructive"
               disabled={isUnsharing}
               onClick={() => void onUnshareFromOrg()}
             >
-              {isUnsharing ? 'Unsharing…' : 'Unshare'}
+              {isUnsharing ? t('meeting.unsharing') : t('meeting.unshare')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1845,9 +1855,9 @@ function DetailContent({
       <ConfirmDialog
         open={retranscribeOpen}
         onOpenChange={setRetranscribeOpen}
-        title="Re-transcribe this recording?"
+        title={t('meeting.retranscribeConfirm.title')}
         description={
-          'This re-runs transcription with your current transcription settings, replacing the transcript and regenerating the summary.' +
+          t('meeting.retranscribeConfirm.description') +
           // #249: reprocess (which --retranscribe runs through) snapshots the
           // current note as a switchable report before overwriting it, so the
           // edited version is one click away in the menu next to Summary
@@ -1859,7 +1869,7 @@ function DetailContent({
               t('noteEditor.savedStandard')
             : '')
         }
-        confirmLabel="Re-transcribe"
+        confirmLabel={t('meeting.retranscribeConfirm.action')}
         destructive={hasNoteEdits}
         isPending={retranscribe.isPending}
         onConfirm={() => {
@@ -1966,8 +1976,8 @@ function NoteViewToggle({
   const summaryActive = tab === 'summary';
   const activeLabel =
     activeReportId === null
-      ? 'Summary'
-      : (reports.find((r) => r.id === activeReportId)?.template_name ?? 'Summary');
+      ? t('meeting.summary')
+      : (reports.find((r) => r.id === activeReportId)?.template_name ?? t('meeting.summary'));
 
   const selectView = (id: string | null) => {
     setMenuOpen(false);
@@ -1984,7 +1994,7 @@ function NoteViewToggle({
     <div className="flex items-center" data-testid="note-view-toggle">
       <div
         role="tablist"
-        aria-label="Note view"
+        aria-label={t('meeting.noteViewAria')}
         className="inline-flex items-stretch overflow-hidden rounded-full"
         style={{ border: '1px solid var(--border-subtle)', opacity: disabled ? 0.5 : 1 }}
       >
@@ -2003,7 +2013,7 @@ function NoteViewToggle({
           }}
         >
           <PencilLine className="size-[13px]" />
-          My notes
+          {t('meeting.myNotes')}
           {hasNotes && !notesActive && (
             <span
               aria-hidden="true"
@@ -2034,12 +2044,12 @@ function NoteViewToggle({
                 className="inline-flex items-center py-1 pl-3 pr-1.5 text-[13px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
                 style={{ color: summaryActive ? 'var(--fg-1)' : 'var(--fg-2)' }}
               >
-                {generating ? 'Generating…' : activeLabel}
+                {generating ? t('meeting.generatingEllipsis') : activeLabel}
               </button>
               <PopoverTrigger asChild>
                 <button
                   type="button"
-                  aria-label="Choose view or template"
+                  aria-label={t('meeting.chooseViewAria')}
                   data-testid="note-view-menu-trigger"
                   disabled={disabled}
                   className="inline-flex items-center py-1 pl-0.5 pr-2.5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring hover:text-[color:var(--fg-1)]"
@@ -2055,7 +2065,7 @@ function NoteViewToggle({
               selected={summaryActive && activeReportId === null}
               onClick={() => selectView(null)}
             >
-              Summary
+              {t('meeting.summary')}
             </ViewMenuItem>
             {reports.map((r) => {
               const meta = [r.model, formatReportDate(r.created_at)].filter(Boolean).join(' · ');
@@ -2080,7 +2090,7 @@ function NoteViewToggle({
                   </button>
                   <button
                     type="button"
-                    aria-label={`Delete report ${r.template_name}`}
+                    aria-label={t('meeting.deleteReportAria', { name: r.template_name })}
                     onClick={(e) => {
                       e.stopPropagation();
                       setDeleteTarget(r);
@@ -2100,7 +2110,7 @@ function NoteViewToggle({
                   className="px-3 pb-1 pt-1.5 text-[11px] font-medium"
                   style={{ color: 'var(--fg-muted)' }}
                 >
-                  Generate from template
+                  {t('meeting.generateFromTemplate')}
                 </div>
                 {templates.map((t) => (
                   <button
@@ -2125,9 +2135,9 @@ function NoteViewToggle({
       <ConfirmDialog
         open={!!deleteTarget}
         onOpenChange={(o) => !o && setDeleteTarget(null)}
-        title={deleteTarget ? `Delete report "${deleteTarget.template_name}"?` : ''}
-        description="This permanently deletes this generated report. The transcript and other reports are not affected."
-        confirmLabel="Delete"
+        title={deleteTarget ? t('meeting.deleteReportConfirm.title', { name: deleteTarget.template_name }) : ''}
+        description={t('meeting.deleteReportConfirm.description')}
+        confirmLabel={t('meeting.delete')}
         destructive
         onConfirm={() => {
           if (!deleteTarget) return;
@@ -2241,7 +2251,7 @@ function MyNotesEditor({
         onBlur={flush}
         aria-invalid={invalidHeading || undefined}
         aria-describedby={error ? errorId : undefined}
-        placeholder="Write notes…"
+        placeholder={t('meeting.writeNotesPlaceholder')}
         spellCheck
         data-testid="my-notes-input"
         className="block w-full resize-none border-0 bg-transparent text-[15.5px] outline-none"
@@ -2480,10 +2490,10 @@ function StreamingView({
   );
 
   const indicatorLabel = chunkProgress
-    ? `Summarising part ${chunkProgress.step}/${chunkProgress.total}`
+    ? t('meeting.streamProgress.partial', { step: chunkProgress.step, total: chunkProgress.total })
     : phase === 'analyzing'
-      ? 'Analysing transcript'
-      : 'Generating notes';
+      ? t('meeting.streamProgress.analysing')
+      : t('meeting.streamProgress.generating');
 
   return (
     <div className="relative">
@@ -2653,7 +2663,7 @@ function FolderPicker({
               }
             }}
             onBlur={() => void submitNewFolder()}
-            placeholder="Folder name..."
+            placeholder={t('meeting.folderNamePlaceholder')}
             className="w-28 bg-transparent outline-none placeholder:text-muted-foreground"
           />
         </div>
@@ -2662,7 +2672,7 @@ function FolderPicker({
     );
   }
 
-  const currentFolderLabel = currentFolder?.name ?? 'Add to folder';
+  const currentFolderLabel = currentFolder?.name ?? t('meeting.addToFolder');
 
   return (
     <div className="space-y-1">
@@ -2673,7 +2683,7 @@ function FolderPicker({
           </button>
         </SelectPrimitive.Trigger>
         <SelectContent align="start">
-          <SelectItem value={FOLDER_NONE}>No folder</SelectItem>
+          <SelectItem value={FOLDER_NONE}>{t('meeting.noFolder')}</SelectItem>
           <SelectSeparator />
           {allFolders.map((f) => (
             <SelectItem key={f.id} value={f.id}>
@@ -2681,7 +2691,7 @@ function FolderPicker({
             </SelectItem>
           ))}
           <SelectSeparator />
-          <SelectItem value={FOLDER_NEW}>New folder...</SelectItem>
+          <SelectItem value={FOLDER_NEW}>{t('meeting.newFolder')}</SelectItem>
         </SelectContent>
       </Select>
       {folderError && <p className="text-xs text-destructive">{folderError}</p>}
@@ -2729,9 +2739,9 @@ function formatDuration(seconds?: number): string | undefined {
   const h = Math.floor(seconds / 3600);
   const m = Math.floor((seconds % 3600) / 60);
   const s = seconds % 60;
-  if (h > 0) return `${h}h ${m}m`;
-  if (m > 0) return `${m}m`;
-  return `${s}s`;
+  if (h > 0) return t('meeting.duration.hoursMinutes', { hours: h, minutes: m });
+  if (m > 0) return t('meeting.duration.minutes', { minutes: m });
+  return t('meeting.duration.seconds', { seconds: s });
 }
 
 interface DiscussionArea {
@@ -2749,7 +2759,7 @@ function asDiscussionAreas(value: unknown): DiscussionArea[] {
       const title = typeof obj.title === 'string' ? obj.title : '';
       const analysis = typeof obj.analysis === 'string' ? obj.analysis : undefined;
       if (!title && !analysis) return null;
-      return { title: title || 'Discussion topic', analysis };
+      return { title: title || t('meeting.discussionTopicFallback'), analysis };
     })
     .filter((v): v is DiscussionArea => v !== null);
 }
@@ -2757,7 +2767,7 @@ function asDiscussionAreas(value: unknown): DiscussionArea[] {
 function getErrorMessage(error: unknown): string {
   if (error instanceof Error && error.message) return error.message;
   if (typeof error === 'string' && error.trim()) return error;
-  return 'Something went wrong.';
+  return t('meeting.errorFallback');
 }
 
 /** Pick which transcript flavour to ship to org. Diarised text (with

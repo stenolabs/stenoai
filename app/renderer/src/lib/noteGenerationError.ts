@@ -36,10 +36,6 @@ export function isRetranscribeError(code: NoteGenerationErrorCode): boolean {
   return code.startsWith('retranscribe_');
 }
 
-export function noteGenerationErrorTitle(code: NoteGenerationErrorCode): string {
-  return isRetranscribeError(code) ? 'Note wasn’t transcribed again' : 'Notes weren’t generated';
-}
-
 // The stream event, terminal event and rejected IPC result can all report the
 // same failure. A generic terminal signal must not erase a known stream cause.
 export function keepNoteGenerationCause(previous: NoteGenerationErrorCode | null, value: unknown): NoteGenerationErrorCode {

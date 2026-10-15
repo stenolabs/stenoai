@@ -23,7 +23,8 @@ import { useUserName } from '@/hooks/useSettings';
 import { useOrgSession } from '@/hooks/useOrg';
 import { navigate } from '@/lib/router';
 import { GLOBAL_SCOPE, bucketKey, deriveSessionName, toBucketLabel, formatActiveModel, chatProviderReady } from '@/lib/chat';
-import { PRESETS, PresetGlyph, PRESET_COLORS, CHAT_COMPOSER_LABEL } from '@/lib/chatPresets';
+import { PRESETS, PresetGlyph, PRESET_COLORS } from '@/lib/chatPresets';
+import { t } from '@/i18n';
 
 function TypewriterPlaceholder({ index, setIndex }: { index: number, setIndex: React.Dispatch<React.SetStateAction<number>> }) {
   const [text, setText] = React.useState('');
@@ -209,7 +210,7 @@ export function Chat() {
       // (disk full, IPC error, cloud-key revoked). Surface the error,
       // restore the user's text so they don't have to retype, and roll
       // back the empty session so it doesn't appear in History/Recents.
-      const message = err instanceof Error ? err.message : 'Failed to send';
+      const message = err instanceof Error ? err.message : t('chat.home.sendFailed');
       setSubmitError(message);
       setInput(q);
       if (createdSessionId) {
@@ -253,10 +254,10 @@ export function Chat() {
         >
           {greetingName ? (
             <>
-              Hi <span style={{ fontStyle: 'italic', fontWeight: 500 }}>{greetingName}</span>, ask anything
+              {t('chat.home.greeting.prefix')}{' '}<span style={{ fontStyle: 'italic', fontWeight: 500 }}>{greetingName}</span>{t('chat.home.greeting.suffix')}
             </>
           ) : (
-            'Ask anything'
+            t('chat.home.greeting.anonymous')
           )}
         </h1>
 
@@ -288,7 +289,7 @@ export function Chat() {
                 {ready && !input && !presetsOpen && !isFocused && <TypewriterPlaceholder index={suggestedIndex} setIndex={setSuggestedIndex} />}
                 <input
                   ref={inputRef}
-                  aria-label={CHAT_COMPOSER_LABEL}
+                  aria-label={t('chat.presets.composerLabel')}
                   type="text"
                   value={input}
                   onFocus={() => setIsFocused(true)}
@@ -333,7 +334,7 @@ export function Chat() {
                     }
                   }}
                   disabled={!ready}
-                  placeholder={ready ? (isFocused && !input && !presetsOpen ? `/ ${PRESETS[suggestedIndex].label}` : '') : 'Set up an AI provider in Settings to ask across notes'}
+                  placeholder={ready ? (isFocused && !input && !presetsOpen ? `/ ${PRESETS[suggestedIndex].label}` : '') : t('chat.home.providerRequiredPlaceholder')}
                   className="block w-full bg-transparent px-3 pb-4 pt-2.5 outline-none disabled:cursor-not-allowed placeholder:text-[color:var(--fg-muted)]"
                   style={{ fontSize: 16, color: 'var(--fg-1)', fontFamily: 'var(--font-sans)', fontWeight: 400 }}
                 />
@@ -359,7 +360,7 @@ export function Chat() {
                   className="text-[12px]"
                   style={{ color: 'var(--fg-muted)' }}
                 >
-                  · may omit older notes
+                  {t('chat.home.localScopeHint')}
                 </span>
               )}
             </div>
@@ -369,7 +370,7 @@ export function Chat() {
                 disabled={!input.trim() || !ready}
                 className="inline-flex size-7 items-center justify-center rounded-full transition-colors hover:bg-[color:var(--surface-hover)] disabled:opacity-40"
                 style={{ color: 'var(--fg-1)' }}
-                aria-label="Send"
+                aria-label={t('chat.home.send')}
               >
                 <ArrowUp className="size-[14px]" />
               </button>
@@ -386,7 +387,7 @@ export function Chat() {
             onOpenAutoFocus={(e) => e.preventDefault()}
           >
             <div className="px-2 pb-1 pt-0.5 text-[11px] font-medium" style={{ color: 'var(--fg-muted)' }}>
-              Skills
+              {t('chat.home.skills')}
             </div>
             <div className="flex flex-col">
               {PRESETS.map((p, idx) => {
@@ -414,7 +415,7 @@ export function Chat() {
 
         <section className="mt-6 flex-1 w-full">
           <SectionHead
-            title="Recents"
+            title={t('chat.home.recents')}
             action={
               canExpand ? (
                 <button
@@ -423,7 +424,7 @@ export function Chat() {
                   className="inline-flex items-center gap-0.5 text-[12px] transition-colors hover:text-[color:var(--fg-1)]"
                   style={{ color: 'var(--fg-2)' }}
                 >
-                  {recentsExpanded ? 'Show less' : 'See all'}
+                  {recentsExpanded ? t('chat.home.showLess') : t('chat.home.seeAll')}
                   <ChevronRight
                     className={`size-[12px] transition-transform ${recentsExpanded ? 'rotate-90' : ''}`}
                   />
@@ -441,7 +442,7 @@ export function Chat() {
               <div className="mb-3 flex justify-center">
                 <History className="size-4 text-muted-foreground" />
               </div>
-              Your past chats will show up here.
+              {t('chat.home.noPastChats')}
             </div>
           ) : recentsExpanded && groupedRecents ? (
             <div className="flex flex-col">
@@ -521,15 +522,14 @@ function ProviderRequiredBanner() {
     >
       <Sparkles className="mt-0.5 size-[14px] flex-shrink-0" style={{ color: 'var(--fg-2)' }} />
       <div className="flex-1">
-        Your AI provider isn't ready for chat yet — add a cloud API key, sign in
-        to your Organisation, or set your remote Ollama URL in{' '}
+        {t('chat.home.providerNotReady.beforeLink')}{' '}
         <button
           type="button"
           className="underline transition-colors hover:text-[color:var(--fg-1)]"
           onClick={() => navigate('/settings')}
           style={{ color: 'var(--fg-1)' }}
         >
-          Settings → AI
+          {t('chat.home.providerNotReady.link')}
         </button>
         .
       </div>

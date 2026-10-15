@@ -22,6 +22,7 @@ import { heroHeadline, heroSubtitle } from '@/lib/hero';
 import { searchNotes } from '@/lib/noteSearch';
 import { navigate } from '@/lib/router';
 import { UI_LOCALE } from '@/lib/locale';
+import { t } from '@/i18n';
 
 interface HomeProps {
   mode: 'home' | 'meetings';
@@ -346,7 +347,7 @@ export function Home({ mode }: HomeProps) {
               style={{ color: 'var(--fg-muted)' }}
             >
               <Calendar className="size-3.5 flex-shrink-0" />
-              <span>Connect your calendar to see today's meetings.</span>
+              <span>{t('home.connectCalendar.prompt')}</span>
               {!withDismiss && (
                 <ChevronRight className="size-3 flex-shrink-0 opacity-60 transition-transform group-hover:translate-x-0.5" />
               )}
@@ -358,8 +359,7 @@ export function Home({ mode }: HomeProps) {
                 style={{ color: 'var(--fg-muted)' }}
               />
               <span>
-                Connecting to {pendingProvider === 'google' ? 'Google' : 'Outlook'}
-                …
+                {t('home.connecting', { provider: pendingProvider === 'google' ? t('home.provider.google') : t('home.provider.outlook') })}
               </span>
               <button
                 type="button"
@@ -367,7 +367,7 @@ export function Home({ mode }: HomeProps) {
                 className="rounded px-2 py-0.5 transition-colors hover:bg-[color:var(--surface-hover)]"
                 style={{ color: 'var(--fg-1)' }}
               >
-                Cancel
+                {t('home.cancel')}
               </button>
             </>
           ) : (
@@ -376,14 +376,14 @@ export function Home({ mode }: HomeProps) {
                 className="size-3.5 flex-shrink-0"
                 style={{ color: 'var(--fg-muted)' }}
               />
-              <span>Connect:</span>
+              <span>{t('home.connectCalendar.label')}</span>
               <button
                 type="button"
                 onClick={() => startConnect('google')}
                 className="rounded px-2 py-0.5 transition-colors hover:bg-[color:var(--surface-hover)]"
                 style={{ color: 'var(--fg-1)' }}
               >
-                Google
+                {t('home.provider.google')}
               </button>
               <button
                 type="button"
@@ -391,7 +391,7 @@ export function Home({ mode }: HomeProps) {
                 className="rounded px-2 py-0.5 transition-colors hover:bg-[color:var(--surface-hover)]"
                 style={{ color: 'var(--fg-1)' }}
               >
-                Outlook
+                {t('home.provider.outlook')}
               </button>
             </>
           )}
@@ -399,8 +399,8 @@ export function Home({ mode }: HomeProps) {
             <button
               type="button"
               onClick={onDismissCalendarNudge}
-              aria-label="Dismiss"
-              title="Dismiss"
+              aria-label={t('home.dismiss.aria')}
+              title={t('home.dismiss.title')}
               className="ml-auto rounded p-1 transition-colors hover:bg-[color:var(--surface-hover)]"
               style={{ color: 'var(--fg-muted)' }}
             >
@@ -474,6 +474,10 @@ export function Home({ mode }: HomeProps) {
     month: 'long',
     day: 'numeric',
   });
+  // Keyboard-hint glyphs, not translatable copy. Hoisted out of JSX so the
+  // i18n gate does not flag the shortcut strings.
+  const quickModKey = isMac ? '⌘' : 'Ctrl';
+  const quickShiftKey = isMac ? '⇧' : 'Shift';
 
   return (
     <MeetingsShell
@@ -482,7 +486,7 @@ export function Home({ mode }: HomeProps) {
     >
       {meetings.isLoading ? (
         <div className="flex min-h-[40vh] items-center justify-center text-[color:var(--fg-2)]">
-          Loading meetings…
+          {t('home.loadingMeetings')}
         </div>
       ) : emptyState ? (
         <div className="flex flex-col items-center gap-8 text-center">
@@ -497,16 +501,16 @@ export function Home({ mode }: HomeProps) {
                 color: 'var(--fg-1)',
               }}
             >
-              Welcome to Steno.
+              {t('home.welcome.title')}
             </h1>
             <p
               className="text-[17px] leading-[1.55]"
               style={{ color: 'var(--fg-2)' }}
             >
-              AI for your confidential workflows.
+              {t('home.welcome.tagline')}
             </p>
             <p className="text-sm" style={{ color: 'var(--fg-muted)' }}>
-              Always get consent when transcribing others.
+              {t('home.welcome.consent')}
             </p>
           </div>
           <div className="flex flex-col items-center gap-3">
@@ -516,18 +520,18 @@ export function Home({ mode }: HomeProps) {
               className="gap-2"
             >
               {isRecording ? <Square className="size-4" /> : <Plus className="size-4" />}
-              {isRecording ? 'Stop recording' : 'New note'}
+              {isRecording ? t('home.stopRecording') : t('home.newNote')}
             </Button>
             {hotkeyEnabled && (
               <p
                 className="flex items-center gap-1.5 text-xs"
                 style={{ color: 'var(--fg-muted)' }}
               >
-                <span>Quick start:</span>
-                <KbdKey>{isMac ? '⌘' : 'Ctrl'}</KbdKey>
-                <KbdKey>{isMac ? '⇧' : 'Shift'}</KbdKey>
-                <KbdKey>R</KbdKey>
-                <span>from anywhere</span>
+                <span>{t('home.quickStart.label')}</span>
+                <KbdKey>{quickModKey}</KbdKey>
+                <KbdKey>{quickShiftKey}</KbdKey>
+                <KbdKey>{RECORD_HOTKEY_LETTER}</KbdKey>
+                <span>{t('home.quickStart.anywhere')}</span>
               </p>
             )}
           </div>
@@ -584,7 +588,7 @@ export function Home({ mode }: HomeProps) {
             return (
               <section className="mb-10">
                 <SectionHead
-                  title="Coming up"
+                  title={t('home.comingUp')}
                   isSerif
                   count={upcomingToday.length}
                   action={
@@ -594,7 +598,7 @@ export function Home({ mode }: HomeProps) {
                           <button
                             type="button"
                             className="inline-flex items-center rounded p-1 transition-colors hover:bg-[color:var(--surface-hover)] disabled:opacity-30 disabled:hover:bg-transparent"
-                            title="Previous"
+                            title={t('home.previousButton')}
                             onClick={() => setUpcomingPage((p) => Math.max(0, p - 1))}
                             disabled={!canPagePrev}
                             style={{ color: 'var(--fg-2)' }}
@@ -604,7 +608,7 @@ export function Home({ mode }: HomeProps) {
                           <button
                             type="button"
                             className="inline-flex items-center rounded p-1 transition-colors hover:bg-[color:var(--surface-hover)] disabled:opacity-30 disabled:hover:bg-transparent"
-                            title="Next"
+                            title={t('home.nextButton')}
                             onClick={() => setUpcomingPage((p) => Math.min(upcomingPageCount - 1, p + 1))}
                             disabled={!canPageNext}
                             style={{ color: 'var(--fg-2)' }}
@@ -616,7 +620,7 @@ export function Home({ mode }: HomeProps) {
                       <button
                         type="button"
                         className="inline-flex items-center rounded p-1 transition-colors hover:bg-[color:var(--surface-hover)] disabled:opacity-50"
-                        title="Check for new calendar events"
+                        title={t('home.checkCalendar')}
                         onClick={() => calendar.refetch()}
                         disabled={calendar.isFetching}
                         style={{ color: 'var(--fg-2)' }}
@@ -636,11 +640,7 @@ export function Home({ mode }: HomeProps) {
                   style={{ borderColor: 'var(--border-subtle)' }}
                 >
                   {Object.entries(groups).map(([dateKey, group]) => {
-                    const [y, m, d] = dateKey.split('-').map(Number);
-                    const groupDate = new Date(y, m, d);
-                    const day = groupDate.getDate();
-                    const month = groupDate.toLocaleDateString(UI_LOCALE, { month: 'short' });
-                    const weekday = groupDate.toLocaleDateString(UI_LOCALE, { weekday: 'short' });
+                    const { day, month, weekday } = previousGroupDayParts(dateKey);
                     
                     return (
                       <div 
@@ -678,7 +678,7 @@ export function Home({ mode }: HomeProps) {
 
           {upcomingToday.length === 0 && tomorrowPreview && mode === 'home' && (
             <section className="mb-10">
-              <SectionHead title="Tomorrow" count={1} />
+              <SectionHead title={t('home.section.tomorrow')} count={1} />
               <AllDayInline
                 events={allDayToday}
                 expanded={allDayExpanded}
@@ -695,7 +695,7 @@ export function Home({ mode }: HomeProps) {
 
           {upcomingToday.length === 0 && !tomorrowPreview && allDayToday.length > 0 && mode === 'home' && (
             <section className="mb-10">
-              <SectionHead title="Today" count={allDayToday.length} />
+              <SectionHead title={t('home.section.today')} count={allDayToday.length} />
               <AllDayInline
                 events={allDayToday}
                 expanded={allDayExpanded}
@@ -706,7 +706,7 @@ export function Home({ mode }: HomeProps) {
 
           <section>
             <SectionHead
-              title={mode === 'meetings' ? 'All notes' : 'Previous'}
+              title={mode === 'meetings' ? t('home.section.allNotes') : t('home.section.previous')}
               count={mode === 'meetings' ? filtered.length : previous.length}
               action={
                 mode === 'meetings' ? (
@@ -720,8 +720,8 @@ export function Home({ mode }: HomeProps) {
                       type="text"
                       value={search}
                       onChange={(e) => setSearch(e.target.value)}
-                      placeholder="Search notes"
-                      aria-label="Search notes"
+                      placeholder={t('home.search.placeholder')}
+                      aria-label={t('home.search.aria')}
                       className="h-[26px] w-[180px] rounded-md border-0 pl-7 pr-7 text-[12.5px] outline-none transition-colors focus:shadow-[inset_0_0_0_1px_hsl(var(--border))]"
                       style={{
                         background: 'rgba(27,27,25,0.04)',
@@ -736,7 +736,7 @@ export function Home({ mode }: HomeProps) {
                           setSearch('');
                           searchInputRef.current?.focus();
                         }}
-                        aria-label="Clear search"
+                        aria-label={t('home.search.clear')}
                         className="absolute right-1.5 top-1/2 -translate-y-1/2 inline-flex size-4 items-center justify-center rounded transition-colors hover:bg-[color:var(--surface-hover)]"
                         style={{ color: 'var(--fg-muted)' }}
                       >
@@ -752,7 +752,7 @@ export function Home({ mode }: HomeProps) {
                 className="px-6 py-12 text-center text-[13px]"
                 style={{ color: 'var(--fg-2)' }}
               >
-                No meetings match &ldquo;{search.trim()}&rdquo;.
+                {t('home.search.noMatch', { query: search.trim() })}
               </div>
             ) : (
               groups.map((g) => (
@@ -834,7 +834,9 @@ function AllDayInline({ events, expanded, onToggle }: AllDayInlineProps) {
         className="-mx-1 self-start rounded px-1 py-0.5 text-xs transition-colors hover:bg-[color:var(--surface-hover)]"
         style={{ color: 'var(--fg-2)' }}
       >
-        + {events.length} all-day event{events.length === 1 ? '' : 's'} today
+        {events.length === 1
+          ? t('home.allDayEvents.one', { count: events.length })
+          : t('home.allDayEvents.other', { count: events.length })}
       </button>
       {expanded && (
         // Render as full UpcomingCards so all-day events match the visual
@@ -877,7 +879,7 @@ function groupPrevious(meetings: Meeting[]): Group[] {
   });
   for (const m of sorted) {
     const raw = m.session_info.processed_at ?? m.session_info.updated_at;
-    const label = raw ? groupLabel(new Date(raw), now) : 'Earlier';
+    const label = raw ? groupLabel(new Date(raw), now) : t('home.group.earlier');
     if (!groups[label]) {
       groups[label] = [];
       order.push(label);
@@ -887,15 +889,27 @@ function groupPrevious(meetings: Meeting[]): Group[] {
   return order.map((label) => ({ label, items: groups[label] }));
 }
 
+const RECORD_HOTKEY_LETTER = 'R';
+
+function previousGroupDayParts(dateKey: string): { day: number; month: string; weekday: string } {
+  const [y, m, d] = dateKey.split('-').map(Number);
+  const groupDate = new Date(y, m, d);
+  return {
+    day: groupDate.getDate(),
+    month: groupDate.toLocaleDateString(UI_LOCALE, { month: 'short' }),
+    weekday: groupDate.toLocaleDateString(UI_LOCALE, { weekday: 'short' }),
+  };
+}
+
 function groupLabel(d: Date, now: Date): string {
   const sameDay = (a: Date, b: Date) =>
     a.getFullYear() === b.getFullYear() &&
     a.getMonth() === b.getMonth() &&
     a.getDate() === b.getDate();
-  if (sameDay(d, now)) return 'Today';
+  if (sameDay(d, now)) return t('home.group.today');
   const yesterday = new Date(now);
   yesterday.setDate(now.getDate() - 1);
-  if (sameDay(d, yesterday)) return 'Yesterday';
+  if (sameDay(d, yesterday)) return t('home.group.yesterday');
   const age = now.getTime() - d.getTime();
   if (age < 7 * 24 * 60 * 60 * 1000) {
     return d.toLocaleDateString(UI_LOCALE, { weekday: 'long' });

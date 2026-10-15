@@ -6,6 +6,7 @@ import { useAppVersion } from '@/hooks/useSettings';
 import { COMPACT_BTN, SettingRow } from './primitives';
 import { useWhatsNew } from '@/components/WhatsNew';
 import { CHANGELOG_URL, WHATS_NEW_COPY } from '@/lib/releaseHighlights';
+import { t } from '@/i18n';
 
 /** Plain external-link text (matches TemplatesTab's "learn more" link) for
  *  rows that just navigate out, rather than a bordered Button — keeps the
@@ -195,7 +196,7 @@ export function AboutTab() {
     } catch (e) {
       setCheckState({
         kind: 'error',
-        message: e instanceof Error ? e.message : 'Check failed',
+        message: e instanceof Error ? e.message : t('settings.about.checkFailed'),
       });
     }
   };
@@ -215,17 +216,23 @@ export function AboutTab() {
   // on the button itself (Checking for Updates -> You're on the latest
   // version / Check failed), so the description only needs to add the
   // persistent, actionable update-available case.
-  const versionLabel = `Version ${version.data?.version ?? '—'}`;
+  const installedVersion = version.data?.version ?? '—';
   const checkDescription =
     checkState.kind === 'update-available'
-      ? `${versionLabel} — Update available (v${checkState.version})`
+      ? t('settings.about.updateAvailable', {
+          version: installedVersion,
+          newVersion: checkState.version,
+        })
       : checkState.kind === 'update-blocked-os'
-        ? `${versionLabel} — v${checkState.version} requires a newer version of macOS`
-        : versionLabel;
+        ? t('settings.about.updateBlockedOs', {
+            version: installedVersion,
+            newVersion: checkState.version,
+          })
+        : t('settings.about.version', { version: installedVersion });
 
   return (
     <section data-settings-tab="about">
-      <SettingRow label="Steno" description={checkDescription}>
+      <SettingRow label={t('settings.about.stenoLabel')} description={checkDescription}>
         <div className="flex items-center gap-2">
           {checkState.kind === 'update-available' && (
             <Button
@@ -234,7 +241,7 @@ export function AboutTab() {
               className={COMPACT_BTN}
               onClick={() => void ipc().updates.openReleasePage(checkState.releaseUrl)}
             >
-              View release
+              {t('settings.about.viewRelease')}
             </Button>
           )}
           <Button
@@ -248,20 +255,20 @@ export function AboutTab() {
             {checkState.kind === 'checking' ? (
               <>
                 <Loader2 className="mr-1.5 size-3 animate-spin" />
-                Checking for Updates
+                {t('settings.about.checkingForUpdates')}
               </>
             ) : checkState.kind === 'up-to-date' ? (
               <>
                 <Check className="mr-1.5 size-3" />
-                You're on the latest version
+                {t('settings.about.onLatest')}
               </>
             ) : checkState.kind === 'error' ? (
               <>
                 <X className="mr-1.5 size-3" />
-                Check failed
+                {t('settings.about.checkFailed')}
               </>
             ) : (
-              'Check for Updates'
+              t('settings.about.checkForUpdates')
             )}
           </Button>
         </div>
@@ -273,7 +280,7 @@ export function AboutTab() {
             className="mb-1.5 flex items-center justify-between text-[12px]"
             style={{ color: 'var(--fg-2)' }}
           >
-            <span>Downloading update…</span>
+            <span>{t('settings.about.downloadingUpdate')}</span>
             <span className="tabular-nums">{downloadPercent}%</span>
           </div>
           <div
@@ -302,14 +309,14 @@ export function AboutTab() {
       {downloadedVersion && (
         <div className="py-3">
           <Button className="w-full" onClick={() => ipc().updates.install()}>
-            Restart to Update (v{downloadedVersion})
+            {t('settings.about.restartToUpdate', { version: downloadedVersion })}
           </Button>
         </div>
       )}
 
-      <SettingRow label="Release notes" description="See what's new">
+      <SettingRow label={t('settings.about.releaseNotes.label')} description={t('settings.about.releaseNotes.description')}>
         <ExternalLinkAction
-          label="View"
+          label={t('settings.about.releaseNotes.action')}
           onClick={() => void ipc().shell.openExternal(CHANGELOG_URL)}
         />
       </SettingRow>
@@ -320,20 +327,20 @@ export function AboutTab() {
         </SettingRow>
       )}
 
-      <SettingRow label="Discord" description="Join the community, ask questions, share feedback">
+      <SettingRow label={t('settings.about.discord.label')} description={t('settings.about.discord.description')}>
         <ExternalLinkAction
-          label="Join"
+          label={t('settings.about.discord.action')}
           onClick={() => void ipc().shell.openExternal(DISCORD_URL)}
         />
       </SettingRow>
 
       <SettingRow
-        label="GitHub"
-        description="Steno is open source — browse the code, file issues"
+        label={t('settings.about.github.label')}
+        description={t('settings.about.github.description')}
         noBorder
       >
         <ExternalLinkAction
-          label="View"
+          label={t('settings.about.github.action')}
           onClick={() => void ipc().shell.openExternal(GITHUB_URL)}
         />
       </SettingRow>
@@ -349,7 +356,7 @@ export function AboutTab() {
           onClick={() => void ipc().shell.openExternal(TERMS_URL)}
           className="hover:underline"
         >
-          Terms of Service
+          {t('settings.about.termsService')}
         </button>
         <span aria-hidden="true">·</span>
         <button
@@ -357,7 +364,7 @@ export function AboutTab() {
           onClick={() => void ipc().shell.openExternal(PRIVACY_URL)}
           className="hover:underline"
         >
-          Privacy Policy
+          {t('settings.about.privacyPolicy')}
         </button>
       </div>
     </section>

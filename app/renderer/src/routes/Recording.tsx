@@ -12,6 +12,7 @@ import { useRecording } from '@/hooks/useRecording';
 import { useLiveMeeting } from '@/hooks/useLiveMeeting';
 import { UI_LOCALE } from '@/lib/locale';
 import { isLiveRowStatus } from '@/lib/liveMeetingRow';
+import { t } from '@/i18n';
 
 export function Recording() {
   const navigate = useNavigate();
@@ -67,16 +68,16 @@ export function Recording() {
                 onClick={() => navigate('/')}
                 className="mb-6 inline-flex cursor-pointer items-center gap-1 rounded-md border-0 bg-transparent px-2 py-1 text-[13px] transition-colors hover:bg-[color:var(--surface-hover)] hover:text-[color:var(--fg-1)]"
                 style={{ color: 'var(--fg-2)' }}
-                aria-label="Back to home"
+                aria-label={t('recording.backHomeAria')}
               >
                 <ChevronLeft size={15} />
-                Home
+                {t('recording.backHome')}
               </button>
 
               <EditableTitle
                 value={live.title}
                 onChange={live.setTitle}
-                placeholder="New note"
+                placeholder={t('recording.titlePlaceholder')}
               />
 
               <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -84,10 +85,10 @@ export function Recording() {
                   {formatDate(startedAt)}
                 </Chip>
                 <Chip icon={<Clock size={11} />}>
-                  Started {formatTime(startedAt)}
+                  {t('recording.startedAt', { time: formatTime(startedAt) })}
                 </Chip>
                 <Chip icon={<FolderPlus size={11} />} dashed>
-                  Add to folder
+                  {t('recording.addToFolder')}
                 </Chip>
               </div>
             </header>
@@ -98,12 +99,12 @@ export function Recording() {
                 style={{ color: 'var(--fg-2)' }}
               >
                 <PencilLine size={13} />
-                My notes
+                {t('recording.myNotes')}
               </div>
               <textarea
                 value={live.notes}
                 onChange={(e) => live.setNotes(e.target.value)}
-                placeholder="Type anything you want to capture — decisions, questions, follow-ups. Steno handles the transcript."
+                placeholder={t('recording.notesPlaceholder')}
                 spellCheck
                 className="block w-full resize-none border-0 bg-transparent text-[15px] outline-none"
                 style={{

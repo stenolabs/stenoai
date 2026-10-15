@@ -10,6 +10,7 @@ import {
 import type { PersonProfile } from '@/lib/ipc';
 import { useBlobAudioPlayback } from '@/hooks/useBlobAudioPlayback';
 import { SettingRow, COMPACT_BTN } from './primitives';
+import { t } from '@/i18n';
 
 // ---------------------------------------------------------------------------
 // People - the one place a voice profile can be deleted.
@@ -43,8 +44,10 @@ function describeSamples(profile: PersonProfile): string {
   // creates the profile before any voice has been attached to it, and every
   // enrollment path can leave one behind. Saying "0 voice samples" would
   // read as damage; naming it as not-yet-learned is what it is.
-  if (n === 0) return 'No voice samples yet - Steno cannot recognise them automatically.';
-  return `${n} voice sample${n === 1 ? '' : 's'}`;
+  if (n === 0) return t('settings.people.voiceSamples.none');
+  return n === 1
+    ? t('settings.people.voiceSamples.one', { count: n })
+    : t('settings.people.voiceSamples.other', { count: n });
 }
 
 export function PeopleTab() {
@@ -70,7 +73,7 @@ export function PeopleTab() {
     return (
       <div className="flex items-center gap-2 py-6 text-[13px]" style={{ color: 'var(--fg-2)' }}>
         <Loader2 className="size-[14px] animate-spin" />
-        Loading people…
+        {t('settings.people.loading')}
       </div>
     );
   }
@@ -78,7 +81,7 @@ export function PeopleTab() {
   if (profilesQuery.isError) {
     return (
       <div className="py-6 text-[13px]" style={{ color: 'var(--fg-2)' }} data-testid="people-error">
-        Could not load people.
+        {t('settings.people.loadError')}
       </div>
     );
   }
@@ -87,7 +90,7 @@ export function PeopleTab() {
     <div data-testid="people-tab">
       {profiles.length === 0 ? (
         <div className="py-6 text-[13px]" style={{ color: 'var(--fg-2)' }} data-testid="people-empty">
-          No people yet. Name a speaker in a meeting and they will appear here.
+          {t('settings.people.empty')}
         </div>
       ) : (
         profiles.map((profile, i) => (
@@ -103,7 +106,7 @@ export function PeopleTab() {
                     className="mt-1 block"
                     data-testid={`people-play-error-${profile.person_id}`}
                   >
-                    Could not play this voice sample. Try again.
+                    {t('settings.people.playError')}
                   </span>
                 )}
               </>
@@ -119,8 +122,8 @@ export function PeopleTab() {
                   onClick={() => void playback.toggle(profile.person_id)}
                   aria-label={
                     playback.playingKey === profile.person_id
-                      ? `Stop voice sample for ${profile.display_name}`
-                      : `Play voice sample for ${profile.display_name}`
+                      ? t('settings.people.stopAria', { name: profile.display_name })
+                      : t('settings.people.playAria', { name: profile.display_name })
                   }
                   data-testid={`people-play-${profile.person_id}`}
                 >
@@ -131,7 +134,7 @@ export function PeopleTab() {
                   ) : (
                     <Play className="size-[13px]" />
                   )}
-                  {playback.playingKey === profile.person_id ? 'Stop' : 'Play'}
+                  {playback.playingKey === profile.person_id ? t('settings.people.stop') : t('settings.people.play')}
                 </Button>
               )}
               <Button
@@ -143,11 +146,11 @@ export function PeopleTab() {
                   setDeleteError(false);
                   setDeleteTarget(profile);
                 }}
-                aria-label={`Delete ${profile.display_name}`}
+                aria-label={t('settings.people.deleteAria', { name: profile.display_name })}
                 data-testid={`people-delete-${profile.person_id}`}
               >
                 <Trash2 className="size-[13px]" />
-                Delete
+                {t('settings.people.delete')}
               </Button>
             </div>
           </SettingRow>
@@ -162,26 +165,25 @@ export function PeopleTab() {
             setDeleteError(false);
           }
         }}
-        title={deleteTarget ? `Delete ${deleteTarget.display_name}?` : ''}
+        title={deleteTarget ? t('settings.people.deleteConfirm.title', { name: deleteTarget.display_name }) : ''}
         // Wording carried over verbatim from the picker this replaced: the
         // reach of the action is the whole point of stating it, and it does
         // not get smaller for being triggered from settings.
         description={(
           <span>
-            This removes them from every meeting&apos;s speaker suggestions and deletes their
-            voice profile. This can&apos;t be undone.
+            {t('settings.people.deleteConfirm.description')}
             {deleteError && (
               <span
                 role="alert"
                 className="mt-2 block"
                 data-testid="people-delete-error"
               >
-                Could not delete this person. Try again.
+                {t('settings.people.deleteError')}
               </span>
             )}
           </span>
         )}
-        confirmLabel="Delete"
+        confirmLabel={t('settings.people.delete')}
         destructive
         isPending={deleteProfile.isPending}
         onConfirm={async () => {

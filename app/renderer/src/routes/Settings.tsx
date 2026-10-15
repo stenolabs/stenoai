@@ -6,7 +6,7 @@ import { ipc } from '@/lib/ipc';
 import { useNavigate, getLastNonSettingsRoute, useRoute, getRouteParam } from '@/lib/router';
 import { useAppVersion } from '@/hooks/useSettings';
 import { useRecording } from '@/hooks/useRecording';
-import { SettingsNav, SETTINGS_TAB_LABELS, type SettingsTabId } from './settings/SettingsNav';
+import { SettingsNav, settingsTabLabel, type SettingsTabId } from './settings/SettingsNav';
 import { GeneralTab } from './settings/GeneralTab';
 import { AiTab } from './settings/AiTab';
 import { TemplatesTab } from './settings/TemplatesTab';
@@ -16,6 +16,7 @@ import { AdvancedTab } from './settings/AdvancedTab';
 import { IntegrationsTab } from './settings/IntegrationsTab';
 import { DeveloperTab } from './settings/DeveloperTab';
 import { AboutTab } from './settings/AboutTab';
+import { t } from '@/i18n';
 
 // Per-tab intro copy, shown in the page header above the divider (rather
 // than repeated inside each tab's own content, which used to duplicate the
@@ -23,10 +24,10 @@ import { AboutTab } from './settings/AboutTab';
 // opposed to AiTab's per-section copy, or tabs with no intro at all) need an
 // entry here.
 const SETTINGS_TAB_DESCRIPTIONS: Partial<Record<SettingsTabId, React.ReactNode>> = {
-  templates: (
+  get templates() {
+    return (
     <>
-      Templates are the instructions your AI follows when turning a
-      transcript into a summary —{' '}
+      {t('settings.nav.templatesIntro')}{' '}
       <button
         type="button"
         onClick={() =>
@@ -35,14 +36,18 @@ const SETTINGS_TAB_DESCRIPTIONS: Partial<Record<SettingsTabId, React.ReactNode>>
         className="inline-flex items-center gap-1 underline underline-offset-2 hover:no-underline"
         style={{ color: 'var(--fg-1)' }}
       >
-        learn more
+        {t('settings.nav.learnMore')}
         <ExternalLink className="size-3" />
       </button>
     </>
-  ),
-  people:
-    'Local voice profiles Steno can use to suggest people across meetings. Deleting a profile stops future matching but does not delete recordings or transcripts.',
-  organisation: 'Connect to Steno Enterprise for your organisation.',
+    );
+  },
+  get people() {
+    return t('settings.nav.peopleIntro');
+  },
+  get organisation() {
+    return t('settings.nav.organisationIntro');
+  },
 };
 
 // Deep-linkable tab ids: the 8 SettingsTabId nav destinations, plus
@@ -193,7 +198,7 @@ export function Settings() {
                   color: 'var(--fg-1)',
                 }}
               >
-                {SETTINGS_TAB_LABELS[tab]}
+                {settingsTabLabel(tab)}
               </h1>
               {SETTINGS_TAB_DESCRIPTIONS[tab] && (
                 <p

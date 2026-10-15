@@ -5,6 +5,7 @@ import { useMeetings } from '@/hooks/useMeetings';
 import { useFolders, useUpdateFolderIcon } from '@/hooks/useFolders';
 import { LucideIcon, IconPicker } from '@/components/IconPicker';
 import { navigate } from '@/lib/router';
+import { t } from '@/i18n';
 
 interface FolderDetailProps {
   folderId: string;
@@ -27,20 +28,20 @@ export function FolderDetail({ folderId }: FolderDetailProps) {
     <MeetingsShell activeSummaryFile={null}>
       {isLoading ? (
         <div className="flex min-h-[40vh] items-center justify-center text-[color:var(--fg-2)]">
-          Loading folder…
+          {t('folder.loading')}
         </div>
       ) : !folder ? (
         <div className="space-y-4 text-center">
-          <h1 className="home-hello">Folder not found.</h1>
+          <h1 className="home-hello">{t('folder.notFound.title')}</h1>
           <p className="text-sm" style={{ color: 'var(--fg-2)' }}>
-            This folder may have been deleted.{' '}
+            {t('folder.notFound.body')}{' '}
             <button
               type="button"
               className="underline"
               onClick={() => navigate('/')}
               style={{ color: 'var(--fg-1)' }}
             >
-              Back to Home
+              {t('folder.notFound.backHome')}
             </button>
             .
           </p>
@@ -52,7 +53,7 @@ export function FolderDetail({ folderId }: FolderDetailProps) {
               <h1 className="home-hello flex items-center gap-3.5">
                 <button
                   type="button"
-                  aria-label="Change folder icon"
+                  aria-label={t('folder.changeIcon')}
                   className="inline-flex h-10 w-10 items-center justify-center rounded-lg transition-colors hover:bg-[color:var(--surface-active)]"
                   style={{ background: 'var(--surface-hover)', color: 'var(--fg-1)', flexShrink: 0 }}
                   onClick={(e) => setIconPickerAnchor(e.currentTarget.getBoundingClientRect())}
@@ -72,7 +73,9 @@ export function FolderDetail({ folderId }: FolderDetailProps) {
                 className="pb-2 text-[13px] tabular-nums"
                 style={{ color: 'var(--fg-2)' }}
               >
-                {filtered.length} {filtered.length === 1 ? 'meeting' : 'meetings'}
+                {filtered.length === 1
+                  ? t('folder.meetingCount.one', { count: filtered.length })
+                  : t('folder.meetingCount.other', { count: filtered.length })}
               </div>
             </div>
           </div>
@@ -84,7 +87,7 @@ export function FolderDetail({ folderId }: FolderDetailProps) {
                   className="text-sm font-medium tracking-[-0.005em]"
                   style={{ color: 'var(--fg-1)', fontFamily: 'var(--font-sans)' }}
                 >
-                  Notes
+                  {t('folder.notes')}
                 </h2>
                 <span
                   className="text-[12.5px] tabular-nums"
@@ -106,13 +109,13 @@ export function FolderDetail({ folderId }: FolderDetailProps) {
                     letterSpacing: '-0.02em',
                   }}
                 >
-                  Nothing here yet
+                  {t('folder.empty.title')}
                 </div>
                 <div
                   className="mx-auto max-w-[40ch] text-[13.5px] leading-[1.55]"
                   style={{ color: 'var(--fg-2)' }}
                 >
-                  Notes you save to this folder will show up here.
+                  {t('folder.empty.body')}
                 </div>
               </div>
             ) : (

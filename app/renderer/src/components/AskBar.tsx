@@ -99,13 +99,13 @@ export function TranscriptBar() {
         <span className="mv-transcript-wave mv-transcript-wave-static" aria-hidden="true">
           <span /><span /><span /><span /><span /><span /><span />
         </span>
-        <span className="mv-transcript-label">Transcript</span>
+        <span className="mv-transcript-label">{t('askBar.transcript.heading')}</span>
         <button
           type="button"
           className="mv-chat-tool"
           onClick={() => void copyTranscript()}
-          aria-label="Copy transcript"
-          title="Copy transcript"
+          aria-label={t('askBar.copyTranscript')}
+          title={t('askBar.copyTranscript')}
         >
           {copied ? <Check size={13} /> : <Copy size={13} />}
         </button>
@@ -113,8 +113,8 @@ export function TranscriptBar() {
           type="button"
           className="mv-chat-tool"
           onClick={() => setTranscriptOpen(false)}
-          aria-label="Hide transcript"
-          title="Hide transcript"
+          aria-label={t('askBar.hideTranscript')}
+          title={t('askBar.hideTranscript')}
         >
           <ChevronUp size={13} style={{ color: 'var(--fg-2)', flexShrink: 0 }} />
         </button>
@@ -136,12 +136,12 @@ export function TranscriptBar() {
             type="button"
             onClick={onResume}
             data-testid="resume-recording-button"
-            aria-label="Resume recording on this note"
-            title="Resume recording — the new audio is appended to this note"
+            aria-label={t('askBar.resumeRecording.aria')}
+            title={t('askBar.resumeRecording.title')}
             className="inline-flex h-8 cursor-pointer items-center rounded-full border-0 px-3.5 text-[13px] font-medium transition-colors hover:bg-[color:var(--surface-hover)]"
             style={{ background: 'var(--surface-sunken)', color: 'var(--fg-1)' }}
           >
-            Resume
+            {t('askBar.resumeRecording.label')}
           </button>
         </div>
       )}
@@ -168,9 +168,9 @@ export function TranscriptToggle() {
       onClick={() => setTranscriptOpen(!transcriptOpen)}
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
-      aria-label={transcriptOpen ? 'Hide transcript' : 'Show transcript'}
+      aria-label={transcriptOpen ? t('askBar.hideTranscript') : t('askBar.showTranscript')}
       aria-pressed={transcriptOpen}
-      title="Transcript"
+      title={t('askBar.transcript.title')}
       // mb-[3px] optically centers the 44px toggle against the 50px composer
       // row it sits beside (PrimaryDock aligns the row items-end; see there).
       className="pointer-events-auto mb-[3px] inline-flex h-11 shrink-0 cursor-pointer items-center justify-center gap-0.5 rounded-full border-0 px-3 transition-colors"
@@ -299,8 +299,8 @@ export function AskBar({ visible = true }: { visible?: boolean }) {
     const content =
       stream.text.trim() ||
       (stream.status === 'error'
-        ? `Error: ${stream.error ?? 'query failed'}`
-        : '(empty response)');
+        ? t('askBar.error', { error: stream.error ?? t('askBar.queryFailed') })
+        : t('askBar.emptyResponse'));
     const message: ChatMessage = { role: 'assistant', content, ts: Date.now(), context: pending.context };
     void chat.appendMessage(pending.sessionId, message).catch(() => setSubmitError(t('chat.saveError')));
     pendingPersistRef.current = null;
@@ -514,7 +514,7 @@ export function AskBar({ visible = true }: { visible?: boolean }) {
             type="button"
             className="mv-chat-send active"
             onClick={stop}
-            aria-label="Stop"
+            aria-label={t('askBar.stop')}
           >
             <Square size={12} />
           </button>
@@ -523,7 +523,7 @@ export function AskBar({ visible = true }: { visible?: boolean }) {
             type="submit"
             className={cn('mv-chat-send', canSend && 'active')}
             disabled={!canSend}
-            aria-label="Send"
+            aria-label={t('askBar.send')}
           >
             <ArrowUp size={14} />
           </button>
@@ -575,7 +575,7 @@ function ChatHeader({
           style={{ color: 'var(--fg-1)' }}
         >
           <span className="max-w-[340px] truncate">
-            {session?.name ?? (meetingName ? `Ask about ${meetingName}` : 'Ask AI')}
+            {session?.name ?? (meetingName ? t('askBar.askAbout', { name: meetingName }) : t('askBar.askAi'))}
           </span>
           <ChevronDown
             className={cn('size-3.5 flex-shrink-0 transition-transform duration-150', sessionMenuOpen && 'rotate-180')}
@@ -600,13 +600,13 @@ function ChatHeader({
           className="rounded-md border px-2.5 py-1 text-xs transition-colors hover:bg-muted"
           style={{ borderColor: 'var(--border-subtle)', color: 'var(--fg-2)' }}
         >
-          New chat
+          {t('askBar.newChat')}
         </button>
         <button
           type="button"
           onClick={onCollapse}
-          title="Collapse"
-          aria-label="Collapse"
+          title={t('askBar.collapse')}
+          aria-label={t('askBar.collapse')}
           className="mv-chat-tool"
         >
           <X size={14} />
@@ -636,7 +636,7 @@ function SessionDropdown({ sessions, activeId, onPick, onDelete }: SessionDropdo
       style={{ background: 'var(--surface-raised)', borderColor: 'var(--border-subtle)' }}
     >
       {sessions.length === 0 ? (
-        <p className="px-3 py-2 text-xs" style={{ color: 'var(--fg-muted)' }}>No saved chats yet.</p>
+        <p className="px-3 py-2 text-xs" style={{ color: 'var(--fg-muted)' }}>{t('askBar.noSavedChats')}</p>
       ) : (
         sessions.map((s) => {
           const isActive = s.id === activeId;
@@ -659,7 +659,7 @@ function SessionDropdown({ sessions, activeId, onPick, onDelete }: SessionDropdo
               <button
                 type="button"
                 onClick={() => onDelete(s.id)}
-                aria-label={`Delete chat ${s.name}`}
+                aria-label={t('askBar.deleteChat', { name: s.name })}
                 className="rounded p-0.5 opacity-0 transition-opacity hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100"
                 style={{ color: 'var(--fg-muted)' }}
               >
@@ -698,7 +698,7 @@ function MessageList({ messages, liveText, streaming }: MessageListProps) {
             </div>
           ) : (
             <div className="flex items-center gap-1.5 py-1" style={{ color: 'var(--fg-muted)' }}>
-              <span className="text-[13px]">Thinking</span>
+              <span className="text-[13px]">{t('askBar.thinking')}</span>
               <span className="thinking-dot" />
               <span className="thinking-dot" />
               <span className="thinking-dot" />
@@ -737,9 +737,30 @@ function MessageBubble({ message }: { message: ChatMessage }) {
 // Markdown rendering moved to lib/markdown.tsx so the Chat tab can share it.
 
 const SUGGESTION_CHIPS: { label: string; prompt: string }[] = [
-  { label: 'Summarize key decisions', prompt: 'Summarize the key decisions made' },
-  { label: 'Action items', prompt: 'What action items were discussed?' },
-  { label: 'Main topics', prompt: 'What were the main topics covered?' },
+  {
+    get label() {
+      return t('askBar.chips.keyDecisions.label');
+    },
+    get prompt() {
+      return t('askBar.chips.keyDecisions.prompt');
+    },
+  },
+  {
+    get label() {
+      return t('askBar.chips.actionItems.label');
+    },
+    get prompt() {
+      return t('askBar.chips.actionItems.prompt');
+    },
+  },
+  {
+    get label() {
+      return t('askBar.chips.mainTopics.label');
+    },
+    get prompt() {
+      return t('askBar.chips.mainTopics.prompt');
+    },
+  },
 ];
 
 function deriveSessionName(prompt: string): string {

@@ -56,6 +56,7 @@ import {
   useOutlookCalendarAuth,
 } from '@/hooks/useCalendarEvents';
 import { COMPACT_BTN, COMPACT_TRIGGER, SectionHeading, SettingRow } from './primitives';
+import { t } from '@/i18n';
 
 const DEFAULT_MIC_VALUE = 'default';
 
@@ -70,9 +71,11 @@ export function GeneralTab() {
   const systemAudioSupport = useSystemAudioSupport();
   const systemAudioDescription = (() => {
     if (systemAudioSupport.data && !systemAudioSupport.data.supported) {
-      return `Capture both sides of a call (requires macOS 14.4+, you're on ${systemAudioSupport.data.osVersion || 'an older version'}). Mic-only recording still works.`;
+      return t('settings.general.systemAudio.unsupported', {
+        osVersion: systemAudioSupport.data.osVersion || t('settings.general.olderVersion'),
+      });
     }
-    return 'Capture both sides of a call. Turn off to record your mic only.';
+    return t('settings.general.systemAudio.description');
   })();
   const autoDetect = useAutoDetectMeetingsSetting();
   const setAutoDetect = useSetAutoDetectMeetings();
@@ -148,9 +151,9 @@ export function GeneralTab() {
   const calendarConnected =
     google.status.data?.connected || outlook.status.data?.connected;
   const calendarProvider = google.status.data?.connected
-    ? 'Google'
+    ? t('settings.general.provider.google')
     : outlook.status.data?.connected
-      ? 'Outlook'
+      ? t('settings.general.provider.outlook')
       : null;
   // Only populated for connections made after the email-capture change —
   // pre-existing connections fall back to the provider name below.
@@ -244,8 +247,8 @@ export function GeneralTab() {
   return (
     <section data-settings-tab="general">
       <SettingRow
-        label="Your name"
-        description="First name only — used for in-app greetings. Stored locally."
+        label={t('settings.general.name.label')}
+        description={t('settings.general.name.description')}
       >
         <Input
           value={nameDraft}
@@ -262,7 +265,7 @@ export function GeneralTab() {
               (e.target as HTMLInputElement).blur();
             }
           }}
-          placeholder="Your name"
+          placeholder={t('settings.general.name.placeholder')}
           autoComplete="given-name"
           className="h-[30px] w-[180px] rounded-[6px] bg-[color:var(--surface-raised)] text-[13px]"
           data-testid="user-name-input"
@@ -270,8 +273,8 @@ export function GeneralTab() {
       </SettingRow>
 
       <SettingRow
-        label="Appearance"
-        description="Choose light, dark, or match your system"
+        label={t('settings.general.appearance')}
+        description={t('settings.general.chooseLightDark')}
         noBorder
       >
         <Select
@@ -285,21 +288,21 @@ export function GeneralTab() {
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="system">System</SelectItem>
-            <SelectItem value="light">Light</SelectItem>
-            <SelectItem value="dark">Dark</SelectItem>
+            <SelectItem value="system">{t('settings.general.system')}</SelectItem>
+            <SelectItem value="light">{t('settings.general.light')}</SelectItem>
+            <SelectItem value="dark">{t('settings.general.dark')}</SelectItem>
           </SelectContent>
         </Select>
       </SettingRow>
 
-      <SectionHeading>Calendar</SectionHeading>
+      <SectionHeading>{t('settings.general.calendar')}</SectionHeading>
 
       <SettingRow
-        label="Connect calendar"
+        label={t('settings.general.calendar.label')}
         description={
           calendarConnected
-            ? `Connected to ${calendarEmail || calendarProvider}`
-            : 'Show upcoming meetings on the home screen'
+            ? t('settings.general.calendar.connectedTo', { account: calendarEmail || calendarProvider })
+            : t('settings.general.calendar.description')
         }
         noBorder
       >
@@ -318,7 +321,7 @@ export function GeneralTab() {
             ) : (
               <OutlookIcon size={13} />
             )}
-            Disconnect
+            {t('settings.general.disconnect')}
           </Button>
         ) : (
           <div className="flex gap-2">
@@ -329,7 +332,7 @@ export function GeneralTab() {
               onClick={() => void startConnect('google')}
             >
               <GoogleCalendarIcon size={13} />
-              Google
+              {t('settings.general.provider.google')}
             </Button>
             <Button
               variant="outline"
@@ -338,7 +341,7 @@ export function GeneralTab() {
               onClick={() => void startConnect('outlook')}
             >
               <OutlookIcon size={13} />
-              Outlook
+              {t('settings.general.provider.outlook')}
             </Button>
           </div>
         )}
@@ -350,11 +353,11 @@ export function GeneralTab() {
         onRetry={() => oauth && void startConnect(oauth.provider)}
       />
 
-      <SectionHeading>Meeting notifications</SectionHeading>
+      <SectionHeading>{t('settings.general.meetingNotifications')}</SectionHeading>
 
       <SettingRow
-        label="Scheduled meetings"
-        description="Show a notification before meetings start, based on your calendar."
+        label={t('settings.general.scheduledMeetings')}
+        description={t('settings.general.showNotificationBefore')}
       >
         <Switch
           checked={premeetingNotifications.data ?? true}
@@ -364,13 +367,15 @@ export function GeneralTab() {
       </SettingRow>
 
       <SettingRow
-        label="Auto-detected meetings"
+        label={t('settings.general.autoDetectedMeetings')}
         description={
           autoDetectSupported
-            ? 'Watch for other apps using your microphone and notify you when a call starts, with a one-click button to record.'
-            : `Watch for other apps using your microphone and notify you when a call starts. Requires macOS 14 (Sonoma) or later${
-                systemAudioSupport.data?.osVersion ? `, you're on ${systemAudioSupport.data.osVersion}` : ''
-              }.`
+            ? t('settings.general.autoDetect.description')
+            : systemAudioSupport.data?.osVersion
+              ? t('settings.general.autoDetect.requiresMacosWithVersion', {
+                  osVersion: systemAudioSupport.data.osVersion,
+                })
+              : t('settings.general.autoDetect.requiresMacos')
         }
       >
         <Switch
@@ -381,8 +386,8 @@ export function GeneralTab() {
       </SettingRow>
 
       <SettingRow
-        label="Post meeting notifications"
-        description="Notify when your notes are ready or a recording auto-stops from silence."
+        label={t('settings.general.postMeetingNotifications')}
+        description={t('settings.general.notifyWhenNotes')}
         noBorder
       >
         <Switch
@@ -392,11 +397,11 @@ export function GeneralTab() {
         />
       </SettingRow>
 
-      <SectionHeading>Recording</SectionHeading>
+      <SectionHeading>{t('settings.general.recording')}</SectionHeading>
 
       <SettingRow
-        label="Microphone"
-        description="Which input device Steno records from. Pins your choice so the OS switching its default (e.g. AirPods connecting) doesn't silently change what gets recorded. Applies the next time you start a recording."
+        label={t('settings.general.microphone')}
+        description={t('settings.general.whichInputDevice')}
       >
         <Select
           value={microphone.data?.device_id ?? DEFAULT_MIC_VALUE}
@@ -421,10 +426,10 @@ export function GeneralTab() {
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value={DEFAULT_MIC_VALUE}>System Default</SelectItem>
+            <SelectItem value={DEFAULT_MIC_VALUE}>{t('settings.general.systemDefault')}</SelectItem>
             {audioInputDevices.map((d, i) => (
               <SelectItem key={d.deviceId} value={d.deviceId}>
-                {d.label || `Microphone ${i + 1}`}
+                {d.label || t('settings.general.microphoneNumber', { number: i + 1 })}
               </SelectItem>
             ))}
             {/* The selected device was unplugged / isn't in the current device
@@ -433,7 +438,7 @@ export function GeneralTab() {
             {microphone.data?.device_id &&
               !audioInputDevices.some((d) => d.deviceId === microphone.data?.device_id) && (
                 <SelectItem value={microphone.data.device_id}>
-                  {microphone.data.label || 'Unknown device (disconnected)'}
+                  {microphone.data.label || t('settings.general.unknownDeviceDisconnected')}
                 </SelectItem>
               )}
           </SelectContent>
@@ -444,7 +449,7 @@ export function GeneralTab() {
           record mic+system (toggle hidden), so this control isn't shown
           there. */}
       {isMac && (
-        <SettingRow label="Record system audio" description={systemAudioDescription}>
+        <SettingRow label={t('settings.general.recordSystemAudio')} description={systemAudioDescription}>
           <Switch
             checked={(systemAudio.data ?? true) && (systemAudioSupport.data?.supported ?? true)}
             onCheckedChange={(v) => setSystemAudio.mutate(v)}
@@ -454,8 +459,8 @@ export function GeneralTab() {
       )}
 
       <SettingRow
-        label="Auto-stop on silence"
-        description="End the recording and start processing it once both the mic and system audio have been silent for the chosen duration. Useful when you forget to stop after a meeting ends."
+        label={t('settings.general.autoStopSilence')}
+        description={t('settings.general.endRecordingStart')}
         noBorder
       >
         <div className="flex items-center gap-3">
@@ -472,7 +477,7 @@ export function GeneralTab() {
             <SelectContent>
               {(silenceAutoStop.data?.supportedMinutes ?? [2, 5, 10, 15, 30]).map((m) => (
                 <SelectItem key={m} value={String(m)}>
-                  {m} minutes
+                  {t('settings.general.silenceMinutes', { minutes: m })}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -485,11 +490,11 @@ export function GeneralTab() {
         </div>
       </SettingRow>
 
-      <SectionHeading>System</SectionHeading>
+      <SectionHeading>{t('settings.general.systemSection')}</SectionHeading>
 
       <SettingRow
-        label="Launch on login"
-        description="Start Steno automatically when you log in, hidden in the menu bar. Turn off to launch it manually."
+        label={t('settings.general.launchLogin')}
+        description={t('settings.general.startStenoAutomatically')}
       >
         <Switch
           checked={launchOnLogin.data ?? true}
@@ -499,8 +504,8 @@ export function GeneralTab() {
       </SettingRow>
 
       <SettingRow
-        label="Install updates automatically"
-        description="When the app is idle and not recording, download and install updates in the background, then restart. You'll still be notified when an update is available."
+        label={t('settings.general.installUpdatesAutomatically')}
+        description={t('settings.general.whenAppIdle')}
       >
         <Switch
           checked={autoInstallWhenIdle.data ?? true}
@@ -510,13 +515,13 @@ export function GeneralTab() {
       </SettingRow>
 
       <SettingRow
-        label={isMac ? 'Show in menu bar' : 'Show in system tray'}
+        label={isMac ? t('settings.general.showMenuBar') : t('settings.general.showSystemTray')}
         description={
           bothIconsHidden
-            ? 'Both your dock icon and menu bar icon will be hidden. Reopen Steno from Applications or Spotlight to bring the window back.'
+            ? t('settings.general.hideBothIcons')
             : isMac
-              ? 'Show a Steno icon in the menu bar for quick access.'
-              : 'Show a Steno icon in the system tray for quick access.'
+              ? t('settings.general.showStenoIcon')
+              : t('settings.general.showStenoIcon2')
         }
       >
         <Switch
@@ -533,11 +538,11 @@ export function GeneralTab() {
           macOS menu bar and the Windows system tray alike.) */}
       {isMac && (
         <SettingRow
-          label="Hide dock icon"
+          label={t('settings.general.hideDock.label')}
           description={
             bothIconsHidden
-              ? 'Both your dock icon and menu bar icon will be hidden. Reopen Steno from Applications or Spotlight to bring the window back.'
-              : 'Run as menu bar app only'
+              ? t('settings.general.hideBothIcons')
+              : t('settings.general.hideDock.description')
           }
           noBorder
         >
@@ -549,18 +554,17 @@ export function GeneralTab() {
         </SettingRow>
       )}
 
-      <SectionHeading>Keyboard shortcut</SectionHeading>
+      <SectionHeading>{t('settings.general.keyboardShortcut')}</SectionHeading>
 
       <SettingRow
-        label="Global record shortcut"
+        label={t('settings.general.globalRecordShortcut')}
         description={
           <>
-            Start or stop recording from anywhere with {recordAccel}. Turn off if it
-            conflicts with another app.
+            {t('settings.general.shortcut.description', { shortcut: recordAccel })}
             {recordHotkey.data?.enabled === true &&
               recordHotkey.data.registered === false && (
                 <span className="mt-1 block" style={{ color: 'var(--fg-2)' }}>
-                  Couldn't register — another app may be using this shortcut.
+                  {t('settings.general.couldnTRegister')}
                 </span>
               )}
           </>
@@ -591,27 +595,27 @@ interface OAuthPromptProps {
 
 function OAuthPrompt({ state, onClose, onRetry }: OAuthPromptProps) {
   const open = !!state;
-  const providerName = state?.provider === 'outlook' ? 'Outlook' : 'Google';
+  const providerName = state?.provider === 'outlook' ? t('settings.general.provider.outlook') : t('settings.general.provider.google');
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="max-w-md" data-oauth-prompt>
         <DialogHeader>
           <DialogTitle>
             {state?.state === 'error'
-              ? `Couldn't connect to ${providerName}`
-              : `Connecting to ${providerName}`}
+              ? t('settings.general.oauth.errorTitle', { provider: providerName })
+              : t('settings.general.oauth.connectingTitle', { provider: providerName })}
           </DialogTitle>
           <DialogDescription>
             {state?.state === 'error'
-              ? state.message || 'The authorization flow did not complete.'
-              : 'Complete the authorization in your browser. This dialog will close automatically once access is granted.'}
+              ? state.message || t('settings.general.oauth.errorFallback')
+              : t('settings.general.oauth.waitingHint')}
           </DialogDescription>
         </DialogHeader>
 
         {state?.state === 'pending' && (
           <div className="flex items-center gap-3 rounded-md border border-border bg-paper-0 p-3 text-sm text-muted-foreground dark:bg-paper-1">
             <Loader2 className="size-4 animate-spin text-foreground" />
-            <span className="flex-1">Waiting for authorization…</span>
+            <span className="flex-1">{t('settings.general.oauth.waiting')}</span>
             <ExternalLink className="size-3.5" />
           </div>
         )}
@@ -620,13 +624,13 @@ function OAuthPrompt({ state, onClose, onRetry }: OAuthPromptProps) {
           {state?.state === 'error' ? (
             <>
               <Button variant="outline" onClick={onClose}>
-                Close
+                {t('settings.general.close')}
               </Button>
-              <Button onClick={onRetry}>Try again</Button>
+              <Button onClick={onRetry}>{t('settings.general.tryAgain')}</Button>
             </>
           ) : (
             <Button variant="outline" onClick={onClose}>
-              Cancel
+              {t('settings.general.cancel')}
             </Button>
           )}
         </DialogFooter>

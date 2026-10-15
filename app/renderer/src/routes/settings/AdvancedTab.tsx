@@ -13,6 +13,7 @@ import {
   useTelemetrySetting,
 } from '@/hooks/useSettings';
 import { COMPACT_BTN, SettingRow } from './primitives';
+import { t } from '@/i18n';
 
 /** A read-only value with a click-to-copy button. Used for paths and IDs that
  *  users frequently need to paste into bug reports or terminal sessions. */
@@ -45,8 +46,8 @@ function CopyableValue({ value, mono = false }: { value: string; mono?: boolean 
       <button
         type="button"
         onClick={onCopy}
-        aria-label={copied ? 'Copied' : 'Copy to clipboard'}
-        title={copied ? 'Copied' : 'Copy to clipboard'}
+        aria-label={copied ? t('settings.advanced.copied') : t('settings.advanced.copyToClipboard')}
+        title={copied ? t('settings.advanced.copied') : t('settings.advanced.copyToClipboard')}
         className="inline-flex size-[22px] flex-shrink-0 items-center justify-center rounded transition-colors hover:bg-[color:var(--surface-hover)]"
         style={{ color: copied ? 'var(--fg-1)' : 'var(--fg-2)' }}
       >
@@ -96,13 +97,13 @@ export function AdvancedTab() {
             className="text-[14px] font-normal"
             style={{ color: 'var(--fg-1)', marginBottom: 2 }}
           >
-            Storage location
+            {t('settings.advanced.storage.label')}
           </div>
           <div
             className="mb-2 text-[13px]"
             style={{ color: 'var(--fg-2)' }}
           >
-            Where your notes and recordings are saved
+            {t('settings.advanced.storage.description')}
           </div>
           {path && <CopyableValue value={path} mono />}
         </div>
@@ -113,7 +114,7 @@ export function AdvancedTab() {
             className={COMPACT_BTN}
             onClick={chooseFolder}
           >
-            Choose…
+            {t('settings.advanced.storage.choose')}
           </Button>
           {custom && (
             <Button
@@ -122,15 +123,15 @@ export function AdvancedTab() {
               className={COMPACT_BTN}
               onClick={resetFolder}
             >
-              Reset
+              {t('settings.advanced.storage.reset')}
             </Button>
           )}
         </div>
       </div>
 
       <SettingRow
-        label="Setup wizard"
-        description="Reinstall dependencies or fix configuration"
+        label={t('settings.advanced.setupWizard.label')}
+        description={t('settings.advanced.setupWizard.description')}
       >
         <Button
           variant="outline"
@@ -138,13 +139,13 @@ export function AdvancedTab() {
           className={COMPACT_BTN}
           onClick={() => navigate('/setup')}
         >
-          Run
+          {t('settings.advanced.setupWizard.action')}
         </Button>
       </SettingRow>
 
       <SettingRow
-        label="Clear recording state"
-        description="Fix stuck recordings or processing"
+        label={t('settings.advanced.clearState.label')}
+        description={t('settings.advanced.clearState.description')}
       >
         <Button
           variant="outline"
@@ -154,13 +155,13 @@ export function AdvancedTab() {
           disabled={clearState.isPending}
           style={{ color: 'var(--danger)' }}
         >
-          {clearState.isPending ? 'Clearing…' : 'Clear'}
+          {clearState.isPending ? t('settings.advanced.clearState.clearing') : t('settings.advanced.clearState.action')}
         </Button>
       </SettingRow>
 
       <SettingRow
-        label="Anonymous usage analytics"
-        description="Help improve Steno — no meeting content is ever sent"
+        label={t('settings.advanced.analytics.label')}
+        description={t('settings.advanced.analytics.description')}
         noBorder={!telemetry.data?.anonymous_id}
       >
         <Switch
@@ -180,13 +181,13 @@ export function AdvancedTab() {
               className="text-[14px] font-normal"
               style={{ color: 'var(--fg-1)', marginBottom: 2 }}
             >
-              Anonymous ID
+              {t('settings.advanced.anonymousId.label')}
             </div>
             <div
               className="mb-2 text-[13px]"
               style={{ color: 'var(--fg-2)' }}
             >
-              Identifies this install in analytics. Useful when reporting bugs.
+              {t('settings.advanced.anonymousId.description')}
             </div>
             <CopyableValue value={telemetry.data.anonymous_id} mono />
           </div>

@@ -1,7 +1,7 @@
 import en from './locales/en.json';
 
 export type TranslationKey = keyof typeof en;
-export type TranslationParams = Readonly<Record<string, string | number>>;
+export type TranslationParams = Readonly<Record<string, string | number | null | undefined>>;
 
 const INTERPOLATION = /\{\{\s*([A-Za-z_][\w.-]*)\s*\}\}/g;
 
