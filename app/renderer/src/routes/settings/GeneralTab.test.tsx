@@ -99,6 +99,8 @@ vi.mock('@/hooks/useSettings', () => {
     useSetRecordHotkey: m,
     usePremeetingNotificationsSetting: () => q(true),
     useSetPremeetingNotifications: m,
+    useAutoRecordMeetingsSetting: () => q(false),
+    useSetAutoRecordMeetings: m,
     useSystemAudioSetting: () => h.systemAudio,
     useSetSystemAudio: () => h.setSystemAudio,
     useSystemAudioSupport: () => h.systemAudioSupport,

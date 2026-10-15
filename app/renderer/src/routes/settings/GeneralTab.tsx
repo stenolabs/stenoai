@@ -57,6 +57,7 @@ import {
 } from '@/hooks/useCalendarEvents';
 import { COMPACT_BTN, COMPACT_TRIGGER, SectionHeading, SettingRow } from './primitives';
 import { t } from '@/i18n';
+import { AutoRecordRow } from './AutoRecordRow';
 
 const DEFAULT_MIC_VALUE = 'default';
 
@@ -384,6 +385,11 @@ export function GeneralTab() {
           disabled={autoDetect.data === undefined || !autoDetectSupported}
         />
       </SettingRow>
+
+      <AutoRecordRow
+        detectionSupported={autoDetectSupported}
+        detectionOn={autoDetectSupported && autoDetect.data === true}
+      />
 
       <SettingRow
         label={t('settings.general.postMeetingNotifications')}

@@ -794,6 +794,32 @@ class ConfigAutoDetectMeetingsTests(unittest.TestCase):
             self.assertTrue(reloaded.get_auto_detect_meetings_enabled())
 
 
+
+class ConfigAutoRecordMeetingsTests(unittest.TestCase):
+    """Auto-record records without asking, so it must stay off unless the user
+    turned it on: no default, a missing key and a non-boolean all read off."""
+
+    def test_default_is_off(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            config = Config(config_path=Path(tmp_dir) / "config.json")
+            self.assertFalse(config.get_auto_record_meetings_enabled())
+
+    def test_round_trip(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            path = Path(tmp_dir) / "config.json"
+            config = Config(config_path=path)
+            self.assertTrue(config.set_auto_record_meetings_enabled(True))
+            self.assertTrue(Config(config_path=path).get_auto_record_meetings_enabled())
+            self.assertTrue(config.set_auto_record_meetings_enabled(False))
+            self.assertFalse(Config(config_path=path).get_auto_record_meetings_enabled())
+
+    def test_only_a_real_true_turns_it_on(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            config = Config(config_path=Path(tmp_dir) / "config.json")
+            for value in ("true", 1, "yes", None):
+                config._config["auto_record_meetings_enabled"] = value
+                self.assertFalse(config.get_auto_record_meetings_enabled(), value)
+
 class ConfigLaunchOnLoginTests(unittest.TestCase):
     def test_default_launch_on_login_is_true(self):
         with tempfile.TemporaryDirectory() as tmp_dir:

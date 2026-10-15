@@ -191,11 +191,14 @@ export function useRecording() {
         // Every caller is fire-and-forget (`void startRecording()`), so an
         // IPC-level failure would otherwise be a silent no-op: the pill
         // flashes out with no explanation. Route it through the same native
-        // notification the renderer-capture failure path uses.
+        // notification the renderer-capture failure path uses. As 'request',
+        // not 'start': main refused this start (a recording is already
+        // running, e.g. a second URL-scheme start) or failed it and cleaned up
+        // itself, so main must not reset the state of the running recording.
         ipc().recording.reportCaptureError(
           err instanceof Error ? err.message : 'Recording could not start',
           undefined,
-          'start'
+          'request'
         );
         throw err;
       }
@@ -350,18 +353,28 @@ export function useRecordingEvents() {
       bridge.on.shortcutStopRecording(() => {
         void stopRecording();
       }),
-      bridge.on.autoRecordRequested(({ sessionName }) => {
-        // Suggested by the mic-monitor auto-detect notification ("Take Notes").
+      bridge.on.autoRecordRequested(({ sessionName, unattended }) => {
+        // Suggested by the mic-monitor auto-detect notification ("Take Notes"),
+        // or started without asking when Auto-record detected meetings is on
+        // (`unattended`, tracked as its own trigger and what main uses to tie
+        // the "Recording started" toast to this recording).
         // Allow start when idle OR when a previous note is still processing
         // — the user explicitly opted in by clicking "Take Notes", and the
         // background queue handles the previous summary fine. Only skip if
         // an active recording (recording/paused) is already in progress —
         // user already manually started or is mid-meeting.
         if (status === 'recording' || status === 'paused') return;
-        void startRecording(sessionName ?? undefined, 'notification_click');
+        void startRecording(sessionName ?? undefined, unattended ? 'auto_record' : 'notification_click');
         // "Take Notes" is an explicit intent to write notes, so open the
         // live-note editor (main already brought the window forward). Mirrors
-        // the toolbar New-note button.
+        // the toolbar New-note button. An unattended start does not: it would
+        // take over whatever the user has open in Steno, or put up the note
+        // editor's unsaved-changes prompt, because a call began. Its toast
+        // opens the live note instead (openLiveNote below).
+        if (!unattended) navigate('/recording');
+      }),
+      bridge.on.openLiveNote(() => {
+        // The "Recording started" toast was tapped (auto-record).
         navigate('/recording');
       }),
       bridge.on.autoPauseRequested(() => {

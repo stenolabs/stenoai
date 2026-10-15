@@ -370,7 +370,7 @@ export type MicPermissionGrantResponse = Result<{ granted: boolean }>;
 /** Mirrors RECORDING_TRIGGERS in main.js -- what UI action started the
  *  recording, so PostHog can tell whether the meeting-detected nudge
  *  actually moves the needle. */
-export type RecordingTrigger = 'manual' | 'notification_click' | 'hotkey' | 'tray' | 'url_scheme';
+export type RecordingTrigger = 'manual' | 'notification_click' | 'auto_record' | 'hotkey' | 'tray' | 'url_scheme';
 
 /** Mirrors TELEMETRY_TOGGLE_SOURCES in main.js -- which UI surface the
  *  telemetry toggle was flipped from. 'setup' names the Setup.tsx screen,
@@ -787,6 +787,7 @@ export type GetAutoDetectMeetingsResponse = Result<{ auto_detect_meetings_enable
 export type GetPremeetingNotificationsResponse = Result<{
   premeeting_notifications_enabled: boolean;
 }>;
+export type GetAutoRecordMeetingsResponse = Result<{ auto_record_meetings_enabled: boolean }>;
 export type GetLaunchOnLoginResponse = Result<{ launch_on_login: boolean }>;
 export type GetWhisperModelResponse = Result<{ whisper_model: string; supported_models: string[] }>;
 export type GetKeepRecordingsResponse = Result<{ keep_recordings: boolean }>;
@@ -1161,8 +1162,10 @@ export interface StenoaiBridge {
     startLinuxLoopback: RequestFn<[], Result<{ sampleRate: number; channels: number }>>;
     stopLinuxLoopback: RequestFn<[], Result<Record<string, never>>>;
     /** Report a renderer-side capture failure so main can surface a native
-     *  notification (a failed start would otherwise be silent). Fire-and-forget. */
-    reportCaptureError: SendFn<[message: string, name?: string, phase?: 'start' | 'ongoing' | 'stop']>;
+     *  notification (a failed start would otherwise be silent). Fire-and-forget.
+     *  'request': start-recording-ui refused or failed the start, so main's
+     *  state is already right; 'start': capture failed after main accepted it. */
+    reportCaptureError: SendFn<[message: string, name?: string, phase?: 'request' | 'start' | 'ongoing' | 'stop']>;
     processSystemAudio: RequestFn<[filePath: string, name: string], Result<{ message: string }>>;
     // Fire-and-forget: the handler copies the file into recordings/ and queues
     // it (addToProcessingQueue), then resolves immediately with no payload —
@@ -1356,6 +1359,8 @@ export interface StenoaiBridge {
     setAutoDetectMeetings: RequestFn<[v: boolean], Result<Record<string, never>>>;
     getPremeetingNotifications: RequestFn<[], GetPremeetingNotificationsResponse>;
     setPremeetingNotifications: RequestFn<[v: boolean], Result<Record<string, never>>>;
+    getAutoRecordMeetings: RequestFn<[], GetAutoRecordMeetingsResponse>;
+    setAutoRecordMeetings: RequestFn<[v: boolean], Result<Record<string, never>>>;
     getLaunchOnLogin: RequestFn<[], GetLaunchOnLoginResponse>;
     setLaunchOnLogin: RequestFn<[v: boolean], Result<Record<string, never>>>;
     getWhisperModel: RequestFn<[], GetWhisperModelResponse>;
@@ -1516,7 +1521,8 @@ export interface StenoaiBridge {
     shortcutStopRecording: Subscribe<void>;
     trayStartRecording: Subscribe<void>;
     trayStopRecording: Subscribe<void>;
-    autoRecordRequested: Subscribe<{ sessionName?: string; appName?: string }>;
+    autoRecordRequested: Subscribe<{ sessionName?: string; appName?: string; unattended?: boolean }>;
+    openLiveNote: Subscribe<void>;
     autoPauseRequested: Subscribe<void>;
     autoResumeRequested: Subscribe<void>;
     autoSummariseRequested: Subscribe<void>;
