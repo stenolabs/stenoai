@@ -1,6 +1,6 @@
 import { describe, test, expect } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { stripReasoning, renderMarkdown } from '@/lib/markdown';
+import { ReportProperties, renderMarkdown, splitFrontmatter, stripReasoning } from '@/lib/markdown';
 
 /**
  * Unit coverage for stripReasoning — the guard that removes `<think>` /
@@ -108,4 +108,139 @@ describe('chat Markdown lists', () => {
     expect(root.querySelectorAll('pre code')[0].textContent).toContain('• literal');
     expect(root.querySelectorAll('pre code')[1].textContent).toContain('• indented code');
   });
+});
+
+/**
+ * splitFrontmatter — a template can produce a report opening with YAML
+ * frontmatter. Fed whole to react-markdown, the opening `---` becomes a
+ * horizontal rule and the closing one turns the keys into a heading, which is
+ * what the report view showed.
+ */
+describe('splitFrontmatter', () => {
+  test('splits frontmatter from the body', () => {
+    const input = '---\nclient: Erika Mustermann\nissue: Empty Bcc field\n---\n\n## Summary\nIt went well.';
+    const { properties, body } = splitFrontmatter(input);
+    expect(properties).toEqual([
+      ['client', 'Erika Mustermann'],
+      ['issue', 'Empty Bcc field'],
+    ]);
+    expect(body).toBe('## Summary\nIt went well.');
+  });
+
+  test('a report without frontmatter is returned untouched', () => {
+    const input = '## Summary\nNothing structured here.';
+    const { properties, body } = splitFrontmatter(input);
+    expect(properties).toEqual([]);
+    expect(body).toBe(input);
+  });
+
+  test('keeps a colon inside a value, which a hand-rolled parser splits', () => {
+    const { properties } = splitFrontmatter('---\nissue: "Outlook: access denied"\n---\n\nprose');
+    expect(properties).toEqual([['issue', 'Outlook: access denied']]);
+  });
+
+  test('lists survive as arrays', () => {
+    const { properties } = splitFrontmatter('---\nsymptoms:\n  - one\n  - two\n---\n\nprose');
+    expect(properties).toEqual([['symptoms', ['one', 'two']]]);
+  });
+
+  test('drops keys the meeting header already shows, and empty values', () => {
+    const input = '---\ntitle: Something broke\ndate: 2026-09-06\nduration: "0:10"\nduration_seconds: 587\n'
+      + 'language: de\nclient: null\nsystems: []\nissue: Something\n---\n\nprose';
+    const { properties } = splitFrontmatter(input);
+    expect(properties).toEqual([['issue', 'Something']]);
+  });
+
+  test('unparseable frontmatter is left in the body rather than lost', () => {
+    const input = '---\nclient: a: b: c\n---\n\nprose';
+    const { properties, body } = splitFrontmatter(input);
+    expect(properties).toEqual([]);
+    expect(body).toBe(input);
+  });
+
+  test('dates and timestamps stay the text the model wrote', () => {
+    // The default schema makes both a Date, shown in the local time zone.
+    const { properties } = splitFrontmatter(
+      '---\nfollow_up: 2026-09-30\ncalled_at: 2026-09-30T14:00:00+02:00\nresolved: true\nattempts: 2\n---\n\nprose',
+    );
+    expect(properties).toEqual([
+      ['follow_up', '2026-09-30'],
+      ['called_at', '2026-09-30T14:00:00+02:00'],
+      ['resolved', true],
+      ['attempts', 2],
+    ]);
+  });
+
+  test('the closing delimiter is a whole line, not a prefix', () => {
+    for (const input of ['---\nclient: Acme\n---oops\nBody', '---\nclient: Acme\n----\nBody']) {
+      expect(splitFrontmatter(input)).toEqual({ properties: [], body: input });
+    }
+    // Trailing blanks on a delimiter line are still a delimiter.
+    expect(splitFrontmatter('--- \nclient: Acme\n---\t\n\nBody')).toEqual({
+      properties: [['client', 'Acme']],
+      body: 'Body',
+    });
+  });
+
+  test('header keys are dropped whatever their case', () => {
+    const { properties } = splitFrontmatter('---\nTitle: X\nDATE: 2026-01-01\nclient: A\n---\n\nprose');
+    expect(properties).toEqual([['client', 'A']]);
+  });
+
+  test('a nested map or list leaves the frontmatter in the body', () => {
+    for (const nested of ['contact: {name: Erika Mustermann}', 'steps:\n  - [restart, retry]']) {
+      const input = `---\nclient: A\n${nested}\n---\n\nprose`;
+      expect(splitFrontmatter(input)).toEqual({ properties: [], body: input });
+    }
+  });
+
+  test('anchors are refused, so aliases cannot expand', () => {
+    // About 3,900 characters that, with aliases expanded and formatted, came
+    // to about 135 million.
+    const s = 'x'.repeat(1500);
+    const b = Array(300).fill('*s').join(', ');
+    const c = Array(300).fill('*b').join(', ');
+    const input = `---\ns: &s ${s}\nb: &b [${b}]\nc: [${c}]\n---\n\nprose`;
+    expect(splitFrontmatter(input)).toEqual({ properties: [], body: input });
+    // An alias with no anchor to point at does not parse either.
+    const dangling = '---\nb: [*s, *s]\n---\n\nprose';
+    expect(splitFrontmatter(dangling)).toEqual({ properties: [], body: dangling });
+  });
+
+  test('& and * inside a value are text, not anchors or aliases', () => {
+    const { properties } = splitFrontmatter('---\nteam: R&D\nnote: "&not an anchor, *nor an alias"\nflag: a*b\n---\n\nprose');
+    expect(properties).toEqual([
+      ['team', 'R&D'],
+      ['note', '&not an anchor, *nor an alias'],
+      ['flag', 'a*b'],
+    ]);
+  });
+
+  test('a long chain of YAML aliases is left in the body, not formatted', () => {
+    // Each alias nests the previous value: 3000 of them (about 65k characters)
+    // made yaml.dump throw a RangeError while rendering.
+    let chain = 'a0: &a0 x\n';
+    for (let i = 1; i < 3000; i++) chain += `a${i}: &a${i} [*a${i - 1}]\n`;
+    const input = `---\n${chain}---\n\nprose`;
+    expect(splitFrontmatter(input)).toEqual({ properties: [], body: input });
+  });
+
+  test('reads frontmatter with CRLF line endings', () => {
+    const { properties, body } = splitFrontmatter('---\r\nclient: Erika Mustermann\r\n---\r\n\r\n## Summary\r\nDone.');
+    expect(properties).toEqual([['client', 'Erika Mustermann']]);
+    expect(body).toBe('## Summary\nDone.');
+  });
+});
+
+describe('ReportProperties', () => {
+  const cells = (properties: [string, unknown][]) => {
+    const root = document.createElement('div');
+    root.innerHTML = renderToStaticMarkup(ReportProperties({ properties })!);
+    return [...root.querySelectorAll('dd')].map((dd) => dd.textContent);
+  };
+
+  test('booleans read yes/no, inside a list too', () => {
+    expect(cells([['resolved', true], ['checks', [true, false]]])).toEqual(['yes', 'yesno']);
+  });
+
 });

@@ -659,5 +659,9 @@
   "meeting.duration.minutes": "{{minutes}}m",
   "meeting.duration.seconds": "{{seconds}}s",
   "meeting.discussionTopicFallback": "Discussion topic",
-  "meeting.errorFallback": "Something went wrong."
+  "meeting.errorFallback": "Something went wrong.",
+  "report.properties.toggle": "Properties",
+  "report.properties.toggleLabel": "Properties, {{count}}",
+  "report.properties.yes": "yes",
+  "report.properties.no": "no"
 }

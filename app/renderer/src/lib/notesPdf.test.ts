@@ -1,5 +1,7 @@
 import { describe, test, expect } from 'vitest';
+import { renderToStaticMarkup } from 'react-dom/server';
 import { buildNotesHtml, hasNotesContent, escapeHtml, type NotesPdfInput } from '@/lib/notesPdf';
+import { ReportProperties } from '@/lib/markdown';
 
 /**
  * Unit coverage for the branded-PDF HTML builder. Load-bearing cases: it must
@@ -181,5 +183,27 @@ describe('buildNotesHtml with an open template report', () => {
     });
     expect(html).toContain('Q3 &lt;Review&gt; &amp; Notes');
     expect(html).toContain('<p>kept &amp; intact</p>');
+  });
+});
+
+/**
+ * A report's frontmatter properties reach the PDF as the same <dl> the detail
+ * view draws. The PDF has no Tailwind and none of the app's colour tokens, so
+ * without its own rules the list loses its layout and colours.
+ */
+describe('buildNotesHtml with report properties', () => {
+  const contentHtml = renderToStaticMarkup(
+    ReportProperties({ properties: [['client', 'Erika Mustermann'], ['resolved', true]] })!,
+  );
+  const html = buildNotesHtml(full, { templateName: 'Client Call', contentHtml });
+
+  test('defines every colour token the properties use', () => {
+    const tokens = [...new Set([...contentHtml.matchAll(/var\((--[\w-]+)\)/g)].map((m) => m[1]))];
+    expect(tokens.length).toBeGreaterThan(0);
+    for (const token of tokens) expect(html).toContain(`${token}:`);
+  });
+
+  test('lays the list out as a grid', () => {
+    expect(html).toMatch(/\.report dl \{[^}]*display: grid/);
   });
 });

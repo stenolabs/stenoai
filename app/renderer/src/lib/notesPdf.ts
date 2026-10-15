@@ -282,6 +282,22 @@ function renderDocument(title: string, meta: string | undefined, sections: strin
   }
   .report th { background: var(--paper-1); font-weight: 600; }
   .report hr { border: none; border-top: 1px solid var(--rule); margin: 14px 0; }
+  /* A report that opens with YAML frontmatter puts its properties first, as
+     the same <dl> the detail view shows (ReportProperties in markdown.tsx).
+     Its Tailwind classes do nothing here, so the layout is restated, and its
+     inline colours use the app's tokens, mapped onto the paper palette. */
+  .report {
+    --surface-raised: var(--paper-1);
+    --border-subtle: var(--rule);
+    --fg-1: var(--ink-900);
+    --fg-2: var(--ink-500);
+  }
+  .report dl {
+    display: grid; column-gap: 14px; row-gap: 3px;
+    margin: 0 0 14px; padding: 8px 10px; border-radius: 6px;
+    font-size: 9.5pt; break-inside: avoid;
+  }
+  .report dd { margin: 0; }
   footer {
     margin-top: 30px; padding: 10px var(--inset) 0; border-top: 1px solid var(--rule);
     font-size: 8pt; color: var(--ink-500); letter-spacing: 0.02em;
