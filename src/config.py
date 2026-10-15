@@ -1992,6 +1992,17 @@ class Config:
         self._config["notifications_enabled"] = enabled
         return self._save()
 
+    def get_caller_id_enabled(self) -> bool:
+        """Whether phone and FaceTime recordings are matched to the caller
+        through iMCP (macOS; see src/call_info.py). Opt-in: only a literal
+        ``True`` enables it, matching the Electron-side ``=== true`` read."""
+        return self._config.get("caller_id_enabled") is True
+
+    def set_caller_id_enabled(self, enabled: bool) -> bool:
+        """Turn caller recognition on or off. Returns True if saved."""
+        self._config["caller_id_enabled"] = bool(enabled)
+        return self._save()
+
     def get_record_hotkey_enabled(self) -> bool:
         """Get whether the global record shortcut is registered at startup.
 

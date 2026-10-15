@@ -93,6 +93,8 @@ const ARGS_ECHO_REDACTORS = {
   'suggest-speakers': redactRest,
   'speaker-timestamps': redactRest,
   'get-person-sample-audio': redactRest,
+  // A caller's Contacts name and phone number (caller recognition).
+  'apply-call-info': redactRest,
 };
 
 // Return the argv rewritten for the `$ stenoai <...>` debug echo. Non-

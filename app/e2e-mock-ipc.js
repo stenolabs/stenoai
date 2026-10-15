@@ -328,6 +328,14 @@ const AUDIO_SEED_MEETINGS = [
   },
 ];
 
+function callerIdSettings(state) {
+  return {
+    success: true, supported: true, caller_id_enabled: state.callerIdEnabled, meeting_detection: true,
+    status: { state: state.callerIdEnabled ? 'not-installed' : 'off', contacts: false },
+    download_url: 'https://imcp.app/download', homebrew: 'brew install --cask mattt/tap/iMCP',
+  };
+}
+
 function install({ ipcMain }) {
   // Renderer tests can save and reopen chat turns without a backend or disk.
   let chatSessions = { sessions: [] };
@@ -346,6 +354,7 @@ function install({ ipcMain }) {
     cloudModel: 'gpt-4o',
     remoteUrl: '', // remote Ollama URL (empty = not configured)
     autoInstallWhenIdle: true, // idle auto-install toggle (config default on)
+    callerIdEnabled: false, // caller recognition (opt-in, macOS)
     transcriptionEngine: process.env.STENOAI_E2E_MOCK_ENGINE || 'parakeet',
     diarizationEngine: 'sortformer',
     // STENOAI_E2E_SPEAKER_MODELS_MISSING=1 simulates an upgraded install whose
@@ -839,6 +848,16 @@ function install({ ipcMain }) {
     'set-auto-install-when-idle': async (_event, enabled) => {
       state.autoInstallWhenIdle = !!enabled;
       return { success: true, auto_install_when_idle: state.autoInstallWhenIdle };
+    },
+
+    // Caller recognition row: macOS-shaped and stateful like the toggle above.
+    // set answers with the whole settings shape, as main does, since the
+    // renderer caches that answer as the row's data. No iMCP under mock IPC,
+    // so switched on it reads as not installed.
+    'get-caller-id': async () => callerIdSettings(state),
+    'set-caller-id': async (_event, enabled) => {
+      state.callerIdEnabled = enabled === true;
+      return callerIdSettings(state);
     },
 
     // Seed meetings for the specs that need them, gated per env so the

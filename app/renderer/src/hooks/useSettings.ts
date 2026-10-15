@@ -1,5 +1,6 @@
+import { useEffect } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ipc, type TelemetryToggleSource } from '@/lib/ipc';
+import { ipc, type GetCallerIdResponse, type TelemetryToggleSource } from '@/lib/ipc';
 import { unwrap } from '@/lib/result';
 
 export const settingsKeys = {
@@ -13,6 +14,7 @@ export const settingsKeys = {
   systemAudio: () => [...settingsKeys.all, 'systemAudio'] as const,
   systemAudioSupport: () => [...settingsKeys.all, 'systemAudioSupport'] as const,
   autoDetectMeetings: () => [...settingsKeys.all, 'autoDetectMeetings'] as const,
+  callerId: () => [...settingsKeys.all, 'callerId'] as const,
   premeetingNotifications: () => [...settingsKeys.all, 'premeetingNotifications'] as const,
   launchOnLogin: () => [...settingsKeys.all, 'launchOnLogin'] as const,
   silenceAutoStop: () => [...settingsKeys.all, 'silenceAutoStop'] as const,
@@ -223,6 +225,46 @@ export function useSetAutoDetectMeetings() {
   return useToggleSetting(settingsKeys.autoDetectMeetings(), async (v) =>
     unwrap(await ipc().settings.setAutoDetectMeetings(v)),
   );
+}
+
+type CallerIdSettings = Extract<GetCallerIdResponse, { success: true }>;
+
+/** Caller recognition (iMCP): the setting plus iMCP's live status. */
+export function useCallerIdSetting() {
+  const qc = useQueryClient();
+  // iMCP's status changes on its own (started, approved, Phone switched on),
+  // so refetch whenever main reports a change rather than polling.
+  useEffect(
+    () => ipc().on.callerIdStatus(() => qc.invalidateQueries({ queryKey: settingsKeys.callerId() })),
+    [qc],
+  );
+  return useQuery({
+    queryKey: settingsKeys.callerId(),
+    queryFn: async (): Promise<CallerIdSettings> => unwrap(await ipc().settings.getCallerId()),
+  });
+}
+
+export function useSetCallerId() {
+  const qc = useQueryClient();
+  const queryKey = settingsKeys.callerId();
+  return useMutation({
+    mutationFn: async (v: boolean): Promise<CallerIdSettings> =>
+      unwrap(await ipc().settings.setCallerId(v)),
+    // As useToggleSetting: the switch moves at once, and goes back if the save
+    // fails. The answer then replaces the guess, since it carries iMCP's status.
+    onMutate: async (v: boolean) => {
+      await qc.cancelQueries({ queryKey });
+      const previous = qc.getQueryData<CallerIdSettings>(queryKey);
+      if (previous) {
+        qc.setQueryData<CallerIdSettings>(queryKey, { ...previous, caller_id_enabled: v });
+      }
+      return { previous };
+    },
+    onError: (_err, _v, ctx) => {
+      if (ctx?.previous) qc.setQueryData(queryKey, ctx.previous);
+    },
+    onSuccess: (settings) => qc.setQueryData(queryKey, settings),
+  });
 }
 
 export function usePremeetingNotificationsSetting() {

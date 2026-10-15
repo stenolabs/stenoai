@@ -301,6 +301,9 @@ const stenoai = {
     setSystemAudio: (v) => invoke('set-system-audio', v),
     getAutoDetectMeetings: () => invoke('get-auto-detect-meetings'),
     setAutoDetectMeetings: (v) => invoke('set-auto-detect-meetings', v),
+    getCallerId: () => invoke('get-caller-id'),
+    setCallerId: (v) => invoke('set-caller-id', v),
+    openImcpDownload: () => invoke('open-imcp-download'),
     getPremeetingNotifications: () => invoke('get-premeeting-notifications'),
     setPremeetingNotifications: (v) => invoke('set-premeeting-notifications', v),
     getLaunchOnLogin: () => invoke('get-launch-on-login'),
@@ -465,6 +468,7 @@ const stenoai = {
     // until the user navigated away and back.
     updateErrorCleared: (cb) => subscribe('update-error-cleared', cb),
     googleAuthChanged: (cb) => subscribe('google-auth-changed', cb),
+    callerIdStatus: (cb) => subscribe('caller-id-status', cb),
     outlookAuthChanged: (cb) => subscribe('outlook-auth-changed', cb),
     shortcutStartRecording: (cb) => subscribe('shortcut-start-recording', cb),
     shortcutStopRecording: (cb) => subscribe('shortcut-stop-recording', cb),

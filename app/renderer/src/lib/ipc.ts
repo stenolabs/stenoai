@@ -784,6 +784,30 @@ export type GetDockIconResponse = Result<{ hide_dock_icon: boolean }>;
 export type GetMenuBarIconResponse = Result<{ show_menu_bar_icon: boolean }>;
 export type GetSystemAudioResponse = Result<{ system_audio_enabled: boolean }>;
 export type GetAutoDetectMeetingsResponse = Result<{ auto_detect_meetings_enabled: boolean }>;
+/** Caller recognition through iMCP (macOS). States mirror app/imcp-client.js STATUS. */
+export type CallerIdState =
+  | 'off'
+  | 'unsupported'
+  | 'not-installed'
+  | 'not-running'
+  | 'awaiting-approval'
+  | 'declined'
+  | 'phone-off'
+  | 'ready';
+export interface CallerIdStatus {
+  state: CallerIdState;
+  /** Whether iMCP offers Contacts, so callers get names and not only numbers. */
+  contacts: boolean;
+}
+export type GetCallerIdResponse = Result<{
+  supported: boolean;
+  caller_id_enabled: boolean;
+  /** The mic monitor (Auto-detected meetings) is what notices a call. */
+  meeting_detection: boolean;
+  status: CallerIdStatus;
+  download_url: string;
+  homebrew: string;
+}>;
 export type GetPremeetingNotificationsResponse = Result<{
   premeeting_notifications_enabled: boolean;
 }>;
@@ -1354,6 +1378,9 @@ export interface StenoaiBridge {
     setSystemAudio: RequestFn<[v: boolean], Result<Record<string, never>>>;
     getAutoDetectMeetings: RequestFn<[], GetAutoDetectMeetingsResponse>;
     setAutoDetectMeetings: RequestFn<[v: boolean], Result<Record<string, never>>>;
+    getCallerId: RequestFn<[], GetCallerIdResponse>;
+    setCallerId: RequestFn<[v: boolean], GetCallerIdResponse>;
+    openImcpDownload: RequestFn<[], Result<Record<string, never>>>;
     getPremeetingNotifications: RequestFn<[], GetPremeetingNotificationsResponse>;
     setPremeetingNotifications: RequestFn<[v: boolean], Result<Record<string, never>>>;
     getLaunchOnLogin: RequestFn<[], GetLaunchOnLoginResponse>;
@@ -1511,6 +1538,7 @@ export interface StenoaiBridge {
     updateError: Subscribe<UpdateErrorEvent>;
     updateErrorCleared: Subscribe<void>;
     googleAuthChanged: Subscribe<{ connected: boolean }>;
+    callerIdStatus: Subscribe<CallerIdStatus>;
     outlookAuthChanged: Subscribe<{ connected: boolean }>;
     shortcutStartRecording: Subscribe<ShortcutStartRecordingEvent>;
     shortcutStopRecording: Subscribe<void>;
