@@ -67,6 +67,11 @@ _LOCAL_PATH_PATTERNS = (
 _MEDIA_SUFFIXES = frozenset(
     {".aac", ".flac", ".m4a", ".mov", ".mp3", ".mp4", ".ogg", ".opus", ".srt", ".vtt", ".wav", ".webm"}
 )
+# Silent marketing video for the website, reviewed before it is committed. Only
+# video suffixes are exempt and only directly under this directory, so audio,
+# subtitles and anything under recordings/ or transcripts/ are still rejected.
+_WEBSITE_VIDEO_DIR = ("website", "public", "video")
+_WEBSITE_VIDEO_SUFFIXES = frozenset({".mp4", ".webm"})
 
 
 def normalize_candidate(value: str) -> str:
@@ -144,6 +149,10 @@ def scan_text(
     return violations
 
 
+def _is_website_video(path: Path) -> bool:
+    return path.parts[:-1] == _WEBSITE_VIDEO_DIR and path.suffix.casefold() in _WEBSITE_VIDEO_SUFFIXES
+
+
 def scan_path(
     path: Path,
     *,
@@ -154,7 +163,7 @@ def scan_path(
     lowered_parts = {part.casefold() for part in path.parts}
     if lowered_parts.intersection({"recordings", "transcripts"}):
         violations.append(Violation(path, 0, "user-data-artifact"))
-    if path.suffix.casefold() in _MEDIA_SUFFIXES:
+    if path.suffix.casefold() in _MEDIA_SUFFIXES and not _is_website_video(path):
         violations.append(Violation(path, 0, "media-artifact"))
 
     path_matches = scan_text(

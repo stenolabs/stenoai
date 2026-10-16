@@ -206,6 +206,17 @@ class RepositoryPrivacyGuardTests(unittest.TestCase):
         self.assertIn("user-data-artifact", {item.rule for item in privacy_guard.scan_path(recording)})
         self.assertIn("media-artifact", {item.rule for item in privacy_guard.scan_path(transcript)})
 
+    def test_website_marketing_video_is_the_only_media_exemption(self):
+        allowed = Path("website/public/video/briefing-room.mp4")
+        self.assertNotIn("media-artifact", {item.rule for item in privacy_guard.scan_path(allowed)})
+        for blocked in (
+            Path("website/public/video/briefing-room.wav"),
+            Path("website/public/video/nested/clip.mp4"),
+            Path("website/public/clip.mp4"),
+            Path("website/public/video/recordings/clip.mp4"),
+        ):
+            self.assertTrue(privacy_guard.scan_path(blocked), blocked)
+
     def test_source_files_about_recording_are_allowed(self):
         self.assertEqual(privacy_guard.scan_path(Path("docs/features/recording.mdx")), [])
 
