@@ -2,28 +2,34 @@
 import BaseLayout from "../layouts/BaseLayout.astro";
 import { Nav } from "../sections/Nav";
 import Hero from "../sections/Hero.astro";
-import HowItWorks from "../sections/HowItWorks.astro";
-import Features from "../sections/Features.astro";
-import Models from "../sections/Models.astro";
-import Industries from "../sections/Industries.astro";
-import { FAQ } from "../sections/FAQ";
+import MissionTrust from "../sections/MissionTrust.astro";
+import MissionSectors from "../sections/MissionSectors.astro";
+import { MissionPlatform } from "../components/MissionPlatform";
+import MissionEditions from "../sections/MissionEditions.astro";
+import MissionAssurance from "../sections/MissionAssurance.astro";
+import MissionDeploy from "../sections/MissionDeploy.astro";
+import MissionThreats from "../sections/MissionThreats.astro";
+import MissionFAQ from "../sections/MissionFAQ.astro";
 import CTAFooter from "../sections/CTAFooter.astro";
 import Footer from "../sections/Footer.astro";
 
-const title = "StenographAI — Highly-Secure AI Notetaker for Government & Defence";
+const title = "StenoAI — Private Meeting Notes for Government, Defence & Law Enforcement";
 const description =
-  "StenographAI is the highly-secure AI notetaker for confidential conversations in government and defence. No cloud, no usage limits and your private data never leaves your premises.";
+  "Turn sensitive conversations into clear records. StenoAI records, transcribes and summarises on your device or on infrastructure you control. Built for government, defence, law enforcement and confidential work.";
 ---
 
 <BaseLayout title={title} description={description} canonical="https://stenoai.co/">
   <Nav client:load />
-  <main>
+  <main id="main-content" class="mission-site">
     <Hero />
-    <HowItWorks />
-    <Features />
-    <Models />
-    <Industries />
-    <FAQ client:visible />
+    <MissionTrust />
+    <MissionPlatform client:visible />
+    <MissionSectors />
+    <MissionDeploy />
+    <MissionAssurance />
+    <MissionThreats />
+    <MissionEditions />
+    <MissionFAQ />
     <CTAFooter />
   </main>
   <Footer />

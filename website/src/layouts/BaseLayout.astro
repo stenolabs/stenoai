@@ -1,5 +1,6 @@
 ---
 import '../index.css'
+import '../enterprise.css'
 
 const {
   title,
@@ -15,10 +16,10 @@ const isHome = Astro.url.pathname === '/'
 const softwareApplicationJsonLd = {
   '@context': 'https://schema.org',
   '@type': 'SoftwareApplication',
-  name: 'StenographAI',
+  name: 'StenoAI',
   url: 'https://stenoai.co/',
   description:
-    'StenographAI is the highly-secure AI notetaker for confidential conversations in government and defence. No cloud, no usage limits and your private data never leaves your premises.',
+    'Private AI meeting notes for government, defence and confidential work. Records, transcribes and summarises on your device in local mode.',
   applicationCategory: 'BusinessApplication',
   operatingSystem: 'macOS, Windows',
   offers: {
@@ -31,7 +32,7 @@ const softwareApplicationJsonLd = {
 const websiteJsonLd = {
   '@context': 'https://schema.org',
   '@type': 'WebSite',
-  name: 'StenographAI',
+  name: 'StenoAI',
   url: 'https://stenoai.co/',
 }
 
@@ -52,7 +53,7 @@ const allStructuredData = isHome ? [websiteJsonLd, softwareApplicationJsonLd, ..
 
     <!-- Open Graph -->
     <meta property="og:type" content="website" />
-    <meta property="og:site_name" content="StenographAI" />
+    <meta property="og:site_name" content="StenoAI" />
     {canonical && <meta property="og:url" content={canonical} />}
     <meta property="og:title" content={title} />
     <meta property="og:description" content={description} />
@@ -97,7 +98,8 @@ const allStructuredData = isHome ? [websiteJsonLd, softwareApplicationJsonLd, ..
     <!-- No-flash dark mode: apply class before first paint -->
     <script is:inline>
       (function() {
-        var stored = localStorage.getItem('theme');
+        var stored;
+        try { stored = localStorage.getItem('theme'); } catch (_) {}
         var prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
         if (stored === 'dark' || (!stored && prefersDark)) {
           document.documentElement.classList.add('dark');
@@ -106,6 +108,7 @@ const allStructuredData = isHome ? [websiteJsonLd, softwareApplicationJsonLd, ..
     </script>
   </head>
   <body>
+    <a class="skip-link" href="#main-content">Skip to content</a>
     <slot />
 
     <script>

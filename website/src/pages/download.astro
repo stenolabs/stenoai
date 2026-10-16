@@ -1,163 +1,84 @@
 ---
-import BaseLayout from "../layouts/BaseLayout.astro";
-import { Check } from "lucide-react";
-import { MAC_DMG_URL } from "../lib/downloads";
-
-const title = "Download StenoAI for Mac";
-const description = "Your StenoAI download is starting. Follow these steps to finish installing StenoAI.";
+import BaseLayout from '../layouts/BaseLayout.astro';
+import { Nav } from '../sections/Nav';
+import Footer from '../sections/Footer.astro';
+import { ArrowDown, ArrowUpRight } from 'lucide-react';
+import AppleIcon from '../components/icons/AppleIcon.astro';
+import WindowsIcon from '../components/icons/WindowsIcon.astro';
+import { MAC_DMG_URL, WINDOWS_EXE_URL } from '../lib/downloads';
+const title = 'Download StenoAI — macOS & Windows';
+const description = 'Choose StenoAI for Apple Silicon macOS or Windows. Free, open-source meeting notes with local AI processing.';
 ---
-
 <BaseLayout title={title} description={description} noindex>
-  <main class="container-site" style="padding-top: 96px; padding-bottom: 96px;">
-    <div class="text-center" style="max-width: 640px; margin: 0 auto;">
-      <div class="download-pill">
-        <Check size={13} aria-hidden="true" />
-        <span>Download started</span>
+  <Nav client:load />
+  <main id="main-content" class="mission-site">
+    <section class="mission-wrap download-page">
+      <p class="mission-eyebrow">StenoAI / Download</p>
+      <h1>Private intelligence.<br />Starts here.</h1>
+      <p class="download-intro">The open-source app. On your own device.<br />Choose your platform to get started.</p>
+      <div class="download-options">
+        <article>
+          <AppleIcon size={30} />
+          <h2>macOS</h2>
+          <p>Apple Silicon · macOS 14.4 or later</p>
+          <a href={MAC_DMG_URL} class="mission-button mission-button-dark" data-track="download" data-location="download_page" data-arch="arm64">Download for macOS <ArrowDown size={16} aria-hidden="true" /></a>
+          <span>For M1 and later Macs.</span>
+        </article>
+        <article>
+          <WindowsIcon size={30} />
+          <h2>Windows <span>Alpha</span></h2>
+          <p>Windows 10 / 11 · x64</p>
+          <a href={WINDOWS_EXE_URL} class="mission-button mission-button-dark" data-track="download" data-location="download_page" data-arch="win-x64">Download for Windows <ArrowDown size={16} aria-hidden="true" /></a>
+          <span>Alpha release. The installer is currently unsigned.</span>
+        </article>
       </div>
-
-      <h1 class="download-heading">You're almost set up.<br />A few quick steps to go.</h1>
-
-      <p class="text-fg-2 text-base mb-16">
-        StenoAI is downloading now. If nothing happened, you can <a
-          href={MAC_DMG_URL}
-          data-track="download"
-          data-location="download_page:manual"
-          data-arch="arm64"
-          class="download-manual-link"
-        >download StenoAI manually</a>.
-      </p>
-    </div>
-
-    <div class="download-steps">
-      <div class="download-step">
-        <div class="download-step-badge">1</div>
-        <img src="/images/download-steps/step-1.png" alt="" width="676" height="454" class="download-step-image" />
-        <p class="download-step-caption">
-          Open the <strong>StenoAI installer</strong> from your <strong>Downloads</strong> folder
-        </p>
+      <p class="download-model-note">First-run setup downloads the AI models. After setup, the local meeting workflow can run offline.</p>
+      <div class="download-install">
+        <h2>Getting started.</h2>
+        <details open>
+          <summary>Installing on macOS <span aria-hidden="true">+</span></summary>
+          <ol class="download-steps">
+            <li><img src="/images/download-steps/step-1.png" alt="Steno installer in Downloads" width="676" height="454" loading="lazy" /><span><b>01</b> Open the installer from Downloads.</span></li>
+            <li><img src="/images/download-steps/step-2.png" alt="Drag Steno into Applications" width="712" height="474" loading="lazy" /><span><b>02</b> Drag Steno into Applications.</span></li>
+            <li><img src="/images/download-steps/step-3.png" alt="Steno in Applications" width="712" height="474" loading="lazy" /><span><b>03</b> Open Steno and follow setup.</span></li>
+          </ol>
+        </details>
+        <details><summary>Installing on Windows <span aria-hidden="true">+</span></summary><p>Open the downloaded <strong>.exe</strong> installer and follow the installation prompts. Launch Steno and complete first-run model setup. For managed devices, follow your organisation’s process for evaluating and installing unsigned alpha software.</p></details>
       </div>
-      <div class="download-step">
-        <div class="download-step-badge">2</div>
-        <img src="/images/download-steps/step-2.png" alt="" width="712" height="474" class="download-step-image" />
-        <p class="download-step-caption">
-          Drag the <strong>StenoAI</strong> icon into your <strong>Applications</strong> folder
-        </p>
-      </div>
-      <div class="download-step">
-        <div class="download-step-badge">3</div>
-        <img src="/images/download-steps/step-3.png" alt="" width="712" height="474" class="download-step-image" />
-        <p class="download-step-caption">
-          Open the <strong>StenoAI</strong> app from your <strong>Applications</strong> folder
-        </p>
-      </div>
-    </div>
+      <a href="https://github.com/stenolabs/stenoai" class="mission-text-link" data-track="github" data-location="download_page" target="_blank" rel="noopener noreferrer">Prefer to build from source? <ArrowUpRight size={16} aria-hidden="true" /></a>
+    </section>
   </main>
-
-  <script>
-    import { trackDownload } from "../analytics";
-    import { MAC_DMG_URL } from "../lib/downloads";
-
-    // Attribute the download to whichever button sent the visitor here
-    // (?src=hero / ?src=cta_footer), or "direct" for a bookmarked/shared
-    // link straight to this page.
-    const params = new URLSearchParams(window.location.search);
-    const src = params.get("src") || "direct";
-    trackDownload(`download_page:${src}`, "arm64");
-
-    // GitHub Releases serves this with Content-Disposition: attachment, so
-    // this starts a native browser download without navigating away.
-    window.location.href = MAC_DMG_URL;
-  </script>
-
-  <style>
-    .download-pill {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      padding: 5px 14px;
-      border-radius: 9999px;
-      background: var(--surface-sunken);
-      border: 1px solid var(--border);
-      color: var(--fg-2);
-      font-size: 12px;
-      font-weight: 500;
-      letter-spacing: 0.04em;
-      text-transform: uppercase;
-    }
-
-    .download-heading {
-      font-family: var(--font-serif);
-      font-weight: 400;
-      font-size: clamp(30px, 4.2vw, 42px);
-      line-height: 1.15;
-      letter-spacing: -0.02em;
-      color: var(--fg-1);
-      margin: 20px 0 12px;
-    }
-
-    .download-manual-link {
-      color: var(--fg-1);
-      text-decoration: underline;
-    }
-
-    .download-steps {
-      display: flex;
-      flex-direction: column;
-      gap: 40px;
-      max-width: 900px;
-      margin: 0 auto;
-    }
-
-    @media (min-width: 768px) {
-      .download-steps {
-        flex-direction: row;
-        justify-content: center;
-        gap: 24px;
-      }
-    }
-
-    .download-step {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      flex: 1;
-      max-width: 280px;
-      margin: 0 auto;
-    }
-
-    .download-step-badge {
-      width: 28px;
-      height: 28px;
-      border-radius: 9999px;
-      background: var(--primary);
-      color: var(--primary-fg);
-      display: grid;
-      place-items: center;
-      font-size: 13px;
-      font-weight: 600;
-      margin-bottom: 16px;
-    }
-
-    .download-step-image {
-      width: 100%;
-      height: auto;
-      border-radius: var(--radius);
-      border: 1px solid var(--border);
-      background: var(--surface-sunken);
-      display: block;
-    }
-
-    .download-step-caption {
-      margin-top: 16px;
-      font-size: 14px;
-      line-height: 1.5;
-      color: var(--fg-2);
-      text-align: center;
-    }
-
-    .download-step-caption strong {
-      color: var(--fg-1);
-      font-weight: 600;
-    }
-  </style>
+  <Footer />
 </BaseLayout>
+<script>
+  // Keep referral attribution, but record a download only once an installer is chosen.
+  const source = new URLSearchParams(window.location.search).get('src') || 'direct';
+  document.querySelectorAll<HTMLElement>('[data-track="download"]').forEach((link) => {
+    link.dataset.location = `download_page:${source}`;
+  });
+</script>
+<style>
+  .download-page { padding-block: 70px 90px; }
+  .download-page h1 { margin-top: 26px; font: 450 clamp(45px, 5vw, 72px)/1.03 var(--font-sans); letter-spacing: -.055em; }
+  .download-intro { margin-top: 25px; font-size: 16px; color: var(--fg-2); line-height: 1.7; }
+  .download-options { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; margin-top: 45px; }
+  .download-options article { border: 1px solid var(--border-strong); padding: 30px; background: var(--surface-sunken); }
+  .download-options h2 { font-size: 30px; margin-top: 25px; display: flex; align-items: center; gap: 15px; }
+  .download-options h2 span { font: 9px var(--font-mono); text-transform: uppercase; letter-spacing: .1em; border: 1px solid var(--border-strong); padding: 6px 8px; }
+  .download-options p { color: var(--fg-2); font-size: 13px; margin: 15px 0 25px; }
+  .download-options article > span { display: block; margin-top: 18px; font-size: 11px; color: var(--fg-2); }
+  .download-model-note { font-size: 12px; color: var(--fg-2); margin-top: 22px; }
+  .download-install { margin: 65px 0 30px; }
+  .download-install h2 { font-size: 32px; margin-bottom: 30px; }
+  .download-install details { border-top: 1px solid var(--border-strong); }
+  .download-install details:last-child { border-bottom: 1px solid var(--border-strong); }
+  .download-install summary { padding: 24px 0; display: flex; justify-content: space-between; list-style: none; font-size: 15px; cursor: pointer; }
+  .download-install summary::-webkit-details-marker { display: none; }
+  .download-install details[open] summary > span { transform: rotate(45deg); }
+  .download-install details > p { padding-bottom: 25px; max-width: 70ch; font-size: 14px; color: var(--fg-2); line-height: 1.8; }
+  .download-steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; padding: 0 0 30px; margin: 0; list-style: none; }
+  .download-steps img { width: 100%; height: auto; border: 1px solid var(--border); }
+  .download-steps li > span { display: flex; gap: 12px; margin-top: 15px; font-size: 12px; color: var(--fg-2); }
+  .download-steps b { font: 10px var(--font-mono); padding-top: 3px; color: var(--fg-1); }
+  @media (max-width: 767px) { .download-page { padding-block: 45px 65px; } .download-options, .download-steps { grid-template-columns: 1fr; } .download-options article { padding: 25px; } .download-steps img { max-width: 350px; } .download-steps { gap: 30px; } }
+</style>

@@ -1,0 +1,37 @@
+---
+import { ArrowUpRight, ArrowRight } from 'lucide-react';
+import { CTA_MAILTO } from '../content/industries.data';
+// Editions and the buy path in one place: try it free, or take the
+// enterprise route from briefing to deployment.
+const path = [
+  { name: 'Brief', body: 'A briefing for your team and security lead.' },
+  { name: 'Pilot', body: 'A pilot on your own meetings and hardware.' },
+  { name: 'Assure', body: 'Source, build and data paths for your security review and DPO.' },
+  { name: 'Deploy', body: 'Roll out on devices or your infrastructure, through your procurement route.' },
+];
+---
+<section id="editions" class="mission-editions mission-section" aria-labelledby="editions-heading">
+  <div class="mission-wrap">
+    <div class="mission-section-top"><p class="mission-eyebrow">06 / Get started</p><span class="mission-eyebrow">Two editions. One pipeline.</span></div>
+    <div class="mission-section-heading">
+      <h2 id="editions-heading">From one laptop to the<br />whole organisation.</h2>
+      <p>Try the open-source app on a single laptop today. When a department, unit or force is ready, we take you from briefing to deployment.</p>
+    </div>
+    <div class="mission-editions-grid">
+      <div class="mission-edition">
+        <p class="mission-eyebrow">Community</p>
+        <h3>Free · MIT licence</h3>
+        <ul><li>The full on-device pipeline</li><li>No account and no usage caps</li><li>macOS · Windows alpha</li></ul>
+        <a href="/download/?src=editions" class="mission-text-link">Download Community <ArrowRight size={16} aria-hidden="true" /></a>
+      </div>
+      <div class="mission-edition mission-edition-featured">
+        <p class="mission-eyebrow">Enterprise</p>
+        <h3>For teams and organisations</h3>
+        <ol class="mission-edition-path">
+          {path.map((step, i) => <li><span class="mission-small-index">0{i + 1}</span><div><strong>{step.name}</strong><p>{step.body}</p></div></li>)}
+        </ol>
+        <a href={CTA_MAILTO} class="mission-button mission-button-light" data-track="demo_request" data-location="editions">Request a briefing <ArrowUpRight size={17} aria-hidden="true" /></a>
+      </div>
+    </div>
+  </div>
+</section>

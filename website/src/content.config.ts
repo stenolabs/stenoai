@@ -14,6 +14,8 @@ const toneValue = z.object({
   tone: z.enum(['good', 'bad', 'neutral']),
 })
 
+const sourceSchema = z.object({ label: z.string(), href: z.string().url() })
+
 const faqSchema = z.object({
   q: z.string(),
   a: z.string(),
@@ -54,6 +56,9 @@ const industries = defineCollection({
     metaDescription: z.string(),
     eyebrow: z.string(),
     h1: z.string(),
+    lede: z.string(),
+    image: z.string(),
+    imageAlt: z.string(),
     intro: z.string(),
     chips: z.array(z.string()),
     pains: z.array(z.string()),
@@ -82,6 +87,22 @@ const industries = defineCollection({
         ),
       })
       .optional(),
+    // Sector-page detail: illustrative settings, sourced timeline, policy
+    // cards and (defence) deployment postures. All optional.
+    useCases: z.array(z.object({ code: z.string(), title: z.string(), outcome: z.string(), for: z.string(), env: z.string(), outputs: z.array(z.string()) })).optional(),
+    whyNow: z.object({
+      heading: z.string(),
+      intro: z.string(),
+      items: z.array(z.object({ date: z.string(), place: z.string(), title: z.string(), body: z.string(), source: sourceSchema, extra: sourceSchema.optional() })),
+    }).optional(),
+    policy: z.object({
+      heading: z.string(),
+      intro: z.string(),
+      cards: z.array(z.object({ law: z.string(), says: z.string(), so: z.string(), yours: z.string(), sources: z.array(sourceSchema) })),
+    }).optional(),
+    postures: z.array(z.object({ name: z.string(), title: z.string(), body: z.string(), steps: z.array(z.string()), holds: z.string() })).optional(),
+    // Lines the product is explicitly not presented as crossing.
+    notFor: z.array(z.object({ h: z.string(), b: z.string() })).optional(),
     faqs: z.array(faqSchema),
   }),
 })

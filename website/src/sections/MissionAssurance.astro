@@ -1,0 +1,42 @@
+---
+import { ArrowUpRight, AudioLines, FileText, HardDrive, Cpu, ShieldCheck } from 'lucide-react';
+const steps = [{icon: AudioLines, title: 'Capture', detail: 'Mic + system audio'}, {icon: Cpu, title: 'Process', detail: 'Your AI models'}, {icon: FileText, title: 'Understand', detail: 'Notes + answers'}, {icon: HardDrive, title: 'Retain', detail: 'Your files'}];
+// What does leave the device. Keep this honest and complete: a buyer's
+// security team will test it against the source.
+const egress = [
+  { what: 'Meeting content', when: 'Never in local mode. Otherwise only to the model endpoint you configure.' },
+  { what: 'Update checks', when: 'Version check only. No meeting content.' },
+  { what: 'Usage analytics', when: 'Anonymous and switchable off in Settings. No meeting content.' },
+  { what: 'Model downloads', when: 'During setup, or when you choose a new model.' },
+];
+---
+<section id="security" class="mission-assurance mission-section" aria-labelledby="assurance-heading">
+  <div class="mission-wrap">
+    <div class="mission-section-top"><p class="mission-eyebrow">04 / Verify, don’t trust</p><ShieldCheck size={21} aria-hidden="true" /></div>
+    <div class="mission-assurance-layout">
+      <div>
+        <h2 id="assurance-heading">Don’t take our word for it.<br />Check it.</h2>
+        <p class="mission-lede">Every claim on this page can be checked against the source. Every step happens on your device, or on infrastructure you control, and the files stay within the boundaries you set.</p>
+        <a class="mission-text-link" href="https://github.com/stenolabs/stenoai" target="_blank" rel="noopener noreferrer" data-track="github" data-location="assurance">Inspect the source <ArrowUpRight size={16} aria-hidden="true" /></a>
+      </div>
+      <div class="mission-principles">
+        <div><span>01</span><div><h3>Read the code that touches the audio.</h3><p>MIT-licensed source. Your security team can review every line and every dependency.</p></div></div>
+        <div><span>02</span><div><h3>Trust a build, not a binary.</h3><p>Compile it in your own environment and evaluate it against your own requirements.</p></div></div>
+        <div><span>03</span><div><h3>Pull the cable. It keeps working.</h3><p>Once the app and models are installed, local mode runs with no network connection at all.</p></div></div>
+        <div><span>04</span><div><h3>We tell you what does go out.</h3><p>The full list is below. Meeting content only ever goes to an endpoint you run or choose.</p></div></div>
+      </div>
+    </div>
+    <div class="mission-boundary">
+      <div class="mission-boundary-top"><span class="mission-eyebrow">Your boundary / device or your infrastructure</span><span class="mission-eyebrow">Meeting content stays inside <span class="mission-status-dot"></span></span></div>
+      <div class="mission-pipeline">
+        {steps.map(({icon: Icon, title, detail}, index) => <div class="mission-pipeline-step"><span class="mission-pipeline-index">0{index + 1}</span><Icon size={27} strokeWidth={1} aria-hidden="true" /><div><h3>{title}</h3><p>{detail}</p></div>{index < 3 && <span class="mission-pipeline-arrow" aria-hidden="true">→</span>}</div>)}
+      </div>
+    </div>
+    <div class="mission-egress">
+      <p class="mission-eyebrow">What leaves the device</p>
+      <dl>
+        {egress.map(({ what, when }) => <div><dt>{what}</dt><dd>{when}</dd></div>)}
+      </dl>
+    </div>
+  </div>
+</section>

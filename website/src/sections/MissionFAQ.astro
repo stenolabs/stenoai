@@ -1,0 +1,21 @@
+---
+import { ArrowUpRight } from 'lucide-react';
+const faqs = [
+  { q: 'Can StenoAI work without an internet connection?', a: 'Yes. After installing the app and downloading the required models, recording, transcription, summarisation and questions about your notes can all run offline in local mode. Model downloads, software updates and optional connected services require a network.' },
+  { q: 'Can we run it on our own infrastructure instead?', a: 'Yes. Recording always happens on the device, and transcription runs there by default (you can also point it at an OpenAI-compatible speech endpoint you host). Summaries and questions can run on the device, on a model server on your own network (Ollama or an OpenAI-compatible endpoint you host), or in your organisation’s own cloud account such as AWS Bedrock. An organisation gateway can hold provider keys centrally so desktops never see them.' },
+  { q: 'What stays on our device?', a: 'In local mode, meeting audio, transcripts, summaries and AI processing stay on your device. If you configure a cloud model or an organisation integration, content used by that feature follows the configured service’s data path. Choose the deployment and settings appropriate to your information.' },
+  { q: 'Can our security team review the software?', a: 'Yes. StenoAI is open source under the MIT licence. Your team can inspect the source, review dependencies and build it in your own environment. Any authorisation to use it in a classified or regulated environment remains part of your organisation’s assessment.' },
+  { q: 'Which meeting platforms and devices are supported?', a: 'StenoAI captures microphone and system audio directly, so it works with Teams, Zoom, Google Meet, Slack and in-person conversations without adding a meeting bot. The current desktop release supports Apple Silicon Macs on macOS 14.4 or later; Windows 10/11 x64 is available in alpha.' },
+  { q: 'How do we evaluate StenoAI for our organisation?', a: 'Download the open-source desktop app to explore the local workflow, or request a briefing to discuss your use case, environment and deployment requirements. The local app has no per-minute transcription or summarisation limits.' },
+];
+const jsonLd = { '@context': 'https://schema.org', '@type': 'FAQPage', mainEntity: faqs.map(f => ({ '@type': 'Question', name: f.q, acceptedAnswer: { '@type': 'Answer', text: f.a } })) };
+---
+<section id="faq" class="mission-faq mission-section" aria-labelledby="faq-heading">
+  <script type="application/ld+json" set:html={JSON.stringify(jsonLd).replace(/</g, '\\u003c')} />
+  <div class="mission-wrap mission-faq-layout">
+    <div><p class="mission-eyebrow">07 / Questions</p><h2 id="faq-heading">Good questions.<br />Clear answers.</h2><p>What your team needs to know<br />before getting started.</p><a class="mission-text-link mission-faq-compare" href="/vs/">Comparing notetakers? See StenoAI vs Otter, Granola and Fireflies <ArrowUpRight size={14} aria-hidden="true" /></a></div>
+    <div class="mission-faq-items">
+      {faqs.map((f, index) => <details><summary><span class="mission-faq-number">0{index + 1}</span><span>{f.q}</span><span class="mission-faq-symbol" aria-hidden="true"></span></summary><p>{f.a}</p></details>)}
+    </div>
+  </div>
+</section>

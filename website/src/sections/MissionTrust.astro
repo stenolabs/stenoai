@@ -1,0 +1,20 @@
+---
+// Same customer logos as TrustStrip, set as a quiet monochrome band under the
+// mission hero.
+const logos = [
+  { name: "AWS", src: "/logos/aws.svg", w: 80, h: 30 },
+  { name: "HashiCorp", src: "/logos/hashicorp.svg", w: 24, h: 24 },
+  { name: "Tesco", src: "/logos/tesco.svg", w: 24, h: 52 },
+  { name: "Deliveroo", src: "/logos/deliveroo.svg", w: 24, h: 26 },
+  { name: "Rutgers", src: "/logos/rutgers.svg", w: 100, h: 30 },
+  { name: "European Union", src: "/logos/european-union.svg", w: 150, h: 30 },
+];
+---
+<section class="mission-trust" aria-label="Teams using StenoAI">
+  <div class="mission-wrap mission-trust-inner">
+    <p class="mission-eyebrow">Trusted by teams at</p>
+    <ul>
+      {logos.map((l) => <li><img src={l.src} alt={l.name} width={l.w} height={l.h} style={{ height: `${l.h}px` }} loading="lazy" decoding="async" /></li>)}
+    </ul>
+  </div>
+</section>

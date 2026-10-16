@@ -1,224 +1,241 @@
 ---
-import { Check, ShieldCheck, Plus, Minus, ArrowUpRight } from "lucide-react";
+import { Check, ArrowUpRight, X } from "lucide-react";
 import { Nav } from "../sections/Nav";
 import Footer from "../sections/Footer.astro";
 import CTAFooter from "../sections/CTAFooter.astro";
-import AppleIcon from "./icons/AppleIcon.astro";
-import { ALL, COMPLIANCE_BODY, CTA_MAILTO, BREACHES_VERIFIED } from "../content/industries.data.js";
+import { ALL, COMPLIANCE_BODY, CTA_MAILTO, BREACHES_VERIFIED, SECTOR_VERIFIED } from "../content/industries.data.js";
+import "../sector.css";
 
 const { data } = Astro.props;
 const others = ALL.filter((c) => c.slug !== data.slug);
 
-const DOWNLOAD_ARM = "https://github.com/stenolabs/stenoai/releases/latest/download/stenoAI-macos-arm64.dmg";
-
-const H2_STYLE = {
-  fontFamily: "var(--font-serif)",
-  fontWeight: 400,
-  fontSize: "clamp(28px, 3.6vw, 40px)",
-  lineHeight: 1.1,
-  letterSpacing: "-0.02em",
-  color: "var(--fg-1)",
-};
+// Sections are numbered in render order, skipping any the sector doesn't have.
+const order = [
+  data.useCases && "use-cases",
+  data.whyNow && "why-now",
+  "cloud",
+  data.policy && "policy",
+  data.breaches && "case-files",
+  data.postures && "postures",
+  data.notFor && "not-for",
+  "questions",
+].filter(Boolean);
+const num = (id) => String(order.indexOf(id) + 1).padStart(2, "0");
 ---
 
 <Nav subpage client:load />
 
-<main>
-  <section class="pt-[48px] pb-[24px] md:pt-[72px]">
-    <div class="container-site" style="max-width: 880px">
-      <p
-        class="text-fg-2 text-[12px] mb-5"
-        style={{ fontFamily: "var(--font-mono)", textTransform: "uppercase", letterSpacing: "0.14em" }}
-      >
-        {data.eyebrow}
-      </p>
-      <h1
-        style={{
-          fontFamily: "var(--font-serif)",
-          fontWeight: 400,
-          fontSize: "clamp(36px, 5vw, 58px)",
-          lineHeight: 1.05,
-          letterSpacing: "-0.025em",
-          color: "var(--fg-1)",
-          maxWidth: "22ch",
-        }}
-      >
-        {data.h1}
-      </h1>
-      <p class="text-fg-2 text-lg leading-[1.6] mt-6" style="max-width: 66ch">
-        {data.intro}
-      </p>
-      <div class="flex flex-wrap gap-5 mt-7">
-        {data.chips.map((c) => (
-          <span class="inline-flex items-center gap-1.5 text-fg-2 text-[13px]">
-            <ShieldCheck size={13} aria-hidden="true" /> {c}
-          </span>
-        ))}
+<main id="main-content" class="mission-site sector-page">
+  <section class="mission-wrap industry-hero">
+    <div>
+      <p class="mission-eyebrow">{data.eyebrow}</p>
+      <h1>{data.h1}</h1>
+      <p>{data.lede}</p>
+      <div class="mission-actions">
+        <a href={CTA_MAILTO} data-track="demo_request" data-location={`enterprise_${data.slug}`} class="mission-button mission-button-dark">Request a briefing <ArrowUpRight size={16} aria-hidden="true" /></a>
+        <a href="/download/?src=enterprise" class="mission-text-link">Evaluate the app <ArrowUpRight size={16} aria-hidden="true" /></a>
       </div>
-      <div class="flex gap-[10px] flex-wrap mt-8">
-        <a
-          href={CTA_MAILTO}
-          data-track="demo_request"
-          data-location={`enterprise_${data.slug}`}
-          class="btn-base btn-primary inline-flex items-center gap-2 no-underline hover:no-underline"
-        >
-          Book a demo
-        </a>
-        <a
-          href={DOWNLOAD_ARM}
-          data-track="download"
-          data-location={`enterprise_${data.slug}`}
-          data-arch="arm64"
-          class="btn-base btn-ghost inline-flex items-center gap-2 no-underline hover:no-underline"
-        >
-          <AppleIcon size={15} /> Download for macOS
-        </a>
-      </div>
+      <div class="industry-hero-chips"><span>Your device or your infrastructure</span><span>No meeting bot</span><span>Open source</span></div>
     </div>
+    <img class="industry-hero-image" src={`/images/enterprise/${data.image}.webp`} alt={data.imageAlt} width="1200" height="800" fetchpriority="high" />
   </section>
 
-  <section class="pt-[48px] pb-[8px]">
-    <div class="container-site" style="max-width: 880px">
-      <h2 class="mb-6" style={H2_STYLE}>Why cloud tools don't fit</h2>
-      <ul class="m-0 p-0 flex flex-col gap-4" style="list-style: none; max-width: 68ch">
-        {data.pains.map((p) => (
-          <li class="flex items-start gap-3 text-fg-2 text-[15px] leading-[1.6]">
-            <span aria-hidden="true" style={{ color: "var(--fg-muted)", marginTop: 2 }}>—</span>
-            <span>{p}</span>
-          </li>
-        ))}
-      </ul>
-    </div>
-  </section>
-
-  {data.breaches && (
-    <section class="pt-[64px] pb-[8px]">
-      <div class="container-site" style="max-width: 880px">
-        <h2 class="mb-5" style={H2_STYLE}>{data.breaches.heading}</h2>
-        <p class="text-fg-2 text-[15px] leading-[1.65] mb-9" style="max-width: 68ch">
-          {data.breaches.intro}
-        </p>
-
-        <div class="flex flex-col">
-          {data.breaches.items.map((b, i) => (
-            <article
-              class="py-8"
-              style={{
-                borderTop: "1px solid var(--border-subtle)",
-                borderBottom: i === data.breaches.items.length - 1 ? "1px solid var(--border-subtle)" : "none",
-              }}
-            >
-              <p
-                class="text-fg-muted text-[11px] mb-3"
-                style={{ fontFamily: "var(--font-mono)", textTransform: "uppercase", letterSpacing: "0.12em" }}
-              >
-                {b.meta}
-              </p>
-              <h3 class="text-fg-1 mb-3" style={{ fontWeight: 500, fontSize: 18, lineHeight: 1.35 }}>
-                {b.title}
-              </h3>
-              <p class="text-fg-2 text-[15px] leading-[1.65]" style="max-width: 68ch">{b.what}</p>
-
-              <div class="mt-5 pl-5" style="border-left: 2px solid var(--fg-1)">
-                <p
-                  class="text-fg-muted text-[11px] mb-2"
-                  style={{ fontFamily: "var(--font-mono)", textTransform: "uppercase", letterSpacing: "0.12em" }}
-                >
-                  What StenographAI changes
-                </p>
-                <p class="text-fg-2 text-[15px] leading-[1.65]" style="max-width: 64ch">{b.why}</p>
-              </div>
-
-              <a
-                href={b.source.href}
-                target="_blank"
-                rel="noopener noreferrer"
-                class="inline-flex items-center gap-1.5 text-fg-2 text-[13px] mt-5"
-              >
-                {b.source.label}
-                <span class="sr-only">(opens in a new tab)</span>
-                <ArrowUpRight size={13} aria-hidden="true" class="flex-shrink-0" />
-              </a>
-            </article>
-          ))}
+  {data.useCases && (
+    <section id="use-cases" class="mission-section sector-section" aria-labelledby="use-cases-heading">
+      <div class="mission-wrap">
+        <div class="mission-section-top"><p class="mission-eyebrow">{num("use-cases")} / Where it is used</p><span class="mission-eyebrow">Illustrative settings · {data.useCases.length}</span></div>
+        <div class="mission-section-heading">
+          <h2 id="use-cases-heading">Where it is used,<br />room by room.</h2>
+          <p>Settings where the conversation can’t be handed to a cloud vendor, and the record StenoAI produces in each, on your device or your infrastructure.</p>
         </div>
-
-        <p class="text-fg-muted text-[13px] mt-5" style="max-width: 70ch">
-          Each incident above is a matter of public record, summarised from the linked source and
-          verified {BREACHES_VERIFIED}. StenographAI is not affiliated with any organisation named here.
-        </p>
+        <ol class="sector-cases">
+          {data.useCases.map((u) => (
+            <li class="sector-case">
+              <div class="sector-case-top"><span class="mission-small-index">{u.code}</span><span class="sector-tag">{u.env}</span></div>
+              <h3>{u.title}</h3>
+              <p class="sector-case-outcome">{u.outcome}</p>
+              <p class="sector-case-for"><span class="mission-eyebrow">For</span>{u.for}</p>
+              <ul class="sector-case-outputs">{u.outputs.map((o) => <li>{o}</li>)}</ul>
+            </li>
+          ))}
+        </ol>
       </div>
     </section>
   )}
 
-  <section class="pt-[56px] pb-[8px]">
-    <div class="container-site" style="max-width: 880px">
-      <div class="grid md:grid-cols-2 gap-x-12 gap-y-9">
-        {data.points.map((pt) => (
-          <div>
-            <h3 class="text-fg-1 mb-2 flex items-center gap-2" style={{ fontWeight: 500, fontSize: 17 }}>
-              <Check size={16} strokeWidth={2.2} aria-hidden="true" style={{ color: "var(--fg-1)" }} />
-              {pt.h}
-            </h3>
-            <p class="text-fg-2 text-[15px] leading-[1.6]" style="max-width: 48ch">{pt.b}</p>
-          </div>
-        ))}
+  {data.whyNow && (
+    <section id="why-now" class="mission-section sector-section sector-sunken" aria-labelledby="why-now-heading">
+      <div class="mission-wrap">
+        <div class="mission-section-top"><p class="mission-eyebrow">{num("why-now")} / Why now · Public record</p><span class="mission-eyebrow">Verified {SECTOR_VERIFIED}</span></div>
+        <div class="mission-section-heading">
+          <h2 id="why-now-heading">{data.whyNow.heading}</h2>
+          <p>{data.whyNow.intro}</p>
+        </div>
+        <ol class="sector-timeline">
+          {data.whyNow.items.map((item) => (
+            <li>
+              <p class="mission-eyebrow"><span class="sector-date">{item.date}</span> {item.place}</p>
+              <h3>{item.title}</h3>
+              <p>{item.body}</p>
+              <div class="sector-sources">
+                <a href={item.source.href} target="_blank" rel="noopener noreferrer">{item.source.label}<span class="sr-only"> (opens in a new tab)</span> <ArrowUpRight size={12} aria-hidden="true" /></a>
+                {item.extra && <a href={item.extra.href} target="_blank" rel="noopener noreferrer">{item.extra.label}<span class="sr-only"> (opens in a new tab)</span> <ArrowUpRight size={12} aria-hidden="true" /></a>}
+              </div>
+            </li>
+          ))}
+        </ol>
       </div>
-    </div>
-  </section>
+    </section>
+  )}
 
-  <section class="pt-[64px] pb-[8px]">
-    <div class="container-site" style="max-width: 880px">
-      <div class="rounded-[14px] p-8 md:p-10" style={{ background: "var(--surface-sunken)", border: "1px solid var(--border-subtle)" }}>
-        <h2 class="mb-4" style={{ ...H2_STYLE, fontSize: "clamp(22px, 2.6vw, 28px)" }}>
-          On compliance
-        </h2>
-        <p class="text-fg-2 text-[15px] leading-[1.65]" style="max-width: 68ch">
-          {COMPLIANCE_BODY}
-        </p>
-      </div>
-    </div>
-  </section>
-
-  <section class="sect" style="padding-bottom: 48px">
-    <div class="container-site" style="max-width: 820px">
-      <h2 class="mb-10" style={H2_STYLE}>Questions</h2>
-      <div class="flex flex-col faq-accordion">
-        {data.faqs.map((f, i) => (
-          <div style={{ borderTop: "1px solid var(--border-subtle)", borderBottom: i === data.faqs.length - 1 ? "1px solid var(--border-subtle)" : "none" }}>
-            <button
-              type="button"
-              data-faq-toggle
-              aria-expanded="false"
-              class="w-full bg-transparent border-0 py-6 flex justify-between items-center gap-5 cursor-pointer text-left text-fg-1 text-base md:text-[17px]"
-              style={{ fontFamily: "var(--font-sans)", fontWeight: 500 }}
-            >
-              <span>{f.q}</span>
-              <span class="text-fg-2 flex-shrink-0 faq-icon">
-                <Plus size={16} aria-hidden="true" class="icon-plus" />
-                <Minus size={16} aria-hidden="true" class="icon-minus" style={{ display: "none" }} />
-              </span>
-            </button>
-            <div class="faq-panel overflow-hidden" style="height: 0">
-              <p class="text-fg-2 text-[15px] leading-[1.6] pb-6" style="max-width: 64ch">{f.a}</p>
+  <section id="cloud" class="mission-section sector-section" aria-labelledby="cloud-heading">
+    <div class="mission-wrap">
+      <div class="mission-section-top"><p class="mission-eyebrow">{num("cloud")} / Structural risk</p><span class="mission-eyebrow">{data.pains.length} points</span></div>
+      <div class="sector-cloud">
+        <div>
+          <h2 id="cloud-heading">Why cloud tools don’t fit.</h2>
+          <ul class="sector-pains">{data.pains.map((p) => <li>{p}</li>)}</ul>
+        </div>
+        <div class="sector-points">
+          {data.points.map((pt) => (
+            <div>
+              <h3><Check size={15} strokeWidth={2.2} aria-hidden="true" />{pt.h}</h3>
+              <p>{pt.b}</p>
             </div>
-          </div>
-        ))}
+          ))}
+        </div>
       </div>
     </div>
   </section>
 
-  <section class="pb-[16px]">
-    <div class="container-site" style="max-width: 820px">
-      <p class="text-fg-2 text-sm">
-        Also built for:{" "}
-        {others.map((c, i) => (
-          <span>
-            <a href={`/enterprise/${c.slug}/`}>{c.name}</a>
-            {i < others.length - 1 ? " · " : ""}
-          </span>
+  {data.policy && (
+    <section id="policy" class="mission-section sector-section sector-dark" aria-labelledby="policy-heading">
+      <div class="mission-wrap">
+        <div class="mission-section-top"><p class="mission-eyebrow">{num("policy")} / Law & policy</p><span class="mission-eyebrow">Verified {SECTOR_VERIFIED}</span></div>
+        <div class="mission-section-heading">
+          <h2 id="policy-heading">{data.policy.heading}</h2>
+          <p>{data.policy.intro}</p>
+        </div>
+        <div class="sector-policy">
+          {data.policy.cards.map((c) => (
+            <article class="sector-policy-card">
+              <h3 class="mission-eyebrow">{c.law}</h3>
+              <dl>
+                <div><dt>It says</dt><dd>{c.says}</dd></div>
+                <div><dt>So</dt><dd>{c.so}</dd></div>
+                <div><dt>Still yours</dt><dd>{c.yours}</dd></div>
+              </dl>
+              <div class="sector-sources">
+                {c.sources.map((s) => <a href={s.href} target="_blank" rel="noopener noreferrer">{s.label}<span class="sr-only"> (opens in a new tab)</span> <ArrowUpRight size={12} aria-hidden="true" /></a>)}
+              </div>
+            </article>
+          ))}
+        </div>
+      </div>
+    </section>
+  )}
+
+  {data.breaches && (
+    <section id="case-files" class="mission-section sector-section" aria-labelledby="case-files-heading">
+      <div class="mission-wrap">
+        <div class="mission-section-top"><p class="mission-eyebrow">{num("case-files")} / Case files · Public record</p><span class="mission-eyebrow">Verified {BREACHES_VERIFIED}</span></div>
+        <div class="mission-section-heading">
+          <h2 id="case-files-heading">{data.breaches.heading}</h2>
+          <p>{data.breaches.intro}</p>
+        </div>
+        <div class="sector-cases-files">
+          {data.breaches.items.map((b, i) => (
+            <article class="sector-file">
+              <p class="mission-eyebrow"><span class="mission-small-index">Case 0{i + 1}</span> {b.meta}</p>
+              <h3>{b.title}</h3>
+              <p class="sector-file-what">{b.what}</p>
+              <div class="sector-file-why"><p class="mission-eyebrow">What StenoAI changes</p><p>{b.why}</p></div>
+              <a class="mission-text-link" href={b.source.href} target="_blank" rel="noopener noreferrer">{b.source.label}<span class="sr-only"> (opens in a new tab)</span> <ArrowUpRight size={14} aria-hidden="true" /></a>
+            </article>
+          ))}
+        </div>
+        <p class="sector-note">Each incident is a matter of public record, summarised from the linked source and verified {BREACHES_VERIFIED}. StenoAI is not affiliated with any organisation named here.</p>
+      </div>
+    </section>
+  )}
+
+  {data.postures && (
+    <section id="postures" class="mission-section sector-section sector-sunken" aria-labelledby="postures-heading">
+      <div class="mission-wrap">
+        <div class="mission-section-top"><p class="mission-eyebrow">{num("postures")} / Deployment postures</p><span class="mission-eyebrow">Device → network → tenancy</span></div>
+        <div class="mission-section-heading">
+          <h2 id="postures-heading">Deployment postures<br />at the edge.</h2>
+          <p>One application, three ways to run it. The product doesn’t change; the network around it does, and so does exactly what we can claim.</p>
+        </div>
+        <div class="sector-postures">
+          {data.postures.map((p, i) => (
+            <article class="sector-posture">
+              <p class="mission-eyebrow"><span class="mission-small-index">Posture 0{i + 1}</span> {p.name}</p>
+              <h3>{p.title}</h3>
+              <p>{p.body}</p>
+              <ol>{p.steps.map((s) => <li>{s}</li>)}</ol>
+              <p class="sector-holds"><span class="mission-eyebrow">What holds</span>{p.holds}</p>
+            </article>
+          ))}
+        </div>
+        <p class="sector-note">Use in any classified space needs your accrediting authority’s approval of the device and the audio capture. Accreditation is a function of your own deployment and authorisation process, not the app alone.</p>
+      </div>
+    </section>
+  )}
+
+  {data.notFor && (
+    <section id="not-for" class="mission-section sector-section sector-sunken" aria-labelledby="not-for-heading">
+      <div class="mission-wrap">
+        <div class="mission-section-top"><p class="mission-eyebrow">{num("not-for")} / Not for</p><span class="mission-eyebrow">{data.notFor.length} lines</span></div>
+        <div class="mission-section-heading">
+          <h2 id="not-for-heading">What it is not for.</h2>
+          <p>Lines StenoAI does not cross, and is never presented as crossing.</p>
+        </div>
+        <div class="sector-notfor">
+          {data.notFor.map((n) => (
+            <div>
+              <h3><X size={15} strokeWidth={2.2} aria-hidden="true" />{n.h}</h3>
+              <p>{n.b}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  )}
+
+  <section class="sector-section sector-compliance-wrap">
+    <div class="mission-wrap">
+      <div class="sector-compliance">
+        <p class="mission-eyebrow">On compliance</p>
+        <p>{COMPLIANCE_BODY}</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="faq" class="mission-faq mission-section" aria-labelledby="faq-heading">
+    <div class="mission-wrap mission-faq-layout">
+      <div><p class="mission-eyebrow">{num("questions")} / Questions</p><h2 id="faq-heading">Questions your<br />security team will ask.</h2></div>
+      <div class="mission-faq-items">
+        {data.faqs.map((f, index) => <details><summary><span class="mission-faq-number">0{index + 1}</span><span>{f.q}</span><span class="mission-faq-symbol" aria-hidden="true"></span></summary><p>{f.a}</p></details>)}
+      </div>
+    </div>
+  </section>
+
+  <section class="sector-section sector-related" aria-labelledby="related-heading">
+    <div class="mission-wrap">
+      <div class="mission-section-top"><p class="mission-eyebrow" id="related-heading">Related briefings</p><span class="mission-eyebrow">Also built for</span></div>
+      <div class="sector-related-grid">
+        {others.map((c) => (
+          <a class="sector-related-card" href={`/enterprise/${c.slug}/`}>
+            <img src={`/images/enterprise/${c.image}.webp`} alt="" width="1200" height="800" decoding="async" />
+            <div>
+              <p class="mission-eyebrow">{c.eyebrow}</p>
+              <h3>{c.name} <ArrowUpRight size={20} aria-hidden="true" /></h3>
+              <p>{c.h1}</p>
+            </div>
+          </a>
         ))}
-      </p>
+      </div>
     </div>
   </section>
 
@@ -226,27 +243,3 @@ const H2_STYLE = {
 </main>
 
 <Footer />
-
-<script>
-  document.querySelectorAll("[data-faq-toggle]").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      const panel = btn.nextElementSibling;
-      const plus = btn.querySelector(".icon-plus");
-      const minus = btn.querySelector(".icon-minus");
-      const open = btn.getAttribute("aria-expanded") === "true";
-      btn.setAttribute("aria-expanded", String(!open));
-      if (panel) panel.style.height = open ? "0" : `${panel.scrollHeight}px`;
-      if (plus) plus.style.display = open ? "" : "none";
-      if (minus) minus.style.display = open ? "none" : "";
-    });
-  });
-
-  // Keep open panels sized to their content after viewport resize / reflow,
-  // otherwise the frozen pixel height clips the answer.
-  window.addEventListener("resize", () => {
-    document.querySelectorAll("[data-faq-toggle][aria-expanded='true']").forEach((btn) => {
-      const panel = btn.nextElementSibling;
-      if (panel) panel.style.height = `${panel.scrollHeight}px`;
-    });
-  });
-</script>

@@ -1,0 +1,28 @@
+---
+import { ArrowUpRight } from 'lucide-react';
+import { government, defense, BREACHES_VERIFIED } from '../content/industries.data.js';
+// Case files reuse the sourced incidents from the sector pages, so the
+// editorial rules in industries.data.js apply here too.
+const cases = [defense.breaches.items[0], government.breaches.items[0], government.breaches.items[2]];
+---
+<section id="case-files" class="mission-threats mission-section" aria-labelledby="threats-heading">
+  <div class="mission-wrap">
+    <div class="mission-section-top"><p class="mission-eyebrow">05 / Case files · Public record</p><span class="mission-eyebrow">Verified {BREACHES_VERIFIED}</span></div>
+    <div class="mission-section-heading">
+      <h2 id="threats-heading">The compromise happens at a<br />link in the chain that isn’t yours.</h2>
+      <p>None of these were careless organisations. In each case the data was lost outside the walls of the organisation that owned it.</p>
+    </div>
+    <div class="mission-threat-grid">
+      {cases.map((c, i) => (
+        <article class="mission-threat">
+          <p class="mission-eyebrow"><span class="mission-small-index">Case 0{i + 1}</span> {c.meta}</p>
+          <h3>{c.title}</h3>
+          <p class="mission-threat-what">{c.what}</p>
+          <div class="mission-threat-why"><p class="mission-eyebrow">What StenoAI changes</p><p>{c.why}</p></div>
+          <a href={c.source.href} target="_blank" rel="noopener noreferrer" class="mission-text-link">{c.source.label}<span class="sr-only"> (opens in a new tab)</span> <ArrowUpRight size={14} aria-hidden="true" /></a>
+        </article>
+      ))}
+    </div>
+    <p class="mission-threat-note">Each incident is a matter of public record, summarised from the linked source. StenoAI is not affiliated with any organisation named here. More case files on the <a href="/enterprise/government/">government</a>, <a href="/enterprise/defense/">defence</a> and <a href="/enterprise/law-enforcement/">law-enforcement</a> pages.</p>
+  </div>
+</section>

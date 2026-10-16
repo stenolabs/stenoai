@@ -1,0 +1,41 @@
+---
+import { Laptop, Server, Cloud } from 'lucide-react';
+// Three equally supported deployment modes. Wording is load-bearing: audio
+// capture always stays on the device and transcription does by default (cloud
+// ASR is opt-in, to an endpoint the customer configures); otherwise only the
+// summarisation/chat model moves. Keep "never ours" true — StenoAI runs
+// no server that receives meeting content in any of these modes.
+const modes = [
+  { index: '01', icon: Laptop, name: 'On the device', body: 'Capture, transcription, summaries and questions all run on the laptop. After setup it works offline and on air-gapped networks.', tags: 'Local mode · Air-gap ready' },
+  { index: '02', icon: Server, name: 'On your infrastructure', body: 'Point summaries at a model server on your own network, such as Ollama or any OpenAI-compatible endpoint you host. Transcription stays on the device unless you also point it at your own speech endpoint.', tags: 'Self-hosted model · Custom endpoint' },
+  { index: '03', icon: Cloud, name: 'In your cloud tenancy', body: 'Use your organisation’s own cloud account, such as AWS Bedrock or your OpenAI or Anthropic agreement, or route through your organisation’s gateway so desktops never hold provider keys.', tags: 'Bedrock · Organisation gateway' },
+];
+const localModels = [
+  { name: 'Gemma 4 E2B', size: '2B' }, { name: 'Gemma 4 E4B', size: '4B' }, { name: 'Llama 3.2', size: '3B' },
+  { name: 'Qwen 3.5', size: '9B' }, { name: 'Gemma 4', size: '12B' }, { name: 'GPT-OSS', size: '20B' },
+];
+---
+<section id="deploy" class="mission-deploy mission-section" aria-labelledby="deploy-heading">
+  <div class="mission-wrap">
+    <div class="mission-section-top"><p class="mission-eyebrow">03 / Where it runs</p><span class="mission-eyebrow">One pipeline. Three boundaries.</span></div>
+    <div class="mission-section-heading">
+      <h2 id="deploy-heading">Your device, or your<br />infrastructure. Never ours.</h2>
+      <p>Choose where the AI runs to match the sensitivity of the conversation. StenoAI operates no server that receives your meeting content, in any mode.</p>
+    </div>
+    <div class="mission-deploy-grid">
+      {modes.map(({ index, icon: Icon, name, body, tags }) => (
+        <div class="mission-deploy-mode">
+          <div class="mission-deploy-top"><span class="mission-small-index">{index}</span><Icon size={26} strokeWidth={1} aria-hidden="true" /></div>
+          <h3>{name}</h3>
+          <p>{body}</p>
+          <span class="mission-eyebrow mission-sector-tags">{tags}</span>
+        </div>
+      ))}
+    </div>
+    <div class="mission-deploy-models">
+      <p class="mission-eyebrow">Open-weight models on the device</p>
+      <ul>{localModels.map((m) => <li><strong>{m.name}</strong> <span>{m.size}</span></li>)}</ul>
+      <p class="mission-deploy-models-note">Downloaded once during setup, then they run offline. Or point it at your own endpoint.</p>
+    </div>
+  </div>
+</section>

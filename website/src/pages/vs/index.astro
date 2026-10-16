@@ -9,9 +9,9 @@ import { ArrowRight } from "lucide-react";
 
 const comparisons = await getCollection("comparisons");
 
-const title = "StenographAI vs Granola, Otter & Fireflies — Compare AI Meeting Notetakers";
+const title = "StenoAI vs Granola, Otter & Fireflies — Compare AI Meeting Notetakers";
 const description =
-  "How StenographAI's free, on-device meeting transcription compares with Granola, Otter.ai, and Fireflies — pricing, privacy, bots, and usage limits, stated as fairly as we can.";
+  "How StenoAI's free, on-device meeting transcription compares with Granola, Otter.ai, and Fireflies — pricing, privacy, bots, and usage limits, stated as fairly as we can.";
 
 const breadcrumbJsonLd = {
   "@context": "https://schema.org",
@@ -31,7 +31,7 @@ const breadcrumbJsonLd = {
 >
   <Nav subpage client:load />
 
-  <main>
+  <main id="main-content">
     <section class="pt-[48px] pb-[24px] md:pt-[72px]">
       <div class="container-site" style="max-width: 880px">
         <p
@@ -51,10 +51,10 @@ const breadcrumbJsonLd = {
             maxWidth: "22ch",
           }}
         >
-          How StenographAI compares.
+          How StenoAI compares.
         </h1>
         <p class="text-fg-2 text-lg leading-[1.6] mt-6" style="max-width: 66ch">
-          StenographAI transcribes and summarizes meetings entirely on your device — free, open source,
+          StenoAI transcribes and summarizes meetings entirely on your device — free, open source,
           no bot, no account. Here is how that stacks up against the tools you might be using
           instead, stated as fairly as we can. Competitor details verified {VERIFIED}.
         </p>
@@ -85,7 +85,7 @@ const breadcrumbJsonLd = {
                       lineHeight: 1.2,
                     }}
                   >
-                    StenographAI vs {c.name}
+                    StenoAI vs {c.name}
                   </span>
                   <span class="block text-fg-2 text-[15px] leading-[1.6] mt-2" style="max-width: 58ch">
                     {c.oneLiner}

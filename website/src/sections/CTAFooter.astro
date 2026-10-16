@@ -1,55 +1,14 @@
 ---
-import AppleIcon from "../components/icons/AppleIcon.astro";
-import WindowsIcon from "../components/icons/WindowsIcon.astro";
-import { WINDOWS_EXE_URL } from "../lib/downloads";
+import { ArrowUpRight, ArrowRight } from 'lucide-react';
+import { CTA_MAILTO } from '../content/industries.data';
 ---
-
-<section id="download" class="pb-[120px] pt-[80px]">
-  <div class="container-site">
-    <div
-      class="cta-wrap rounded-[14px] md:rounded-[20px] px-6 py-14 sm:px-10 sm:py-16 md:px-16 md:py-24 text-center"
-      style={{ backgroundColor: "var(--primary)", color: "var(--primary-fg)" }}
-    >
-      <div style="max-width: 520px; margin: 0 auto">
-        <h2
-          class="mb-[14px]"
-          style={{
-            fontFamily: "var(--font-serif)",
-            fontWeight: 400,
-            fontSize: "clamp(34px, 4.6vw, 52px)",
-            lineHeight: 1.08,
-            letterSpacing: "-0.02em",
-            color: "var(--primary-fg)",
-          }}
-        >
-          Start keeping private notes.
-        </h2>
-        <p class="text-lg mb-8" style={{ color: "var(--primary-fg)", opacity: 0.7 }}>
-          Free. Open source.
-        </p>
-
-        <div class="flex gap-[10px] justify-center flex-wrap">
-          <a
-            href="/download/?src=cta_footer"
-            class="btn-base btn-primary no-underline"
-          >
-            <AppleIcon size={15} /> Download for Apple Silicon
-          </a>
-          <a
-            href={WINDOWS_EXE_URL}
-            data-track="download"
-            data-location="cta_footer"
-            data-arch="win-x64"
-            class="btn-base btn-ghost no-underline"
-          >
-            <WindowsIcon size={15} /> Download for Windows (alpha)
-          </a>
-        </div>
-
-        <p class="mt-5 text-[13px]" style={{ color: "var(--primary-fg)", opacity: 0.5 }}>
-          macOS 14.4+ (Apple Silicon) · Windows 10/11 (x64, alpha — unsigned) · ~4 GB for the default model
-        </p>
-      </div>
+<section id="download" class="mission-cta">
+  <div class="mission-wrap">
+    <p class="mission-eyebrow">Your next conversation deserves better.</p>
+    <div class="mission-cta-content">
+      <h2>Keep the record.<br /><span>Keep control.</span></h2>
+      <div><p>See what private meeting intelligence<br />can do for your organisation.</p><a href={CTA_MAILTO} class="mission-button mission-button-light" data-track="demo_request" data-location="cta_footer">Request a briefing <ArrowUpRight size={17} aria-hidden="true" /></a><a href="/download/?src=cta_footer" class="mission-text-link">Download the open-source app <ArrowRight size={16} aria-hidden="true" /></a></div>
     </div>
+    <div class="mission-cta-bottom"><span>Your device or your infrastructure. Never ours.</span><span>macOS · Windows alpha</span></div>
   </div>
 </section>

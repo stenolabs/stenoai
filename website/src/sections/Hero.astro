@@ -1,136 +1,44 @@
 ---
-import { ShieldCheck, Lock, HandCoins, BotOff } from "lucide-react";
-import ProviderCluster from "../components/ProviderCluster.astro";
-import TrustStrip from "./TrustStrip.astro";
-import { AppWindowDemo } from "../components/AppWindowDemo";
-import AppleIcon from "../components/icons/AppleIcon.astro";
-import WindowsIcon from "../components/icons/WindowsIcon.astro";
-import { WINDOWS_EXE_URL } from "../lib/downloads";
-
-// The hero download buttons are hidden for now — the nav and the CTA footer
-// both carry a download link. Flip back to true to restore them; the markup,
-// the OS-detection script below, and its analytics attributes are all intact.
-const SHOW_HERO_CTA = false;
+import { ArrowUpRight, ArrowDown, Plus } from "lucide-react";
+import { CTA_MAILTO } from "../content/industries.data";
 ---
 
-<section class="pt-[40px] pb-[56px] md:pt-[56px] md:pb-[80px]">
-  <div class="container-site text-center">
-
-    <div class="mb-5 flex justify-center">
-      <ProviderCluster />
+<section class="mission-hero" aria-labelledby="hero-heading">
+  <video class="mission-hero-image" muted loop playsinline autoplay preload="auto" poster="/images/enterprise/briefing-room.webp?v=3" aria-hidden="true" data-hero-film>
+    <source src="/video/briefing-room.mp4?v=5" type="video/mp4" />
+  </video>
+  <div class="mission-hero-shade" aria-hidden="true"></div>
+  <div class="mission-hero-grid" aria-hidden="true"><Plus className="hero-cross hero-cross-one" size={20} /><Plus className="hero-cross hero-cross-two" size={20} /></div>
+  <div class="mission-wrap mission-hero-content">
+    <p class="mission-eyebrow"><span class="mission-status-dot"></span> Government, defence & law enforcement</p>
+    <h1 id="hero-heading">The record stays<br /><span>in the room.</span></h1>
+    <p class="mission-hero-description">AI meeting notes for conversations that can’t be handed to a vendor. Run it on the device, or on infrastructure you control. No meeting bot. Open source.</p>
+    <div class="mission-actions">
+      <a href={CTA_MAILTO} class="mission-button mission-button-light" data-track="demo_request" data-location="hero">Request a briefing <ArrowUpRight size={17} aria-hidden="true" /></a>
+      <a href="#how" class="mission-text-link">Explore the platform <ArrowDown size={16} aria-hidden="true" /></a>
     </div>
-
-    <h1
-      style={{
-        fontFamily: "var(--font-serif)",
-        fontWeight: 400,
-        fontSize: "clamp(40px, 5.6vw, 68px)",
-        lineHeight: 1.02,
-        letterSpacing: "-0.025em",
-        color: "var(--fg-1)",
-        maxWidth: "36ch",
-        margin: "0 auto",
-      }}
-    >
-      Protect your classified conversations.
-    </h1>
-
-    <p
-      class="text-fg-2 text-lg leading-[1.55] mt-6 mx-auto"
-      style="max-width: 64ch"
-    >
-      StenographAI is the highly-secure AI notetaker for confidential conversations in
-      government and defence. No cloud, no usage limits and your private data
-      never leaves your premises.
-    </p>
-
-    <TrustStrip class="mt-11 mb-11" />
-
-    <div class="mx-auto" style="max-width: 960px">
-      <AppWindowDemo client:visible />
-    </div>
-
-    {SHOW_HERO_CTA && (
-      <>
-        <div class="flex gap-[10px] flex-wrap justify-center mt-12" id="hero-cta">
-          <a
-            href="/download/?src=hero"
-            data-os-cta="mac"
-            class="btn-base btn-primary inline-flex items-center gap-2 no-underline hover:no-underline"
-          >
-            <AppleIcon size={15} />
-            <span data-os-cta-label="mac">Download for macOS</span>
-          </a>
-          <a
-            href={WINDOWS_EXE_URL}
-            data-track="download"
-            data-location="hero"
-            data-arch="win-x64"
-            data-os-cta="windows"
-            class="btn-base btn-ghost inline-flex items-center gap-2 no-underline hover:no-underline"
-            style="display: none"
-          >
-            <WindowsIcon size={15} />
-            <span data-os-cta-label="windows">Download for Windows (alpha)</span>
-          </a>
-        </div>
-        <noscript>
-          <style>#hero-cta [data-os-cta="windows"] { display: inline-flex !important; }</style>
-        </noscript>
-      </>
-    )}
-
-    <div class={`flex gap-5 flex-wrap justify-center ${SHOW_HERO_CTA ? "mt-6" : "mt-10"}`}>
-      <span class="inline-flex items-center gap-1.5 text-fg-2 text-[13px]">
-        <ShieldCheck size={13} aria-hidden="true" /> Open source
-      </span>
-      <span class="inline-flex items-center gap-1.5 text-fg-2 text-[13px]">
-        <Lock size={13} aria-hidden="true" /> Data never leaves your premises
-      </span>
-      <span class="inline-flex items-center gap-1.5 text-fg-2 text-[13px]">
-        <BotOff size={13} aria-hidden="true" /> No meeting bots
-      </span>
-      <span class="inline-flex items-center gap-1.5 text-fg-2 text-[13px]">
-        <HandCoins size={13} aria-hidden="true" /> No usage limits
-      </span>
-    </div>
-
+  </div>
+  <div class="mission-hero-caption" aria-hidden="true"><span>Illustrative footage · Local mode</span></div>
+  <div class="mission-hero-bottom mission-wrap">
+    <span><span class="mission-small-index">01</span> On your device</span>
+    <span><span class="mission-small-index">02</span> On your infrastructure</span>
+    <span><span class="mission-small-index">03</span> Open & inspectable</span>
+    <a href="#how" aria-label="Explore how StenoAI works"><ArrowDown size={20} aria-hidden="true" /></a>
   </div>
 </section>
-
 <script>
-  // Best-effort client OS detection, ported from Hero.jsx's detectOS(). The
-  // primary CTA follows the visitor's OS; on ambiguous UAs both are shown.
-  // Dormant while SHOW_HERO_CTA is false — #hero-cta isn't rendered, so the
-  // guard below no-ops. Kept in step with the flag, not deleted with it.
-  function detectOS() {
-    if (typeof navigator === "undefined") return "mac";
-    const hint = navigator.userAgentData?.platform || navigator.platform || "";
-    const ua = navigator.userAgent || "";
-    const isIOS =
-      /iphone|ipad|ipod/i.test(ua) ||
-      (/mac/i.test(hint) && navigator.maxTouchPoints > 1);
-    if (isIOS || /android/i.test(ua)) return "other";
-    if (/win/i.test(hint) || /windows/i.test(ua)) return "windows";
-    if (/mac/i.test(hint) || /mac os/i.test(ua)) return "mac";
-    return "other";
-  }
-
-  const wrap = document.getElementById("hero-cta");
-  if (wrap) {
-    const os = detectOS();
-    const mac = wrap.querySelector('[data-os-cta="mac"]');
-    const win = wrap.querySelector('[data-os-cta="windows"]');
-    if (os === "windows" && mac && win) {
-      // Windows: lead with the Windows CTA, keep Mac as secondary.
-      wrap.insertBefore(win, mac);
-      win.style.display = "";
-      win.className = "btn-base btn-primary inline-flex items-center gap-2 no-underline hover:no-underline";
-      mac.className = "btn-base btn-ghost inline-flex items-center gap-2 no-underline hover:no-underline";
-    } else if (os === "other" && win) {
-      // Unknown OS: show both options.
-      win.style.display = "";
+  // Illustrative film behind the hero. Hold the still poster under reduced
+  // motion, and pause while scrolled out of view.
+  const film = document.querySelector<HTMLVideoElement>('[data-hero-film]');
+  if (film) {
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      film.removeAttribute('autoplay');
+      film.pause();
+    } else if ('IntersectionObserver' in window) {
+      new IntersectionObserver(([entry]) => {
+        if (entry.isIntersecting) film.play().catch(() => {});
+        else film.pause();
+      }, { threshold: 0.1 }).observe(film);
     }
-    // os === "mac" (default): only the Mac CTA shows, matching the markup as-authored.
   }
 </script>

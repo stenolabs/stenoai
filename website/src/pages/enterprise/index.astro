@@ -1,115 +1,40 @@
 ---
-import BaseLayout from "../../layouts/BaseLayout.astro";
-import { Nav } from "../../sections/Nav";
-import Footer from "../../sections/Footer.astro";
-import CTAFooter from "../../sections/CTAFooter.astro";
-import { getCollection } from "astro:content";
-import { ArrowRight } from "lucide-react";
-import { ALL } from "../../content/industries.data.js";
-
-// getCollection returns entries in id order; keep the authored order from
-// industries.data.js so this hub matches the nav, footer, and homepage.
-const order = ALL.map((c) => c.slug);
-const industries = (await getCollection("industries")).sort(
-  (a, b) => order.indexOf(a.data.slug) - order.indexOf(b.data.slug),
-);
-
-const title = "StenographAI for Enterprise — Private, On-Device AI Meeting Notes for Regulated Teams";
-const description =
-  "StenographAI records, transcribes, and summarizes meetings entirely on your device — no cloud, no bot, no vendor in your data path. Built for government and defence teams.";
-
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import { Nav } from '../../sections/Nav';
+import Footer from '../../sections/Footer.astro';
+import CTAFooter from '../../sections/CTAFooter.astro';
+import MissionSectors from '../../sections/MissionSectors.astro';
+import MissionDeploy from '../../sections/MissionDeploy.astro';
+import MissionAssurance from '../../sections/MissionAssurance.astro';
+import MissionEditions from '../../sections/MissionEditions.astro';
+import { CTA_MAILTO } from '../../content/industries.data';
+import { ArrowUpRight, ArrowDown } from 'lucide-react';
+const title = 'StenoAI for Enterprise — Private Intelligence. Institutional Control.';
+const description = 'Private meeting intelligence for government, defence and law enforcement. Explore on-device and self-hosted deployment, open-source assurance and a meeting workflow on your own hardware.';
 const breadcrumbJsonLd = {
-  "@context": "https://schema.org",
-  "@type": "BreadcrumbList",
+  '@context': 'https://schema.org', '@type': 'BreadcrumbList',
   itemListElement: [
-    { "@type": "ListItem", position: 1, name: "Home", item: "https://stenoai.co/" },
-    { "@type": "ListItem", position: 2, name: "Enterprise", item: "https://stenoai.co/enterprise/" },
+    { '@type': 'ListItem', position: 1, name: 'Home', item: 'https://stenoai.co/' },
+    { '@type': 'ListItem', position: 2, name: 'Enterprise', item: 'https://stenoai.co/enterprise/' },
   ],
 };
 ---
-
-<BaseLayout
-  title={title}
-  description={description}
-  canonical="https://stenoai.co/enterprise/"
-  structuredData={[breadcrumbJsonLd]}
->
-  <Nav subpage client:load />
-
-  <main>
-    <section class="pt-[48px] pb-[24px] md:pt-[72px]">
-      <div class="container-site" style="max-width: 880px">
-        <p
-          class="text-fg-2 text-[12px] mb-5"
-          style={{ fontFamily: "var(--font-mono)", textTransform: "uppercase", letterSpacing: "0.14em" }}
-        >
-          Enterprise
-        </p>
-        <h1
-          style={{
-            fontFamily: "var(--font-serif)",
-            fontWeight: 400,
-            fontSize: "clamp(36px, 5vw, 58px)",
-            lineHeight: 1.05,
-            letterSpacing: "-0.025em",
-            color: "var(--fg-1)",
-            maxWidth: "24ch",
-          }}
-        >
-          Built for confidential work.
-        </h1>
-        <p class="text-fg-2 text-lg leading-[1.6] mt-6" style="max-width: 66ch">
-          If your meetings contain confidential data, you can't send the audio to a third party.
-          StenographAI records, transcribes, and summarizes entirely on the device — no cloud, no bot, no
-          vendor in your data path. Here's what that means for regulated and sensitive work.
-        </p>
+<BaseLayout title={title} description={description} canonical="https://stenoai.co/enterprise/" structuredData={[breadcrumbJsonLd]}>
+  <Nav client:load />
+  <main id="main-content" class="mission-site">
+    <section class="enterprise-intro">
+      <div class="mission-wrap">
+        <p class="mission-eyebrow">StenoAI / Enterprise</p>
+        <h1>Private intelligence.<br />Institutional control.</h1>
+        <p>Give your teams the clarity of AI meeting notes while keeping control of their conversations. On the device or on infrastructure you control, open source, and never on ours.</p>
+        <div class="mission-actions"><a href={CTA_MAILTO} class="mission-button mission-button-light" data-track="demo_request" data-location="enterprise">Request a briefing <ArrowUpRight size={17} aria-hidden="true" /></a><a class="mission-text-link" href="#sectors">Explore your sector <ArrowDown size={16} aria-hidden="true" /></a></div>
       </div>
     </section>
-
-    <section class="pt-[40px] pb-[24px]">
-      <div class="container-site" style="max-width: 880px">
-        <div class="flex flex-col">
-          {industries.map(({ data: c }, i) => (
-            <a
-              href={`/enterprise/${c.slug}/`}
-              class="group no-underline hover:no-underline"
-              style={{
-                borderTop: "1px solid var(--border-subtle)",
-                borderBottom: i === industries.length - 1 ? "1px solid var(--border-subtle)" : "none",
-              }}
-            >
-              <div class="flex items-center justify-between gap-5 py-7">
-                <div>
-                  <span
-                    class="block text-fg-1"
-                    style={{
-                      fontFamily: "var(--font-serif)",
-                      fontWeight: 400,
-                      fontSize: "clamp(22px, 2.8vw, 28px)",
-                      letterSpacing: "-0.015em",
-                      lineHeight: 1.2,
-                    }}
-                  >
-                    {c.name}
-                  </span>
-                  <span class="block text-fg-2 text-[15px] leading-[1.6] mt-2" style="max-width: 62ch">
-                    {c.intro}
-                  </span>
-                </div>
-                <ArrowRight
-                  size={18}
-                  aria-hidden="true"
-                  class="flex-shrink-0 text-fg-muted transition-transform group-hover:translate-x-1 group-hover:text-fg-1"
-                />
-              </div>
-            </a>
-          ))}
-        </div>
-      </div>
-    </section>
-
+    <MissionSectors standalone />
+    <MissionDeploy />
+    <MissionAssurance />
+    <MissionEditions />
     <CTAFooter />
   </main>
-
   <Footer />
 </BaseLayout>

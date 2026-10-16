@@ -1,0 +1,34 @@
+---
+import { ArrowUpRight } from "lucide-react";
+const { standalone = false } = Astro.props;
+const sectors = [
+  { index: '01', name: 'Government', slug: 'government', title: 'For the public interest.\nWithin your perimeter.', body: 'Policy discussions, ministerial briefings and committee meetings. Keep the record where it belongs, with the people responsible for it.', image: 'government', alt: 'People outside a lit office building at dusk', tags: 'Policy · Briefings · Public administration' },
+  { index: '02', name: 'Defence', slug: 'defense', title: 'Clarity in the room.\nContinuity in the field.', body: 'Planning sessions, programme reviews and debriefs. Capture decisions on your own hardware, even when a connection isn’t an option.', image: 'defence', alt: 'Personnel reviewing documents around a planning table', tags: 'Planning · Reviews · Debriefs' },
+  { index: '03', name: 'Law enforcement', slug: 'law-enforcement', title: 'Accountable records.\nInside the force.', body: 'Investigation reviews, command meetings and witness contact notes. A transcript behind every summary, kept under your own retention rules.', image: 'law-enforcement', alt: 'Officers in a briefing room', tags: 'Reviews · Command · Safeguarding' },
+];
+---
+<section id="sectors" class:list={["mission-sectors mission-section", { "sectors-standalone": standalone }]} aria-labelledby="sectors-heading">
+  <div class="mission-wrap">
+    <div class="mission-section-top"><p class="mission-eyebrow">02 / Where it’s used</p><span class="mission-eyebrow">A private record. A shared purpose.</span></div>
+    <div class="mission-section-heading">
+      <h2 id="sectors-heading">Built for the conversations<br />that carry consequence.</h2>
+      <p>When information is sensitive, the tools in the room matter. Give your teams useful AI without handing over their conversations.</p>
+    </div>
+    <div class="mission-sector-grid">
+      {sectors.map((sector) => (
+        <a class="mission-sector" href={`/enterprise/${sector.slug}/`}>
+          <div class="mission-sector-image">
+            <img src={`/images/enterprise/${sector.image}.webp`} alt={sector.alt} width="1200" height="800" loading="lazy" decoding="async" />
+            <div class="mission-sector-image-label"><span class="mission-eyebrow">{sector.index} / {sector.name}</span><ArrowUpRight size={24} aria-hidden="true" /></div>
+            <h3>{sector.name}</h3>
+          </div>
+          <div class="mission-sector-body">
+            <h4>{sector.title.split('\n').map(line => <span>{line}</span>)}</h4>
+            <p>{sector.body}</p>
+            <span class="mission-eyebrow mission-sector-tags">{sector.tags}</span>
+          </div>
+        </a>
+      ))}
+    </div>
+  </div>
+</section>

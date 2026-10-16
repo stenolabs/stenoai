@@ -1,0 +1,110 @@
+/* Sector pages (/enterprise/<sector>/), in the mission design language. */
+.sector-sunken { background: var(--surface-sunken); }
+.sector-dark { --fg-1: #faf9f5; --fg-2: #b9bcb3; --border-strong: #ffffff2e; --focus-ring: #faf9f5; background: var(--mission-dark); color: var(--fg-1); }
+.sector-dark .mission-section-top { color: #d0d3c8; }
+.sector-tag { font: 9px var(--font-mono); text-transform: uppercase; letter-spacing: .08em; padding: 4px 8px; border: 1px solid var(--border-strong); color: var(--fg-2); white-space: nowrap; }
+.sector-note { font-size: 12px; line-height: 1.7; color: var(--fg-2); margin-top: 24px; max-width: 100ch; }
+.sector-sources { display: flex; flex-wrap: wrap; gap: 8px 18px; margin-top: auto; padding-top: 18px; }
+.sector-sources a { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: var(--fg-2); text-decoration: underline !important; text-underline-offset: 3px; }
+.sector-sources a:hover { color: var(--fg-1); }
+
+/* Use cases: room by room. */
+.sector-cases { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(4, 1fr); border-top: 1px solid var(--border-strong); }
+.sector-case { min-width: 0; display: flex; flex-direction: column; padding: 24px 22px 28px 0; border-bottom: 1px solid var(--border-strong); }
+.sector-case:not(:nth-child(4n + 1)) { padding-left: 22px; border-left: 1px solid var(--border-strong); }
+.sector-case-top { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.sector-case h3 { font-size: 19px; font-weight: 400; letter-spacing: -.025em; line-height: 1.3; margin-top: 26px; }
+.sector-case-outcome { font-size: 14px; line-height: 1.6; color: var(--fg-2); margin-top: 10px; }
+.sector-case-for { display: flex; flex-direction: column; gap: 6px; font-size: 12px; line-height: 1.6; margin-top: 18px; }
+.sector-case-for .mission-eyebrow { color: var(--fg-2); }
+.sector-case-outputs { list-style: none; margin: auto 0 0; padding: 18px 0 0; display: flex; flex-wrap: wrap; gap: 6px; }
+.sector-case-outputs li { font: 9px var(--font-mono); text-transform: uppercase; letter-spacing: .06em; padding: 4px 7px; background: var(--surface-sunken); color: var(--fg-1); }
+
+/* Why now: sourced timeline. */
+.sector-timeline { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); border-top: 1px solid var(--border-strong); }
+.sector-timeline > li { min-width: 0; display: flex; flex-direction: column; padding: 26px 24px 8px 0; }
+.sector-timeline > li + li { padding-left: 24px; border-left: 1px solid var(--border-strong); }
+.sector-timeline .mission-eyebrow { color: var(--fg-2); }
+.sector-date { color: var(--fg-1); }
+.sector-timeline h3 { font-size: 20px; font-weight: 400; letter-spacing: -.03em; line-height: 1.3; margin-top: 18px; }
+.sector-timeline h3 + p { font-size: 13px; line-height: 1.7; color: var(--fg-2); margin-top: 10px; }
+
+/* Why cloud tools don't fit. */
+.sector-cloud { display: grid; grid-template-columns: 1fr 1.2fr; gap: 80px; }
+.sector-pains { list-style: none; margin: 30px 0 0; padding: 0; }
+.sector-pains li { font-size: 15px; line-height: 1.65; color: var(--fg-2); padding: 16px 0 16px 22px; border-top: 1px solid var(--border-strong); position: relative; }
+.sector-pains li::before { content: '—'; position: absolute; left: 0; color: var(--fg-1); }
+.sector-points, .sector-notfor { display: grid; grid-template-columns: 1fr 1fr; gap: 30px 40px; align-content: start; }
+.sector-points > div, .sector-notfor > div { min-width: 0; padding-top: 18px; border-top: 1px solid var(--border-strong); }
+.sector-points h3, .sector-notfor h3 { display: flex; align-items: center; gap: 8px; font-size: 16px; font-weight: 500; letter-spacing: -.015em; }
+.sector-points p, .sector-notfor p { font-size: 14px; line-height: 1.65; color: var(--fg-2); margin-top: 8px; }
+
+/* Law and policy cards. */
+.sector-policy { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 24px; }
+.sector-policy-card { min-width: 0; display: flex; flex-direction: column; border: 1px solid var(--border-strong); padding: 26px; }
+.sector-policy-card h3 { color: var(--fg-1); font-size: 11px; }
+.sector-policy-card dl { margin: 18px 0 0; }
+.sector-policy-card dl > div { padding: 14px 0; border-top: 1px solid var(--border-strong); }
+.sector-policy-card dt { font: 9px var(--font-mono); text-transform: uppercase; letter-spacing: .1em; color: var(--fg-2); }
+.sector-policy-card dd { margin: 7px 0 0; font-size: 14px; line-height: 1.65; }
+
+/* Case files. */
+.sector-cases-files { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 0 44px; }
+.sector-file { min-width: 0; display: flex; flex-direction: column; align-items: flex-start; padding: 28px 0 32px; border-top: 1px solid var(--border-strong); }
+.sector-file .mission-eyebrow { color: var(--fg-2); }
+.sector-file h3 { font-size: 22px; font-weight: 400; letter-spacing: -.03em; line-height: 1.25; margin-top: 16px; }
+.sector-file-what { font-size: 14px; line-height: 1.7; color: var(--fg-2); margin-top: 14px; }
+.sector-file-why { margin: 20px 0 22px; padding-left: 18px; border-left: 2px solid var(--fg-1); }
+.sector-file-why p:last-child { font-size: 14px; line-height: 1.7; margin-top: 8px; }
+.sector-file > .mission-text-link { margin-top: auto; }
+
+/* Defence deployment postures. */
+.sector-postures { display: grid; grid-template-columns: repeat(3, 1fr); border-top: 1px solid var(--border-strong); }
+.sector-posture { min-width: 0; display: flex; flex-direction: column; padding: 28px 28px 8px 0; }
+.sector-posture + .sector-posture { padding-left: 28px; border-left: 1px solid var(--border-strong); }
+.sector-posture .mission-eyebrow { color: var(--fg-2); }
+.sector-posture h3 { font-size: 23px; font-weight: 400; letter-spacing: -.03em; line-height: 1.25; margin-top: 18px; }
+.sector-posture > p:not(.mission-eyebrow):not(.sector-holds) { font-size: 14px; line-height: 1.7; color: var(--fg-2); margin-top: 12px; }
+.sector-posture ol { margin: 18px 0 0; padding-left: 18px; font-size: 13px; line-height: 1.7; display: flex; flex-direction: column; gap: 6px; }
+.sector-holds { display: flex; flex-direction: column; gap: 6px; margin-top: auto; padding-top: 22px; font-size: 13px; line-height: 1.6; }
+.sector-posture ol + .sector-holds { margin-top: 22px; border-top: 1px solid var(--border-strong); }
+
+/* Compliance and related briefings. */
+.sector-compliance-wrap { padding: 72px 0 20px; }
+.sector-compliance { border: 1px solid var(--border-strong); background: var(--surface-sunken); padding: 30px 34px; display: grid; grid-template-columns: 200px 1fr; gap: 30px; }
+.sector-compliance .mission-eyebrow { color: var(--fg-2); }
+.sector-compliance p:last-child { font-size: 14px; line-height: 1.75; color: var(--fg-2); max-width: 90ch; }
+.sector-related { padding: 30px 0 100px; }
+.sector-related-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 30px; }
+.sector-related-card { min-width: 0; display: grid; grid-template-columns: 180px 1fr; gap: 24px; align-items: stretch; border: 1px solid var(--border-strong); }
+.sector-related-card img { width: 100%; height: 100%; min-height: 150px; object-fit: cover; filter: saturate(.5); }
+.sector-related-card > div { padding: 22px 22px 22px 0; }
+.sector-related-card .mission-eyebrow { color: var(--fg-2); }
+.sector-related-card h3 { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 26px; font-weight: 400; letter-spacing: -.035em; margin-top: 14px; }
+.sector-related-card h3 + p { font-size: 13px; line-height: 1.6; color: var(--fg-2); margin-top: 8px; }
+.sector-related-card:hover { border-color: var(--fg-1); }
+
+@media (max-width: 1099px) {
+  .sector-cases { grid-template-columns: repeat(2, 1fr); }
+  .sector-case:not(:nth-child(4n + 1)) { padding-left: 0; border-left: 0; }
+  .sector-case:nth-child(2n) { padding-left: 22px; border-left: 1px solid var(--border-strong); }
+  .sector-cloud { grid-template-columns: 1fr; gap: 40px; }
+  .sector-postures { grid-template-columns: 1fr; }
+  .sector-posture, .sector-posture + .sector-posture { padding: 26px 0; border-left: 0; border-bottom: 1px solid var(--border-strong); }
+  .sector-related-grid { grid-template-columns: 1fr; }
+}
+@media (max-width: 767px) {
+  .sector-cases { grid-template-columns: 1fr; }
+  .sector-case, .sector-case:nth-child(2n), .sector-case:not(:nth-child(4n + 1)) { padding: 22px 0 24px; border-left: 0; }
+  .sector-case h3 { margin-top: 16px; }
+  .sector-timeline { grid-template-columns: 1fr; }
+  .sector-timeline > li, .sector-timeline > li + li { padding: 22px 0; border-left: 0; border-bottom: 1px solid var(--border-strong); }
+  .sector-points, .sector-notfor { grid-template-columns: 1fr; gap: 22px; }
+  .sector-policy, .sector-cases-files { grid-template-columns: 1fr; }
+  .sector-policy-card { padding: 20px; }
+  .sector-compliance { grid-template-columns: 1fr; gap: 14px; padding: 22px 20px; }
+  .sector-related { padding-bottom: 64px; }
+  .sector-related-card { grid-template-columns: 1fr; gap: 0; }
+  .sector-related-card img { height: 160px; }
+  .sector-related-card > div { padding: 20px; }
+}
