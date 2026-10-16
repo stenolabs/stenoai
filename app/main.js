@@ -179,6 +179,13 @@ const ALLOW_E2E_PATH_SEAMS = IS_E2E && !app.isPackaged;
 const IS_E2E_MOCK_IPC = process.env.STENOAI_E2E_MOCK_IPC === '1';
 const IS_E2E_HEADLESS = IS_E2E && process.env.STENOAI_E2E_HEADLESS === '1';
 
+// Carry chat history over from v0.8.0, the one release named "StenoAI".
+if (app.isPackaged && !process.env.STENOAI_USER_DATA_DIR) {
+  require('./legacy-user-data').migrateLegacyUserData({
+    fs, path, appDataDir: app.getPath('appData'), userDataDir: app.getPath('userData'),
+  });
+}
+
 // Global (system-wide) accelerator to toggle recording. CommandOrControl
 // resolves to Cmd on macOS and Ctrl on Windows/Linux, so no manual
 // process.platform split is needed. The env override lets the e2e T2 spec
@@ -1858,7 +1865,7 @@ function createTray() {
   const icon = nativeImage.createFromPath(getTrayIconPath(false));
   icon.setTemplateImage(true);
   tray = new Tray(icon);
-  tray.setToolTip('StenoAI');
+  tray.setToolTip('Steno');
 
   updateTrayMenu();
 }
@@ -1868,7 +1875,7 @@ function updateTrayIcon(recording) {
   const icon = nativeImage.createFromPath(getTrayIconPath(recording));
   icon.setTemplateImage(true);
   tray.setImage(icon);
-  tray.setToolTip(recording ? 'StenoAI - Recording' : 'StenoAI');
+  tray.setToolTip(recording ? 'Steno - Recording' : 'Steno');
   updateTrayMenu();
 }
 
@@ -1884,7 +1891,7 @@ function updateTrayMenu() {
 
   const contextMenu = Menu.buildFromTemplate([
     {
-      label: 'Open StenoAI',
+      label: 'Open Steno',
       click: showAndFocusWindow
     },
     // A keyboard-reachable Resume for a paused recording: the "Recording
@@ -1917,14 +1924,14 @@ function updateTrayMenu() {
       }
     },
     {
-      label: 'Hide StenoAI',
+      label: 'Hide Steno',
       click: () => {
         if (mainWindow) mainWindow.hide();
       }
     },
     { type: 'separator' },
     {
-      label: `StenoAI v${appVersion}`,
+      label: `Steno v${appVersion}`,
       enabled: false
     },
     {
@@ -1935,7 +1942,7 @@ function updateTrayMenu() {
     },
     { type: 'separator' },
     {
-      label: 'Quit StenoAI',
+      label: 'Quit Steno',
       click: () => {
         app.quit();
       }
@@ -10531,7 +10538,7 @@ function showRecordingFailedNotification(body) {
   try {
     if (!Notification.isSupported()) return;
     new Notification({
-      title: 'StenoAI',
+      title: 'Steno',
       body: body || "Recording couldn't start.",
       iconType: 'alert',
     }).show();

@@ -1869,7 +1869,7 @@
         "The recording for this note, or for part of it, is no longer on this computer, so it cannot be transcribed again. The note is unchanged.",
         "The selected AI model is unavailable. Check the model in Settings, then try again.",
         "There was not enough memory to generate notes. Choose a smaller model in Settings or free up memory, then try again.",
-        "This note was continued in an earlier version of StenoAI, which did not save which recordings belong to it. Transcribing it again would lose the continued part, so the note is unchanged."
+        "This note was continued in an earlier version of Steno, which did not save which recordings belong to it. Transcribing it again would lose the continued part, so the note is unchanged."
       ],
       "uncertain": [
         "generation_failed",

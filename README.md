@@ -23,7 +23,7 @@
 <div align="center">
   <picture>
     <source srcset="website/public/demo.gif" type="image/gif">
-    <img src="website/public/readme.png" alt="StenoAI" width="800">
+    <img src="website/public/readme.png" alt="Steno" width="800">
   </picture>
 
   <br>
@@ -204,8 +204,8 @@ Download the latest release (**Apple Silicon Mac, macOS 14.4 or later**):
    - Go to **System Settings > Privacy & Security** and click **"Open Anyway"**
 
    **Alternatively:**
-   - Right-click StenoAI in Applications and select **"Open"**
-   - Or run in Terminal: `xattr -cr /Applications/StenoAI.app`
+   - Right-click Steno in Applications and select **"Open"**
+   - Or run in Terminal: `xattr -cr /Applications/Steno.app`
 5. **The app will work normally on subsequent launches**
 
 You can run it locally as well (see below) if you don't want to install a DMG.
@@ -304,22 +304,22 @@ stenoai/
 
 **Terminal logging (recommended for runtime issues):** launch the app from a terminal to stream all logs (Python subprocess output, Whisper transcription, Ollama API traffic, error stack traces):
 ```bash
-/Applications/StenoAI.app/Contents/MacOS/StenoAI
+/Applications/Steno.app/Contents/MacOS/Steno
 ```
 
 **System Console:**
 ```bash
 # View recent StenographAI-related logs
-log show --last 10m --predicate 'process CONTAINS "StenoAI" OR eventMessage CONTAINS "ollama"' --info
+log show --last 10m --predicate 'process CONTAINS "Steno" OR eventMessage CONTAINS "ollama"' --info
 
 # Monitor live logs
-log stream --predicate 'eventMessage CONTAINS "ollama" OR process CONTAINS "StenoAI"' --level info
+log stream --predicate 'eventMessage CONTAINS "ollama" OR process CONTAINS "Steno"' --level info
 ```
 
 ### Common Issues
 
-- **Update didn't install**: Auto-updates are applied on next quit. Quit via the **StenoAI → Quit** menu (not just closing the window), then reopen.
-- **No system audio / no `[Others]` speaker labels**: On macOS, allow StenoAI to record system audio in **System Settings → Privacy & Security → Screen & System Audio Recording**. Screen Recording access is not required.
+- **Update didn't install**: Auto-updates are applied on next quit. Quit via the **Steno → Quit** menu (not just closing the window), then reopen.
+- **No system audio / no `[Others]` speaker labels**: On macOS, allow Steno to record system audio in **System Settings → Privacy & Security → Screen & System Audio Recording**. Screen Recording access is not required.
 - **`stenoai://` deep link doesn't start recording**: Make sure StenographAI has launched at least once after install so the URL scheme is registered. If it still fails, check the terminal log for `Protocol handler registration` output.
 - **Recording stops early**: Check microphone permission, System Audio Recording permission (if recording system audio), and available disk space.
 - **"Processing failed"**: Usually an Ollama service or model issue — check the terminal logs.

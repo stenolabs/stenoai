@@ -84,7 +84,7 @@ test('failed regeneration keeps the existing summary visible and My notes usable
 });
 
 for (const scenario of [
-  { code: 'retranscribe_unlinked_segments', message: 'This note was continued in an earlier version of StenoAI' },
+  { code: 'retranscribe_unlinked_segments', message: 'This note was continued in an earlier version of Steno' },
   { code: 'retranscribe_no_audio', message: 'is no longer on this computer, so it cannot be transcribed again' },
 ]) {
   test(`a re-transcribe refusal (${scenario.code}) explains itself and offers no regenerate`, async ({ launchApp }) => {

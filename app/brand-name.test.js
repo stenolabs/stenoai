@@ -52,10 +52,10 @@ test('development runs retain their existing default data directory', () => {
   assert.equal(userDataPath(false, undefined, path.posix, '/unused'), '/unused/stenoai');
 });
 
-test('installed app and shortcuts use StenoAI while update identity stays stable', () => {
+test('installed app and shortcuts use Steno while update identity stays stable', () => {
   const { build } = require('./package.json');
-  assert.equal(build.productName, 'StenoAI');
-  assert.equal(build.nsis.shortcutName, 'StenoAI');
+  assert.equal(build.productName, 'Steno');
+  assert.equal(build.nsis.shortcutName, 'Steno');
   assert.equal(build.appId, 'com.stenoai.recorder');
   assert.deepEqual(build.protocols[0].schemes, ['stenoai']);
 });

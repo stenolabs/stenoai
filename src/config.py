@@ -297,14 +297,14 @@ def get_user_data_dir() -> Path:
 def is_bundled() -> bool:
     """True when running from a PyInstaller-frozen bundle.
 
-    The legacy "StenoAI.app"/"Applications" string check was a mac-only safety
+    The legacy "Steno.app"/"Applications" string check was a mac-only safety
     net; sys.frozen is the canonical PyInstaller marker on every platform, with
     the path check kept as a belt-and-braces for mac-source-in-Applications.
     """
     if getattr(sys, "frozen", False):
         return True
     path = str(Path(__file__))
-    return "StenoAI.app" in path or "Applications" in path
+    return "Steno.app" in path or "StenoAI.app" in path or "Applications" in path
 
 
 def is_apple_silicon() -> bool:
