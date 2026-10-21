@@ -3,7 +3,7 @@ import { Check, ArrowUpRight, X } from "lucide-react";
 import { Nav } from "../sections/Nav";
 import Footer from "../sections/Footer.astro";
 import CTAFooter from "../sections/CTAFooter.astro";
-import { ALL, COMPLIANCE_BODY, CTA_MAILTO, BREACHES_VERIFIED, SECTOR_VERIFIED } from "../content/industries.data.js";
+import { ALL, COMPLIANCE_BODY, CTA_BRIEFING, BREACHES_VERIFIED, SECTOR_VERIFIED } from "../content/industries.data.js";
 import "../sector.css";
 
 const { data } = Astro.props;
@@ -32,7 +32,7 @@ const num = (id) => String(order.indexOf(id) + 1).padStart(2, "0");
       <h1>{data.h1}</h1>
       <p>{data.lede}</p>
       <div class="mission-actions">
-        <a href={CTA_MAILTO} data-track="demo_request" data-location={`enterprise_${data.slug}`} class="mission-button mission-button-dark">Request a briefing <ArrowUpRight size={16} aria-hidden="true" /></a>
+        <a href={CTA_BRIEFING} data-track="demo_request" data-location={`enterprise_${data.slug}`} class="mission-button mission-button-dark">Request a briefing <ArrowUpRight size={16} aria-hidden="true" /></a>
         <a href="/download/?src=enterprise" class="mission-text-link">Evaluate the app <ArrowUpRight size={16} aria-hidden="true" /></a>
       </div>
       <div class="industry-hero-chips"><span>Your device or your infrastructure</span><span>No meeting bot</span><span>Open source</span></div>

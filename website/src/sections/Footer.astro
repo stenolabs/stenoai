@@ -14,6 +14,6 @@ const sections = [
       <div class="mission-footer-brand"><a href="/" aria-label="StenoAI home"><StenoMark size={34} /><Wordmark size={26} /></a><p>Private meeting intelligence.<br />For the work that matters.</p></div>
       {sections.map(section => <div><h2 class="mission-eyebrow">{section.title}</h2><ul>{section.links.map(link => <li><a href={link.href} target={link.external ? '_blank' : undefined} rel={link.external ? 'noopener noreferrer' : undefined} data-track={link.track} data-location={link.track ? 'footer' : undefined}>{link.name}{link.external && <ArrowUpRight size={12} aria-hidden="true" />}</a></li>)}</ul></div>)}
     </div>
-    <div class="mission-footer-bottom"><span>© {new Date().getFullYear()} StenoAI</span><div><a href="/privacy/">Privacy</a><a href="/terms/">Terms</a><ThemeToggle client:load /></div></div>
+    <div class="mission-footer-bottom"><p class="mission-footer-legal"><span>© {new Date().getFullYear()} StenoAI Pte Ltd</span><span>Singapore&nbsp;098642</span><a href="mailto:support@stenoai.co">support@stenoai.co</a></p><div><a href="/privacy/">Privacy</a><a href="/terms/">Terms</a><ThemeToggle client:load /></div></div>
   </div>
 </footer>

@@ -7,7 +7,7 @@ import MissionSectors from '../../sections/MissionSectors.astro';
 import MissionDeploy from '../../sections/MissionDeploy.astro';
 import MissionAssurance from '../../sections/MissionAssurance.astro';
 import MissionEditions from '../../sections/MissionEditions.astro';
-import { CTA_MAILTO } from '../../content/industries.data';
+import { CTA_BRIEFING } from '../../content/industries.data';
 import { ArrowUpRight, ArrowDown } from 'lucide-react';
 const title = 'StenoAI for Enterprise — Private Intelligence. Institutional Control.';
 const description = 'Private meeting intelligence for government, defence and law enforcement. Explore on-device and self-hosted deployment, open-source assurance and a meeting workflow on your own hardware.';
@@ -27,7 +27,7 @@ const breadcrumbJsonLd = {
         <p class="mission-eyebrow">StenoAI / Enterprise</p>
         <h1>Private intelligence.<br />Institutional control.</h1>
         <p>Give your teams the clarity of AI meeting notes while keeping control of their conversations. On the device or on infrastructure you control, open source, and never on ours.</p>
-        <div class="mission-actions"><a href={CTA_MAILTO} class="mission-button mission-button-light" data-track="demo_request" data-location="enterprise">Request a briefing <ArrowUpRight size={17} aria-hidden="true" /></a><a class="mission-text-link" href="#sectors">Explore your sector <ArrowDown size={16} aria-hidden="true" /></a></div>
+        <div class="mission-actions"><a href={CTA_BRIEFING} class="mission-button mission-button-light" data-track="demo_request" data-location="enterprise">Request a briefing <ArrowUpRight size={17} aria-hidden="true" /></a><a class="mission-text-link" href="#sectors">Explore your sector <ArrowDown size={16} aria-hidden="true" /></a></div>
       </div>
     </section>
     <MissionSectors standalone />

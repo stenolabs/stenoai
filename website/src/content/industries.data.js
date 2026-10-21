@@ -35,6 +35,11 @@ const BREACH_INTRO_GOV =
 const BREACH_INTRO_DEF =
   "The pattern is consistent: the compromise happens at a link in the chain that isn't yours. A contractor's system, a vendor's build server, a file that left the enclave and couldn't be recalled.";
 
+// Every "Request a briefing" button opens /briefing/, which composes this email and offers the mail app, Gmail,
+// Outlook or copy-and-paste. A bare mailto: link does nothing on devices with no default mail app (most managed
+// and webmail-only machines), so the buttons appeared dead there.
+export const BRIEFING_EMAIL = "chantelle@stenoai.co";
+export const CTA_BRIEFING = "/briefing/";
 const CTA_MAILTO =
   "mailto:chantelle@stenoai.co?subject=StenoAI%20demo%20request&body=Hi%20StenoAI%20team%2C%0A%0AWe%27d%20like%20to%20see%20a%20demo.%0A%0AOrganisation%3A%20%0ATeam%20size%3A%20%0AUse%20case%3A%20%0A%0AThanks%2C";
 

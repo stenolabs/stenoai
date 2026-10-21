@@ -28,9 +28,57 @@ html { scroll-behavior: smooth; scroll-padding-top: 125px; }
 .mission-utility a:hover { color: #fff; }
 .mission-nav { display: flex; align-items: center; justify-content: space-between; gap: 28px; padding: 0 56px; height: 82px; border-bottom: 1px solid #ffffff20; position: relative; }
 .mission-brand { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
-.mission-nav-links { display: flex; gap: 30px; }
-.mission-nav-links a { font-size: 12px; color: #e0e1d9; }
-.mission-nav-links a:hover { color: #fff; text-decoration: underline; text-underline-offset: 6px; }
+.mission-nav-links { display: flex; gap: 30px; align-self: stretch; }
+.mission-nav-item { display: flex; align-items: center; }
+.mission-nav-item > a { display: inline-flex; align-items: center; gap: 5px; height: 100%; font-size: 12px; color: #e0e1d9; transition: color .2s; }
+.mission-nav-item > a:hover, .mission-nav-item > a.is-open, .mission-nav-item > a.is-current { color: #fff; }
+.mission-nav-caret { opacity: .55; transition: transform .3s cubic-bezier(.2,.7,.2,1), opacity .2s; }
+.mission-nav-item > a.is-open .mission-nav-caret { transform: rotate(180deg); opacity: 1; }
+/* The hover bar: a line along the bottom of the menu bar that slides under the hovered or open link. */
+.mission-nav-bar { position: absolute; left: 0; bottom: -1px; height: 2px; background: var(--mission-paper); opacity: 0; pointer-events: none; z-index: 41; transition: transform .38s cubic-bezier(.2,.7,.2,1), width .38s cubic-bezier(.2,.7,.2,1), opacity .25s; }
+.mission-nav-bar.is-on { opacity: 1; }
+/* Extended hover menus (desktop): a full-width panel under the menu bar for each section. */
+.mega-panel { position: absolute; left: 0; right: 0; top: 100%; z-index: 40; color: #faf9f5; background: rgba(21,23,20,.97); border-top: 1px solid #ffffff20; border-bottom: 1px solid #ffffff28; -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px); opacity: 0; visibility: hidden; transform: translateY(-8px); transition: opacity .28s ease, transform .4s cubic-bezier(.2,.7,.2,1), visibility .28s; }
+.mega-panel::after { content: ''; position: absolute; left: 0; right: 0; top: 100%; height: 100vh; background: rgba(10,11,9,.5); pointer-events: none; }
+.mega-panel.is-open { opacity: 1; visibility: visible; transform: none; }
+.mega-in { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1.1fr) minmax(0, .75fr); gap: 28px; padding: 26px 56px 30px; }
+.mega-h { margin: 0 0 12px; font: 10px var(--font-mono); letter-spacing: .115em; text-transform: uppercase; color: #b9bcb3; }
+.mega-feat { position: relative; display: block; min-height: 340px; overflow: hidden; border: 1px solid #ffffff28; background: #232620; color: #faf9f5; }
+.mega-layer { position: absolute; inset: 0; margin: 0; opacity: 0; transition: opacity .5s ease; }
+.mega-layer.is-on { opacity: 1; }
+.mega-layer img { width: 100%; height: 100%; object-fit: cover; transform: scale(1.06); filter: saturate(.75) contrast(1.04); transition: transform 1.6s cubic-bezier(.2,.7,.2,1); }
+.mega-layer.is-on img { transform: scale(1); }
+.mega-layer::after { content: ''; position: absolute; inset: 0; background: linear-gradient(180deg, rgba(12,10,8,.08) 30%, rgba(12,10,8,.88) 100%); }
+.mega-layer figcaption { position: absolute; left: 20px; right: 20px; bottom: 46px; z-index: 1; display: grid; gap: 6px; }
+.mega-fk { font: 10px var(--font-mono); letter-spacing: .1em; text-transform: uppercase; color: #d0d3c8; }
+.mega-ft { font-size: clamp(18px, 1.6vw, 23px); line-height: 1.2; letter-spacing: -.02em; max-width: 26ch; }
+.mega-scan { position: absolute; left: 0; right: 0; top: 0; z-index: 1; height: 30%; pointer-events: none; background: linear-gradient(180deg, transparent, rgba(182,211,191,.07) 80%, rgba(182,211,191,.2)); border-bottom: 1px solid rgba(182,211,191,.35); transform: translateY(-100%); animation: mega-scan 4.2s linear infinite; }
+@keyframes mega-scan { to { transform: translateY(360%); } }
+.mega-panel:not(.is-open) .mega-scan { animation-play-state: paused; }
+.mega-tag { position: absolute; top: 14px; left: 16px; z-index: 2; display: inline-flex; align-items: center; gap: 7px; padding: 4px 8px; font: 9px var(--font-mono); letter-spacing: .1em; text-transform: uppercase; color: #e0e1d9; background: rgba(12,10,8,.6); border: 1px solid #ffffff28; }
+.mega-tag .mission-status-dot { color: #b6d3bf; }
+.mega-open { position: absolute; left: 20px; bottom: 16px; z-index: 2; display: inline-flex; align-items: center; gap: 8px; font: 10px var(--font-mono); letter-spacing: .1em; text-transform: uppercase; }
+.mega-feat:hover .mega-open, .mega-feat:focus-visible .mega-open { text-decoration: underline; text-underline-offset: 5px; }
+.mega-list { display: grid; gap: 2px; margin: 0; padding: 0; list-style: none; }
+.mega-list a { display: grid; grid-template-columns: 34px minmax(0, 1fr) auto; gap: 14px; align-items: center; padding: 10px 12px; color: #faf9f5; border: 1px solid transparent; transition: background .25s, border-color .25s; }
+.mega-list a:hover, .mega-list a:focus-visible, .mega-list a.is-on { background: #ffffff08; border-color: #ffffff28; }
+.mega-ic { display: grid; place-items: center; width: 34px; height: 34px; color: #b9bcb3; background: #ffffff06; border: 1px solid #ffffff28; transition: color .25s, border-color .25s; }
+.mega-list a:hover .mega-ic, .mega-list a:focus-visible .mega-ic, .mega-list a.is-on .mega-ic { color: #faf9f5; border-color: #ffffff70; }
+.mega-tx b { display: block; font-weight: 500; font-size: 14px; }
+.mega-tx span { display: block; overflow: hidden; font-size: 12.5px; color: #b9bcb3; white-space: nowrap; text-overflow: ellipsis; }
+.mega-n { font: 10px var(--font-mono); color: #a4a99c; }
+.mega-list a.is-on .mega-n { color: #faf9f5; }
+.mega-side { display: flex; flex-direction: column; gap: 18px; padding-left: 24px; border-left: 1px solid #ffffff20; }
+.mega-ro { display: grid; gap: 10px; margin: 0; }
+.mega-ro div { display: grid; gap: 3px; padding-bottom: 10px; border-bottom: 1px dashed #ffffff28; }
+.mega-ro dt { font: 9px var(--font-mono); letter-spacing: .1em; text-transform: uppercase; color: #a4a99c; }
+.mega-ro dd { margin: 0; font-size: 13.5px; color: #b6d3bf; }
+.mega-links { display: grid; gap: 4px; }
+.mega-links a { display: inline-flex; align-items: center; gap: 9px; padding: 7px 0; font-size: 13px; color: #d0d3c8; }
+.mega-links a:hover { color: #fff; }
+.mega-cta { margin-top: auto; align-self: flex-start; }
+@media (max-width: 1320px) { .mega-in { grid-template-columns: minmax(0, 1.15fr) minmax(0, 1.1fr); } .mega-side { display: none; } }
+@media (min-width: 1700px) { .mega-in { padding-inline: max(56px, calc((100vw - 1440px) / 2)); } }
 .mission-nav-actions { display: flex; gap: 16px; align-items: center; }
 .mission-nav-github { display: inline-flex; align-items: center; justify-content: center; width: 42px; height: 42px; color: #e0e1d9; border: 1px solid #ffffff30; }
 .mission-button-outline { background: transparent; color: #faf9f5; border-color: #ffffff40; }
@@ -261,6 +309,9 @@ html { scroll-behavior: smooth; scroll-padding-top: 125px; }
 .mission-footer a:hover { text-decoration: underline; }
 .mission-footer-bottom { display: flex; justify-content: space-between; align-items: center; gap: 20px; padding: 26px 0; border-top: 1px solid var(--border-strong); font-size: 10px; color: var(--fg-2); }
 .mission-footer-bottom > div { display: flex; align-items: center; gap: 24px; }
+/* Company line: legal entity, registered address and the support address. */
+.mission-footer-legal { margin: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 22px; }
+.mission-footer-legal a:hover { color: var(--fg-1); }
 /* Enterprise landing and sector pages share the same visual language. */
 .enterprise-intro { padding: 82px 0 90px; background: var(--mission-dark); color: var(--mission-paper); }
 .enterprise-intro .mission-eyebrow { color: #b9bcb3; margin-bottom: 30px; }
@@ -280,7 +331,7 @@ html { scroll-behavior: smooth; scroll-padding-top: 125px; }
   .mission-nav .nav-download { display: none; }
   .mission-wrap { width: calc(100% - 64px); }
   .mission-nav, .mission-utility { padding-inline: 32px; }
-  .mission-nav-links { display: none; }
+  .mission-nav-links, .mission-nav-bar { display: none; }
   .mission-menu-toggle { display: inline-flex; }
   .mission-section { padding-block: 80px; }
   .mission-section-heading { gap: 40px; }

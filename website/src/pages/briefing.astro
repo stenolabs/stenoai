@@ -1,0 +1,161 @@
+---
+import BaseLayout from "../layouts/BaseLayout.astro";
+import { Nav } from "../sections/Nav";
+import Footer from "../sections/Footer.astro";
+import { BRIEFING_EMAIL } from "../content/industries.data.js";
+import { ArrowUpRight, Copy, Mail } from "lucide-react";
+
+// Briefing requests. The site is static, so nothing is submitted to a server: the form composes an email to the
+// briefing address and offers four ways to send it, because a bare mailto: link does nothing on devices with no
+// default mail app (most managed and webmail-only machines).
+const title = "Request a briefing — StenoAI";
+const description = "Request a StenoAI briefing for your organisation: deployment on your devices or your own infrastructure, security review and evaluation.";
+const SECTORS = ["Government", "Defence", "Law enforcement", "Other"];
+---
+
+<BaseLayout title={title} description={description} canonical="https://stenoai.co/briefing/">
+  <Nav client:load />
+  <main id="main-content" class="mission-site briefing-page">
+    <section class="mission-wrap briefing">
+      <div class="briefing-intro">
+        <p class="mission-eyebrow"><span class="mission-status-dot"></span> Request a briefing</p>
+        <h1>Tell us about the rooms you need to record.</h1>
+        <p>We’ll come back to you to arrange a briefing on running StenoAI on your devices or on infrastructure you control. Nothing is sent from this page: it writes the email for you, and you send it.</p>
+        <dl class="briefing-facts">
+          <div><dt>Goes to</dt><dd><a href={`mailto:${BRIEFING_EMAIL}`}>{BRIEFING_EMAIL}</a></dd></div>
+          <div><dt>Sent from</dt><dd>Your own email account</dd></div>
+        </dl>
+      </div>
+
+      <form class="briefing-form" data-briefing novalidate>
+        <div class="briefing-row">
+          <label><span class="briefing-label">Name</span><input name="name" autocomplete="name" required /></label>
+          <label><span class="briefing-label">Work email</span><input name="email" type="email" autocomplete="email" required /></label>
+        </div>
+        <div class="briefing-row">
+          <label><span class="briefing-label">Organisation</span><input name="org" autocomplete="organization" required /></label>
+          <label><span class="briefing-label">Team size</span><input name="size" inputmode="numeric" placeholder="Optional" /></label>
+        </div>
+        <fieldset class="briefing-sectors">
+          <legend class="briefing-label">Sector</legend>
+          {SECTORS.map((s, i) => <label><input type="radio" name="sector" value={s} checked={i === 0} /><span>{s}</span></label>)}
+        </fieldset>
+        <label><span class="briefing-label">What should the briefing cover?</span><textarea name="note" rows="4" placeholder="Optional: the meetings you want to record, where it must run, timelines"></textarea></label>
+        <p class="briefing-error" data-briefing-error hidden>Please add your name, a work email and your organisation.</p>
+        <button type="submit" class="mission-button mission-button-dark" data-track="demo_request" data-location="briefing_form">Write the email <ArrowUpRight size={16} aria-hidden="true" /></button>
+
+        <div class="briefing-send" data-briefing-send hidden>
+          <p class="briefing-send-h">Your email is ready. Send it from:</p>
+          <div class="briefing-send-grid">
+            <a class="mission-button mission-button-dark" data-send="mailto" href="#"><Mail size={15} aria-hidden="true" /> Email app</a>
+            <a class="mission-button mission-button-outline-dark" data-send="gmail" href="#" target="_blank" rel="noopener noreferrer">Gmail <ArrowUpRight size={15} aria-hidden="true" /></a>
+            <a class="mission-button mission-button-outline-dark" data-send="outlook" href="#" target="_blank" rel="noopener noreferrer">Outlook <ArrowUpRight size={15} aria-hidden="true" /></a>
+            <button type="button" class="mission-button mission-button-outline-dark" data-copy><Copy size={15} aria-hidden="true" /> <span data-copy-label>Copy the email</span></button>
+          </div>
+          <p class="briefing-send-note">No mail app opened? Use Gmail or Outlook, or copy the email into a new message to <a href={`mailto:${BRIEFING_EMAIL}`}>{BRIEFING_EMAIL}</a>.</p>
+        </div>
+      </form>
+    </section>
+  </main>
+  <Footer />
+</BaseLayout>
+
+<style>
+  .briefing-page { background: var(--page); color: var(--fg-1); }
+  .briefing { display: grid; grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr); gap: clamp(40px, 6vw, 110px); padding-block: clamp(64px, 9vw, 120px); align-items: start; }
+  .briefing-intro h1 { max-width: 13ch; margin: 22px 0 0; font-family: var(--font-sans); font-weight: 450; font-size: clamp(38px, 4.2vw, 62px); line-height: 1.02; letter-spacing: -.05em; }
+  .briefing-intro > p:not(.mission-eyebrow) { margin-top: 24px; max-width: 46ch; font-size: 16px; line-height: 1.65; color: var(--fg-2); }
+  .briefing-facts { display: grid; gap: 0; margin: 34px 0 0; border-top: 1px solid var(--border-strong); max-width: 420px; }
+  .briefing-facts div { display: flex; justify-content: space-between; gap: 20px; padding: 14px 0; border-bottom: 1px solid var(--border); }
+  .briefing-facts dt { font: 10px var(--font-mono); letter-spacing: .1em; text-transform: uppercase; color: var(--fg-2); }
+  .briefing-facts dd { margin: 0; font-size: 14px; }
+  .briefing-facts a { text-decoration: underline; text-underline-offset: 4px; }
+
+  .briefing-form { display: grid; gap: 18px; padding: clamp(22px, 3vw, 36px); background: var(--surface-raised); border: 1px solid var(--border-strong); }
+  .briefing-row { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+  .briefing-form label { display: grid; gap: 8px; }
+  .briefing-label { font: 10px var(--font-mono); letter-spacing: .1em; text-transform: uppercase; color: var(--fg-2); }
+  .briefing-form input:not([type='radio']), .briefing-form textarea { width: 100%; padding: 12px 14px; font: 15px var(--font-sans); color: var(--fg-1); background: var(--page); border: 1px solid var(--border-strong); border-radius: 0; }
+  .briefing-form input:focus-visible, .briefing-form textarea:focus-visible { outline: 2px solid var(--fg-1); outline-offset: 1px; }
+  .briefing-form textarea { resize: vertical; min-height: 104px; }
+  .briefing-form [aria-invalid='true'] { border-color: var(--recording); }
+  .briefing-sectors { display: flex; flex-wrap: wrap; gap: 8px; margin: 0; padding: 0; border: 0; }
+  .briefing-sectors legend { margin-bottom: 8px; padding: 0; }
+  .briefing-sectors label { display: inline-flex; cursor: pointer; }
+  .briefing-sectors input { position: absolute; opacity: 0; pointer-events: none; }
+  .briefing-sectors label span { padding: 9px 14px; font-size: 13.5px; border: 1px solid var(--border-strong); transition: background .15s, color .15s; }
+  .briefing-sectors input:checked + span { background: var(--fg-1); color: var(--page); border-color: var(--fg-1); }
+  .briefing-sectors input:focus-visible + span { outline: 2px solid var(--fg-1); outline-offset: 2px; }
+  .briefing-error { margin: 0; font-size: 13.5px; color: var(--recording); }
+  .briefing-form > .mission-button { justify-self: start; }
+
+  .briefing-send { display: grid; gap: 14px; margin-top: 6px; padding-top: 22px; border-top: 1px solid var(--border-strong); }
+  .briefing-send-h { margin: 0; font-size: 15px; font-weight: 500; }
+  .briefing-send-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+  .briefing-send-grid .mission-button { justify-content: center; gap: 10px; cursor: pointer; }
+  .mission-button-outline-dark { background: transparent; color: var(--fg-1); border-color: var(--border-strong); }
+  .mission-button-outline-dark:hover { border-color: var(--fg-1); }
+  .briefing-send-note { margin: 0; font-size: 13px; color: var(--fg-2); }
+  .briefing-send-note a { text-decoration: underline; text-underline-offset: 3px; color: var(--fg-1); }
+
+  @media (max-width: 1099px) { .briefing { grid-template-columns: 1fr; } .briefing-send-grid { grid-template-columns: 1fr 1fr; } }
+  @media (max-width: 560px) { .briefing-row { grid-template-columns: 1fr; } .briefing-send-grid { grid-template-columns: 1fr; } }
+</style>
+
+<script define:vars={{ to: BRIEFING_EMAIL }}>
+  const form = document.querySelector('[data-briefing]');
+  if (form) {
+    const send = form.querySelector('[data-briefing-send]');
+    const error = form.querySelector('[data-briefing-error]');
+    const copyLabel = form.querySelector('[data-copy-label]');
+    let mail = null;
+    const required = ['name', 'email', 'org'];
+    form.addEventListener('submit', (event) => {
+      event.preventDefault();
+      const data = new FormData(form);
+      const get = (k) => String(data.get(k) || '').trim();
+      let ok = true;
+      for (const k of required) {
+        const input = form.elements[k];
+        const bad = !get(k) || (k === 'email' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(get(k)));
+        input.setAttribute('aria-invalid', bad ? 'true' : 'false');
+        if (bad && ok) { input.focus(); ok = false; }
+      }
+      error.hidden = ok;
+      if (!ok) return;
+      const subject = `StenoAI briefing request: ${get('org')}`;
+      const body = [
+        'Hi StenoAI team,',
+        '',
+        'We would like a briefing on StenoAI.',
+        '',
+        `Name: ${get('name')}`,
+        `Email: ${get('email')}`,
+        `Organisation: ${get('org')}`,
+        `Sector: ${get('sector')}`,
+        `Team size: ${get('size') || 'Not given'}`,
+        '',
+        get('note') ? `What we would like to cover:\n${get('note')}` : '',
+        '',
+        'Thanks,',
+        get('name'),
+      ].join('\n').replace(/\n{3,}/g, '\n\n');
+      mail = { subject, body };
+      const q = (s) => encodeURIComponent(s);
+      form.querySelector('[data-send="mailto"]').href = `mailto:${to}?subject=${q(subject)}&body=${q(body)}`;
+      form.querySelector('[data-send="gmail"]').href = `https://mail.google.com/mail/?view=cm&fs=1&to=${q(to)}&su=${q(subject)}&body=${q(body)}`;
+      form.querySelector('[data-send="outlook"]').href = `https://outlook.office.com/mail/deeplink/compose?to=${q(to)}&subject=${q(subject)}&body=${q(body)}`;
+      send.hidden = false;
+      copyLabel.textContent = 'Copy the email';
+      send.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      // Try the device's mail app straight away; the other options stay on screen in case nothing opens.
+      window.location.href = form.querySelector('[data-send="mailto"]').href;
+    });
+    form.querySelector('[data-copy]')?.addEventListener('click', async () => {
+      if (!mail) return;
+      const text = `To: ${to}\nSubject: ${mail.subject}\n\n${mail.body}`;
+      try { await navigator.clipboard.writeText(text); copyLabel.textContent = 'Copied'; }
+      catch { copyLabel.textContent = `Email ${to}`; }
+    });
+  }
+</script>

@@ -1,20 +1,45 @@
 ---
 import { ArrowUpRight, ArrowDown, Plus } from "lucide-react";
-import { CTA_MAILTO } from "../content/industries.data";
+import { CTA_BRIEFING } from "../content/industries.data";
+
+// Radar layer over the film: light pulses travelling along the 88px grid lines.
+// d = axis, n = line index, t = seconds per pass, del = start offset, a = amber.
+const PULSES = [
+  { d: "x", n: 2, t: 9, del: -2 },
+  { d: "x", n: 5, t: 12, del: -7, a: true },
+  { d: "x", n: 8, t: 10, del: -4 },
+  { d: "y", n: 1, t: 8, del: -1 },
+  { d: "y", n: 3, t: 10, del: -5 },
+  { d: "y", n: 9, t: 11, del: -6 },
+  { d: "y", n: 14, t: 9.5, del: -3, a: true },
+];
 ---
 
 <section class="mission-hero" aria-labelledby="hero-heading">
-  <video class="mission-hero-image" muted loop playsinline autoplay preload="auto" poster="/images/enterprise/briefing-room.webp?v=3" aria-hidden="true" data-hero-film>
-    <source src="/video/briefing-room.mp4?v=5" type="video/mp4" />
+  <!-- The app film: the StenoAI window locked in place while real rooms change around it. Landscape on desktop,
+       portrait on phones (the window at the top, the copy below). No sound track. -->
+  <video class="mission-hero-image" muted loop playsinline autoplay preload="auto" poster="/images/enterprise/hero-film.webp" disablepictureinpicture disableremoteplayback aria-hidden="true" tabindex="-1" data-hero-film>
+    <source src="/video/hero-film-m.mp4" type="video/mp4" media="(max-width: 767px)" />
+    <source src="/video/hero-film.mp4" type="video/mp4" />
   </video>
+  <script is:inline>
+    (function () { var v = document.querySelector('[data-hero-film]'); if (v && window.matchMedia('(max-width: 767px)').matches) v.poster = '/images/enterprise/hero-film-m.webp'; })();
+  </script>
   <div class="mission-hero-shade" aria-hidden="true"></div>
+  <div class="hero-radar-grid" aria-hidden="true"></div>
+  <div class="hero-radar" aria-hidden="true">
+    <div class="hero-radar-pulses">
+      {PULSES.map((p) => <i class:list={["hero-pulse", `hero-pulse-${p.d}`, { "hero-pulse-amber": p.a }]} style={`--n:${p.n};--dur:${p.t}s;--del:${p.del}s`}></i>)}
+    </div>
+    <div class="hero-radar-scan"></div>
+  </div>
   <div class="mission-hero-grid" aria-hidden="true"><Plus className="hero-cross hero-cross-one" size={20} /><Plus className="hero-cross hero-cross-two" size={20} /></div>
   <div class="mission-wrap mission-hero-content">
     <p class="mission-eyebrow"><span class="mission-status-dot"></span> Government, defence & law enforcement</p>
     <h1 id="hero-heading">The record stays<br /><span>in the room.</span></h1>
     <p class="mission-hero-description">AI meeting notes for conversations that can’t be handed to a vendor. Run it on the device, or on infrastructure you control. No meeting bot. Open source.</p>
     <div class="mission-actions">
-      <a href={CTA_MAILTO} class="mission-button mission-button-light" data-track="demo_request" data-location="hero">Request a briefing <ArrowUpRight size={17} aria-hidden="true" /></a>
+      <a href={CTA_BRIEFING} class="mission-button mission-button-light" data-track="demo_request" data-location="hero">Request a briefing <ArrowUpRight size={17} aria-hidden="true" /></a>
       <a href="#how" class="mission-text-link">Explore the platform <ArrowDown size={16} aria-hidden="true" /></a>
     </div>
   </div>
@@ -26,6 +51,74 @@ import { CTA_MAILTO } from "../content/industries.data";
     <a href="#how" aria-label="Explore how StenoAI works"><ArrowDown size={20} aria-hidden="true" /></a>
   </div>
 </section>
+
+<style>
+  /* Radar layer: a hairline grid blended into the film, light pulses running along its lines and a slow amber
+     sweep with faint scan lines. All of it sits over the film and under the copy. */
+  .hero-radar { position: absolute; inset: 0; z-index: -1; pointer-events: none; }
+  .hero-radar-pulses, .hero-radar-scan { position: absolute; inset: 0; }
+  /* The grid is its own layer beside the film (not inside .hero-radar, whose z-index makes a separate stacking
+     context), so its overlay blend mixes with the film and the lines stay as quiet as in the original design. */
+  .hero-radar-grid {
+    position: absolute; inset: 0; z-index: -1; pointer-events: none;
+    background-image:
+      linear-gradient(to right, rgba(236, 234, 227, .32) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(236, 234, 227, .32) 1px, transparent 1px);
+    background-size: 88px 88px;
+    mix-blend-mode: overlay;
+    mask-image: radial-gradient(ellipse 80% 70% at 50% 42%, #000 30%, transparent 80%);
+    -webkit-mask-image: radial-gradient(ellipse 80% 70% at 50% 42%, #000 30%, transparent 80%);
+  }
+  .hero-radar-pulses {
+    overflow: hidden;
+    mask-image: radial-gradient(ellipse 80% 70% at 50% 42%, #000 30%, transparent 80%);
+    -webkit-mask-image: radial-gradient(ellipse 80% 70% at 50% 42%, #000 30%, transparent 80%);
+  }
+  .hero-pulse { position: absolute; display: block; --c: 127, 214, 192; }
+  .hero-pulse-amber { --c: 240, 160, 75; }
+  .hero-pulse-x { left: 0; top: calc(var(--n) * 88px); width: 110px; height: 1px; background: linear-gradient(90deg, rgba(var(--c), 0), rgba(var(--c), .95)); box-shadow: 0 0 8px 1px rgba(var(--c), .45); animation: hero-pulse-x var(--dur) linear var(--del) infinite; }
+  .hero-pulse-y { top: 0; left: calc(var(--n) * 88px); width: 1px; height: 110px; background: linear-gradient(180deg, rgba(var(--c), 0), rgba(var(--c), .95)); box-shadow: 0 0 8px 1px rgba(var(--c), .45); animation: hero-pulse-y var(--dur) linear var(--del) infinite; }
+  @keyframes hero-pulse-x { from { transform: translateX(-140px); } to { transform: translateX(calc(100vw + 140px)); } }
+  @keyframes hero-pulse-y { from { transform: translateY(-140px); } to { transform: translateY(1000px); } }
+  .hero-radar-scan { overflow: hidden; background: repeating-linear-gradient(180deg, rgba(255, 255, 255, .018) 0 1px, transparent 1px 3px); }
+  .hero-radar-scan::after {
+    content: ''; position: absolute; left: 0; right: 0; height: 30%; top: -30%;
+    background: linear-gradient(180deg, transparent, rgba(240, 160, 75, .05) 70%, rgba(240, 160, 75, .14) 99%, transparent);
+    animation: hero-sweep 9s cubic-bezier(.65, 0, .35, 1) 1.2s infinite;
+  }
+  @keyframes hero-sweep { 0% { transform: translateY(0); } 60%, 100% { transform: translateY(470%); } }
+  @media (prefers-reduced-motion: reduce) { .hero-radar-pulses { display: none; } .hero-radar-scan::after { animation: none; display: none; } }
+
+  /* Landscape tablets and small laptops: the film sits further right so the copy stays clear of the laptop. */
+  @media (min-width: 768px) and (max-width: 1199px) and (min-aspect-ratio: 1/1) {
+    .mission-hero-image { object-position: 35% 50%; }
+  }
+
+  /* Portrait tablets: the landscape film runs full width across the top and the copy follows below it (laid over the
+     film, the copy sat on the app window). */
+  @media (min-width: 768px) and (max-width: 1099px) and (max-aspect-ratio: 1/1) {
+    .mission-hero { height: auto; min-height: 0; }
+    .mission-hero-image { bottom: auto; height: auto; aspect-ratio: 16 / 9; object-position: 50% 50%; }
+    .mission-hero-shade { background: linear-gradient(180deg, rgba(12, 10, 8, .2) 0, rgba(12, 10, 8, 0) 14vw, rgba(12, 10, 8, .1) 36vw, rgba(12, 10, 8, .88) 52vw, #14110d 57vw); }
+    .mission-hero-content { padding-top: calc(56.25vw + 12px); }
+    .hero-radar-grid, .hero-radar-pulses {
+      mask-image: linear-gradient(180deg, #000 0, #000 40vw, transparent 55vw);
+      -webkit-mask-image: linear-gradient(180deg, #000 0, #000 40vw, transparent 55vw);
+    }
+  }
+
+  /* Phones: the portrait film sits at the top with the app window in view, the copy follows below it. */
+  @media (max-width: 767px) {
+    .mission-hero-image { bottom: auto; height: auto; aspect-ratio: 9 / 16; object-position: 50% 0; }
+    .mission-hero-shade { background: linear-gradient(180deg, rgba(12, 10, 8, .18) 0, rgba(12, 10, 8, 0) 24vw, rgba(12, 10, 8, .1) 62vw, rgba(12, 10, 8, .86) 86vw, #14110d 104vw); }
+    .mission-hero-content { padding-top: calc(86vw + 8px); }
+    .hero-radar-grid, .hero-radar-pulses {
+      mask-image: linear-gradient(180deg, #000 0, #000 60vw, transparent 84vw);
+      -webkit-mask-image: linear-gradient(180deg, #000 0, #000 60vw, transparent 84vw);
+    }
+  }
+</style>
+
 <script>
   // Illustrative film behind the hero. Hold the still poster under reduced
   // motion, and pause while scrolled out of view.

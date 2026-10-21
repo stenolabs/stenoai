@@ -1,6 +1,6 @@
 ---
 import { ArrowUpRight, ArrowRight } from 'lucide-react';
-import { CTA_MAILTO } from '../content/industries.data';
+import { CTA_BRIEFING } from '../content/industries.data';
 // Editions and the buy path in one place: try it free, or take the
 // enterprise route from briefing to deployment.
 const path = [
@@ -30,7 +30,7 @@ const path = [
         <ol class="mission-edition-path">
           {path.map((step, i) => <li><span class="mission-small-index">0{i + 1}</span><div><strong>{step.name}</strong><p>{step.body}</p></div></li>)}
         </ol>
-        <a href={CTA_MAILTO} class="mission-button mission-button-light" data-track="demo_request" data-location="editions">Request a briefing <ArrowUpRight size={17} aria-hidden="true" /></a>
+        <a href={CTA_BRIEFING} class="mission-button mission-button-light" data-track="demo_request" data-location="editions">Request a briefing <ArrowUpRight size={17} aria-hidden="true" /></a>
       </div>
     </div>
   </div>

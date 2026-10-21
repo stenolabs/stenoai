@@ -1,0 +1,69 @@
+/* Phone and tablet refinements, loaded after enterprise.css and index.css. Each rule keeps the existing look and
+   copy: it lifts text that dropped below a readable size on phones, gives small links a full touch target, keeps
+   two-column tablet grids free of a lone last card, and stacks the comparison table on phones. The hero's own
+   phone and portrait-tablet layout lives in sections/Hero.astro. */
+
+/* ---- Tablets (768 to 1099px) ---- */
+@media (min-width: 768px) and (max-width: 1099px) {
+  /* Two-column grids: a lone last card spans the row instead of leaving a hole beside it. */
+  .mission-sector-grid > :last-child:nth-child(odd),
+  .mission-threat-grid > :last-child:nth-child(odd) { grid-column: 1 / -1; }
+  /* The "why now" timeline sets two by two rather than three and one. */
+  .mission-site .sector-timeline { grid-template-columns: repeat(2, 1fr); }
+  /* Customer logos: all six on one line. */
+  .mission-trust ul { column-gap: 24px; }
+}
+@media (min-width: 768px) and (max-width: 900px) {
+  .mission-site .sector-policy > :last-child:nth-child(odd),
+  .mission-site .sector-cases-files > :last-child:nth-child(odd) { grid-column: 1 / -1; }
+}
+
+/* ---- Phones (up to 767px) ---- */
+@media (max-width: 767px) {
+  /* Readable labels: the mono labels keep their style but stop at 9 to 10px instead of 7 to 8px. */
+  .mission-header .mission-utility { font-size: 9px; }
+  .mission-site .mission-eyebrow, .mission-cta .mission-eyebrow, .mission-footer .mission-eyebrow,
+  .mission-site .mission-small-index, .mission-site .mission-faq-number, .mission-site .mission-pipeline-index,
+  .mission-site .sector-tag, .mission-site .sector-case-outputs li, .mission-site .industry-hero-chips span,
+  .mission-site .mission-sector-tags, .mission-site .mission-hero-bottom > span,
+  .mission-cta .mission-cta-bottom, .mission-footer .mission-footer-bottom { font-size: 9.5px; }
+  .mission-site .platform-status, .mission-site .platform-windowbar .platform-local, .mission-site .platform-demo-caption,
+  .mission-site .mission-boundary-top .mission-eyebrow, .mission-site .mission-pipeline p { font-size: 9px; }
+  .mission-site .platform-meeting-header p, .mission-site .platform-meeting-header span,
+  .mission-site .platform-audio-sources span, .mission-site dl dt { font-size: 10px; }
+
+  /* Touch targets: standalone text links get a 44px tall hit area; small links grow their hit area without
+     moving anything; footer links get a little more room between them. */
+  .mission-site .mission-text-link, .mission-cta .mission-text-link { min-height: 44px; }
+  .mission-header .mission-utility a, .mission-header .mission-brand, .mission-footer-brand > a,
+  .mission-site .mission-hero-bottom > a, .mission-site .sector-sources a, .mission-site dd > a,
+  .mission-footer .mission-footer-bottom a { position: relative; }
+  .mission-header .mission-utility a::after, .mission-header .mission-brand::after, .mission-footer-brand > a::after,
+  .mission-site .mission-hero-bottom > a::after, .mission-site .sector-sources a::after, .mission-site dd > a::after,
+  .mission-footer .mission-footer-bottom a::after { content: ''; position: absolute; left: -6px; right: -6px; top: 50%; height: 40px; transform: translateY(-50%); }
+  .mission-footer li + li { margin-top: 4px; }
+  .mission-footer li a { padding-block: 8px; }
+
+  /* Customer logos: an even three by two grid instead of a ragged wrap. */
+  .mission-trust ul { display: grid; grid-template-columns: repeat(3, 1fr); justify-items: center; gap: 26px 12px; }
+}
+
+/* ---- Comparison table on phones: one row per feature, the two products side by side under its name ---- */
+@media (max-width: 640px) {
+  .vs-table, .vs-table thead, .vs-table tbody { display: block; min-width: 0; }
+  .vs-table thead tr, .vs-table tbody tr { display: grid; grid-template-columns: 1fr 1fr; }
+  .vs-table thead th:first-child { display: none; }
+  .vs-table thead th { padding: 0 10px 10px; font-size: 11px; }
+  .vs-table tbody th { grid-column: 1 / -1; width: auto; padding: 16px 0 8px; }
+  .vs-table tbody td { width: auto; padding: 10px; font-size: 13px; }
+}
+
+/* ---- Small laptops and landscape tablets (1100 to 1320px): every menu label stays on one line ---- */
+@media (min-width: 1100px) and (max-width: 1320px) {
+  .mission-nav, .mission-utility { padding-inline: 36px; }
+  .mission-nav { gap: 18px; }
+  .mission-nav-links { gap: 16px; }
+  .mission-nav-item > a, .mission-nav .mission-button { white-space: nowrap; }
+  .mission-nav .mission-button { gap: 14px; }
+  .mega-in { padding-inline: 36px; }
+}
