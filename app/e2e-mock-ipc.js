@@ -1682,6 +1682,8 @@ function install({ ipcMain }) {
     // row + the hero copy). Default enabled + registered so T1 renderer specs
     // render the ON state without a real globalShortcut registration.
     'get-record-hotkey': { success: true, enabled: true, registered: true },
+    // Auto-record (#463) defaults off; answered so its row isn't stuck loading.
+    'get-auto-record-meetings': { success: true, auto_record_meetings_enabled: false },
     // parakeet-status lives in MOCKS (env-gated installed flag).
     // Transcribe tab reads this on first paint. (The engine itself moved to
     // MOCKS so STENOAI_E2E_MOCK_ENGINE can override it; default parakeet keeps

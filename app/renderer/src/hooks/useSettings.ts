@@ -14,6 +14,7 @@ export const settingsKeys = {
   systemAudioSupport: () => [...settingsKeys.all, 'systemAudioSupport'] as const,
   autoDetectMeetings: () => [...settingsKeys.all, 'autoDetectMeetings'] as const,
   premeetingNotifications: () => [...settingsKeys.all, 'premeetingNotifications'] as const,
+  autoRecordMeetings: () => [...settingsKeys.all, 'autoRecordMeetings'] as const,
   launchOnLogin: () => [...settingsKeys.all, 'launchOnLogin'] as const,
   silenceAutoStop: () => [...settingsKeys.all, 'silenceAutoStop'] as const,
   language: () => [...settingsKeys.all, 'language'] as const,
@@ -236,6 +237,20 @@ export function usePremeetingNotificationsSetting() {
 export function useSetPremeetingNotifications() {
   return useToggleSetting(settingsKeys.premeetingNotifications(), async (v) =>
     unwrap(await ipc().settings.setPremeetingNotifications(v)),
+  );
+}
+
+export function useAutoRecordMeetingsSetting() {
+  return useQuery({
+    queryKey: settingsKeys.autoRecordMeetings(),
+    queryFn: async () =>
+      unwrap(await ipc().settings.getAutoRecordMeetings()).auto_record_meetings_enabled,
+  });
+}
+
+export function useSetAutoRecordMeetings() {
+  return useToggleSetting(settingsKeys.autoRecordMeetings(), async (v) =>
+    unwrap(await ipc().settings.setAutoRecordMeetings(v)),
   );
 }
 
