@@ -116,6 +116,8 @@ const { parseSpeakerModelStatusOutput } = require('./speaker-model-status');
 const { createSpeakerModelPreparer } = require('./speaker-model-prepare');
 const { reprepareSpeakerModelsAfterUpgrade } = require('./speaker-model-upgrade');
 const { isDiagnosticStdoutLine, sanitizeArgsForLog } = require('./diagnostics-filter');
+const { ImcpClient, IMCP_DOWNLOAD_URL, IMCP_HOMEBREW } = require('./imcp-client');
+const { CallerId } = require('./caller-id');
 // Pure analytics bucketing/classification/sanitization lives in
 // ./analytics-helpers (unit-tested). trackEvent() itself and every IPC
 // handler that calls it stay here, alongside the PostHog client.
@@ -2300,6 +2302,7 @@ if (!gotSingleInstanceLock) {
     if (!IS_E2E && loadShowMenuBarIconEnabled()) createTray();
     setupAutoUpdater();
     setupAutoMeetingDetector();
+    setupCallerId();
     setupDevNotificationTriggers();
     // Pre-meeting heads-up scheduler (calendar-time based). Skipped under E2E —
     // tests drive the show-premeeting-notification IPC seam directly; this would
@@ -5031,7 +5034,10 @@ ipcMain.handle('delete-meeting', async (event, meetingData) => {
     //     disk, with no UI that ever shows it - a privacy regression against the
     //     local-first promise, not just untidiness. Same "unlinked only at
     //     commit" semantics as the rest: an undo must restore a COMPLETE note.
-    for (const sidecarSuffix of ['_reports.json', '_original.json']) {
+    //   _call.json     - the phone or FaceTime call the recording captured
+    //     (src/call_info.py): the caller's name and number. Left behind, a
+    //     deleted call would still say whom it was with.
+    for (const sidecarSuffix of ['_reports.json', '_original.json', '_call.json']) {
       let sidecarBase = null;
       for (const suf of ['_summary.md', '_summary.json']) {
         if (summaryBase.endsWith(suf)) {
@@ -5824,6 +5830,18 @@ function loadAutoDetectMeetingsEnabled() {
   }
 }
 
+// Caller recognition (iMCP) is opt-in: only a literal true turns it on,
+// matching Config.get_caller_id_enabled.
+function loadCallerIdEnabled() {
+  try {
+    const cfgPath = path.join(getUserDataDir(), 'config.json');
+    if (!fs.existsSync(cfgPath)) return false;
+    return JSON.parse(fs.readFileSync(cfgPath, 'utf-8')).caller_id_enabled === true;
+  } catch (_) {
+    return false;
+  }
+}
+
 // Same sync-read-at-startup pattern as loadAutoDetectMeetingsEnabled(), used
 // to decide whether createTray() should run at all without spawning Python.
 function loadShowMenuBarIconEnabled() {
@@ -6495,6 +6513,7 @@ async function processNextInQueue() {
         }
       } catch (_) { /* best-effort cleanup */ }
     }
+    callerId?.processingFinished(processingJobStems(currentProcessingJob));
     isProcessing = false;
     currentProcessingJob = null;
     currentProcessingStartedAtMs = null;
@@ -6732,6 +6751,48 @@ function addToProcessingQueue(audioFile, sessionName, notesFile, liveTranscriptF
   processingQueue.push({ audioFile, sessionName, notesFile, liveTranscriptFile, appendTo, summaryFile });
   console.log(`📋 Added to processing queue: ${sessionName} (Queue size: ${processingQueue.length})`);
   processNextInQueue();
+}
+
+// Caller recognition (macOS, opt-in): finds who a phone or FaceTime recording
+// was with through iMCP. See caller-id.js. Null off macOS, so every hook below
+// is a no-op there.
+let callerId = null;
+
+// The note stem of an audio file (`<stem>.webm`) or a note (`<stem>_summary.md`).
+function noteStem(filePath) {
+  const base = path.basename(filePath || '');
+  return /_summary\.(md|json)$/.test(base)
+    ? base.replace(/_summary\.(md|json)$/, '')
+    : base.replace(/\.[^.]+$/, '');
+}
+
+function processingJobStems(job) {
+  if (!job) return [];
+  return [job.audioFile, job.appendTo, job.summaryFile].filter(Boolean).map(noteStem);
+}
+
+function setupCallerId() {
+  if (process.platform !== 'darwin' || callerId) return;
+  callerId = new CallerId({
+    imcp: new ImcpClient({ clientInfo: { name: 'Steno', version: app.getVersion() }, log: sendDebugLog }),
+    applyCallInfo: async (stem, calls, { sidecarOnly }) => {
+      await runPythonScript('simple_recorder.py', [
+        'apply-call-info', stem, '--calls', JSON.stringify(calls), ...(sidecarOnly ? ['--sidecar-only'] : []),
+      ], true);
+      // A caller added to a finished note fires no processing-complete, so
+      // mirror it to the vault here, as update-meeting does for an edit.
+      if (!sidecarOnly) {
+        try { obsidianSync.syncNoteBySummaryPath(path.join(getOutputDir(), `${stem}_summary.md`)); } catch (_) {}
+      }
+    },
+    isProcessing: (stem) => [currentProcessingJob, ...processingQueue]
+      .some((job) => processingJobStems(job).includes(stem)),
+    log: sendDebugLog,
+  });
+  callerId.imcp.on('status', (status) => {
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('caller-id-status', status);
+  });
+  callerId.setEnabled(loadCallerIdEnabled());
 }
 
 // Continue-recording (append) target: set at start-recording-ui when the
@@ -7063,6 +7124,7 @@ ipcMain.handle('stop-recording-ui', async () => {
     if (instantSummaryFile) {
       liveTranscriptState.summaryFile = instantSummaryFile;
     }
+    callerId?.recordingStopped();
     systemAudioRecordingActive = false;
     applyRecordingBackgroundThrottling();
     stopLiveTranscribe();
@@ -7691,6 +7753,7 @@ async function handleMicEvent(line) {
     return;
   }
   if (evt.app_id === STENO_BUNDLE_ID) return; // never react to our own recording
+  callerId?.micEvent(evt);
 
   if (evt.event === 'stop') {
     handleMicStop(evt);
@@ -9260,6 +9323,41 @@ ipcMain.handle('show-transcript-ready-notification', async (_event, payload) => 
 
 ipcMain.handle('get-notifications', handleGetNotifications);
 
+// Caller recognition (iMCP). Off macOS it reports itself unsupported.
+function callerIdSettings() {
+  return {
+    success: true,
+    supported: process.platform === 'darwin',
+    caller_id_enabled: loadCallerIdEnabled(),
+    meeting_detection: loadAutoDetectMeetingsEnabled(),
+    status: callerId ? callerId.imcp.status : { state: 'unsupported', contacts: false },
+    download_url: IMCP_DOWNLOAD_URL,
+    homebrew: IMCP_HOMEBREW,
+  };
+}
+
+ipcMain.handle('get-caller-id', () => callerIdSettings());
+
+ipcMain.handle('set-caller-id', async (_event, enabled) => {
+  // The setting means nothing off macOS, so it is not saved there either.
+  if (process.platform !== 'darwin') return { success: false, error: 'Caller recognition is macOS only' };
+  try {
+    const result = await runPythonScript('simple_recorder.py', ['set-caller-id', enabled ? 'True' : 'False'], true);
+    const saved = JSON.parse(result.match(/\{.*\}/s)?.[0] || '{}');
+    if (!saved.success) return { success: false, error: saved.error || 'Failed to save the setting' };
+    callerId?.setEnabled(enabled === true);
+    return callerIdSettings();
+  } catch (error) {
+    sendDebugLog(`Error setting caller recognition: ${error.message}`);
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('open-imcp-download', async () => {
+  await shell.openExternal(IMCP_DOWNLOAD_URL);
+  return { success: true };
+});
+
 ipcMain.handle('set-notifications', async (event, enabled) => {
   try {
     sendDebugLog(`Setting notifications to: ${enabled}`);
@@ -10397,6 +10495,7 @@ ipcMain.handle('open-system-audio-file', async (_event, sessionName) => {
     activeSysAudioWriteStream = stream;
     activeSysAudioFilePath = filePath;
     activeSysAudioSummaryFile = summaryFileForAudio(filePath);
+    callerId?.recordingStarted(noteStem(currentRecordingAppendTarget || filePath));
     activeSysAudioBytesWritten = 0;
     sendDebugLog(`[sysaudio] opened ${filename} for incremental write`);
     return { success: true, filePath };
@@ -10444,6 +10543,7 @@ ipcMain.handle('close-system-audio-file', async () => {
   activeSysAudioWriteStream = null;
   activeSysAudioFilePath = null;
   activeSysAudioBytesWritten = 0;
+  callerId?.recordingStopped(); // no-op if stop-recording-ui already said so
   if (!stream) {
     return { success: false, error: 'No open system audio file' };
   }

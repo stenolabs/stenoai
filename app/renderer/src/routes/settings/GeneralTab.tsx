@@ -21,6 +21,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { isMac, shortcut } from '@/lib/utils';
+import { CallerIdRow } from './CallerIdRow';
 import { useTheme } from '@/hooks/useTheme';
 import {
   useAutoDetectMeetingsSetting,
@@ -384,6 +385,8 @@ export function GeneralTab() {
           disabled={autoDetect.data === undefined || !autoDetectSupported}
         />
       </SettingRow>
+
+      <CallerIdRow />
 
       <SettingRow
         label={t('settings.general.postMeetingNotifications')}

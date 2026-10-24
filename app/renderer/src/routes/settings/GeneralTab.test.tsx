@@ -104,6 +104,16 @@ vi.mock('@/hooks/useSettings', () => {
     useSystemAudioSupport: () => h.systemAudioSupport,
     useAutoDetectMeetingsSetting: () => q(true),
     useSetAutoDetectMeetings: m,
+    useCallerIdSetting: () =>
+      q({
+        supported: true,
+        caller_id_enabled: false,
+        meeting_detection: true,
+        status: { state: 'off', contacts: false },
+        download_url: 'https://imcp.app/download',
+        homebrew: 'brew install --cask mattt/tap/iMCP',
+      }),
+    useSetCallerId: m,
     useLaunchOnLoginSetting: () => q(true),
     useSetLaunchOnLogin: m,
     useAutoInstallWhenIdleSetting: () => q(true),
