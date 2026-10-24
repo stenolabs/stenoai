@@ -803,6 +803,23 @@ export type GetSilenceAutoStopResponse = Result<{
   supported_minutes: number[];
 }>;
 
+export type AutoOpenMode = 'off' | 'ask' | 'auto';
+export type AutoOpenProvider = 'meet' | 'zoom' | 'teams';
+
+export type GetAutoOpenMeetingsResponse = Result<{
+  auto_open_meetings: AutoOpenMode;
+  auto_open_lead_minutes: number;
+  auto_open_providers: AutoOpenProvider[];
+  auto_open_accepted_only: boolean;
+}>;
+
+export interface AutoOpenMeetingsPatch {
+  mode?: AutoOpenMode;
+  lead_minutes?: number;
+  providers?: AutoOpenProvider[];
+  accepted_only?: boolean;
+}
+
 export type SetSilenceAutoStopEnabledResponse = Result<{ silence_auto_stop_enabled: boolean }>;
 export type SetSilenceAutoStopMinutesResponse = Result<{ silence_auto_stop_minutes: number }>;
 export type GetLanguageResponse = Result<{ language: string }>;
@@ -1087,7 +1104,7 @@ export interface StenoaiBridge {
   window: { focus: SendFn<[]>; readyToShow: SendFn<[]> };
 
   shell: {
-    openExternal: RequestFn<[string], Result<Record<string, never>>>;
+    openExternal: RequestFn<[url: string, eventId?: string], Result<Record<string, never>>>;
   };
 
   analytics: {
@@ -1410,9 +1427,22 @@ export interface StenoaiBridge {
     /** Design-for-test seam for the pre-meeting notification (production fire
      *  path is the main-side scheduler). Returns `shown` for the gate/suppression. */
     showPremeetingNotification: RequestFn<
-      [payload: { event: { id: string; title?: string } }],
-      Result<{ shown?: boolean }>
+      [
+        payload: {
+          event: {
+            id: string;
+            title?: string;
+            start?: string;
+            end?: string;
+            meeting_url?: string;
+            response_status?: string;
+          };
+        },
+      ],
+      Result<{ shown?: boolean; action?: 'auto' | 'ask' | 'heads-up' | null }>
     >;
+    getAutoOpenMeetings: RequestFn<[], GetAutoOpenMeetingsResponse>;
+    setAutoOpenMeetings: RequestFn<[patch: AutoOpenMeetingsPatch], GetAutoOpenMeetingsResponse>;
     getLanguage: RequestFn<[], GetLanguageResponse>;
     setLanguage: RequestFn<[code: string], Result<Record<string, never>>>;
     getMicrophone: RequestFn<[], GetMicrophoneResponse>;
@@ -1536,6 +1566,8 @@ export interface StenoaiBridge {
       meeting_url?: string;
       attendees?: string;
       premeeting?: boolean;
+      autoOpen?: 'ask';
+      event_id?: string;
       iconType?: 'app' | 'alert' | 'success' | 'recording';
       color?: string;
       actions?: { id: string; text: string; type?: 'primary' | 'secondary' }[];

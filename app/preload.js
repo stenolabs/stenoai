@@ -72,7 +72,7 @@ const stenoai = {
   },
 
   shell: {
-    openExternal: (url) => invoke('open-external', url),
+    openExternal: (url, eventId) => invoke('open-external', url, eventId),
   },
 
   analytics: {
@@ -303,6 +303,8 @@ const stenoai = {
     setAutoDetectMeetings: (v) => invoke('set-auto-detect-meetings', v),
     getPremeetingNotifications: () => invoke('get-premeeting-notifications'),
     setPremeetingNotifications: (v) => invoke('set-premeeting-notifications', v),
+    getAutoOpenMeetings: () => invoke('get-auto-open-meetings'),
+    setAutoOpenMeetings: (patch) => invoke('set-auto-open-meetings', patch),
     getLaunchOnLogin: () => invoke('get-launch-on-login'),
     setLaunchOnLogin: (v) => invoke('set-launch-on-login', v),
     getWhisperModel: () => invoke('get-whisper-model'),

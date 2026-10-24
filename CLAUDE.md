@@ -144,8 +144,10 @@ overrides an agent's own test-level defaults.
     ASR, no real model), and the calendar/notifications pair `calendar-auth.t2`
     (auth-status from a local token file + auto-detect-meetings toggle) /
     `notifications.t2` (the notifications_enabled toggle gating the note-ready /
-    silence notifications via the `shown` signal), `diarization-engine.t2` (the
-    Speaker detection setting: Sortformer default, a non-default engine refused
+    silence notifications via the `shown` signal), `auto-open-meetings.t2`
+    (the four `auto_open_*` keys round-trip, and the premeeting seam's
+    auto/ask/none decision with `shell.openExternal` spied),
+    `diarization-engine.t2` (the Speaker detection setting: Sortformer default, a non-default engine refused
     while its models are missing, IPC allowlist, and a pre-0.17 Sortformer
     cache reading as missing on macOS; its UI half, the download-then-save
     picker and the upgrade Download action, is `diarization-engine.t1`), and the onboarding spec

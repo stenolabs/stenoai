@@ -9223,6 +9223,45 @@ def set_premeeting_notifications(enabled):
         print(json.dumps({"success": False, "error": "Failed to save config"}))
 
 
+@cli.command(name='get-auto-open-meetings')
+def get_auto_open_meetings_cmd():
+    """Get the auto-open-meetings settings"""
+    from src.config import get_config
+
+    print(json.dumps(get_config().get_auto_open_meetings()))
+
+
+@cli.command(name='set-auto-open-meetings')
+@click.option('--mode', default=None, help='off, ask or auto')
+@click.option('--lead-minutes', type=int, default=None, help='Minutes before start (0-30)')
+@click.option('--providers', default=None, help='Comma-separated meet,zoom,teams; empty = any link')
+@click.option('--accepted-only', default=None, help='true or false')
+def set_auto_open_meetings_cmd(mode, lead_minutes, providers, accepted_only):
+    """Set auto-open-meetings settings; omitted options stay unchanged"""
+    from src.config import get_config
+
+    config = get_config()
+    try:
+        if accepted_only is not None:
+            if accepted_only.lower() not in ('true', 'false'):
+                raise ValueError("accepted-only must be true or false")
+            accepted_only = accepted_only.lower() == 'true'
+        if providers is not None:
+            providers = [p.strip() for p in providers.split(',') if p.strip()]
+        saved = config.set_auto_open_meetings(
+            mode=mode, lead_minutes=lead_minutes,
+            providers=providers, accepted_only=accepted_only,
+        )
+        error = None if saved else "Failed to save config"
+    except ValueError as e:
+        error = str(e)
+
+    if error:
+        print(json.dumps({"success": False, "error": error}))
+        sys.exit(1)
+    print(json.dumps({"success": True, **config.get_auto_open_meetings()}))
+
+
 @cli.command()
 def get_launch_on_login():
     """Get the current launch-on-login preference"""
