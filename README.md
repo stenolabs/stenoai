@@ -16,7 +16,7 @@
   <a href="#sponsors"><img src="https://img.shields.io/badge/Sponsors-%E2%9D%A4-EA4AAA?style=for-the-badge" alt="Sponsors"></a>
 </p>
 
-<p align="center">StenographAI is a privacy-first AI notepad for confidential conversations. Record, summarize, and query meetings with local AI by default; optional external providers are available when you choose them.</p>
+<p align="center">StenographAI is a privacy-first AI notepad for confidential conversations. Record, summarise, and query meetings with local AI by default; optional external providers can be enabled if you choose.</p>
 
 <p align="center"><sub>Trusted by teams at <b>AWS</b>, <b>Deliveroo</b>, <b>Tesco</b>, <b>Hashicorp</b>, <b>Rutgers</b> & <b>European Union</b>.</sub></p>
 
@@ -43,10 +43,10 @@ If you're looking for a hosted desktop recording API, consider checking out [Rec
 
 ## 📢 What's New
 
-- **2026-10-26** ✏️ Edit generated notes: Change a saved note's generated sections without losing the original model output.
+- **2026-10-26** ✏️ Edit generated notes: Change a saved note's generated sections while keeping earlier generated text available.
 - **2026-10-26** 📤 Share from one menu: Copy or export a note and its transcript. On macOS, send a note through the system share sheet.
-- **2026-10-26** 🗣️ Choose speaker detection: On macOS, keep Sortformer or select Nemotron 3 under Settings → AI. Its models download before the switch.
-- **2026-10-26** 🎙️ More reliable recording: Capture system audio without a microphone, and keep a paused-recording notification visible until you act.
+- **2026-10-26** 🗣️ Choose speaker detection: On macOS, keep Sortformer or select Nemotron 3 under Settings → AI. Its models download before the engine changes.
+- **2026-10-26** 🎙️ More reliable recording: Capture system audio without a microphone, and keep a paused-recording notification visible until you respond to it.
 
 ## Features
 
@@ -57,7 +57,7 @@ If you're looking for a hosted desktop recording API, consider checking out [Rec
 - **System audio capture** — Record both sides of virtual meetings. Native Core Audio Tap on macOS 14.4+, Windows loopback capture, and PipeWire capture on Linux, with selectable microphone input. A recording can use system audio alone when no microphone is present.
 - **Recording that coexists** — A compact transcription pill docks beside the app instead of taking over; Stop lands you on the note instantly and you can resume recording into an existing note (it appends and re-generates on demand).
 - **Global record shortcut** — Start or stop recording from anywhere with `⌘⇧R` (`Ctrl+Shift+R` on Windows). Toggle it off in Settings if it clashes with another app. On macOS, power users can additionally bind any key of their own via the `stenoai://record/start` / `record/stop` deep links (Shortcuts app).
-- **In-app note-taking** — Jot notes while you record, keep a dedicated **My notes** tab, or edit a saved note's generated sections. The original generated text remains available if you regenerate later.
+- **In-app note-taking** — Jot notes while you record, keep a dedicated **My notes** tab, or edit a saved note's generated sections. Earlier generated text remains available for recovery.
 - **Ask your meetings** — Ask general questions anytime, including while recording. Attach This meeting, All notes, a folder, or Shared notes as optional context, or choose No meeting context. Conversations stay with the note when recording stops.
 - **Charts in chat** — Ask for a bar or line chart based on numbers in your notes, and open its data table to inspect the values.
 - **Agent setup** — The Agents sidebar offers Steno skill install prompts for Claude Code and Codex, with a [setup guide](docs/features/agents.mdx).
