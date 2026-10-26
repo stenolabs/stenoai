@@ -37,6 +37,29 @@ function buildTranscriptReadyBody(title) {
 }
 
 /**
+ * Keep an actionable preservation notice when a late ordinary note-ready
+ * request refers to that same note. The fork request may still be waiting on
+ * its asynchronous settings gate, or its toast may already be active. Different
+ * notes retain normal single-toast semantics and may supersede one another.
+ */
+function shouldSuppressNoteReadyNotification(activeOptions, summaryFile, forkPending = false) {
+  return typeof summaryFile === 'string' && summaryFile.length > 0 &&
+    (forkPending || (
+      activeOptions?.completionKind === 'obsidian-fork' &&
+      activeOptions.summaryFile === summaryFile
+    ));
+}
+
+/**
+ * The main process reserves an Obsidian preservation toast before emitting the
+ * completion event. A transcript-only result deliberately leaves that event to
+ * the renderer so its actionable "Summarise" prompt keeps priority.
+ */
+function shouldReserveObsidianForkNotification(forked, summarizationCompleted) {
+  return Boolean(forked) && Boolean(summarizationCompleted);
+}
+
+/**
  * Body text for the recording-failure notification.
  *
  * The renderer's capture failure carries a DOMException, and its `message` used
@@ -113,5 +136,7 @@ function buildCaptureErrorBody({ name, phase = 'start', platform = process.platf
 module.exports = {
   buildNoteReadyNotificationOptions,
   buildTranscriptReadyBody,
+  shouldSuppressNoteReadyNotification,
+  shouldReserveObsidianForkNotification,
   buildCaptureErrorBody,
 };

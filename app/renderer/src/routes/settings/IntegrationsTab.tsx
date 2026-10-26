@@ -1,4 +1,4 @@
-import { Gem } from 'lucide-react';
+import { ArrowRight, Gem } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import {
@@ -36,7 +36,8 @@ export function IntegrationsTab() {
   const clearFolder = () => setVaultPath.mutate('');
 
   const path = vaultPath.data || '';
-  const conflictCount = conflicts.data ? Object.keys(conflicts.data).length : 0;
+  const conflictEntries = Object.entries(conflicts.data || {});
+  const conflictCount = conflictEntries.length;
 
   return (
     <section data-settings-tab="integrations">
@@ -112,13 +113,59 @@ export function IntegrationsTab() {
       )}
 
       {conflictCount > 0 && (
-        <div className="py-3 text-[13px]" style={{ color: 'var(--fg-2)' }}>
-          <span style={{ color: 'var(--fg-1)' }}>
-            {conflictCount === 1
-              ? t('settings.integrations.conflicts.skipped.one', { count: conflictCount })
-              : t('settings.integrations.conflicts.skipped.other', { count: conflictCount })}
-          </span>{' '}
-          {t('settings.integrations.conflicts.afterCount')}
+        <div className="space-y-2 py-3 text-[13px]" style={{ color: 'var(--fg-2)' }}>
+          <div>
+            <span style={{ color: 'var(--fg-1)' }}>
+              {conflictCount === 1
+                ? t('settings.integrations.conflicts.preserved.one', { count: conflictCount })
+                : t('settings.integrations.conflicts.preserved.other', { count: conflictCount })}
+            </span>{' '}
+            {t('settings.integrations.conflicts.preserved.description')}
+          </div>
+          <div className="space-y-1.5">
+            {conflictEntries.map(([stem, conflict]) => (
+              <div
+                key={stem}
+                className="rounded-lg border px-2.5 py-2"
+                style={{ borderColor: 'var(--border-subtle)' }}
+              >
+                <div className="flex min-w-0 items-center gap-2">
+                  <code
+                    className="min-w-0 flex-1 truncate font-mono text-[12px]"
+                    title={conflict.vaultRelPath}
+                    style={{ color: 'var(--fg-1)' }}
+                  >
+                    {conflict.vaultRelPath}
+                  </code>
+                  {conflict.replacementVaultRelPath ? (
+                    <>
+                      <ArrowRight className="size-3.5 shrink-0" aria-hidden />
+                      <code
+                        className="min-w-0 flex-1 truncate font-mono text-[12px]"
+                        title={conflict.replacementVaultRelPath}
+                        style={{ color: 'var(--fg-1)' }}
+                      >
+                        {conflict.replacementVaultRelPath}
+                      </code>
+                    </>
+                  ) : (
+                    <span className="shrink-0 text-[12px]">
+                      {conflict.reason === 'external-edit-on-delete'
+                        ? t('settings.integrations.conflicts.reason.delete')
+                        : conflict.reason === 'external-edit-preserved'
+                          ? t('settings.integrations.conflicts.reason.removed')
+                          : t('settings.integrations.conflicts.reason.update')}
+                    </span>
+                  )}
+                </div>
+                {conflict.replacementVaultRelPath && (
+                  <div className="mt-1 text-[11px]">
+                    {t('settings.integrations.conflicts.replacementDescription')}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
         </div>
       )}
     </section>

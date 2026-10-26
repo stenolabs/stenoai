@@ -51,3 +51,16 @@ test('a notification click opens the target note', async ({ launchApp }) => {
 
   await expect(page).toHaveURL(new RegExp(`#/meetings/${encodeURIComponent(summaryFile)}`));
 });
+
+test('an Obsidian preservation notification opens Integrations', async ({
+  launchApp,
+}) => {
+  const { app, page } = await launchApp({ mockIpc: true, env: PILL_ENV });
+
+  await emitMainEvent(app, 'tray-open-settings', { tab: 'integrations' });
+
+  await expect(page).toHaveURL(/#\/settings\?tab=integrations/);
+  await expect(
+    page.locator('[data-settings-tab="integrations"]'),
+  ).toBeVisible();
+});

@@ -22,7 +22,7 @@ vi.mock('@/lib/ipc', () => ({
       },
     },
     analytics: { track: vi.fn() },
-    notification: { close: vi.fn(), bodyClicked: vi.fn(), actionClicked: vi.fn() },
+    notification: { close: vi.fn(), bodyClicked: vi.fn(), actionClicked: vi.fn(), rendererReady: vi.fn() },
     window: { focus: vi.fn() },
   }),
 }));

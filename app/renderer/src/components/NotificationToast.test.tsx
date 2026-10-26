@@ -1,6 +1,23 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { render } from '@testing-library/react';
 import { AlertCircle, CheckCircle2, Mic, Info } from 'lucide-react';
-import { notificationIconMeta } from './NotificationToast';
+
+const h = vi.hoisted(() => ({
+  showNotification: vi.fn(),
+  rendererReady: vi.fn(),
+  unsubscribe: vi.fn(),
+}));
+
+vi.mock('@/lib/ipc', () => ({
+  ipc: () => ({
+    on: { showNotification: h.showNotification },
+    notification: { rendererReady: h.rendererReady },
+  }),
+}));
+
+vi.mock('@/hooks/useTheme', () => ({ useTheme: () => ({}) }));
+
+import { NotificationToast, notificationIconMeta } from './NotificationToast';
 
 describe('notificationIconMeta', () => {
   it('returns null for the brand app icon (unset or "app")', () => {
@@ -31,5 +48,23 @@ describe('notificationIconMeta', () => {
     const meta = notificationIconMeta('bogus');
     expect(meta?.Icon).toBe(Info);
     expect(meta?.className).toContain('gray');
+  });
+});
+
+describe('NotificationToast handshake', () => {
+  beforeEach(() => {
+    h.showNotification.mockReset();
+    h.rendererReady.mockReset();
+    h.unsubscribe.mockReset();
+    h.showNotification.mockReturnValue(h.unsubscribe);
+  });
+
+  it('subscribes before telling main that the notification renderer is ready', () => {
+    render(<NotificationToast />);
+
+    expect(h.showNotification).toHaveBeenCalledOnce();
+    expect(h.rendererReady).toHaveBeenCalledOnce();
+    expect(h.showNotification.mock.invocationCallOrder[0])
+      .toBeLessThan(h.rendererReady.mock.invocationCallOrder[0]);
   });
 });

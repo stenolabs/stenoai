@@ -8,6 +8,7 @@ const { EventEmitter } = require('node:events');
 const ts = require('typescript');
 const { makeLineReader } = require('./backend-stream');
 const { classifyReprocessError } = require('./reprocess-error');
+const { reserveReprocessObsidianForkNotification } = require('./reprocess-obsidian-fork-notification');
 
 const cases = [
   ['Connection error.', 'generation_connection_failed'],
@@ -59,7 +60,9 @@ async function start(validationError) {
   proc.kill = () => { proc.emit('close', null, 'SIGTERM'); return true; };
   vm.runInNewContext(watchdogDeclaration.getText(file) + '\n' + registration.getText(file), {
     ipcMain: { handle: (_channel, fn) => { handler = fn; } },
-    classifyReprocessError, makeLineReader, Buffer,
+    classifyReprocessError, reserveReprocessObsidianForkNotification,
+    showObsidianForkNotification: () => ({ success: true, shown: false }),
+    makeLineReader, Buffer,
     validateMeetingFilePath: async () => validationError ? { error: validationError } : { realPath: '/synthetic/meeting.md' },
     activeReprocessJobs: jobs, getAiEnv: () => ({}),
     getBackendEnv: () => ({}), getTranscriptionEnv: async () => ({}),
