@@ -163,7 +163,7 @@ class LinuxBundledFfmpegTests(unittest.TestCase):
             [str(FFMPEG), "-version"], capture_output=True, text=True, check=True).stdout)
         license_text = subprocess.run([str(FFMPEG), "-L"], capture_output=True,
                                       text=True, check=True).stdout
-        self.assertIn("GNU Lesser General Public License", license_text)
+        self.assertIn("GNU Lesser General Public License", " ".join(license_text.split()))
         for flag, names in REQUIRED.items():
             listing = subprocess.run([str(FFMPEG), "-hide_banner", flag],
                                      capture_output=True, text=True, check=True).stdout
