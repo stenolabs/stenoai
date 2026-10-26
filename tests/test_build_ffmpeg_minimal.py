@@ -3,6 +3,7 @@
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -11,6 +12,7 @@ from pathlib import Path
 SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "build-ffmpeg-minimal.sh"
 
 
+@unittest.skipIf(sys.platform == "win32", "Linux build preflight requires a Unix shell")
 class BuildFfmpegPreflightTests(unittest.TestCase):
     def test_linux_requires_sha256sum_before_download(self):
         with tempfile.TemporaryDirectory() as tmp:
