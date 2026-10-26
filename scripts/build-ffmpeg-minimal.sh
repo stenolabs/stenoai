@@ -39,7 +39,7 @@ if { [ "$HOST_OS" != "Darwin" ] || [ "$HOST_ARCH" != "arm64" ]; } &&
     exit 1
 fi
 if [ "$HOST_OS" = "Linux" ]; then
-    for tool in musl-gcc readelf nproc; do
+    for tool in musl-gcc readelf nproc sha256sum; do
         if ! command -v "$tool" >/dev/null; then
             echo "Linux static ffmpeg build requires $tool (install musl-tools/binutils/coreutils)" >&2
             exit 1
@@ -53,7 +53,11 @@ trap 'rm -rf "$WORK"' EXIT
 echo "=== Building minimal ffmpeg $FFMPEG_VERSION ==="
 curl --fail --retry 3 --retry-delay 2 --retry-all-errors -L \
     "https://ffmpeg.org/releases/ffmpeg-$FFMPEG_VERSION.tar.xz" -o "$WORK/ffmpeg.tar.xz"
-echo "$FFMPEG_SHA256  $WORK/ffmpeg.tar.xz" | shasum -a 256 -c -
+if [ "$HOST_OS" = "Linux" ]; then
+    echo "$FFMPEG_SHA256  $WORK/ffmpeg.tar.xz" | sha256sum -c -
+else
+    echo "$FFMPEG_SHA256  $WORK/ffmpeg.tar.xz" | shasum -a 256 -c -
+fi
 tar -xJf "$WORK/ffmpeg.tar.xz" -C "$WORK"
 cd "$WORK/ffmpeg-$FFMPEG_VERSION"
 

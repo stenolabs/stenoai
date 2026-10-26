@@ -4,14 +4,14 @@ The macOS and Linux bundles ship an audio-only ffmpeg (scripts/build-ffmpeg-mini
 compiled with an explicit list of demuxers, decoders, filters and muxers. A
 component missing from that list only fails at runtime, so this exercises the
 real pipeline invocations against bin/ffmpeg over one sample of every import
-format (app/main.js IMPORT_AUDIO_EXTENSIONS). wav/aiff/caf/m4a are made at test
-time with macOS's own `say` and `afconvert`. The formats afconvert cannot write
-(mp3, aac, webm, ogg vorbis/opus, flac, mp4, mov) are encoded at test time by a
-full reference ffmpeg -- STENOAI_REF_FFMPEG, or Homebrew's -- and skipped,
-loudly, without one. Media files are never committed (the repository privacy
-guard rejects them). A full ffmpeg as bin/ffmpeg passes too -- it is a superset.
+format (app/main.js IMPORT_AUDIO_EXTENSIONS). macOS uses `say` and `afconvert`
+for wav/aiff/caf/m4a. Linux makes these and the remaining formats at test time
+with a full reference ffmpeg, found via STENOAI_REF_FFMPEG or PATH. Media files
+are never committed (the repository privacy guard rejects them). A full ffmpeg
+as bin/ffmpeg passes too -- it is a superset.
 """
 
+import os
 import shutil
 import subprocess
 import sys
@@ -19,6 +19,7 @@ import tempfile
 import unittest
 import wave
 from pathlib import Path
+from unittest import mock
 
 from src.transcriber import (
     AUDIO_HIGHPASS_HZ,
@@ -39,14 +40,39 @@ REFERENCE_ENCODED = [
     ("tone.flac", ["-c:a", "flac"]),
 ]
 REFERENCE_VIDEO = [("tone.mp4", ["-c:a", "aac"]), ("tone.mov", ["-c:a", "alac"])]
+LINUX_REFERENCE_ENCODED = [
+    ("tone.m4a", ["-c:a", "aac", "-f", "ipod"]),
+    ("tone.aiff", ["-c:a", "pcm_s16be", "-f", "aiff"]),
+    ("tone.caf", ["-c:a", "pcm_f32le", "-f", "caf"]),
+]
 
 
 def _reference_ffmpeg():
-    import os
-    for candidate in (os.environ.get("STENOAI_REF_FFMPEG"), "/opt/homebrew/bin/ffmpeg", "/usr/local/bin/ffmpeg"):
-        if candidate and Path(candidate).is_file() and Path(candidate).resolve() != FFMPEG.resolve():
+    candidates = [os.environ.get("STENOAI_REF_FFMPEG")]
+    candidates.extend(str(Path(directory) / "ffmpeg") for directory in os.get_exec_path())
+    candidates.extend(("/opt/homebrew/bin/ffmpeg", "/usr/local/bin/ffmpeg"))
+    for candidate in candidates:
+        if candidate and os.access(candidate, os.X_OK) and Path(candidate).is_file() and Path(candidate).resolve() != FFMPEG.resolve():
             return candidate
     return None
+
+
+class ReferenceFfmpegDiscoveryTests(unittest.TestCase):
+    def test_path_search_skips_bundled_binary(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            bundled = root / "bundled" / "ffmpeg"
+            system = root / "system" / "ffmpeg"
+            bundled.parent.mkdir()
+            system.parent.mkdir()
+            bundled.write_text("#!/bin/sh\nexit 0\n")
+            system.write_text("#!/bin/sh\nexit 0\n")
+            bundled.chmod(0o755)
+            system.chmod(0o755)
+            with mock.patch.dict(os.environ, {"PATH": f"{bundled.parent}{os.pathsep}{system.parent}"}):
+                with mock.patch.dict(os.environ, {"STENOAI_REF_FFMPEG": ""}):
+                    with mock.patch(__name__ + ".FFMPEG", bundled):
+                        self.assertEqual(_reference_ffmpeg(), str(system))
 
 # Components named explicitly by an ffmpeg invocation in src/, simple_recorder.py
 # or app/meeting-transfer-audio.js, or required for an import format.
@@ -180,9 +206,9 @@ class LinuxBundledFfmpegTests(unittest.TestCase):
                 out.setframerate(16000)
                 out.writeframes(b"\0\0\0\0" * 16000)
             reference = _reference_ffmpeg()
-            self.assertIsNotNone(reference, "set STENOAI_REF_FFMPEG to a full system ffmpeg")
+            self.assertIsNotNone(reference, "install a full system ffmpeg or set STENOAI_REF_FFMPEG")
             fixtures = {"wav": wav}
-            for name, args in REFERENCE_ENCODED + REFERENCE_VIDEO:
+            for name, args in REFERENCE_ENCODED + LINUX_REFERENCE_ENCODED + REFERENCE_VIDEO:
                 path = root / name
                 video = ["-f", "lavfi", "-i", "color=black:s=16x16:r=2:d=2"] if (name, args) in REFERENCE_VIDEO else []
                 result = subprocess.run([reference, "-nostdin", "-v", "error", "-y", *video,
