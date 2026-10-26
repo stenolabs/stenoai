@@ -162,6 +162,10 @@ test('a live note becomes a processing placeholder, then shows its completed spe
   launchApp,
   userDataDir,
 }) => {
+  // Live acoustic speaker separation uses the macOS-only diarization sidecar.
+  // Windows/Linux retain channel labels; the two fixture-sidecar tests above
+  // still exercise their shared speaker IPC and refresh contract.
+  test.skip(process.platform !== 'darwin', 'live acoustic speaker separation is macOS-only');
   test.setTimeout(60_000);
   enableSpeakerIdentification(userDataDir);
   writeUserConfig(userDataDir, {
