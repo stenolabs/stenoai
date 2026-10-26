@@ -828,6 +828,9 @@ jobs:
           path: build
           key: pyinstaller-${{ runner.os }}-${{ hashFiles('stenoai.spec', 'requirements.txt') }}
 
+      - name: Install Linux ffmpeg build and test deps
+        run: sudo apt-get update && sudo apt-get install -y musl-tools binutils build-essential ffmpeg
+
       - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
@@ -838,6 +841,11 @@ jobs:
         run: |
           chmod +x scripts/download-ollama.sh
           ./scripts/download-ollama.sh
+
+      - name: Verify Linux ffmpeg build and audio formats
+        env:
+          STENOAI_REF_FFMPEG: /usr/bin/ffmpeg
+        run: python -m unittest tests.test_download_ffmpeg tests.test_ffmpeg_minimal -v
 
       - name: Build backend with PyInstaller
         run: pyinstaller stenoai.spec --noconfirm

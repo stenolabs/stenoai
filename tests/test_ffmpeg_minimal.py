@@ -1,6 +1,6 @@
 """Check the bundled ffmpeg can do everything the app asks of it.
 
-The macOS bundle ships an audio-only ffmpeg (scripts/build-ffmpeg-minimal.sh)
+The macOS and Linux bundles ship an audio-only ffmpeg (scripts/build-ffmpeg-minimal.sh)
 compiled with an explicit list of demuxers, decoders, filters and muxers. A
 component missing from that list only fails at runtime, so this exercises the
 real pipeline invocations against bin/ffmpeg over one sample of every import
@@ -17,6 +17,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import wave
 from pathlib import Path
 
 from src.transcriber import (
@@ -147,6 +148,56 @@ class BundledFfmpegTests(unittest.TestCase):
                             "-f", "null", "-"], capture_output=True, text=True)
         self.assertEqual(_parse_channels_from_ffmpeg_stderr(r.stderr), 2)
         self.assertGreater(_parse_duration_from_ffmpeg_stderr(r.stderr) or 0, 1.0)
+
+
+@unittest.skipUnless(sys.platform == "linux" and FFMPEG.is_file(), "needs built Linux bin/ffmpeg")
+class LinuxBundledFfmpegTests(unittest.TestCase):
+    def test_static_audio_pipeline(self):
+        # The packaged binary must load on its own, with no runtime linker or
+        # shared libs from the CI runner. Check this before exercising codecs.
+        elf = subprocess.run(["readelf", "-l", str(FFMPEG)], capture_output=True, text=True, check=True)
+        self.assertNotIn("INTERP", elf.stdout)
+        dynamic = subprocess.run(["readelf", "-d", str(FFMPEG)], capture_output=True, text=True, check=True)
+        self.assertNotIn("NEEDED", dynamic.stdout)
+        self.assertIn("ffmpeg version 7.1.1", subprocess.run(
+            [str(FFMPEG), "-version"], capture_output=True, text=True, check=True).stdout)
+        license_text = subprocess.run([str(FFMPEG), "-L"], capture_output=True,
+                                      text=True, check=True).stdout
+        self.assertIn("GNU Lesser General Public License", license_text)
+        for flag, names in REQUIRED.items():
+            listing = subprocess.run([str(FFMPEG), "-hide_banner", flag],
+                                     capture_output=True, text=True, check=True).stdout
+            available = {n for line in listing.splitlines() if len(line.split()) > 1
+                         for n in line.split()[1].split(",")}
+            for name in names:
+                self.assertIn(name, available, f"{name} missing from ffmpeg {flag}")
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            wav = root / "input.wav"
+            with wave.open(str(wav), "wb") as out:
+                out.setnchannels(2)
+                out.setsampwidth(2)
+                out.setframerate(16000)
+                out.writeframes(b"\0\0\0\0" * 16000)
+            reference = _reference_ffmpeg()
+            self.assertIsNotNone(reference, "set STENOAI_REF_FFMPEG to a full system ffmpeg")
+            fixtures = {"wav": wav}
+            for name, args in REFERENCE_ENCODED + REFERENCE_VIDEO:
+                path = root / name
+                video = ["-f", "lavfi", "-i", "color=black:s=16x16:r=2:d=2"] if (name, args) in REFERENCE_VIDEO else []
+                result = subprocess.run([reference, "-nostdin", "-v", "error", "-y", *video,
+                                         "-i", str(wav), *(["-c:v", "mpeg4", "-shortest"] if video else []),
+                                         *args, str(path)], capture_output=True, text=True)
+                self.assertEqual(result.returncode, 0, f"reference encode {name}: {result.stderr}")
+                fixtures[name] = path
+            for name, path in fixtures.items():
+                with self.subTest(name=name):
+                    output = root / f"{name}.mono.wav"
+                    result = subprocess.run([str(FFMPEG), "-nostdin", "-v", "error", "-y", "-i", str(path),
+                                             "-af", _audio_filter_chain(), "-ar", "16000", "-ac", "1",
+                                             "-c:a", "pcm_s16le", str(output)], capture_output=True, text=True)
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    self.assertGreater(output.stat().st_size, 16000)
 
 
 if __name__ == "__main__":

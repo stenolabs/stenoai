@@ -1,12 +1,15 @@
 #!/bin/bash
-# Build a minimal, audio-only ffmpeg for the macOS bundle.
+# Build a minimal, audio-only ffmpeg for the macOS or Linux bundle.
 #
 # The prebuilt static ffmpeg we used to download is a full build (~48 MB):
 # every video codec, scaler and device. Steno only ever uses ffmpeg to decode
 # the import/recording formats below, run a few audio filters (pan, highpass,
 # loudnorm, volume, resampling) and write PCM to wav/raw/caf. Building just
-# that from source gives a ~3 MB binary with no third-party download in the
-# supply chain beyond ffmpeg.org's own release tarball.
+# that from source gives a ~3 MB macOS binary with no third-party download in
+# the supply chain beyond ffmpeg.org's own release tarball. Linux uses musl
+# for a static binary with no distribution-specific shared-library dependency.
+# No external codec, GPL, or nonfree FFmpeg option is enabled; FFmpeg's default
+# LGPL licensing applies (check the produced binary's -L output in CI).
 #
 # If you add an ffmpeg invocation that needs another demuxer, decoder, filter
 # or muxer, add it here -- a missing component fails at runtime with
@@ -28,9 +31,20 @@ OUTPUT="${1:-$ROOT_DIR/bin/ffmpeg}"
 mkdir -p "$(dirname "$OUTPUT")"
 OUTPUT="$(cd "$(dirname "$OUTPUT")" && pwd)/$(basename "$OUTPUT")"
 
-if [ "$(uname -s)" != "Darwin" ] || [ "$(uname -m)" != "arm64" ]; then
-    echo "build-ffmpeg-minimal.sh targets macOS arm64 only (got $(uname -s) $(uname -m))" >&2
+HOST_OS="$(uname -s)"
+HOST_ARCH="$(uname -m)"
+if { [ "$HOST_OS" != "Darwin" ] || [ "$HOST_ARCH" != "arm64" ]; } &&
+   { [ "$HOST_OS" != "Linux" ] || [ "$HOST_ARCH" != "x86_64" ]; }; then
+    echo "build-ffmpeg-minimal.sh supports macOS arm64 and Linux x86_64 (got $HOST_OS $HOST_ARCH)" >&2
     exit 1
+fi
+if [ "$HOST_OS" = "Linux" ]; then
+    for tool in musl-gcc readelf nproc; do
+        if ! command -v "$tool" >/dev/null; then
+            echo "Linux static ffmpeg build requires $tool (install musl-tools/binutils/coreutils)" >&2
+            exit 1
+        fi
+    done
 fi
 
 WORK="$(mktemp -d)"
@@ -46,8 +60,8 @@ cd "$WORK/ffmpeg-$FFMPEG_VERSION"
 # Containers the app imports (app/main.js IMPORT_AUDIO_EXTENSIONS) plus the
 # raw PCM formats the pipeline round-trips through.
 DEMUXERS="wav,w64,aiff,caf,mp3,aac,mov,matroska,ogg,flac,pcm_s16le,pcm_f32le"
-# Audio codecs those containers carry. aac_at/alac_at use macOS AudioToolbox.
-DECODERS="pcm_s16le,pcm_s16be,pcm_s24le,pcm_s24be,pcm_s32le,pcm_s32be,pcm_f32le,pcm_f32be,pcm_f64le,pcm_u8,pcm_alaw,pcm_mulaw,mp3,mp3float,aac,aac_at,alac,flac,opus,vorbis,adpcm_ima_qt"
+# Audio codecs those containers carry. aac_at uses macOS AudioToolbox only.
+DECODERS="pcm_s16le,pcm_s16be,pcm_s24le,pcm_s24be,pcm_s32le,pcm_s32be,pcm_f32le,pcm_f32be,pcm_f64le,pcm_u8,pcm_alaw,pcm_mulaw,mp3,mp3float,aac,alac,flac,opus,vorbis,adpcm_ima_qt"
 PARSERS="aac,mpegaudio,opus,vorbis,flac"
 ENCODERS="pcm_s16le,pcm_f32le"
 MUXERS="wav,caf,pcm_s16le,pcm_f32le,null"
@@ -55,11 +69,19 @@ MUXERS="wav,caf,pcm_s16le,pcm_f32le,null"
 # convert formats/rates between them.
 FILTERS="pan,highpass,loudnorm,volume,aresample,aformat,anull,atrim,asetpts,abuffer,abuffersink"
 
+PLATFORM_FLAGS=()
+if [ "$HOST_OS" = "Darwin" ]; then
+    DECODERS="${DECODERS},aac_at"
+    PLATFORM_FLAGS=(--enable-audiotoolbox --extra-cflags=-mmacosx-version-min=13.0 --extra-ldflags=-mmacosx-version-min=13.0)
+else
+    PLATFORM_FLAGS=(--cc=musl-gcc --extra-ldflags=-static)
+fi
+
 ./configure \
     --prefix="$WORK/out" \
     --disable-everything \
     --disable-autodetect \
-    --enable-audiotoolbox \
+    "${PLATFORM_FLAGS[@]}" \
     --disable-network \
     --disable-doc \
     --disable-debug \
@@ -78,12 +100,22 @@ FILTERS="pan,highpass,loudnorm,volume,aresample,aformat,anull,atrim,asetpts,abuf
     --enable-encoder="$ENCODERS" \
     --enable-muxer="$MUXERS" \
     --enable-filter="$FILTERS" \
-    --extra-cflags="-mmacosx-version-min=13.0" \
-    --extra-ldflags="-mmacosx-version-min=13.0" \
     >/dev/null
 
-make -j"$(sysctl -n hw.ncpu)" ffmpeg >/dev/null
+if [ "$HOST_OS" = "Darwin" ]; then
+    JOBS="$(sysctl -n hw.ncpu)"
+else
+    JOBS="$(nproc)"
+fi
+make -j"$JOBS" ffmpeg >/dev/null
 strip ffmpeg
+
+if [ "$HOST_OS" = "Linux" ]; then
+    if readelf -l ffmpeg | grep -q INTERP || readelf -d ffmpeg 2>&1 | grep -q NEEDED; then
+        echo "Linux ffmpeg unexpectedly depends on a dynamic loader or shared library" >&2
+        exit 1
+    fi
+fi
 
 mkdir -p "$(dirname "$OUTPUT")"
 cp ffmpeg "$OUTPUT"

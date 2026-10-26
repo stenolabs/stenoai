@@ -55,8 +55,8 @@ jobs:
       # PyInstaller or vendored in the pip wheel like on macOS/Windows.
       # Without this, setup-check crashes with "OSError: PortAudio library
       # not found" (also declared as a runtime .deb dependency below).
-      - name: Install system audio deps (PortAudio)
-        run: sudo apt-get update && sudo apt-get install -y libportaudio2
+      - name: Install system audio and ffmpeg build deps
+        run: sudo apt-get update && sudo apt-get install -y libportaudio2 musl-tools binutils build-essential ffmpeg
 
       - name: Install Python dependencies
         run: |
@@ -70,6 +70,11 @@ jobs:
         run: |
           chmod +x scripts/download-ollama.sh
           ./scripts/download-ollama.sh
+
+      - name: Verify Linux ffmpeg build and audio formats
+        env:
+          STENOAI_REF_FFMPEG: /usr/bin/ffmpeg
+        run: python -m unittest tests.test_download_ffmpeg tests.test_ffmpeg_minimal -v
 
       - name: List bin/ contents
         run: find bin -maxdepth 3 -type f -exec ls -lh {} \;
