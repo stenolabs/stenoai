@@ -126,3 +126,78 @@ test('the live transcript bar can select Italian and shares it with Settings', a
   });
   await expect(page.getByTestId('transcription-language-select')).toHaveText('Italian');
 });
+
+test('Apple stays opt-in and exposes its curated languages only when supported', async ({ launchApp }) => {
+  const { page } = await launchApp({
+    mockIpc: true,
+    env: {
+      STENOAI_E2E_MOCK_PARAKEET_INSTALLED: '1',
+      STENOAI_E2E_MOCK_APPLE_SUPPORTED: '1',
+      STENOAI_E2E_MOCK_APPLE_INSTALLED: '1',
+    },
+  });
+  await page.evaluate(() => { window.location.hash = '#/settings?tab=transcription'; });
+  const model = page.getByTestId('transcription-model-select');
+  await expect(model).toContainText('Parakeet');
+  await model.click();
+  await page.getByRole('option', { name: /Apple Speech/ }).click();
+  await expect(model).toContainText('Apple Speech');
+  await expect.poll(() => page.evaluate(() => window.stenoai.transcriptionEngine.get()))
+    .toMatchObject({ success: true, engine: 'apple' });
+  await openTranscribeLanguagePicker(page);
+  await expect(page.getByRole('option', { name: 'Japanese', exact: true })).toBeVisible();
+  await expect(page.getByRole('option', { name: 'Italian', exact: true })).toHaveCount(0);
+});
+
+test('active Apple prepares Japanese before saving the language', async ({ launchApp }) => {
+  const { page } = await launchApp({
+    mockIpc: true,
+    env: {
+      STENOAI_E2E_MOCK_ENGINE: 'apple',
+      STENOAI_E2E_MOCK_LANGUAGE: 'en',
+      STENOAI_E2E_MOCK_APPLE_SUPPORTED: '1',
+      STENOAI_E2E_MOCK_APPLE_INSTALLED: '1',
+      STENOAI_E2E_MOCK_APPLE_MISSING_LANGUAGE: 'ja',
+      STENOAI_E2E_MOCK_APPLE_REQUIRED_LANGUAGE: 'ja',
+    },
+  });
+  await openTranscribeLanguagePicker(page);
+  await page.getByRole('option', { name: 'Japanese', exact: true }).click();
+  await expect.poll(() => page.evaluate(() => window.stenoai.appleSpeech.status('ja')))
+    .toMatchObject({ success: true, installed: true, locale: 'ja' });
+  await expect.poll(() => page.evaluate(() => window.stenoai.settings.getLanguage()))
+    .toMatchObject({ success: true, language: 'ja' });
+  await expect(page.getByTestId('transcription-language-select')).toHaveText('Japanese');
+});
+
+test('failed Apple language preparation keeps the saved language', async ({ launchApp }) => {
+  const { page } = await launchApp({
+    mockIpc: true,
+    env: {
+      STENOAI_E2E_MOCK_ENGINE: 'apple',
+      STENOAI_E2E_MOCK_LANGUAGE: 'en',
+      STENOAI_E2E_MOCK_APPLE_SUPPORTED: '1',
+      STENOAI_E2E_MOCK_APPLE_INSTALLED: '1',
+      STENOAI_E2E_MOCK_APPLE_MISSING_LANGUAGE: 'ja',
+      STENOAI_E2E_MOCK_APPLE_PREPARE_FAIL_LANGUAGE: 'ja',
+    },
+  });
+  await openTranscribeLanguagePicker(page);
+  await page.getByRole('option', { name: 'Japanese', exact: true }).click();
+  await expect(page.getByRole('alert')).toContainText('Could not prepare Apple Speech');
+  await expect.poll(() => page.evaluate(() => window.stenoai.settings.getLanguage()))
+    .toMatchObject({ success: true, language: 'en' });
+  await expect(page.getByTestId('transcription-language-select')).toHaveText('English');
+});
+
+test('unsupported Apple is absent while other engines remain selectable', async ({ launchApp }) => {
+  const { page } = await launchApp({
+    mockIpc: true,
+    env: { STENOAI_E2E_MOCK_PARAKEET_INSTALLED: '1' },
+  });
+  await page.evaluate(() => { window.location.hash = '#/settings?tab=transcription'; });
+  await page.getByTestId('transcription-model-select').click();
+  await expect(page.getByRole('option', { name: /Apple Speech/ })).toHaveCount(0);
+  await expect(page.getByRole('option', { name: /Parakeet/ })).toBeVisible();
+  await expect(page.getByRole('option', { name: /Whisper/ })).toBeVisible();
+});

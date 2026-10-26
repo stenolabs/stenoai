@@ -294,7 +294,7 @@ export function Setup() {
   const [summaryMode, setSummaryMode] = React.useState<SummaryMode>('local');
   const [cloudProvider, setCloudProviderChoice] = React.useState<CloudProvider>('openai');
   const [cloudApiKey, setCloudApiKey] = React.useState('');
-  
+
   const [bedrockRegion, setBedrockRegionState] = React.useState('');
   const [bedrockProfile, setBedrockProfileState] = React.useState('');
   const [apiUrl, setApiUrl] = React.useState('');
@@ -358,27 +358,40 @@ export function Setup() {
 
       if (snapshot.transcription !== 'done') {
         setStatus('transcription', 'running', 'Checking transcription model...');
-        // Skip the install if any ASR engine is already on disk — covers
-        // existing Whisper users running setup again and Parakeet users
-        // rerunning to fix a different step.
-        const [parakeetStatus, whisperList] = await Promise.all([
-          ipc().parakeetModels.status(),
-          ipc().whisperModels.list(),
-        ]);
-        const parakeetInstalled =
-          parakeetStatus.success && parakeetStatus.installed === true;
-        const anyWhisperInstalled =
-          whisperList.success &&
-          Object.values(whisperList.supported_models ?? {}).some(
+        const selected = await ipc().transcriptionEngine.get();
+        const engine = selected.success ? selected.engine : 'parakeet';
+        if (engine === 'apple') {
+          const language = await ipc().settings.getLanguage();
+          const code = language.success ? language.language : 'auto';
+          const status = await ipc().appleSpeech.status(code);
+          if (!status.success || !status.available || !status.supported) {
+            throw new Error(t('settings.ai.apple.unavailable'));
+          }
+          if (!status.installed) {
+            setStatus('transcription', 'running', t('settings.ai.apple.preparing'));
+            const prepared = await ipc().appleSpeech.prepare(code);
+            if (!prepared.success || !prepared.installed) {
+              throw new Error(prepared.success ? t('settings.ai.apple.notReady') : prepared.error);
+            }
+          }
+          setStatus('transcription', 'done', 'Transcription model ready');
+        } else if (engine === 'openai-asr') {
+          setStatus('transcription', 'done', 'Transcription model ready');
+        } else if (engine === 'whisper') {
+          const whisperList = await ipc().whisperModels.list();
+          const installed = whisperList.success && Object.values(whisperList.supported_models ?? {}).some(
             (m) => (m as { installed?: boolean }).installed === true,
           );
-        if (parakeetInstalled || anyWhisperInstalled) {
+          if (!installed) throw new Error(t('settings.ai.apple.whisperMissing'));
           setStatus('transcription', 'done', 'Transcription model ready');
         } else {
-          setStatus('transcription', 'running', `Downloading Parakeet TDT v3 (${isMac ? '~2.5 GB' : '~670 MB'})...`);
-          setParakeetStage({ stage: 'preparing' });
-          await parakeetStep.mutateAsync();
-          setParakeetStage(null);
+          const parakeetStatus = await ipc().parakeetModels.status();
+          if (!parakeetStatus.success || !parakeetStatus.installed) {
+            setStatus('transcription', 'running', `Downloading Parakeet TDT v3 (${isMac ? '~2.5 GB' : '~670 MB'})...`);
+            setParakeetStage({ stage: 'preparing' });
+            await parakeetStep.mutateAsync();
+            setParakeetStage(null);
+          }
           setStatus('transcription', 'done', 'Transcription model ready');
         }
       }

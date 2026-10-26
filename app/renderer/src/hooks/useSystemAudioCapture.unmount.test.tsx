@@ -29,6 +29,7 @@ vi.mock('./useRecording', () => ({
 }));
 vi.mock('./useModels', () => ({
   useTranscriptionEngine: () => ({ data: 'parakeet' }),
+  useLiveTranscriptAvailable: () => true,
 }));
 vi.mock('./useSettings', () => ({
   settingsKeys: { microphone: () => ['settings', 'microphone'] },

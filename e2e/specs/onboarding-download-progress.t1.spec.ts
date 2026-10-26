@@ -88,6 +88,39 @@ test('transcription step renders an indeterminate "preparing" bar (no fabricated
   await expect(bar.getByText('%')).toHaveCount(0);
 });
 
+test('Apple opt-in setup uses Apple readiness without starting Parakeet', async ({ launchApp }) => {
+  const { page } = await launchApp({
+    mockIpc: true,
+    env: {
+      STENOAI_E2E_MOCK_ENGINE: 'apple',
+      STENOAI_E2E_MOCK_APPLE_SUPPORTED: '1',
+      STENOAI_E2E_MOCK_APPLE_INSTALLED: '1',
+      STENOAI_E2E_FAIL_ON_PARAKEET_SETUP: '1',
+    },
+  });
+  await page.evaluate(() => { window.location.hash = '#/setup'; });
+  await page.getByRole('button', { name: 'Begin setup' }).click();
+  await expect(page.locator('[data-setup-step="transcription"]')).toHaveAttribute('data-setup-status', 'done');
+});
+
+test('Apple setup prepares the pinned language rather than the system language', async ({ launchApp }) => {
+  const { page } = await launchApp({
+    mockIpc: true,
+    env: {
+      STENOAI_E2E_MOCK_ENGINE: 'apple',
+      STENOAI_E2E_MOCK_LANGUAGE: 'ja',
+      STENOAI_E2E_MOCK_APPLE_SUPPORTED: '1',
+      STENOAI_E2E_MOCK_APPLE_INSTALLED: '1',
+      STENOAI_E2E_MOCK_APPLE_MISSING_LANGUAGE: 'ja',
+      STENOAI_E2E_MOCK_APPLE_REQUIRED_LANGUAGE: 'ja',
+      STENOAI_E2E_FAIL_ON_PARAKEET_SETUP: '1',
+    },
+  });
+  await page.evaluate(() => { window.location.hash = '#/setup'; });
+  await page.getByRole('button', { name: 'Begin setup' }).click();
+  await expect(page.locator('[data-setup-step="transcription"]')).toHaveAttribute('data-setup-status', 'done');
+});
+
 test('optional speaker model failure does not block the rest of onboarding', async ({
   launchApp,
 }) => {

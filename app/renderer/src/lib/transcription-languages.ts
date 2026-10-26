@@ -38,3 +38,22 @@ export const PARAKEET_LANGUAGES: readonly ParakeetLanguageOption[] = [
 export const PARAKEET_LANGUAGE_CODES: ReadonlySet<string> = new Set(
   PARAKEET_LANGUAGES.map((l) => l.code),
 );
+
+export const APPLE_LANGUAGES: readonly ParakeetLanguageOption[] = [
+  { code: 'auto', label: t('settings.ai.apple.system'), hint: t('settings.ai.apple.systemHint') },
+  { code: 'en', label: 'English', hint: t('settings.ai.apple.languageHint', { language: 'English' }) },
+  { code: 'fr', label: 'French', hint: t('settings.ai.apple.languageHint', { language: 'French' }) },
+  { code: 'de', label: 'German', hint: t('settings.ai.apple.languageHint', { language: 'German' }) },
+  { code: 'es', label: 'Spanish', hint: t('settings.ai.apple.languageHint', { language: 'Spanish' }) },
+  { code: 'pt', label: 'Portuguese', hint: t('settings.ai.apple.languageHint', { language: 'Portuguese' }) },
+  { code: 'ja', label: 'Japanese', hint: t('settings.ai.apple.languageHint', { language: 'Japanese' }) },
+  { code: 'zh-Hans', label: 'Chinese (Simplified)', hint: t('settings.ai.apple.languageHint', { language: 'Simplified Chinese' }) },
+  { code: 'zh-Hant', label: 'Chinese (Traditional)', hint: t('settings.ai.apple.languageHint', { language: 'Traditional Chinese' }) },
+  { code: 'ko', label: 'Korean', hint: t('settings.ai.apple.languageHint', { language: 'Korean' }) },
+  { code: 'hi', label: 'Hindi', hint: t('settings.ai.apple.languageHint', { language: 'Hindi' }) },
+];
+
+export const APPLE_LANGUAGE_CODES: ReadonlySet<string> = new Set(
+  APPLE_LANGUAGES.map((l) => l.code),
+);
+import { t } from '@/i18n';

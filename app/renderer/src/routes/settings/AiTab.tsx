@@ -25,6 +25,7 @@ import { GoogleIcon } from '@/components/ui/google-icon';
 import { MetaIcon } from '@/components/ui/meta-icon';
 import { QwenIcon } from '@/components/ui/qwen-icon';
 import { cn, isMac } from '@/lib/utils';
+import { ipc } from '@/lib/ipc';
 import { t } from '@/i18n';
 import type { AiProvider, CloudProvider, DiarizationEngine, TranscriptionEngine } from '@/lib/ipc';
 import {
@@ -42,6 +43,8 @@ import {
 } from '@/hooks/useAi';
 import {
   useCurrentModel,
+  useAppleSpeechStatus,
+  usePrepareAppleSpeech,
   useDeleteModel,
   useDiarizationEngine,
   useDiarizationModelsState,
@@ -75,7 +78,7 @@ import { useOrgSession } from '@/hooks/useOrg';
 import { COMPACT_BTN, COMPACT_INPUT, COMPACT_TRIGGER, SectionHeading, SettingRow } from './primitives';
 import { ModelCard, formatModelSize, isDefaultModel, parsePullPercent } from './model-card';
 import { modelMayExceedMemory } from './model-memory';
-import { LANGUAGES_PARAKEET, LANGUAGES_WHISPER } from './languages';
+import { LANGUAGES_APPLE, LANGUAGES_PARAKEET, LANGUAGES_WHISPER } from './languages';
 
 export function AiTab() {
   return (
@@ -98,6 +101,10 @@ export function AiTab() {
 function TranscriptionSection() {
   const language = useLanguageSetting();
   const setLanguage = useSetLanguage();
+  const prepareApple = usePrepareAppleSpeech();
+  const [pendingLanguage, setPendingLanguage] = React.useState<string | null>(null);
+  const [languageError, setLanguageError] = React.useState<string | null>(null);
+  const languageChangeInFlight = React.useRef(false);
   const keepRecordings = useKeepRecordingsSetting();
   const setKeepRecordings = useSetKeepRecordings();
   const engineQuery = useTranscriptionEngine();
@@ -106,7 +113,8 @@ function TranscriptionSection() {
   // Parakeet has the narrower language set; Whisper and the OpenAI-compatible
   // cloud ASR expose Whisper language hints. Custom endpoints/models may
   // support a subset; compatibility alone does not advertise capabilities.
-  const options = engine === 'parakeet' ? LANGUAGES_PARAKEET : LANGUAGES_WHISPER;
+  const options = engine === 'parakeet' ? LANGUAGES_PARAKEET :
+    engine === 'apple' ? LANGUAGES_APPLE : LANGUAGES_WHISPER;
   // useSetActiveTranscription coerces language to 'auto' when switching
   // to an engine that doesn't support the current pick. So by the time
   // this renders, persisted is normally in `options`. Edge case (CLI
@@ -115,6 +123,33 @@ function TranscriptionSection() {
   // pick something new.
   const persisted = language.data ?? 'auto';
   const displayValue = options.some((o) => o.value === persisted) ? persisted : 'auto';
+
+  const selectLanguage = async (code: string) => {
+    if (languageChangeInFlight.current) return;
+    if (engine !== 'apple') {
+      setLanguage.mutate(code);
+      return;
+    }
+    languageChangeInFlight.current = true;
+    setPendingLanguage(code);
+    setLanguageError(null);
+    let failureMessage = t('settings.ai.apple.prepareError');
+    try {
+      const status = await ipc().appleSpeech.status(code);
+      if (!status.success || !status.available || !status.supported) {
+        failureMessage = t('settings.ai.apple.languageUnavailable');
+        throw new Error(failureMessage);
+      }
+      if (!status.installed) await prepareApple.mutateAsync(code);
+      failureMessage = t('settings.ai.apple.saveError');
+      await setLanguage.mutateAsync(code);
+    } catch {
+      setLanguageError(failureMessage);
+    } finally {
+      languageChangeInFlight.current = false;
+      setPendingLanguage(null);
+    }
+  };
 
   return (
     // Retains the pre-merge data-settings-tab="transcription" identity as a
@@ -134,8 +169,8 @@ function TranscriptionSection() {
       >
         <Select
           value={displayValue}
-          onValueChange={(v) => setLanguage.mutate(v)}
-          disabled={!language.data}
+          onValueChange={(v) => { void selectLanguage(v); }}
+          disabled={!language.data || pendingLanguage !== null}
         >
           {/* Explicit testid: the Model dropdown below is a second combobox in
               this section now, so parakeet-language-picker.t1 can no longer
@@ -151,6 +186,12 @@ function TranscriptionSection() {
             ))}
           </SelectContent>
         </Select>
+        {pendingLanguage !== null && (
+          <p role="status" className="mt-2 text-xs text-muted-foreground">
+            {t('settings.ai.apple.preparing')}
+          </p>
+        )}
+        {languageError && <p role="alert" className="mt-2 text-xs text-destructive">{languageError}</p>}
       </SettingRow>
 
       <SettingRow
@@ -345,6 +386,9 @@ export function SpeakerIdentificationSetting() {
 // one supported model today (see SUPPORTED_PARAKEET_MODELS /
 // SUPPORTED_WHISPER_MODELS in the Python registries).
 const ENGINE_TAGLINE: Record<Exclude<TranscriptionEngine, 'openai-asr'>, string> = {
+  get apple() {
+    return t('settings.ai.engineTagline.apple');
+  },
   get parakeet() {
     return t('settings.ai.engineTagline.parakeet');
   },
@@ -373,6 +417,9 @@ function TranscriptionModelList() {
   const parakeet = useParakeetModels();
   const whisper = useWhisperModels();
   const engine = useTranscriptionEngine();
+  const language = useLanguageSetting();
+  const apple = useAppleSpeechStatus(language.data ?? 'auto', isMac);
+  const prepareApple = usePrepareAppleSpeech();
   const setActive = useSetActiveTranscription();
   const pullParakeet = usePullParakeetModel();
   const pullWhisper = usePullWhisperModel();
@@ -428,7 +475,7 @@ function TranscriptionModelList() {
   const parakeetDownloading = pullParakeet.isPending;
   const whisperDownloading = pullWhisper.isPending;
   const downloadingEngine = parakeetDownloading ? 'parakeet' : whisperDownloading ? 'whisper' : null;
-  const isDownloading = downloadingEngine !== null;
+  const isDownloading = downloadingEngine !== null || prepareApple.isPending;
   const value: TranscriptionEngine = downloadingEngine ?? activeEngine;
 
   const whisperPercent =
@@ -438,6 +485,7 @@ function TranscriptionModelList() {
   // per engine rather than indexing the model-backed options array (which only
   // covers parakeet/whisper).
   const triggerFor: Record<TranscriptionEngine, { icon: React.ReactNode; name: string }> = {
+    apple: { icon: <Laptop className="size-3" />, name: t('settings.ai.apple.label') },
     parakeet: { icon: <NvidiaIcon size={12} />, name: parakeetModel.displayName ?? parakeetModel.name },
     whisper: { icon: <OpenAiIcon size={12} />, name: whisperModel.displayName ?? whisperModel.name },
     'openai-asr': {
@@ -453,6 +501,17 @@ function TranscriptionModelList() {
       // Switching to the cloud engine sends audio off-device - gate it behind
       // an explicit privacy confirmation.
       setConfirmCloudAsr(true);
+      return;
+    }
+    if (next === 'apple') {
+      if (!apple.data?.available || !apple.data.supported) return;
+      if (apple.data.installed) {
+        setActive.mutate({ engine: 'apple' });
+      } else {
+        prepareApple.mutate(language.data ?? 'auto', {
+          onSuccess: () => setActive.mutate({ engine: 'apple' }),
+        });
+      }
       return;
     }
     if (next === 'parakeet') {
@@ -499,6 +558,14 @@ function TranscriptionModelList() {
             </div>
           </SelectTrigger>
           <SelectContent className="w-72">
+            {(apple.data?.available && apple.data.supported || activeEngine === 'apple') && (
+              <SelectItem value="apple" description={ENGINE_TAGLINE.apple}>
+                <span className="inline-flex items-center gap-1.5">
+                  <Laptop className="size-3" />
+                  {t('settings.ai.apple.label')}
+                </span>
+              </SelectItem>
+            )}
             <SelectItem value="parakeet" description={ENGINE_TAGLINE.parakeet}>
               <span className="inline-flex items-center gap-1.5">
                 <NvidiaIcon size={12} />
@@ -528,6 +595,7 @@ function TranscriptionModelList() {
           </p>
         )}
         {pullParakeet.isError && <p role="alert">{String(pullParakeet.error.message)}</p>}
+        {prepareApple.isError && <p role="alert">{t('settings.ai.apple.prepareError')}</p>}
       </SettingRow>
 
       {activeEngine === 'openai-asr' && <OpenAiAsrConfig />}

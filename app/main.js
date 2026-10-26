@@ -102,6 +102,7 @@ const {
 } = require('./notification-copy');
 const { makeLineReader } = require('./backend-stream');
 const { classifyReprocessError } = require('./reprocess-error');
+const { appleSpeechSupported, defaultTranscriptionEngine, normalizeTranscriptionEngine, isLiveTranscriptionEngine, appleSpeechReady } = require('./transcription-engine');
 // Pure deep-link (stenoai://) parsing/sanitizing lives in ./shortcut-url
 // (unit-tested). The stateful side — window creation, IPC dispatch,
 // notifications — stays here and calls parseShortcutUrl().
@@ -665,6 +666,37 @@ function getMicMonitorPath() {
     return path.join(process.resourcesPath, binName);
   } else {
     return path.join(__dirname, '..', 'bin', binName);
+  }
+}
+
+function getAppleTranscribePath() {
+  if (ALLOW_E2E_PATH_SEAMS && process.env.STENOAI_TRANSCRIBE_SIDECAR_PATH) {
+    return process.env.STENOAI_TRANSCRIBE_SIDECAR_PATH;
+  }
+  return app.isPackaged
+    ? path.join(process.resourcesPath, 'stenoai', '_internal', 'steno-transcribe')
+    : path.join(__dirname, '..', 'bin', 'steno-transcribe');
+}
+
+function appleSidecarExecutable() {
+  if (!appleSpeechSupported()) return false;
+  try {
+    fs.accessSync(getAppleTranscribePath(), fs.constants.X_OK);
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
+async function getAppleSpeechStatus(language = 'auto') {
+  const unavailable = { success: true, available: false, supported: false, installed: false, locale: null, display_name: 'Apple On-Device', system_managed: true };
+  if (!appleSidecarExecutable()) return unavailable;
+  try {
+    const requested = typeof language === 'string' ? language : 'auto';
+    const result = await runPythonScript('simple_recorder.py', ['apple-speech-status', requested], true);
+    return JSON.parse(result.trim());
+  } catch (e) {
+    return parsePythonFailureJson(e);
   }
 }
 
@@ -5464,7 +5496,7 @@ ipcMain.handle('get-live-transcript-state', async () => {
 // Spawn the Python transcribe-stream sidecar that produces live partials for
 // the renderer-driven capture (Parakeet engine only). Wires its stdout NDJSON
 // to the live-transcript-{ready,chunk,error} IPC events the renderer consumes.
-function spawnLiveTranscribe(sessionName) {
+function spawnLiveTranscribe(sessionName, { timelineOffset = 0 } = {}) {
   if (liveTranscribeProcess) {
     // Race-safe restart: a quick stop→start can land here while the
     // previous subprocess is still draining its stdin. Skipping the
@@ -5477,10 +5509,17 @@ function spawnLiveTranscribe(sessionName) {
     liveTranscribeSessionName = null;
     liveTranscribeStdoutBuf = '';
   }
+  const transcription = loadTranscriptionContext();
+  const usesAppleSpeech = transcription.engine === 'apple';
+  if (usesAppleSpeech && !appleSidecarExecutable()) {
+    throw new Error('Apple on-device transcription is unavailable on this Mac.');
+  }
   const aiEnv = { ...getAiEnv(), ...getTranscriptionEnv() };
   const env = getBackendEnv(aiEnv);
-  parakeetLoadStartedAt = Date.now();
-  liveTranscribeProcess = spawn(getBackendPath(), ['transcribe-stream'], {
+  parakeetLoadStartedAt = usesAppleSpeech ? 0 : Date.now();
+  liveTranscribeProcess = spawn(
+    usesAppleSpeech ? getAppleTranscribePath() : getBackendPath(),
+    usesAppleSpeech ? ['stream', transcription.language || 'auto'] : ['transcribe-stream'], {
     cwd: getBackendCwd(),
     env,
     // Default {pipe, pipe, pipe} — we need stdin to push audio in and
@@ -5494,6 +5533,8 @@ function spawnLiveTranscribe(sessionName) {
   // the resolver to `proc` so a quick stop→start can't have the old process's
   // teardown resolve/null the NEW process's state (#207 review-2, Finding 2).
   const proc = liveTranscribeProcess;
+  proc._usesAppleSpeech = usesAppleSpeech;
+  proc._timelineOffset = Number.isFinite(timelineOffset) && timelineOffset > 0 ? timelineOffset : 0;
   proc._drainResolve = null;
   proc._drainPromise = new Promise((resolve) => {
     proc._drainResolve = resolve;
@@ -5535,7 +5576,7 @@ function spawnLiveTranscribe(sessionName) {
     while ((nl = liveTranscribeStdoutBuf.indexOf('\n')) !== -1) {
       const line = liveTranscribeStdoutBuf.slice(0, nl);
       liveTranscribeStdoutBuf = liveTranscribeStdoutBuf.slice(nl + 1);
-      handleLiveTranscribeLine(line);
+      handleLiveTranscribeLine(line, proc);
     }
   });
 
@@ -5612,7 +5653,7 @@ function spawnLiveTranscribe(sessionName) {
 // Keeps the per-line semantics (buffer mutation + IPC emit) in one place
 // so the legacy `record --live` path and this sidecar path stay in lock
 // step if we ever extend the protocol.
-function handleLiveTranscribeLine(line) {
+function handleLiveTranscribeLine(line, proc = liveTranscribeProcess) {
   const sessionName = liveTranscribeSessionName;
   if (line.startsWith('LIVE_READY:')) {
     if (parakeetLoadStartedAt) {
@@ -5628,10 +5669,11 @@ function handleLiveTranscribeLine(line) {
   if (line.startsWith('LIVE_SEG:')) {
     try {
       const seg = JSON.parse(line.slice('LIVE_SEG:'.length));
+      const offset = Number.isFinite(proc?._timelineOffset) ? proc._timelineOffset : 0;
       const segment = {
         text: seg.text,
-        start: seg.start,
-        end: seg.end,
+        start: seg.start + offset,
+        end: seg.end + offset,
         isFinal: !!seg.is_final,
         // 'You' | 'Others', set directly by the Python sidecar from which
         // channel (mic vs system) produced this segment — a structural
@@ -5678,6 +5720,26 @@ function handleLiveTranscribeLine(line) {
       }
     } catch (e) {
       sendDebugLog(`LIVE_SEG parse error (sidecar): ${e.message}`);
+    }
+    return;
+  }
+  if (line.startsWith('LIVE_REVOKE:') && proc?._usesAppleSpeech) {
+    try {
+      const payload = JSON.parse(line.slice('LIVE_REVOKE:'.length));
+      if (payload.speaker !== 'You' && payload.speaker !== 'Others') return;
+      // A withdrawn volatile hypothesis can remove only that channel's
+      // in-progress row. Final segments remain available for the stop-time
+      // transcript and for a language restart's monotonic timeline offset.
+      liveTranscriptState.segments = liveTranscriptState.segments.filter(
+        (segment) => segment.isFinal || segment.speaker !== payload.speaker,
+      );
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('live-transcript-revoke', {
+          sessionName, speaker: payload.speaker,
+        });
+      }
+    } catch (e) {
+      sendDebugLog(`LIVE_REVOKE parse error (sidecar): ${e.message}`);
     }
     return;
   }
@@ -5737,6 +5799,43 @@ function stopLiveTranscribe() {
   return exited;
 }
 
+let appleLanguageRestartGeneration = 0;
+
+async function beforeAppleLanguageChange(language) {
+  if (!systemAudioRecordingActive || loadTranscriptionEngine() !== 'apple') return null;
+  const status = await getAppleSpeechStatus(language);
+  return appleSpeechReady(status) ? null : 'Apple speech language is not ready. Prepare it in Settings first.';
+}
+
+async function restartActiveAppleLiveTranscribeAfterLanguageChange() {
+  const proc = liveTranscribeProcess;
+  const sessionName = liveTranscribeSessionName;
+  if (!proc?._usesAppleSpeech || !systemAudioRecordingActive || !sessionName) return;
+  const generation = ++appleLanguageRestartGeneration;
+  const state = liveTranscriptState;
+  liveTranscriptState.ready = false;
+  await stopLiveTranscribe(); // close drains FINAL segments before we replace the process
+  if (generation !== appleLanguageRestartGeneration || state !== liveTranscriptState
+      || !systemAudioRecordingActive || currentRecordingSessionName !== sessionName
+      || liveTranscribeProcess !== null) return;
+
+  const finals = state.segments.filter((segment) => segment?.isFinal);
+  state.segments = finals;
+  const latestFinalEnd = finals.reduce((end, segment) =>
+    Number.isFinite(segment.end) ? Math.max(end, segment.end) : end, 0);
+  const timelineOffset = Math.max(latestFinalEnd, getRecordingElapsedSeconds());
+  const status = await getAppleSpeechStatus(loadTranscriptionContext().language);
+  if (generation !== appleLanguageRestartGeneration || state !== liveTranscriptState
+      || !systemAudioRecordingActive || currentRecordingSessionName !== sessionName
+      || liveTranscribeProcess !== null) return;
+  if (!appleSpeechReady(status)) {
+    state.error = { stage: 'native', message: 'Apple speech language is not ready. Prepare it in Settings first.' };
+    mainWindow?.webContents?.send('live-transcript-error', { sessionName, ...state.error });
+    return;
+  }
+  spawnLiveTranscribe(sessionName, { timelineOffset });
+}
+
 // Sync read of the active ASR engine. Reads the JSON directly so we don't
 // spawn a Python subprocess on
 // every recording start just to ask. Default 'parakeet' matches the
@@ -5746,13 +5845,12 @@ function stopLiveTranscribe() {
 function loadTranscriptionEngine() {
   try {
     const cfgPath = path.join(getUserDataDir(), 'config.json');
-    if (!fs.existsSync(cfgPath)) return 'parakeet';
+    if (!fs.existsSync(cfgPath)) return defaultTranscriptionEngine();
     const cfg = JSON.parse(fs.readFileSync(cfgPath, 'utf-8'));
     const engine = cfg.transcription_engine;
-    if (engine === 'whisper' || engine === 'openai-asr') return engine;
-    return 'parakeet';
+    return normalizeTranscriptionEngine(engine);
   } catch (_) {
-    return 'parakeet';
+    return defaultTranscriptionEngine();
   }
 }
 
@@ -5768,12 +5866,14 @@ function loadTranscriptionContext() {
     }
     const cfg = JSON.parse(fs.readFileSync(cfgPath, 'utf-8'));
     const rawEngine = cfg.transcription_engine;
-    const engine = (rawEngine === 'whisper' || rawEngine === 'openai-asr') ? rawEngine : 'parakeet';
+    const engine = normalizeTranscriptionEngine(rawEngine);
     let model;
     if (engine === 'whisper') {
       model = sanitizeModelForAnalytics(cfg.whisper_model);
     } else if (engine === 'openai-asr') {
       model = sanitizeModelForAnalytics(cfg.openai_asr_model) || 'whisper-1';
+    } else if (engine === 'apple') {
+      model = 'apple';
     } else {
       // Parakeet has no separate user-selectable model today (single bundled
       // default) -- report the engine name rather than guess a variant id.
@@ -6753,6 +6853,17 @@ ipcMain.handle('start-recording-ui', async (_, sessionName, trigger, appendTo) =
     if (systemAudioRecordingActive) {
       return { success: false, error: 'Recording already in progress' };
     }
+    const requestedEngine = loadTranscriptionEngine();
+    if (requestedEngine === 'apple') {
+      const status = await getAppleSpeechStatus(loadTranscriptionContext().language);
+      if (!appleSpeechReady(status)) {
+        return { success: false, error: 'Apple on-device transcription is not ready. Prepare its language in Settings first.' };
+      }
+      // A second start may have arrived while the offline status check ran.
+      if (currentRecordingProcess || systemAudioRecordingActive) {
+        return { success: false, error: 'Recording already in progress' };
+      }
+    }
 
     // Validate the append target up front: it must be an existing, canonical
     // meeting file (`*_summary.md`/`.json`) scoped to an `output/` dir — the
@@ -6789,7 +6900,7 @@ ipcMain.handle('start-recording-ui', async (_, sessionName, trigger, appendTo) =
     // so the renderer can show real-time text. Cached read — avoids a
     // Python subprocess on every recording start.
     const engine = loadTranscriptionEngine();
-    const liveEnabled = engine === 'parakeet';
+    const liveEnabled = isLiveTranscriptionEngine(engine);
 
     // Renderer-driven capture (useSystemAudioCapture) is the ONLY recording
     // path: it captures the mic (+ system loopback when the Settings toggle is
@@ -7025,7 +7136,7 @@ ipcMain.handle('stop-recording-ui', async () => {
       const sessionName = currentRecordingSessionName || 'Note';
       if (currentRecordingAppendTarget) {
         instantSummaryFile = currentRecordingAppendTarget;
-      } else if (loadTranscriptionEngine() === 'parakeet' && activeSysAudioSummaryFile) {
+      } else if (isLiveTranscriptionEngine(loadTranscriptionEngine()) && activeSysAudioSummaryFile) {
         const transcriptText = liveTranscriptTextForPlaceholder(sessionName);
         const notesFile = userNotesFilePath(getOutputDir(), sessionName);
         let notesText = '';
@@ -8739,12 +8850,31 @@ ipcMain.handle('get-transcription-engine', async () => {
 });
 
 ipcMain.handle('set-transcription-engine', async (event, engine) => {
+  if (engine === 'apple' && !appleSidecarExecutable()) {
+    return { success: false, error: 'Apple on-device transcription is unavailable on this Mac.' };
+  }
   try {
     const result = await runPythonScript('simple_recorder.py', ['set-transcription-engine', engine]);
     const jsonData = JSON.parse(result.trim());
-    trackEvent('model_changed', { model: engine, kind: 'transcription_engine' });
+    if (jsonData.success) trackEvent('model_changed', { model: engine, kind: 'transcription_engine' });
     return { success: true, ...jsonData };
   } catch (e) { return { success: false, error: e.message }; }
+});
+
+ipcMain.handle('apple-speech-status', async (_event, language = 'auto') =>
+  getAppleSpeechStatus(language));
+
+ipcMain.handle('prepare-apple-speech', async (_event, language = 'auto') => {
+  if (!appleSidecarExecutable()) {
+    return { success: false, error: 'Apple on-device transcription is unavailable on this Mac.' };
+  }
+  try {
+    const requested = typeof language === 'string' ? language : 'auto';
+    const result = await runPythonScript('simple_recorder.py', ['prepare-apple-speech', requested]);
+    return JSON.parse(result.trim());
+  } catch (e) {
+    return parsePythonFailureJson(e);
+  }
 });
 
 ipcMain.handle('get-diarization-engine', async () => {
@@ -9072,7 +9202,11 @@ ipcMain.handle('pull-parakeet-model', async (event, modelId) => {
 // behavior are identical to the inline handlers this replaces. Settings-shaped
 // handlers coupled to another domain (telemetry, models, mic-monitor, calendar,
 // tray) deliberately stay in main.js until that domain's own extraction.
-registerSettingsIpc({ ipcMain, runPythonScript, sendDebugLog });
+registerSettingsIpc({
+  ipcMain, runPythonScript, sendDebugLog,
+  beforeLanguageChange: beforeAppleLanguageChange,
+  onLanguageChanged: restartActiveAppleLiveTranscribeAfterLanguageChange,
+});
 registerPersonSampleIpc({ ipcMain, runPythonScript });
 registerSpeakerIpc({ ipcMain, runPythonScript, parsePythonFailureJson });
 
@@ -10618,7 +10752,7 @@ ipcMain.handle('process-system-audio-recording', async (event, audioFilePath, se
     const engine = loadTranscriptionEngine();
     const jobSummaryFile = appendTo
       ? appendTo
-      : engine === 'parakeet'
+      : isLiveTranscriptionEngine(engine)
         ? summaryFileForAudio(audioFilePath)
         : undefined;
 

@@ -337,7 +337,8 @@ function install({ ipcMain }) {
   // handlers persist to disk. Mutated by the org-login / org-logout / set-ai
   // mocks so a test can assert the UI reacts to its own actions.
   const state = {
-    language: 'auto',
+    language: process.env.STENOAI_E2E_MOCK_LANGUAGE || 'auto',
+    appleSpeechPrepared: new Set(),
     provider: 'local', // 'local' | 'remote' | 'cloud' | 'adapter'
     orgSession: null, // { adapterUrl, email, name, orgId, exp } when signed in
     everSignedIn: false,
@@ -808,6 +809,34 @@ function install({ ipcMain }) {
       installed: process.env.STENOAI_E2E_MOCK_PARAKEET_INSTALLED === '1',
     }),
 
+    'apple-speech-status': async (_event, language = 'auto') => ({
+      success: true,
+      available: process.env.STENOAI_E2E_MOCK_APPLE_SUPPORTED === '1',
+      supported: process.env.STENOAI_E2E_MOCK_APPLE_SUPPORTED === '1',
+      installed: state.appleSpeechPrepared.has(language) || (
+        process.env.STENOAI_E2E_MOCK_APPLE_INSTALLED === '1'
+        && language !== process.env.STENOAI_E2E_MOCK_APPLE_MISSING_LANGUAGE
+      ),
+      locale: language,
+      display_name: 'Apple On-Device',
+      system_managed: true,
+    }),
+
+    'prepare-apple-speech': async (_event, language = 'auto') => {
+      if (language === process.env.STENOAI_E2E_MOCK_APPLE_PREPARE_FAIL_LANGUAGE) {
+        return { success: false, error: 'Synthetic Apple preparation failure' };
+      }
+      if (process.env.STENOAI_E2E_MOCK_APPLE_REQUIRED_LANGUAGE
+          && language !== process.env.STENOAI_E2E_MOCK_APPLE_REQUIRED_LANGUAGE) {
+        return { success: false, error: 'Wrong Apple Speech language prepared' };
+      }
+      state.appleSpeechPrepared.add(language);
+      return {
+        success: true, available: true, supported: true, installed: true,
+        locale: language, display_name: 'Apple On-Device', system_managed: true,
+      };
+    },
+
     'get-ai-provider': async () => ({
       success: true,
       ai_provider: state.provider,
@@ -1178,6 +1207,9 @@ function install({ ipcMain }) {
       return new Promise(() => {});
     },
     'setup-parakeet': async (event) => {
+      if (process.env.STENOAI_E2E_FAIL_ON_PARAKEET_SETUP === '1') {
+        throw new Error('Parakeet setup must not run for Apple transcription');
+      }
       if (process.env.STENOAI_E2E_SETUP_PROGRESS === '1') {
         const wc = event && event.sender;
         if (wc && !wc.isDestroyed()) {

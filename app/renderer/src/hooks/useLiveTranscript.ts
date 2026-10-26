@@ -134,12 +134,14 @@ export function useLiveTranscript(sessionName: string | null): UseLiveTranscript
   // applying its snapshot — if a chunk landed first, the snapshot is
   // older than what we already have and would clobber live updates.
   const receivedEventRef = React.useRef(false);
+  const revokedSpeakersRef = React.useRef<Set<'You' | 'Others'>>(new Set());
 
   React.useEffect(() => {
     // Reset state for the new session. Doing this in the same effect as
     // the subscription guarantees the marker resets BEFORE any chunk
     // event can fire for the new session.
     receivedEventRef.current = false;
+    revokedSpeakersRef.current = new Set();
     setFinals([]);
     setPartials([]);
     setPriorSegments([]);
@@ -171,6 +173,12 @@ export function useLiveTranscript(sessionName: string | null): UseLiveTranscript
       }
     });
 
+    const offRevoke = ipc().on.liveTranscriptRevoke((ev) => {
+      if (ev.sessionName !== sessionName) return;
+      revokedSpeakersRef.current.add(ev.speaker);
+      setPartials((prev) => prev.filter((segment) => speakerKey(segment) !== ev.speaker));
+    });
+
     const offError = ipc().on.liveTranscriptError((ev) => {
       if (ev.sessionName !== sessionName) return;
       receivedEventRef.current = true;
@@ -194,7 +202,9 @@ export function useLiveTranscript(sessionName: string | null): UseLiveTranscript
         // main.js stores it verbatim in liveTranscriptState.segments.
         const lanes = splitLanes(res.segments ?? []);
         setFinals(lanes.finals);
-        setPartials(lanes.partials);
+        setPartials(lanes.partials.filter(
+          (segment) => !revokedSpeakersRef.current.has(speakerKey(segment)),
+        ));
         setReady(res.ready);
         if (res.error) {
           setError({ stage: res.error.stage, message: res.error.message ?? res.error.error });
@@ -208,6 +218,7 @@ export function useLiveTranscript(sessionName: string | null): UseLiveTranscript
       cancelled = true;
       offReady();
       offChunk();
+      offRevoke();
       offError();
     };
   }, [sessionName]);

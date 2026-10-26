@@ -8,7 +8,7 @@ import { flushNotesThenProcess } from '@/lib/notesFlush';
 import { unwrap } from '@/lib/result';
 import { getLiveDraft } from './liveDraftStore';
 import { useRecording } from './useRecording';
-import { useTranscriptionEngine } from './useModels';
+import { useLiveTranscriptAvailable } from './useModels';
 import {
   settingsKeys,
   useMicrophoneSetting,
@@ -49,11 +49,8 @@ export function useSystemAudioCapture() {
   const { status, sessionName } = useRecording();
   const systemAudio = useSystemAudioSetting();
   const systemAudioSupport = useSystemAudioSupport();
-  const engineQuery = useTranscriptionEngine();
-  // Whisper recordings have no live transcript: the transcribe-stream
-  // sidecar isn't spawned by main.js, so any chunks we'd push would be
-  // silently dropped. Skip the tap setup entirely on whisper.
-  const liveTapEnabled = (engineQuery.data ?? 'parakeet') === 'parakeet';
+  // The shared live-engine gate excludes Whisper and cloud ASR from the PCM tap.
+  const liveTapEnabled = useLiveTranscriptAvailable();
   // Read into a ref so the tap callback (closed over once at startCapture)
   // can be a no-op if the engine flips mid-recording without rebuilding
   // the AudioContext graph.

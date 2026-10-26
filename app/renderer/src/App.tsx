@@ -40,14 +40,22 @@ import { useMeetingTransferEvents } from '@/hooks/useMeetingTransfer';
 import { WhatsNewProvider } from '@/components/WhatsNew';
 
 async function hasInstalledTranscriptionModel() {
-  const [parakeet, whisper] = await Promise.all([
-    ipc().parakeetModels.status(),
-    ipc().whisperModels.list(),
-  ]);
-  return (parakeet.success && parakeet.installed === true) ||
-    (whisper.success && Object.values(whisper.supported_models ?? {}).some(
+  const selected = await ipc().transcriptionEngine.get();
+  const engine = selected.success ? selected.engine : 'parakeet';
+  if (engine === 'apple') {
+    const language = await ipc().settings.getLanguage();
+    const status = await ipc().appleSpeech.status(language.success ? language.language : 'auto');
+    return status.success && status.available && status.supported && status.installed;
+  }
+  if (engine === 'openai-asr') return true;
+  if (engine === 'whisper') {
+    const whisper = await ipc().whisperModels.list();
+    return whisper.success && Object.values(whisper.supported_models ?? {}).some(
       model => (model as { installed?: boolean }).installed === true,
-    ));
+    );
+  }
+  const parakeet = await ipc().parakeetModels.status();
+  return parakeet.success && parakeet.installed === true;
 }
 
 export function App() {

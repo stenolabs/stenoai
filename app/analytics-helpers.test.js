@@ -481,6 +481,7 @@ test('sanitizeModelForAnalytics keeps known public model ids but collapses custo
     'qwen3.5:9b',
     'gpt-oss:20b',
     'parakeet',
+    'apple',
     'large-v3-turbo',
     'gpt-4o-mini',
     'gpt-4o',

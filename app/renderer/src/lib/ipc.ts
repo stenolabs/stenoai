@@ -734,7 +734,16 @@ export type ParakeetStatusResponse = Result<{
   installed: boolean;
 }>;
 
-export type TranscriptionEngine = 'parakeet' | 'whisper' | 'openai-asr';
+export type AppleSpeechStatusResponse = Result<{
+  available: boolean;
+  supported: boolean;
+  installed: boolean;
+  locale: string | null;
+  display_name: string;
+  system_managed: boolean;
+}>;
+
+export type TranscriptionEngine = 'apple' | 'parakeet' | 'whisper' | 'openai-asr';
 
 export type GetTranscriptionEngineResponse = Result<{
   engine: TranscriptionEngine;
@@ -1044,6 +1053,11 @@ export interface LiveTranscriptChunkEvent {
   segment: LiveSegment;
 }
 
+export interface LiveTranscriptRevokeEvent {
+  sessionName: string;
+  speaker: 'You' | 'Others';
+}
+
 export interface LiveTranscriptErrorEvent {
   sessionName: string;
   stage: string;
@@ -1317,6 +1331,11 @@ export interface StenoaiBridge {
     status: RequestFn<[], ParakeetStatusResponse>;
   };
 
+  appleSpeech: {
+    status: RequestFn<[language?: string], AppleSpeechStatusResponse>;
+    prepare: RequestFn<[language?: string], AppleSpeechStatusResponse>;
+  };
+
   transcriptionEngine: {
     get: RequestFn<[], GetTranscriptionEngineResponse>;
     set: RequestFn<[engine: TranscriptionEngine], Result<{ engine: TranscriptionEngine }>>;
@@ -1497,6 +1516,7 @@ export interface StenoaiBridge {
     speakerModelsProgress: Subscribe<SpeakerModelsProgressEvent>;
     liveTranscriptReady: Subscribe<LiveTranscriptReadyEvent>;
     liveTranscriptChunk: Subscribe<LiveTranscriptChunkEvent>;
+    liveTranscriptRevoke: Subscribe<LiveTranscriptRevokeEvent>;
     liveTranscriptError: Subscribe<LiveTranscriptErrorEvent>;
     /** Raw interleaved s16 PCM from the Linux loopback capture — see
      *  recording.startLinuxLoopback. Electron serialises the main-side Buffer

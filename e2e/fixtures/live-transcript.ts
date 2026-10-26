@@ -36,3 +36,18 @@ export async function emitLiveSegments(
     { sessionName, segments },
   );
 }
+
+export async function emitLiveRevoke(
+  app: ElectronApplication,
+  sessionName: string,
+  speaker: 'You' | 'Others',
+): Promise<void> {
+  await app.evaluate(
+    ({ BrowserWindow }, payload: { sessionName: string; speaker: 'You' | 'Others' }) => {
+      const win = BrowserWindow.getAllWindows()[0];
+      if (!win) throw new Error('no BrowserWindow to emit into');
+      win.webContents.send('live-transcript-revoke', payload);
+    },
+    { sessionName, speaker },
+  );
+}

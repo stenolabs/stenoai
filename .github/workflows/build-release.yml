@@ -68,19 +68,9 @@ jobs:
         include:
           - arch: arm64
             build_cmd: build:arm64
-            # macos-15, NOT macos-14: the diarize sidecar's FluidAudio
-            # dependency requires Swift tools 6.0, which the macos-14 image's
-            # Xcode does not provide. v0.7.0 is the first release to build the
-            # sidecar at all, so this surfaced only at the tag:
-            #   error: Dependencies could not be resolved because 'fluidaudio'
-            #   >= 0.9.0 contains incompatible tools version (6.0.0)
-            # e2e.yml already builds the sidecar on macos-latest, which is why
-            # the release gate stayed green while the release itself failed.
-            # Safe for the deployment target: diarize-sidecar/Package.swift
-            # declares `platforms: [.macOS(.v14)]`, so SwiftPM still targets
-            # macOS 14 regardless of the host image. pip wheels do follow the
-            # host, see "Install macOS 14 builds of MLX" below.
-            runner: macos-15
+            # Build on macOS 26 for the opt-in SpeechTranscriber helper.
+            # Check the macOS 14 floor separately for all other binaries.
+            runner: macos-26
     runs-on: ${{ matrix.runner }}
 
     steps:
@@ -159,6 +149,16 @@ jobs:
         file bin/steno-diarize
         file bin/steno-diarize | grep -q "arm64"
 
+    - name: Build Apple transcription sidecar (Swift/Speech)
+      run: |
+        chmod +x scripts/build-transcribe-sidecar.sh
+        ./scripts/build-transcribe-sidecar.sh arm64
+        test -x bin/steno-transcribe
+        file bin/steno-transcribe
+        file bin/steno-transcribe | grep -q "arm64"
+        bash scripts/test-transcribe-sidecar.sh
+        python -m unittest tests.test_apple_speech.NativeAppleSpeechContractTests
+
     - name: Build Python backend with PyInstaller
       run: |
         pyinstaller stenoai.spec --noconfirm
@@ -168,6 +168,8 @@ jobs:
         test -x dist/stenoai/_internal/steno-audio-encode
         test -x dist/stenoai/_internal/steno-diarize
         file dist/stenoai/_internal/steno-diarize | grep -q "arm64"
+        test -x dist/stenoai/_internal/steno-transcribe
+        file dist/stenoai/_internal/steno-transcribe | grep -q "arm64"
         echo "Expected arch: ${{ matrix.arch }}"
         echo "Backend built successfully"
 

@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { t } from '@/i18n';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   ipc,
@@ -10,7 +11,7 @@ import {
 } from '@/lib/ipc';
 import { unwrap } from '@/lib/result';
 import { speakerModelsStatusKey } from '@/hooks/useSpeakerModels';
-import { PARAKEET_LANGUAGE_CODES } from '@/lib/transcription-languages';
+import { APPLE_LANGUAGE_CODES, PARAKEET_LANGUAGE_CODES } from '@/lib/transcription-languages';
 
 export const modelsKeys = {
   all: ['models'] as const,
@@ -33,6 +34,10 @@ export const parakeetKeys = {
 export const transcriptionEngineKeys = {
   all: ['transcriptionEngine'] as const,
   current: () => [...transcriptionEngineKeys.all, 'current'] as const,
+};
+
+export const appleSpeechKeys = {
+  status: (language: string) => ['appleSpeech', 'status', language] as const,
 };
 
 export const diarizationEngineKeys = {
@@ -569,6 +574,29 @@ export function useTranscriptionEngine() {
   });
 }
 
+export function useAppleSpeechStatus(language = 'auto', enabled = true) {
+  return useQuery({
+    queryKey: appleSpeechKeys.status(language),
+    queryFn: async () => unwrap(await ipc().appleSpeech.status(language)),
+    enabled,
+    staleTime: 60_000,
+  });
+}
+
+export function usePrepareAppleSpeech() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (language: string) => {
+      const status = unwrap(await ipc().appleSpeech.prepare(language));
+      if (!status.available || !status.supported || !status.installed) {
+        throw new Error(t('settings.ai.apple.notReady'));
+      }
+      return status;
+    },
+    onSuccess: (status, language) => qc.setQueryData(appleSpeechKeys.status(language), status),
+  });
+}
+
 export function useDiarizationEngine() {
   return useQuery({
     queryKey: diarizationEngineKeys.current(),
@@ -682,7 +710,7 @@ export function useSetDiarizationEngine() {
 }
 
 /**
- * Whether live (during-recording) transcription is available: Parakeet only —
+ * Whether live (during-recording) transcription is available: Parakeet or Apple —
  * Whisper never spawns the transcribe-stream sidecar, so it has no live
  * drawer, no partials, and its recording pill keeps Pause/Resume inline.
  * Defaults to parakeet while the query hydrates so the first paint doesn't
@@ -693,7 +721,7 @@ export function useSetDiarizationEngine() {
  */
 export function useLiveTranscriptAvailable(): boolean {
   const engineQuery = useTranscriptionEngine();
-  return (engineQuery.data ?? 'parakeet') === 'parakeet';
+  return ['parakeet', 'apple'].includes(engineQuery.data ?? 'parakeet');
 }
 
 // Activating Parakeet must drop a pin Parakeet can't honour as an output
@@ -726,6 +754,11 @@ export function useSetActiveTranscription() {
     }) => {
       if (engine === 'parakeet') {
         await coerceLanguageForParakeet();
+      } else if (engine === 'apple') {
+        const current = unwrap(await ipc().settings.getLanguage()).language;
+        if (!APPLE_LANGUAGE_CODES.has(current)) {
+          unwrap(await ipc().settings.setLanguage('auto'));
+        }
       }
       unwrap(await ipc().transcriptionEngine.set(engine));
       if (engine === 'whisper' && whisperModel) {

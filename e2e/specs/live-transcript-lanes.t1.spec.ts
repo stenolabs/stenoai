@@ -1,5 +1,5 @@
 import { test, expect } from '../fixtures/electron';
-import { emitLiveSegments, type LiveSegmentInput } from '../fixtures/live-transcript';
+import { emitLiveSegments, emitLiveRevoke, type LiveSegmentInput } from '../fixtures/live-transcript';
 
 /**
  * T1 - renderer-only, mock IPC. The live transcript panel's rendering contract,
@@ -59,6 +59,25 @@ test('a partial is replaced in place, then retired by its final', async ({ launc
   await emitLiveSegments(app, SESSION, [seg('So the plan for today is this.', 6, true)]);
   await expect(panel.getByText('So the plan for today is this.')).toBeVisible();
   expect(await bubbles(page)).toEqual(['Good morning everyone', 'So the plan for today is this.']);
+});
+
+test('a revoked volatile Apple partial disappears without deleting finals or the other channel', async ({ launchApp }) => {
+  const { app, page } = await launchApp({ mockIpc: true, fakeAudio: true, env: PILL_ENV });
+  await page.evaluate((name) => window.stenoai.recording.start(name), SESSION);
+  await page.getByTestId('transcription-pill').getByRole('button', { name: 'Show transcript' }).click();
+  const panel = page.getByTestId('live-transcript-panel');
+  await emitLiveSegments(app, SESSION, [
+    seg('Settled', 0, true, 'You'),
+    seg('Withdraw me', 5, false, 'You'),
+    seg('Other partial', 6, false, 'Others'),
+  ]);
+  await expect(panel.getByText('Withdraw me')).toBeVisible();
+  await emitLiveRevoke(app, SESSION, 'You');
+  await expect(panel.getByText('Withdraw me')).toHaveCount(0);
+  expect(await bubbles(page)).toEqual(['Settled', 'Other partial']);
+  await emitLiveSegments(app, SESSION, [seg('New final', 8, true, 'You')]);
+  await expect(panel.getByText('New final')).toBeVisible();
+  expect(await bubbles(page)).toEqual(['Settled', 'New final', 'Other partial']);
 });
 
 test('both channels can have an in-progress bubble at once, below the finalised text', async ({

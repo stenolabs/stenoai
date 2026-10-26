@@ -20,9 +20,16 @@
  * them:
  *   - runPythonScript  the bundled-backend invoker (backend-cli seam)
  *   - sendDebugLog     the debug-panel log sink (debug-log seam)
+ *   - onLanguageChanged  post-persistence live ASR restart hook (main owns sidecars)
  */
 
-function registerSettingsIpc({ ipcMain, runPythonScript, sendDebugLog }) {
+function registerSettingsIpc({
+  ipcMain,
+  runPythonScript,
+  sendDebugLog,
+  beforeLanguageChange = null,
+  onLanguageChanged = null,
+}) {
   ipcMain.handle('get-keep-recordings', async () => {
     try {
       const result = await runPythonScript('simple_recorder.py', ['get-keep-recordings'], true);
@@ -181,13 +188,24 @@ function registerSettingsIpc({ ipcMain, runPythonScript, sendDebugLog }) {
 
   ipcMain.handle('set-language', async (event, languageCode) => {
     try {
+      if (typeof beforeLanguageChange === 'function') {
+        const refused = await beforeLanguageChange(languageCode);
+        if (refused) return { success: false, error: refused };
+      }
       sendDebugLog(`Setting language to: ${languageCode}`);
       const result = await runPythonScript('simple_recorder.py', ['set-language', languageCode]);
       const jsonMatch = result.match(/\{.*\}/s);
-      if (jsonMatch) {
-        return JSON.parse(jsonMatch[0]);
+      const parsed = jsonMatch
+        ? JSON.parse(jsonMatch[0])
+        : { success: true, language: languageCode };
+      if (parsed.success !== false && typeof onLanguageChanged === 'function') {
+        try {
+          await onLanguageChanged(languageCode, parsed);
+        } catch (callbackError) {
+          sendDebugLog(`Error applying language change: ${callbackError.message}`);
+        }
       }
-      return { success: true, language: languageCode };
+      return parsed;
     } catch (error) {
       sendDebugLog(`Error setting language: ${error.message}`);
       return { success: false, error: error.message };
