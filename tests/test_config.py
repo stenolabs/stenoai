@@ -1,4 +1,5 @@
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -1425,6 +1426,36 @@ class MlxTagResolutionTests(unittest.TestCase):
         self.assertEqual(len(Config._MLX_TO_GGUF), len(Config._MLX_EQUIVALENTS))
 
 
+class CustomKeywordsConfigTests(unittest.TestCase):
+    def setUp(self):
+        self._prior_user_data_dir = os.environ.get("STENOAI_USER_DATA_DIR")
+        self._tmp = tempfile.TemporaryDirectory()
+        os.environ["STENOAI_USER_DATA_DIR"] = self._tmp.name
+        self.cfg = Config()
+
+    def tearDown(self):
+        if self._prior_user_data_dir is None:
+            os.environ.pop("STENOAI_USER_DATA_DIR", None)
+        else:
+            os.environ["STENOAI_USER_DATA_DIR"] = self._prior_user_data_dir
+        self._tmp.cleanup()
+
+    def test_default_empty(self):
+        self.assertEqual(self.cfg.get_custom_keywords(), [])
+
+    def test_set_get_roundtrip_and_persist(self):
+        ok = self.cfg.set_custom_keywords([{"preferred": "NexGen Suite", "aliases": ["NexGan Suite"]}])
+        self.assertTrue(ok)
+        self.assertEqual(
+            self.cfg.get_custom_keywords(),
+            [{"preferred": "NexGen Suite", "aliases": ["NexGan Suite"]}],
+        )
+        # persisted: a fresh Config reads it back
+        self.assertEqual(Config().get_custom_keywords()[0]["preferred"], "NexGen Suite")
+
+    def test_set_normalizes(self):
+        self.cfg.set_custom_keywords([{"preferred": "  ", "aliases": ["x"]}])
+        self.assertEqual(self.cfg.get_custom_keywords(), [])
 class ConfigPersonProfileTests(unittest.TestCase):
     """PersonProfile/SpeakerPrototype: the named (non-self) speaker-identity
     store. See src.speaker_suggestions for how these get consumed — this

@@ -109,6 +109,7 @@ class PartialCoverageStreamingTests(unittest.TestCase):
             config.get_language.return_value = "en"
             config.get_auto_summarize_enabled.return_value = False
             config.get_keep_recordings.return_value = False
+            config.get_custom_keywords.return_value = []
             with (
                 mock.patch.dict("os.environ", {"STENOAI_USER_DATA_DIR": tmp_dir}),
                 mock.patch("simple_recorder.MeetingPipeline", return_value=recorder),

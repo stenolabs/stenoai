@@ -1161,6 +1161,7 @@ class OpenAiAsrTests(unittest.TestCase):
             config.get_language_name.side_effect = lambda code: code or "Unknown"
             config.get_auto_summarize_enabled.return_value = False
             config.get_keep_recordings.return_value = True
+            config.get_custom_keywords.return_value = []
             with patch("src.config.get_config", return_value=config), patch.dict(
                 "os.environ", {"STENOAI_USER_DATA_DIR": tmp_dir}
             ), contextlib.redirect_stdout(io.StringIO()):

@@ -1064,6 +1064,11 @@ class OllamaSummarizer:
                     raise
         raise RuntimeError("Bedrock chat failed after all retries")
 
+    def _keyword_reference_block(self) -> str:
+        from .config import get_config
+        from . import keywords
+        return keywords.reference_block(get_config().get_custom_keywords())
+
     def _create_permissive_prompt(self, transcript: str, language: str = "en", notes: str = None) -> str:
         """
         Create an enhanced prompt with discussion_areas and improved extraction.
@@ -1100,7 +1105,9 @@ names, jargon, or context that helps interpret the transcript more accurately.
 
 """
 
-        return f"""{diarisation_note}{notes_context}You are a helpful meeting assistant. Summarise this meeting transcript into discussion areas, key points and any next steps mentioned. Only base your summary on what was explicitly discussed in the transcript.
+        ref = self._keyword_reference_block()
+
+        return f"""{ref}{diarisation_note}{notes_context}You are a helpful meeting assistant. Summarise this meeting transcript into discussion areas, key points and any next steps mentioned. Only base your summary on what was explicitly discussed in the transcript.
 
 IMPORTANT: Do not infer or assume information that wasn't directly mentioned.
 
@@ -1416,7 +1423,9 @@ Return ONLY the response in this exact JSON format:
         if notes and notes.strip():
             notes_context = f"USER NOTES (written during the meeting):\n{notes.strip()}\n\n"
 
-        return f"""{diarisation_note}{notes_context}Summarise this meeting transcript as markdown. Output ONLY the markdown below with no preamble, commentary, or explanation. Start directly with ## Summary.
+        ref = self._keyword_reference_block()
+
+        return f"""{ref}{diarisation_note}{notes_context}Summarise this meeting transcript as markdown. Output ONLY the markdown below with no preamble, commentary, or explanation. Start directly with ## Summary.
 
 ## Summary
 A 1-3 sentence overview of the main topics and outcomes, written directly. Do not refer to "the transcript", "the meeting", or "the recording", and do not open with phrases like "The transcript discusses" or "In this meeting".
@@ -1460,8 +1469,9 @@ TRANSCRIPT:
         diarisation_note = ""
         if "[You]" in transcript and "[Others]" in transcript:
             diarisation_note = "NOTE: [You] is the recorder, [Others] are remote participants.\n\n"
+        ref = self._keyword_reference_block()
         return (
-            f"{diarisation_note}{notes_context}{template_prompt.strip()}\n\n"
+            f"{ref}{diarisation_note}{notes_context}{template_prompt.strip()}\n\n"
             "Base the report only on what was explicitly discussed; do not infer. "
             "Output the report as markdown with no preamble."
             f"{language_instruction}\n\nTRANSCRIPT:\n{transcript}"
@@ -1729,7 +1739,9 @@ TRANSCRIPT:
             else:
                 lang_instruction = ""
 
-            prompt = f"""Generate a short, descriptive title for this meeting based on the summary below.
+            ref = self._keyword_reference_block()
+
+            prompt = f"""{ref}Generate a short, descriptive title for this meeting based on the summary below.
 
 RULES:
 1. Maximum 6 words
@@ -1828,7 +1840,8 @@ TITLE:"""
             query_lang_instruction = f"\nRespond in {language_name}." if language_name != "Unknown" else ""
         else:
             query_lang_instruction = ""
-        return f"""Answer the following question based on the meeting content below (summary, participants, key topics, key points, action items, and transcript).
+        ref = self._keyword_reference_block()
+        return f"""{ref}Answer the following question based on the meeting content below (summary, participants, key topics, key points, action items, and transcript).
 Be concise and direct. If the answer requires inference from what was discussed, that's fine.
 Only say you don't know if the topic truly wasn't discussed at all.{query_lang_instruction}
 

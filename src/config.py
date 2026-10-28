@@ -1979,6 +1979,17 @@ class Config:
         """Get all supported models with their metadata."""
         return self.SUPPORTED_MODELS.copy()
 
+    def get_custom_keywords(self) -> list:
+        """Normalized custom-keyword entries: [{'preferred', 'aliases'}]."""
+        from src import keywords
+        return keywords.normalize_keywords(self._config.get("custom_keywords", []) or [])
+
+    def set_custom_keywords(self, entries: list) -> bool:
+        """Validate + persist the whole list (replace, not merge)."""
+        from src import keywords
+        self._config["custom_keywords"] = keywords.normalize_keywords(entries or [])
+        return self._save()
+
     def get_notifications_enabled(self) -> bool:
         """Get whether desktop notifications are enabled."""
         return self._config.get("notifications_enabled", True)

@@ -627,6 +627,23 @@ Summary output language: {config.get_language_name(output_language)}
         transcript_text = _apply_chinese_variant(transcript_text)
         diarised_text = _apply_chinese_variant(diarised_text)
 
+        # Custom Keywords: correct known mis-transcriptions before persisting +
+        # summarizing. No-op when no keywords are configured.
+        #
+        # NEVER heal the silence sentinel: the downstream silence / live-rescue
+        # decision compares the transcript against the exact sentinel string, so
+        # an alias like "speech -> Speechly" would mutate "No speech detected in
+        # audio", defeat that check, and get a fake-empty transcript summarised
+        # and saved (audio possibly deleted). Skip healing when the text IS the
+        # sentinel; heal only genuine content.
+        from src import keywords as _kw
+        _kw_entries = config.get_custom_keywords()
+        if _kw_entries:
+            if transcript_text and transcript_text.strip() != _SILENCE_SENTINEL:
+                transcript_text = _kw.apply_to_transcript(transcript_text, _kw_entries)
+            if diarised_text and diarised_text.strip() != _SILENCE_SENTINEL:
+                diarised_text = _kw.apply_to_transcript(diarised_text, _kw_entries)
+
         output_language = self._resolve_output_language(
             configured_language, detected_language, transcript_text=diarised_text or transcript_text
         )
@@ -1382,6 +1399,18 @@ def process_streaming(audio_file, name, notes, live_transcript, append_to):
                 len(live_transcript_text),
             )
             is_live_transcript = True
+            # Custom Keywords: heal the live fallback text too. The batch path's
+            # healing (in transcribe_audio) never touched this text, so without
+            # this the transcription-time correction guarantee is violated and
+            # language resolution + the saved .txt below would run on uncorrected
+            # text. Guard the sentinel defensively (live text is genuine content).
+            from src.config import get_config as _kw_get_config
+            from src import keywords as _kw
+            _kw_entries = _kw_get_config().get_custom_keywords()
+            if _kw_entries and live_transcript_text.strip() != _SILENCE_SENTINEL:
+                live_transcript_text = _kw.apply_to_transcript(
+                    live_transcript_text, _kw_entries
+                )
             # Always (re)write _transcript.txt with the live text via the shared
             # formatter so the on-disk file matches the markdown/summary the user
             # sees and uses the canonical filename/header (#207, review-2
@@ -2082,6 +2111,28 @@ def set_keep_recordings_cmd(enabled: bool):
         print(json.dumps({"success": True, "keep_recordings": enabled}))
     else:
         print(json.dumps({"success": False, "error": "Failed to persist setting"}))
+
+
+@cli.command(name='get-custom-keywords')
+def get_custom_keywords_cmd():
+    """Print the custom keywords as textarea-formatted text."""
+    from src.config import get_config
+    from src import keywords
+    text = keywords.format_keywords_text(get_config().get_custom_keywords())
+    print(json.dumps({"success": True, "text": text}))
+
+
+@cli.command(name='set-custom-keywords')
+@click.argument('text')
+def set_custom_keywords_cmd(text):
+    """Parse + persist custom keywords from raw textarea text."""
+    from src.config import get_config
+    from src import keywords
+    entries = keywords.parse_keywords_text(text)
+    ok = get_config().set_custom_keywords(entries)
+    # Exit 0 regardless: the JSON on stdout IS the result (mirrors save-template).
+    print(json.dumps({"success": ok} if ok
+                     else {"success": False, "error": "Failed to save config"}))
 
 
 @cli.command(name='get-auto-install-when-idle')
@@ -3602,6 +3653,19 @@ def reprocess(summary_file, regenerate_title, retranscribe):
         if not transcript:
             print("ERROR: No transcript found in summary file")
             sys.exit(1)
+
+        # Custom Keywords retroactive heal (A2): correct the stored transcript
+        # before re-summarizing. No re-ASR; pure text. No-op when unconfigured.
+        from src.config import get_config as _get_config
+        from src import keywords as _kw
+        _kw_entries = _get_config().get_custom_keywords()
+        if _kw_entries:
+            transcript = _kw.apply_to_transcript(transcript, _kw_entries)
+            existing_data['transcript'] = transcript
+            if existing_data.get('diarised_text'):
+                existing_data['diarised_text'] = _kw.apply_to_transcript(
+                    existing_data['diarised_text'], _kw_entries
+                )
 
         session_name = existing_data.get('session_info', {}).get('name', 'Reprocessed')
         duration_minutes = existing_data.get('session_info', {}).get('duration_minutes', 10)
