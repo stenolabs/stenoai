@@ -20,11 +20,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { isMac, shortcut } from '@/lib/utils';
+import { cn, isMac, shortcut } from '@/lib/utils';
 import { useTheme } from '@/hooks/useTheme';
 import {
   useAutoDetectMeetingsSetting,
   useAutoInstallWhenIdleSetting,
+  useAutoOpenMeetingsSetting,
   useDockIconSetting,
   useLaunchOnLoginSetting,
   useMicrophoneSetting,
@@ -33,6 +34,7 @@ import {
   useRecordHotkeySetting,
   useSetAutoDetectMeetings,
   useSetAutoInstallWhenIdle,
+  useSetAutoOpenMeetings,
   useSetDockIcon,
   useSetLaunchOnLogin,
   useSetMicrophone,
@@ -55,10 +57,14 @@ import {
   useGoogleCalendarAuth,
   useOutlookCalendarAuth,
 } from '@/hooks/useCalendarEvents';
-import { COMPACT_BTN, COMPACT_TRIGGER, SectionHeading, SettingRow } from './primitives';
+import { COMPACT_BTN, COMPACT_INPUT, COMPACT_TRIGGER, SectionHeading, SettingRow } from './primitives';
 import { t } from '@/i18n';
+import type { AutoOpenMode, AutoOpenProvider } from '@/lib/ipc';
 
 const DEFAULT_MIC_VALUE = 'default';
+const LEAD_PRESETS = [0, 1, 2, 5];
+const MAX_LEAD_MINUTES = 30;
+const OPEN_PROVIDERS: AutoOpenProvider[] = ['meet', 'zoom', 'teams'];
 
 export function GeneralTab() {
   const { theme, setTheme } = useTheme();
@@ -104,6 +110,14 @@ export function GeneralTab() {
   const silenceAutoStop = useSilenceAutoStopSetting();
   const setSilenceAutoStopEnabled = useSetSilenceAutoStopEnabled();
   const setSilenceAutoStopMinutes = useSetSilenceAutoStopMinutes();
+  const autoOpen = useAutoOpenMeetingsSetting();
+  const setAutoOpen = useSetAutoOpenMeetings();
+  const [customLead, setCustomLead] = React.useState(false);
+  const [leadDraft, setLeadDraft] = React.useState(String(autoOpen.data?.leadMinutes ?? 1));
+  const leadEditingRef = React.useRef(false);
+  const skipLeadCommitRef = React.useRef(false);
+  const leadInputRef = React.useRef<HTMLInputElement>(null);
+  const focusLeadOnCloseRef = React.useRef(false);
   const dockIcon = useDockIconSetting();
   const setDockIcon = useSetDockIcon();
   const menuBarIcon = useShowMenuBarIconSetting();
@@ -150,6 +164,39 @@ export function GeneralTab() {
 
   const calendarConnected =
     google.status.data?.connected || outlook.status.data?.connected;
+  const openMode = autoOpen.data?.mode ?? 'off';
+  const leadMinutes = autoOpen.data?.leadMinutes ?? 1;
+  const leadIsCustom = customLead || !LEAD_PRESETS.includes(leadMinutes);
+  React.useEffect(() => {
+    if (!leadEditingRef.current) setLeadDraft(String(leadMinutes));
+  }, [leadMinutes]);
+  const commitLead = () => {
+    leadEditingRef.current = false;
+    if (skipLeadCommitRef.current) {
+      skipLeadCommitRef.current = false;
+      return;
+    }
+    const raw = leadDraft.trim();
+    const n = Math.round(Number(raw));
+    if (raw === '' || !Number.isFinite(n)) {
+      setLeadDraft(String(leadMinutes));
+      return;
+    }
+    const clamped = Math.min(MAX_LEAD_MINUTES, Math.max(0, n));
+    setLeadDraft(String(clamped));
+    if (clamped !== leadMinutes) setAutoOpen.mutate({ lead_minutes: clamped });
+  };
+  const selectedProviders = autoOpen.data?.providers ?? [];
+  const toggleProvider = (id: AutoOpenProvider, on: boolean) => {
+    setAutoOpen.mutate({
+      providers: on ? [...selectedProviders, id] : selectedProviders.filter((p) => p !== id),
+    });
+  };
+  const providerLabels: Record<AutoOpenProvider, string> = {
+    meet: t('settings.general.openMeetings.meet'),
+    zoom: t('settings.general.openMeetings.zoom'),
+    teams: t('settings.general.openMeetings.teams'),
+  };
   const calendarProvider = google.status.data?.connected
     ? t('settings.general.provider.google')
     : outlook.status.data?.connected
@@ -304,7 +351,7 @@ export function GeneralTab() {
             ? t('settings.general.calendar.connectedTo', { account: calendarEmail || calendarProvider })
             : t('settings.general.calendar.description')
         }
-        noBorder
+        noBorder={!calendarConnected}
       >
         {calendarConnected ? (
           <Button
@@ -346,6 +393,177 @@ export function GeneralTab() {
           </div>
         )}
       </SettingRow>
+
+      {calendarConnected && (
+        <>
+          <SettingRow
+            label={t('settings.general.openMeetings')}
+            description={openMode === 'auto'
+              ? `${t('settings.general.openMeetings.description')} ${t('settings.general.openMeetings.guardHint')}`
+              : t('settings.general.openMeetings.description')}
+            descriptionId="open-meetings-description"
+            noBorder={openMode === 'off'}
+          >
+            <Select
+              value={openMode}
+              onValueChange={(v) => setAutoOpen.mutate({ mode: v as AutoOpenMode })}
+              disabled={autoOpen.data === undefined}
+            >
+              <SelectTrigger
+                className="h-8 w-40 text-sm"
+                aria-label={t('settings.general.openMeetings')}
+                aria-describedby="open-meetings-description"
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="off">{t('settings.general.openMeetings.off')}</SelectItem>
+                <SelectItem value="ask">{t('settings.general.openMeetings.ask')}</SelectItem>
+                <SelectItem value="auto">{t('settings.general.openMeetings.auto')}</SelectItem>
+              </SelectContent>
+            </Select>
+          </SettingRow>
+
+          {openMode !== 'off' && (
+            <div className="border-l pl-4" style={{ borderColor: 'var(--border-subtle)' }}>
+              <SettingRow
+                label={t('settings.general.openMeetings.when')}
+                description={t('settings.general.openMeetings.whenDescription')}
+                descriptionId="open-meetings-when-description"
+              >
+                <div className="flex items-center gap-2">
+                  <Select
+                    value={leadIsCustom ? 'custom' : String(leadMinutes)}
+                    onValueChange={(v) => {
+                      if (v === 'custom') {
+                        setLeadDraft(String(leadMinutes));
+                        setCustomLead(true);
+                        focusLeadOnCloseRef.current = true;
+                        return;
+                      }
+                      setCustomLead(false);
+                      setAutoOpen.mutate({ lead_minutes: Number(v) });
+                    }}
+                    disabled={autoOpen.data === undefined}
+                  >
+                    <SelectTrigger
+                      className="h-8 w-40 text-sm"
+                      aria-label={t('settings.general.openMeetings.when')}
+                      aria-describedby="open-meetings-when-description"
+                    >
+                      <SelectValue />
+                    </SelectTrigger>
+                    {/* Radix returns focus to the trigger on close; send it to the new input instead. */}
+                    <SelectContent
+                      onCloseAutoFocus={(e) => {
+                        if (!focusLeadOnCloseRef.current) return;
+                        focusLeadOnCloseRef.current = false;
+                        e.preventDefault();
+                        leadInputRef.current?.focus();
+                      }}
+                    >
+                      {LEAD_PRESETS.map((m) => (
+                        <SelectItem key={m} value={String(m)}>
+                          {m === 0
+                            ? t('settings.general.openMeetings.atStart')
+                            : m === 1
+                              ? t('settings.general.openMeetings.oneMinuteBefore')
+                              : t('settings.general.openMeetings.minutesBefore', { minutes: m })}
+                        </SelectItem>
+                      ))}
+                      <SelectItem value="custom">{t('settings.general.openMeetings.custom')}</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  {leadIsCustom && (
+                    <Input
+                      type="number"
+                      size="sm"
+                      min={0}
+                      max={MAX_LEAD_MINUTES}
+                      ref={leadInputRef}
+                      className={cn(COMPACT_INPUT, 'w-16')}
+                      aria-label={t('settings.general.openMeetings.customAria')}
+                      value={leadDraft}
+                      onFocus={() => {
+                        leadEditingRef.current = true;
+                      }}
+                      onChange={(e) => setLeadDraft(e.target.value)}
+                      onBlur={commitLead}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') e.currentTarget.blur();
+                        if (e.key === 'Escape') {
+                          skipLeadCommitRef.current = true;
+                          setLeadDraft(String(leadMinutes));
+                          e.currentTarget.blur();
+                        }
+                      }}
+                    />
+                  )}
+                  {leadIsCustom && (
+                    <span className="text-[13px]" style={{ color: 'var(--fg-2)' }}>
+                      {t('settings.general.openMeetings.minutesUnit')}
+                    </span>
+                  )}
+                </div>
+              </SettingRow>
+
+              <SettingRow
+                label={t('settings.general.openMeetings.onlyFor')}
+                description={t('settings.general.openMeetings.onlyForHint')}
+                descriptionId="open-meetings-only-for-description"
+                align="start"
+              >
+                <div
+                  role="group"
+                  aria-label={t('settings.general.openMeetings.onlyForAria')}
+                  aria-describedby="open-meetings-only-for-description"
+                  className="flex flex-col gap-2"
+                >
+                  <label className="flex items-center justify-between gap-4 text-[13px]">
+                    {t('settings.general.openMeetings.anyLink')}
+                    <Switch
+                      checked={selectedProviders.length === 0}
+                      onCheckedChange={(v) => {
+                        setAutoOpen.mutate({ providers: v ? [] : [...OPEN_PROVIDERS] });
+                      }}
+                      disabled={autoOpen.data === undefined}
+                    />
+                  </label>
+                  {OPEN_PROVIDERS.map((id) => {
+                    const isLast = selectedProviders.length === 1 && selectedProviders[0] === id;
+                    return (
+                      <label key={id} className="flex items-center justify-between gap-4 text-[13px]">
+                        {providerLabels[id]}
+                        <Switch
+                          checked={selectedProviders.includes(id)}
+                          onCheckedChange={(v) => toggleProvider(id, v)}
+                          disabled={autoOpen.data === undefined || isLast}
+                          title={isLast ? t('settings.general.openMeetings.keepOne') : undefined}
+                        />
+                      </label>
+                    );
+                  })}
+                </div>
+              </SettingRow>
+
+              <SettingRow
+                label={t('settings.general.openMeetings.accepted')}
+                description={t('settings.general.openMeetings.acceptedDescription')}
+                descriptionId="open-meetings-accepted-description"
+                noBorder
+              >
+                <Switch
+                  aria-label={t('settings.general.openMeetings.accepted')}
+                  aria-describedby="open-meetings-accepted-description"
+                  checked={autoOpen.data?.acceptedOnly ?? true}
+                  onCheckedChange={(v) => setAutoOpen.mutate({ accepted_only: v })}
+                  disabled={autoOpen.data === undefined}
+                />
+              </SettingRow>
+            </div>
+          )}
+        </>
+      )}
 
       <OAuthPrompt
         state={oauth}

@@ -794,6 +794,151 @@ class ConfigAutoDetectMeetingsTests(unittest.TestCase):
             self.assertTrue(reloaded.get_auto_detect_meetings_enabled())
 
 
+class ConfigAutoOpenMeetingsTests(unittest.TestCase):
+    DEFAULTS = {
+        "auto_open_meetings": "off",
+        "auto_open_lead_minutes": 1,
+        "auto_open_providers": [],
+        "auto_open_accepted_only": True,
+    }
+
+    def test_defaults_on_fresh_config(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            config = Config(config_path=Path(tmp_dir) / "config.json")
+            self.assertEqual(config.get_auto_open_meetings(), self.DEFAULTS)
+
+    def test_round_trip_survives_reload(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            path = Path(tmp_dir) / "config.json"
+            config = Config(config_path=path)
+            self.assertTrue(config.set_auto_open_meetings(
+                mode="auto", lead_minutes=0,
+                providers=["zoom", "meet", "zoom"], accepted_only=False,
+            ))
+            self.assertEqual(Config(config_path=path).get_auto_open_meetings(), {
+                "auto_open_meetings": "auto",
+                "auto_open_lead_minutes": 0,
+                "auto_open_providers": ["zoom", "meet"],
+                "auto_open_accepted_only": False,
+            })
+
+    def test_partial_update_leaves_other_keys(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            path = Path(tmp_dir) / "config.json"
+            config = Config(config_path=path)
+            self.assertTrue(config.set_auto_open_meetings(mode="ask"))
+            got = Config(config_path=path).get_auto_open_meetings()
+            self.assertEqual(got, {**self.DEFAULTS, "auto_open_meetings": "ask"})
+
+    def test_invalid_fields_raise_and_write_nothing(self):
+        bad = [
+            {"mode": "always"},
+            {"lead_minutes": -1},
+            {"lead_minutes": 31},
+            {"lead_minutes": True},
+            {"lead_minutes": 1.5},
+            {"providers": ["meet", "slack"]},
+            {"accepted_only": "yes"},
+            {"mode": "auto", "lead_minutes": 99},
+        ]
+        for kwargs in bad:
+            with self.subTest(kwargs=kwargs), tempfile.TemporaryDirectory() as tmp_dir:
+                path = Path(tmp_dir) / "config.json"
+                config = Config(config_path=path)
+                self.assertTrue(config.set_auto_open_meetings(mode="ask", lead_minutes=5))
+                before = path.read_text()
+                with self.assertRaises(ValueError):
+                    config.set_auto_open_meetings(**kwargs)
+                self.assertEqual(path.read_text(), before)
+                self.assertEqual(
+                    Config(config_path=path).get_auto_open_meetings()["auto_open_meetings"], "ask"
+                )
+
+    def test_bad_stored_values_fall_back_per_key(self):
+        cases = {
+            "auto_open_meetings": ["nope", 3, None],
+            "auto_open_lead_minutes": [-1, 31, True, 2.5, "3"],
+            "auto_open_providers": ["meet", "teams", 5, {"a": 1}],
+            "auto_open_accepted_only": ["true", 1, None],
+        }
+        for key, values in cases.items():
+            for value in values:
+                with self.subTest(key=key, value=value), tempfile.TemporaryDirectory() as tmp_dir:
+                    path = Path(tmp_dir) / "config.json"
+                    path.write_text(json.dumps({
+                        "auto_open_meetings": "auto",
+                        "auto_open_lead_minutes": 7,
+                        "auto_open_providers": ["teams"],
+                        "auto_open_accepted_only": False,
+                        key: value,
+                    }))
+                    got = Config(config_path=path).get_auto_open_meetings()
+                    self.assertEqual(got[key], self.DEFAULTS[key])
+                    for other in set(cases) - {key}:
+                        self.assertNotEqual(got[other], self.DEFAULTS[other])
+
+    def test_bad_provider_entries_are_dropped_not_widened(self):
+        cases = [
+            (["meet", "bogus"], ["meet"]),
+            (["zoom", "meet", "zoom"], ["zoom", "meet"]),
+            (["slack", 1, ["meet"]], []),
+        ]
+        for stored, expected in cases:
+            with self.subTest(stored=stored), tempfile.TemporaryDirectory() as tmp_dir:
+                path = Path(tmp_dir) / "config.json"
+                path.write_text(json.dumps({"auto_open_providers": stored}))
+                self.assertEqual(
+                    Config(config_path=path).get_auto_open_meetings()["auto_open_providers"], expected
+                )
+
+    def test_cli_get_and_set(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            path = Path(tmp_dir) / "config.json"
+            config = Config(config_path=path)
+            with patch("src.config.get_config", return_value=config):
+                runner = CliRunner()
+                got = runner.invoke(simple_recorder.get_auto_open_meetings_cmd, [])
+                self.assertEqual(got.exit_code, 0, got.output)
+                self.assertEqual(json.loads(got.output), self.DEFAULTS)
+
+                res = runner.invoke(simple_recorder.set_auto_open_meetings_cmd, [
+                    "--mode", "auto", "--lead-minutes", "3",
+                    "--providers", "meet,zoom", "--accepted-only", "false",
+                ])
+                self.assertEqual(res.exit_code, 0, res.output)
+                self.assertEqual(json.loads(res.output), {
+                    "success": True,
+                    "auto_open_meetings": "auto",
+                    "auto_open_lead_minutes": 3,
+                    "auto_open_providers": ["meet", "zoom"],
+                    "auto_open_accepted_only": False,
+                })
+
+                res = runner.invoke(
+                    simple_recorder.set_auto_open_meetings_cmd, ["--providers", ""]
+                )
+                self.assertEqual(res.exit_code, 0, res.output)
+                out = json.loads(res.output)
+                self.assertEqual(out["auto_open_providers"], [])
+                self.assertEqual(out["auto_open_meetings"], "auto")
+
+    def test_cli_rejects_invalid_with_exit_1(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            path = Path(tmp_dir) / "config.json"
+            config = Config(config_path=path)
+            before = path.read_text()
+            with patch("src.config.get_config", return_value=config):
+                for args in (["--mode", "bogus"], ["--accepted-only", "maybe"],
+                             ["--lead-minutes", "99"], ["--providers", "slack"]):
+                    with self.subTest(args=args):
+                        res = CliRunner().invoke(simple_recorder.set_auto_open_meetings_cmd, args)
+                        self.assertEqual(res.exit_code, 1, res.output)
+                        out = json.loads(res.output)
+                        self.assertFalse(out["success"])
+                        self.assertTrue(out["error"])
+            self.assertEqual(path.read_text(), before)
+
+
 class ConfigLaunchOnLoginTests(unittest.TestCase):
     def test_default_launch_on_login_is_true(self):
         with tempfile.TemporaryDirectory() as tmp_dir:

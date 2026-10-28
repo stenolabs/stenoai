@@ -1,8 +1,9 @@
 import * as React from 'react';
 import { ipc } from '@/lib/ipc';
 import { useTheme } from '@/hooks/useTheme';
+import { t } from '@/i18n';
 import { AppIcon } from '@/components/ui/app-icon';
-import { AlertCircle, CheckCircle2, Mic, Info } from 'lucide-react';
+import { AlertCircle, CheckCircle2, ExternalLink, Mic, Info } from 'lucide-react';
 
 export type NotificationIconType = 'app' | 'alert' | 'success' | 'recording';
 
@@ -24,6 +25,9 @@ interface NotificationData {
    *  analytics; every other notification is a "generic" toast routed through the
    *  action/body-click bridge and tracked entirely main-side. */
   premeeting?: boolean;
+  /** 'ask' = auto-open prompt: the button opens the link only, never starts a recording. */
+  autoOpen?: 'ask';
+  event_id?: string;
   iconType?: NotificationIconType;
   color?: string;
   actions?: NotificationAction[];
@@ -68,6 +72,7 @@ export function NotificationToast() {
   if (!data) return null;
 
   const isPremeeting = !!data.premeeting;
+  const premeetingType = data.autoOpen === 'ask' ? 'meeting_open_ask' : 'premeeting';
   const hasValidUrl = !!(data.meeting_url && /^https?:\/\//i.test(data.meeting_url));
   const hasActions = !!(data.actions && data.actions.length > 0);
 
@@ -77,7 +82,7 @@ export function NotificationToast() {
     // it). Generic notifications are tracked entirely main-side via
     // trackNotificationLifecycle, so the renderer must NOT double-track them.
     if (isPremeeting) {
-      ipc().analytics.track('notification_dismissed', { type: 'premeeting' });
+      ipc().analytics.track('notification_dismissed', { type: premeetingType });
     }
     ipc().notification.close();
   };
@@ -86,9 +91,16 @@ export function NotificationToast() {
     e?.stopPropagation();
     ipc().analytics.track('notification_clicked', { type: 'premeeting' });
     if (hasValidUrl) {
-      ipc().shell.openExternal(data.meeting_url!);
+      ipc().shell.openExternal(data.meeting_url!, data.event_id);
     }
     ipc().recording.start(data.title, 'notification_click');
+    ipc().notification.close();
+  };
+
+  const handleOpen = (e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    ipc().analytics.track('notification_clicked', { type: 'meeting_open_ask' });
+    void ipc().shell.openExternal(data.meeting_url!, data.event_id);
     ipc().notification.close();
   };
 
@@ -102,7 +114,7 @@ export function NotificationToast() {
 
   const handleBody = () => {
     if (isPremeeting) {
-      ipc().analytics.track('notification_clicked', { type: 'premeeting' });
+      ipc().analytics.track('notification_clicked', { type: premeetingType });
       ipc().window.focus();
     } else {
       ipc().notification.bodyClicked(data.id);
@@ -180,11 +192,17 @@ export function NotificationToast() {
           ) : isPremeeting ? (
             hasValidUrl ? (
               <button
-                onClick={handleJoin}
+                onClick={data.autoOpen === 'ask' ? handleOpen : handleJoin}
                 className="flex items-center gap-2 rounded-[10px] border border-gray-200 bg-white px-3 py-1.5 text-[13px] font-medium text-gray-900 transition-all hover:bg-gray-50 hover:shadow-sm active:bg-gray-100 active:scale-[0.98] shrink-0 dark:border-white/10 dark:bg-[#2C2C2E] dark:text-gray-100 dark:hover:bg-[#3C3C3E] dark:active:bg-[#1C1C1E]"
               >
-                <ProfessionalCameraIcon className="h-5 w-5" backgroundColor={barColor ?? '#1B1B19'} />
-                <span>Join &amp; take notes</span>
+                {data.autoOpen === 'ask' ? (
+                  <ExternalLink className="h-4 w-4" aria-hidden="true" />
+                ) : (
+                  <ProfessionalCameraIcon className="h-5 w-5" backgroundColor={barColor ?? '#1B1B19'} />
+                )}
+                <span>
+                  {data.autoOpen === 'ask' ? t('notificationToast.open') : 'Join & take notes'}
+                </span>
               </button>
             ) : null
           ) : (

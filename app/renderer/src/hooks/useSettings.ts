@@ -1,5 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ipc, type TelemetryToggleSource } from '@/lib/ipc';
+import {
+  ipc,
+  type AutoOpenMeetingsPatch,
+  type AutoOpenMode,
+  type AutoOpenProvider,
+  type TelemetryToggleSource,
+} from '@/lib/ipc';
 import { unwrap } from '@/lib/result';
 
 export const settingsKeys = {
@@ -15,6 +21,7 @@ export const settingsKeys = {
   autoDetectMeetings: () => [...settingsKeys.all, 'autoDetectMeetings'] as const,
   premeetingNotifications: () => [...settingsKeys.all, 'premeetingNotifications'] as const,
   launchOnLogin: () => [...settingsKeys.all, 'launchOnLogin'] as const,
+  autoOpenMeetings: () => [...settingsKeys.all, 'autoOpenMeetings'] as const,
   silenceAutoStop: () => [...settingsKeys.all, 'silenceAutoStop'] as const,
   language: () => [...settingsKeys.all, 'language'] as const,
   microphone: () => [...settingsKeys.all, 'microphone'] as const,
@@ -539,4 +546,59 @@ export function useSetSilenceAutoStopMinutes() {
   return useSilenceAutoStopField<number>('minutes', async (v) =>
     unwrap(await ipc().settings.setSilenceAutoStopMinutes(v)),
   );
+}
+
+type AutoOpenMeetings = {
+  mode: AutoOpenMode;
+  leadMinutes: number;
+  providers: AutoOpenProvider[];
+  acceptedOnly: boolean;
+};
+
+export function useAutoOpenMeetingsSetting() {
+  return useQuery({
+    queryKey: settingsKeys.autoOpenMeetings(),
+    queryFn: async (): Promise<AutoOpenMeetings> => {
+      const res = unwrap(await ipc().settings.getAutoOpenMeetings());
+      return {
+        mode: res.auto_open_meetings,
+        leadMinutes: res.auto_open_lead_minutes,
+        providers: res.auto_open_providers,
+        acceptedOnly: res.auto_open_accepted_only,
+      };
+    },
+  });
+}
+
+export function useSetAutoOpenMeetings() {
+  const qc = useQueryClient();
+  const key = settingsKeys.autoOpenMeetings();
+  return useMutation({
+    mutationFn: async (patch: AutoOpenMeetingsPatch) =>
+      unwrap(await ipc().settings.setAutoOpenMeetings(patch)),
+    onMutate: async (patch: AutoOpenMeetingsPatch) => {
+      await qc.cancelQueries({ queryKey: key });
+      const previous = qc.getQueryData<AutoOpenMeetings>(key);
+      if (previous) {
+        qc.setQueryData<AutoOpenMeetings>(key, {
+          mode: patch.mode ?? previous.mode,
+          leadMinutes: patch.lead_minutes ?? previous.leadMinutes,
+          providers: patch.providers ?? previous.providers,
+          acceptedOnly: patch.accepted_only ?? previous.acceptedOnly,
+        });
+      }
+      return { previous };
+    },
+    onError: (_err, _patch, ctx) => {
+      if (ctx?.previous) qc.setQueryData<AutoOpenMeetings>(key, ctx.previous);
+    },
+    onSuccess: (res) => {
+      qc.setQueryData<AutoOpenMeetings>(key, {
+        mode: res.auto_open_meetings,
+        leadMinutes: res.auto_open_lead_minutes,
+        providers: res.auto_open_providers,
+        acceptedOnly: res.auto_open_accepted_only,
+      });
+    },
+  });
 }

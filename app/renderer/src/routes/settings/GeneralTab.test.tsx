@@ -53,6 +53,15 @@ const h = vi.hoisted(() => {
     microphone: { data: { device_id: null as string | null, label: null as string | null } },
     setMicrophone: { mutate: vi.fn() },
     audioInputDevices: [] as { deviceId: string; label: string }[],
+    autoOpen: {
+      data: {
+        mode: 'off' as 'off' | 'ask' | 'auto',
+        leadMinutes: 1,
+        providers: [] as string[],
+        acceptedOnly: true,
+      },
+    },
+    setAutoOpen: { mutate: vi.fn() },
     systemAudio: { data: true as boolean | undefined },
     setSystemAudio: { mutate: vi.fn() },
     systemAudioSupport: {
@@ -112,6 +121,8 @@ vi.mock('@/hooks/useSettings', () => {
       q({ enabled: true, minutes: 15, supportedMinutes: [2, 5, 10, 15, 30] }),
     useSetSilenceAutoStopEnabled: m,
     useSetSilenceAutoStopMinutes: m,
+    useAutoOpenMeetingsSetting: () => h.autoOpen,
+    useSetAutoOpenMeetings: () => h.setAutoOpen,
     useDockIconSetting: () => q(false),
     useSetDockIcon: m,
     useShowMenuBarIconSetting: () => q(true),
@@ -150,6 +161,8 @@ beforeEach(() => {
   h.setMicrophone.mutate.mockReset();
   h.audioInputDevices = [];
   h.systemAudio.data = true;
+  h.autoOpen.data = { mode: 'off', leadMinutes: 1, providers: [], acceptedOnly: true };
+  h.setAutoOpen.mutate.mockReset();
   h.setSystemAudio.mutate.mockReset();
   h.systemAudioSupport.data = {
     supported: true,
@@ -465,5 +478,121 @@ describe('GeneralTab Record system audio', () => {
     };
     render(<GeneralTab />);
     expect(screen.queryByText(/Requires macOS 14 \(Sonoma\) or later/)).toBeNull();
+  });
+});
+
+describe('GeneralTab open-meetings row', () => {
+  test('is hidden when no calendar is connected', () => {
+    h.autoOpen.data.mode = 'auto';
+    render(<GeneralTab />);
+    expect(screen.queryByText('Open meetings')).toBeNull();
+  });
+
+  test('sub-rows appear only when the mode is not off', () => {
+    h.google.status.data = { connected: true };
+    const { unmount } = render(<GeneralTab />);
+    expect(screen.getByText('Open meetings')).toBeTruthy();
+    expect(screen.queryByRole('group', { name: 'Meeting services to open' })).toBeNull();
+    unmount();
+
+    h.autoOpen.data.mode = 'ask';
+    render(<GeneralTab />);
+    expect(screen.getByRole('group', { name: 'Meeting services to open' })).toBeTruthy();
+    expect(screen.getByText("Only meetings I've accepted")).toBeTruthy();
+  });
+
+  test('toggling a service patches the provider list', () => {
+    h.google.status.data = { connected: true };
+    h.autoOpen.data.mode = 'auto';
+    render(<GeneralTab />);
+    fireEvent.click(screen.getByRole('switch', { name: 'Zoom' }));
+    expect(h.setAutoOpen.mutate).toHaveBeenCalledWith({ providers: ['zoom'] });
+  });
+
+  test('Automatically explains the Ask fallback when live mic detection is unavailable', () => {
+    h.google.status.data = { connected: true };
+    h.autoOpen.data.mode = 'auto';
+    render(<GeneralTab />);
+    expect(screen.getByText(/Automatically opens only while Auto-detected meetings is enabled and live meeting detection is running/)).toBeTruthy();
+    expect(screen.getByText(/Declined invitations never open/)).toBeTruthy();
+  });
+
+  test('turning off a provider removes it; Any link clears the list', () => {
+    h.google.status.data = { connected: true };
+    h.autoOpen.data.mode = 'auto';
+    h.autoOpen.data.providers = ['meet', 'zoom'];
+    render(<GeneralTab />);
+    expect(screen.getByRole('switch', { name: 'Any link' }).getAttribute('aria-checked')).toBe('false');
+    fireEvent.click(screen.getByRole('switch', { name: 'Zoom' }));
+    expect(h.setAutoOpen.mutate).toHaveBeenLastCalledWith({ providers: ['meet'] });
+    fireEvent.click(screen.getByRole('switch', { name: 'Any link' }));
+    expect(h.setAutoOpen.mutate).toHaveBeenLastCalledWith({ providers: [] });
+  });
+
+  test('Any link is on when no provider is selected', () => {
+    h.google.status.data = { connected: true };
+    h.autoOpen.data.mode = 'auto';
+    render(<GeneralTab />);
+    expect(screen.getByRole('switch', { name: 'Any link' }).getAttribute('aria-checked')).toBe('true');
+  });
+
+  test('turning Any link off selects all three services', () => {
+    h.google.status.data = { connected: true };
+    h.autoOpen.data.mode = 'auto';
+    render(<GeneralTab />);
+    fireEvent.click(screen.getByRole('switch', { name: 'Any link' }));
+    expect(h.setAutoOpen.mutate).toHaveBeenCalledWith({ providers: ['meet', 'zoom', 'teams'] });
+  });
+
+  test('the last selected service cannot be switched off', () => {
+    h.google.status.data = { connected: true };
+    h.autoOpen.data.mode = 'auto';
+    h.autoOpen.data.providers = ['zoom'];
+    render(<GeneralTab />);
+    const zoom = screen.getByRole('switch', { name: 'Zoom' }) as HTMLButtonElement;
+    expect(zoom.disabled).toBe(true);
+    expect(zoom.getAttribute('title')).toBeTruthy();
+    fireEvent.click(zoom);
+    expect(h.setAutoOpen.mutate).not.toHaveBeenCalled();
+    expect((screen.getByRole('switch', { name: 'Google Meet' }) as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  test('accepted-only switch patches accepted_only', () => {
+    h.google.status.data = { connected: true };
+    h.autoOpen.data.mode = 'auto';
+    render(<GeneralTab />);
+    fireEvent.click(screen.getByRole('switch', { name: "Only meetings I've accepted" }));
+    expect(h.setAutoOpen.mutate).toHaveBeenCalledWith({ accepted_only: false });
+  });
+
+  test('Escape in the custom lead field reverts without saving', () => {
+    h.google.status.data = { connected: true };
+    h.autoOpen.data.mode = 'auto';
+    h.autoOpen.data.leadMinutes = 10;
+    render(<GeneralTab />);
+    const input = screen.getByLabelText('Minutes before the meeting starts') as HTMLInputElement;
+    fireEvent.focus(input);
+    fireEvent.change(input, { target: { value: '20' } });
+    fireEvent.keyDown(input, { key: 'Escape' });
+    fireEvent.blur(input);
+    expect(input.value).toBe('10');
+    expect(h.setAutoOpen.mutate).not.toHaveBeenCalled();
+  });
+
+  test('custom lead field shows the saved value and reverts on empty blur', () => {
+    h.google.status.data = { connected: true };
+    h.autoOpen.data.mode = 'auto';
+    h.autoOpen.data.leadMinutes = 10;
+    render(<GeneralTab />);
+    const input = screen.getByLabelText('Minutes before the meeting starts') as HTMLInputElement;
+    expect(input.value).toBe('10');
+    fireEvent.focus(input);
+    fireEvent.change(input, { target: { value: '' } });
+    fireEvent.blur(input);
+    expect(input.value).toBe('10');
+    expect(h.setAutoOpen.mutate).not.toHaveBeenCalled();
+    fireEvent.change(input, { target: { value: '99' } });
+    fireEvent.blur(input);
+    expect(h.setAutoOpen.mutate).toHaveBeenCalledWith({ lead_minutes: 30 });
   });
 });

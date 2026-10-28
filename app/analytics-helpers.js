@@ -61,8 +61,8 @@ const RENDERER_TRACK_EVENTS = new Set(Object.keys(RENDERER_TRACK_EVENT_PROPERTIE
 // entry; booleans/numbers are already fully constrained by their type.
 const RENDERER_TRACK_EVENT_VALUE_ALLOWLIST = Object.assign(Object.create(null), {
   'notification_shown.type': new Set(['premeeting']),
-  'notification_clicked.type': new Set(['premeeting']),
-  'notification_dismissed.type': new Set(['premeeting']),
+  'notification_clicked.type': new Set(['premeeting', 'meeting_open_ask']),
+  'notification_dismissed.type': new Set(['premeeting', 'meeting_open_ask']),
   'onboarding_completed.ai_provider': new Set(['local', 'cloud']),
   'ai_provider_selected.provider': new Set(['local', 'cloud']),
 });

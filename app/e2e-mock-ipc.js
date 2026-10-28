@@ -338,6 +338,7 @@ function install({ ipcMain }) {
   // mocks so a test can assert the UI reacts to its own actions.
   const state = {
     language: 'auto',
+    autoOpen: { mode: 'off', lead_minutes: 1, providers: [], accepted_only: true },
     provider: 'local', // 'local' | 'remote' | 'cloud' | 'adapter'
     orgSession: null, // { adapterUrl, email, name, orgId, exp } when signed in
     everSignedIn: false,
@@ -732,6 +733,24 @@ function install({ ipcMain }) {
     'set-language': async (_event, language) => {
       state.language = language;
       return { success: true, language };
+    },
+
+    'get-auto-open-meetings': async () => ({
+      success: true,
+      auto_open_meetings: state.autoOpen.mode,
+      auto_open_lead_minutes: state.autoOpen.lead_minutes,
+      auto_open_providers: state.autoOpen.providers,
+      auto_open_accepted_only: state.autoOpen.accepted_only,
+    }),
+    'set-auto-open-meetings': async (_event, patch) => {
+      Object.assign(state.autoOpen, patch || {});
+      return {
+        success: true,
+        auto_open_meetings: state.autoOpen.mode,
+        auto_open_lead_minutes: state.autoOpen.lead_minutes,
+        auto_open_providers: state.autoOpen.providers,
+        auto_open_accepted_only: state.autoOpen.accepted_only,
+      };
     },
 
     'get-transcription-engine': async () => ({
