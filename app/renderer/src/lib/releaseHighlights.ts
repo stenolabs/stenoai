@@ -28,6 +28,14 @@ export const RELEASE_HIGHLIGHTS: readonly ReleaseHighlight[] = [
     action: 'Open AI settings',
     route: '/settings?tab=ai',
   },
+  {
+    id: 'open-meetings',
+    title: 'Open meetings on time',
+    description:
+      'With a calendar connected, Steno can open the meeting link shortly before it starts, or ask first.',
+    action: 'Open Preferences',
+    route: '/settings?tab=general',
+  },
 ];
 
 export const WHATS_NEW_COPY = {

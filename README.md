@@ -43,10 +43,10 @@ If you're looking for a hosted desktop recording API, consider checking out [Rec
 
 ## 📢 What's New
 
-- **2026-10-26** ✏️ Edit generated notes: Change a saved note's generated sections while keeping earlier generated text available.
-- **2026-10-26** 📤 Share from one menu: Copy or export a note and its transcript. On macOS, send a note through the system share sheet.
-- **2026-10-26** 🗣️ Choose speaker detection: On macOS, keep Sortformer or select Nemotron 3 under Settings → AI. Its models download before the engine changes.
-- **2026-10-26** 🎙️ More reliable recording: Capture system audio without a microphone, and keep a paused-recording notification visible until you respond to it.
+- **2026-10-28** 📅 Open meetings on time: Steno can open a calendar meeting's link shortly before it starts, or ask first. Choose under Settings → Preferences.
+- **2026-10-28** ✏️ Edit generated notes: Change a saved note's generated sections while keeping earlier generated text available.
+- **2026-10-28** 📤 Share from one menu: Copy or export a note and its transcript. On macOS, send a note through the system share sheet.
+- **2026-10-28** 🗣️ Choose speaker detection: On macOS, keep Sortformer or select Nemotron 3 under Settings → AI. Its models download before the engine changes.
 
 ## Features
 
@@ -54,6 +54,7 @@ If you're looking for a hosted desktop recording API, consider checking out [Rec
 - **Live speaker labels** — Real-time on-screen text as you speak via Parakeet TDT v3 on Apple Silicon (MLX). Granola-style chat-bubble view with `[You]` vs `[Others]` attribution live during the recording.
 - **Individual speakers (macOS)** — Once the recording stops, StenographAI separates the voices sharing each channel, so the saved transcript reads `Speaker 2` / `Speaker 3` rather than one merged `[Others]`. Sortformer remains the default; Nemotron 3 can be selected under Settings → AI after its models download. Name a speaker once and StenographAI can suggest them in later meetings — that part is off by default, and the voice profiles never leave your Mac.
 - **Auto start/stop meetings** — StenographAI notices when a meeting starts and offers to take notes, then offers to summarise when it ends. Granola-style frictionless capture.
+- **Open meetings** — With a calendar connected, StenographAI can open a meeting's Meet, Zoom or Teams link shortly before it starts, or ask first. Off by default, under Settings → Preferences.
 - **System audio capture** — Record both sides of virtual meetings. Native Core Audio Tap on macOS 14.4+, Windows loopback capture, and PipeWire capture on Linux, with selectable microphone input. A recording can use system audio alone when no microphone is present.
 - **Recording that coexists** — A compact transcription pill docks beside the app instead of taking over; Stop lands you on the note instantly and you can resume recording into an existing note (it appends and re-generates on demand).
 - **Global record shortcut** — Start or stop recording from anywhere with `⌘⇧R` (`Ctrl+Shift+R` on Windows). Toggle it off in Settings if it clashes with another app. On macOS, power users can additionally bind any key of their own via the `stenoai://record/start` / `record/stop` deep links (Shortcuts app).

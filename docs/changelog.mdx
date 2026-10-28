@@ -3,11 +3,12 @@ title: "Changelog"
 description: "What's new in Steno -- recent releases and notable changes."
 ---
 
-<Update label="v0.8.1" description="October 26, 2026">
+<Update label="v0.8.1" description="October 28, 2026">
 **New**
 - **Edit generated notes**: change a saved note's generated sections while keeping the original model output available for recovery.
 - **Share menu**: copy or export notes and transcripts from one menu, or send a note through the macOS share sheet.
 - **Nemotron 3 speaker detection**: select this optional macOS engine in Settings → AI. Its models download before the engine changes; Sortformer remains the default.
+- **Open meetings**: Steno can open a calendar meeting's link shortly before it starts. Choose Off, Ask or Automatically in Settings → Preferences.
 - **Report properties**: custom reports show flat YAML frontmatter in a collapsible Properties panel and in PDF exports.
 
 **Improved**
@@ -21,6 +22,7 @@ description: "What's new in Steno -- recent releases and notable changes."
 - A Traditional Chinese translation catalogue is prepared, but the interface still uses English until locale selection is available.
 
 **Fixed**
+- Calendar events keep their Google Meet or Outlook video link, which was previously dropped.
 - Recording can use system audio alone when no microphone is present; a busy or denied microphone still stops the start.
 - Live transcription stops when its capture view unmounts.
 - Local settings and meeting requests keep working when the computer is offline.
