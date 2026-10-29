@@ -3,12 +3,14 @@ title: "Changelog"
 description: "What's new in Steno -- recent releases and notable changes."
 ---
 
-<Update label="v0.8.1" description="October 28, 2026">
+<Update label="v0.8.1" description="October 29, 2026">
 **New**
 - **Edit generated notes**: change a saved note's generated sections while keeping the original model output available for recovery.
 - **Share menu**: copy or export notes and transcripts from one menu, or send a note through the macOS share sheet.
 - **Nemotron 3 speaker detection**: select this optional macOS engine in Settings → AI. Its models download before the engine changes; Sortformer remains the default.
 - **Open meetings**: Steno can open a calendar meeting's link shortly before it starts. Choose Off, Ask or Automatically in Settings → Preferences.
+- **Auto-record detected meetings**: turn this on in Settings → Preferences to start recording when Steno detects a meeting, without the Take Notes tap. A Recording started notification offers Stop. Off by default.
+- **Identify call participants**: on macOS, put the other party of a phone or FaceTime call into a note's Participants by their Contacts name. Turn it on in Settings → Preferences; it needs the free iMCP app. Caller names reach the AI model, including cloud models. Off by default.
 - **Report properties**: custom reports show flat YAML frontmatter in a collapsible Properties panel and in PDF exports.
 
 **Improved**
@@ -31,6 +33,7 @@ description: "What's new in Steno -- recent releases and notable changes."
 - OpenAI-compatible providers can return text in typed chunks without breaking summaries or chat.
 - A note being reprocessed keeps its original time in the notes list.
 - Leaving a note with unsaved edits asks before discarding them.
+- Fixed an issue that could make a recording started right after Stop report success without capturing audio.
 
 **Known Issues**
 - Continued notes created before segment tracking was added cannot be safely re-transcribed; Steno leaves them unchanged and explains why.
