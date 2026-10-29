@@ -19,6 +19,8 @@ const h = vi.hoisted(() => ({
   setNotifications: vi.fn(),
   getIdentityMatchingEnabled: vi.fn(),
   setIdentityMatchingEnabled: vi.fn(),
+  getCallerId: vi.fn(),
+  setCallerId: vi.fn(),
 }));
 
 vi.mock('@/lib/ipc', () => ({
@@ -28,13 +30,18 @@ vi.mock('@/lib/ipc', () => ({
       setNotifications: h.setNotifications,
       getIdentityMatchingEnabled: h.getIdentityMatchingEnabled,
       setIdentityMatchingEnabled: h.setIdentityMatchingEnabled,
+      getCallerId: h.getCallerId,
+      setCallerId: h.setCallerId,
     },
+    on: { callerIdStatus: () => () => {} },
   }),
 }));
 
 import {
+  useCallerIdSetting,
   useIdentityMatchingEnabledSetting,
   useNotificationsSetting,
+  useSetCallerId,
   useSetIdentityMatchingEnabled,
   useSetNotifications,
 } from './useSettings';
@@ -170,5 +177,58 @@ describe('speaker identification toggle', () => {
 
     await waitFor(() => expect(result.current.value.data).toBe(true));
     expect(h.getIdentityMatchingEnabled).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('caller recognition switch', () => {
+  // The setting's query holds iMCP's status as well, so the switch flips the
+  // flag inside it at once and takes main's answer when the save resolves.
+  const settings = (on: boolean) => ({
+    success: true,
+    supported: true,
+    caller_id_enabled: on,
+    meeting_detection: true,
+    status: { state: on ? 'ready' : 'off', contacts: true },
+    download_url: 'https://imcp.app/download',
+    homebrew: 'brew install --cask mattt/tap/iMCP',
+  });
+  const render = () =>
+    renderHook(() => ({ value: useCallerIdSetting(), setValue: useSetCallerId() }), {
+      wrapper: wrapper(),
+    });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    h.getCallerId.mockResolvedValue(settings(true));
+  });
+
+  test('switching off moves at once, then takes the saved settings', async () => {
+    const write = defer<ReturnType<typeof settings>>();
+    h.setCallerId.mockReturnValue(write.promise);
+    const { result } = render();
+    await waitFor(() => expect(result.current.value.data?.caller_id_enabled).toBe(true));
+
+    await act(async () => {
+      result.current.setValue.mutate(false);
+    });
+    await waitFor(() => expect(result.current.value.data?.caller_id_enabled).toBe(false));
+    expect(write.settled).toBe(false);
+
+    await act(async () => {
+      write.resolve(settings(false));
+      await write.promise;
+    });
+    await waitFor(() => expect(result.current.value.data?.status.state).toBe('off'));
+  });
+
+  test('a failed save puts the switch back', async () => {
+    h.setCallerId.mockRejectedValue(new Error('backend unavailable'));
+    const { result } = render();
+    await waitFor(() => expect(result.current.value.data?.caller_id_enabled).toBe(true));
+
+    await act(async () => {
+      await result.current.setValue.mutateAsync(false).catch(() => {});
+    });
+    await waitFor(() => expect(result.current.value.data?.caller_id_enabled).toBe(true));
   });
 });

@@ -90,6 +90,29 @@ back to channel labels when the cache is unavailable. The cache lives below
 the Steno user-data directory and therefore honors `STENOAI_USER_DATA_DIR` in
 tests; `STENOAI_DIARIZE_MODEL_DIR` is the lower-level sidecar override.
 
+### Caller recognition (macOS only, opt-in)
+Settings -> General -> "Identify call participants" (`caller_id_enabled`, off
+by default, turned on only after a dialog that says caller names reach the AI
+model, cloud ones included) puts the other party of a phone or FaceTime call
+into a note's Participants, by Contacts name. Steno does not access the
+call-history database directly: iMCP (https://imcp.app), a separate menu bar
+app the user installs and grants access, serves it over MCP.
+`app/imcp-client.js` connects through iMCP's bundled `imcp-server` bridge
+(`@modelcontextprotocol/client`) and reports a status for Settings;
+`app/caller-id.js` follows the mic monitor's call audio
+(`com.apple.avconferenced`) and the recordings, and once a recording that
+overlapped a call has stopped and the call has ended, picks the call with
+`app/call-matching.js`, looks the number up, and runs `apply-call-info`. That
+stores `<stem>_call.json` beside the note (`src/call_info.py`) and adds the
+caller to Participants; `_update_summary_participants` keeps callers through
+every speaker-side rewrite, and `OllamaSummarizer.meeting_context` tells the
+prompts who the call was with. Only names reach the note and the prompts, since
+both reach the models (chat over notes included); a caller without a name adds
+nothing there. The number stays in the sidecar on this Mac: no prompt, chat or
+export reads it, the Obsidian copy included. It needs Auto-detected meetings
+on, since the mic monitor is what notices a call, so under E2E only the setting
+and status are exercised (`STENOAI_IMCP_SERVER` points at the mock bridge).
+
 ### End-to-end tests (Playwright)
 The e2e suite drives the **real Electron app** (real window, real clicks) to catch
 full-app regressions like the org-provider reset before they reach users. It lives
@@ -146,11 +169,17 @@ overrides an agent's own test-level defaults.
     `notifications.t2` (the notifications_enabled toggle gating the note-ready /
     silence notifications via the `shown` signal), `auto-open-meetings.t2`
     (the four `auto_open_*` keys round-trip, and the premeeting seam's
-    auto/ask/none decision with `shell.openExternal` spied),
+    auto/ask/none decision with `shell.openExternal` spied), `auto-record.t2` (Auto-record
+    detected meetings: a detection played through `STENOAI_E2E_MIC_EVENTS`
+    starts a recording without asking or navigating, its toast belongs to that
+    recording, a second detection is refused, Stop ends it, and a later manual
+    recording gets no toast; macOS only),
     `diarization-engine.t2` (the Speaker detection setting: Sortformer default, a non-default engine refused
     while its models are missing, IPC allowlist, and a pre-0.17 Sortformer
     cache reading as missing on macOS; its UI half, the download-then-save
-    picker and the upgrade Download action, is `diarization-engine.t1`), and the onboarding spec
+    picker and the upgrade Download action, is `diarization-engine.t1`),
+    `caller-id.t2` (the Identify call participants setting and the iMCP status it
+    reports, against `e2e/fixtures/mock-imcp-server.js`; macOS only), and the onboarding spec
     `setup-check.t2` (the setup-wizard allGood + checks contract) (all model-free,
     run in `t2-macos` /
     `t2-windows`); `transcription-pipeline.t2` and `honest-failure.t2` (tagged

@@ -249,7 +249,9 @@ test('a shared calendar event never auto-opens', async ({ launchApp }) => {
 
 test('the meeting being recorded neither opens nor asks', async ({ launchApp, userDataDir }) => {
   enableDeterministicRecording(userDataDir);
-  const { app, page } = await launchApp();
+  // fakeAudio gives the renderer a microphone, so the recording really runs on
+  // every runner, including one with no audio device.
+  const { app, page } = await launchApp({ fakeAudio: true });
   await spyOpenExternal(app);
   const ev = makeEvent('rec1', { title: 'Weekly sync' });
   const started = await page.evaluate((n) => (window as StenoWindow).stenoai.recording.start(n), ev.title);

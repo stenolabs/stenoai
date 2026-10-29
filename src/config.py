@@ -1060,6 +1060,11 @@ class Config:
             # any non-Steno app starts capturing the mic. Helper is gated
             # to macOS 14+ in main.js; users can flip off in Settings.
             "auto_detect_meetings_enabled": True,
+            # Default OFF — opt-in, because it records without asking. When
+            # on, a detected meeting starts recording at once instead of
+            # posting "Meeting detected"; a passive toast says it started and
+            # offers Stop. Only acts while auto_detect_meetings_enabled is on.
+            "auto_record_meetings_enabled": False,
             # Default ON — Steno auto-starts (hidden, in the tray/menu bar)
             # when the user logs in. main.js registers/removes the OS login
             # item and suppresses the first window show on a login launch.
@@ -1996,6 +2001,17 @@ class Config:
         self._config["notifications_enabled"] = enabled
         return self._save()
 
+    def get_caller_id_enabled(self) -> bool:
+        """Whether phone and FaceTime recordings are matched to the caller
+        through iMCP (macOS; see src/call_info.py). Opt-in: only a literal
+        ``True`` enables it, matching the Electron-side ``=== true`` read."""
+        return self._config.get("caller_id_enabled") is True
+
+    def set_caller_id_enabled(self, enabled: bool) -> bool:
+        """Turn caller recognition on or off. Returns True if saved."""
+        self._config["caller_id_enabled"] = bool(enabled)
+        return self._save()
+
     def get_record_hotkey_enabled(self) -> bool:
         """Get whether the global record shortcut is registered at startup.
 
@@ -2536,6 +2552,15 @@ class Config:
     def set_auto_detect_meetings_enabled(self, enabled: bool) -> bool:
         """Set whether auto-detect meetings is enabled."""
         self._config["auto_detect_meetings_enabled"] = enabled
+        return self._save()
+
+    def get_auto_record_meetings_enabled(self) -> bool:
+        """Get whether a detected meeting is recorded without asking."""
+        return self._config.get("auto_record_meetings_enabled", False) is True
+
+    def set_auto_record_meetings_enabled(self, enabled: bool) -> bool:
+        """Set whether a detected meeting is recorded without asking."""
+        self._config["auto_record_meetings_enabled"] = bool(enabled)
         return self._save()
 
     def get_launch_on_login(self) -> bool:

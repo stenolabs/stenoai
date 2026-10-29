@@ -59,11 +59,12 @@ function buildTranscriptReadyBody(title) {
  * different sentences: a start that never got off the ground, a write failure
  * DURING a recording that is still running, and a stop that did not complete.
  * Telling a user mid-recording that "the recording didn't start" is exactly the
- * kind of lie this module exists to prevent.
+ * kind of lie this module exists to prevent. A start main refused or failed
+ * ('request') is still a start that did not happen, so it reads like 'start'.
  *
  * @param {Object} [o]
  * @param {string} [o.name]     DOMException name (NotFoundError, NotAllowedError, …)
- * @param {'start'|'ongoing'|'stop'} [o.phase] what the caller was doing
+ * @param {'request'|'start'|'ongoing'|'stop'} [o.phase] what the caller was doing
  * @param {string} [o.platform] defaults to the running platform; injectable so the
  *   platform-specific permission hint is testable on either OS
  * @returns {string} one or two sentences, free of errno/DOMException text

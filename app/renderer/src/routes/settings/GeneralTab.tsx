@@ -21,6 +21,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { cn, isMac, shortcut } from '@/lib/utils';
+import { CallerIdRow } from './CallerIdRow';
 import { useTheme } from '@/hooks/useTheme';
 import {
   useAutoDetectMeetingsSetting,
@@ -60,6 +61,7 @@ import {
 import { COMPACT_BTN, COMPACT_INPUT, COMPACT_TRIGGER, SectionHeading, SettingRow } from './primitives';
 import { t } from '@/i18n';
 import type { AutoOpenMode, AutoOpenProvider } from '@/lib/ipc';
+import { AutoRecordRow } from './AutoRecordRow';
 
 const DEFAULT_MIC_VALUE = 'default';
 const LEAD_PRESETS = [0, 1, 2, 5];
@@ -602,6 +604,13 @@ export function GeneralTab() {
           disabled={autoDetect.data === undefined || !autoDetectSupported}
         />
       </SettingRow>
+
+      <AutoRecordRow
+        detectionSupported={autoDetectSupported}
+        detectionOn={autoDetectSupported && autoDetect.data === true}
+      />
+
+      <CallerIdRow />
 
       <SettingRow
         label={t('settings.general.postMeetingNotifications')}

@@ -72,6 +72,27 @@ test('a genuinely running session still shows its recording row', async ({ launc
   });
 });
 
+test('a second shortcut Start rejected by main does not stop the live capture', async ({ launchApp }) => {
+  const { app, page } = await launchApp({ mockIpc: true, fakeAudio: true, env: STALE_ENV });
+  const started = await page.evaluate(() => window.stenoai.recording.start('First capture'));
+  expect(started.success).toBe(true);
+  const sends = () => app.evaluate(() =>
+    (global as unknown as { __mockIpcSends: Array<{ channel: string; args: unknown[] }> }).__mockIpcSends);
+  await expect.poll(async () => (await sends()).filter((s) =>
+    s.channel === 'system-audio-recording-state' && s.args[0] === true).length).toBe(1);
+
+  await app.evaluate(({ BrowserWindow }) => {
+    BrowserWindow.getAllWindows()[0]?.webContents.send('shortcut-start-recording', { sessionName: 'Duplicate' });
+  });
+  await expect.poll(async () => countCalls(await ipcCalls(app), 'start-recording-ui')).toBe(2);
+  const queue = await page.evaluate(() => window.stenoai.recording.getQueue());
+  expect(queue.hasRecording).toBe(true);
+  expect(queue.recordingId).toBe(started.recordingId);
+  expect(queue.sessionName).toBe('First capture');
+  expect((await sends()).filter((s) =>
+    s.channel === 'system-audio-recording-state' && s.args[0] === false)).toHaveLength(0);
+});
+
 test('a cancelled start rejecting late cannot clean up its successor', async ({ launchApp }) => {
   const { app, page } = await launchApp({
     mockIpc: true,
