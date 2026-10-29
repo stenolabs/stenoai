@@ -41,7 +41,7 @@ export const RELEASE_HIGHLIGHTS: readonly ReleaseHighlight[] = [
     title: 'Record detected meetings',
     description:
       'Turn on Auto-record, and Steno starts recording a detected meeting without waiting for a tap.',
-    action: 'Open Preferences',
+    action: 'Turn on Auto-record',
     route: '/settings?tab=general',
   },
 ];

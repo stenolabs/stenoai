@@ -69,6 +69,9 @@ test("upgrade waits for foreground, dismisses across restarts, and reopens from 
   await expect(
     dialog.getByRole("button", { name: "Open Preferences" }),
   ).toBeVisible();
+  await expect(
+    dialog.getByRole("button", { name: "Turn on Auto-record" }),
+  ).toBeVisible();
   await dialog.evaluate((node) =>
     node.setAttribute("data-persistence-probe", "retained"),
   );
