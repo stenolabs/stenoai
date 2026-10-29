@@ -406,10 +406,26 @@ export function useDeleteModel() {
 // Whisper models (mirrors the Ollama pattern above)
 // ---------------------------------------------------------------------------
 
+/** A single-language Whisper fine-tune, used in place of the main model for
+ *  recordings in `language` (see LANGUAGE_WHISPER_MODELS in
+ *  src/whisper_models.py). */
+export interface LanguageModel {
+  name: string;
+  displayName: string;
+  language: string;
+  size_gb?: number;
+  installed: boolean;
+}
+
 export function useWhisperModels() {
   return useQuery({
     queryKey: whisperKeys.list(),
-    queryFn: async (): Promise<{ models: ListedModel[]; current: string }> => {
+    queryFn: async (): Promise<{
+      models: ListedModel[];
+      current: string;
+      languageModels: LanguageModel[];
+      languageModelsEnabled: boolean;
+    }> => {
       const raw = unwrap(await ipc().whisperModels.list());
       const models: ListedModel[] = Object.entries(raw.supported_models).map(([id, info]) => ({
         name: id,
@@ -422,9 +438,104 @@ export function useWhisperModels() {
         speed: info.speed,
         quality: info.quality,
       }));
-      return { models, current: raw.current_model };
+      const languageModels: LanguageModel[] = Object.entries(raw.language_models ?? {}).map(
+        ([id, info]) => ({
+          name: id,
+          displayName: info.name,
+          language: info.language,
+          size_gb: parseSizeGb(info.size),
+          installed: info.installed,
+        }),
+      );
+      return {
+        models,
+        current: raw.current_model,
+        languageModels,
+        languageModelsEnabled: raw.language_models_enabled ?? true,
+      };
     },
   });
+}
+
+export function useSetLanguageModelsEnabled() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (enabled: boolean) =>
+      unwrap(await ipc().whisperModels.setLanguageModelsEnabled(enabled)),
+    onSuccess: () => qc.invalidateQueries({ queryKey: whisperKeys.all }),
+  });
+}
+
+/**
+ * Download a language model and switch language models on. Unlike
+ * usePullWhisperModel this never touches the main model or the engine: the
+ * language model only stands in for recordings in its own language. Progress
+ * arrives on the same whisper-pull-* channels, keyed by model name.
+ */
+export function usePullLanguageModel() {
+  const qc = useQueryClient();
+  const whisper = useWhisperModels();
+  // A string, so the rehydrate effect below runs once per mount rather than
+  // on every refetch.
+  const languageModelKey = whisper.data?.languageModels.map((m) => m.name).join('\n') ?? '';
+  const [progress, setProgress] = React.useState<Record<string, string>>({});
+
+  React.useEffect(() => {
+    const offProgress = ipc().on.whisperPullProgress(({ model, progress: p }) => {
+      setProgress((prev) => ({ ...prev, [model]: p }));
+    });
+    const offComplete = ipc().on.whisperPullComplete(({ model }) => {
+      setProgress((prev) => {
+        const { [model]: _drop, ...rest } = prev;
+        return rest;
+      });
+    });
+    return () => {
+      offProgress();
+      offComplete();
+    };
+  }, []);
+
+  const mutation = useMutation({
+    mutationFn: async (name: string) => {
+      unwrap(await ipc().whisperModels.pull(name));
+      // Re-enable in case the user had switched language models off before.
+      // Best-effort: the model is installed either way, and the switch shows
+      // the persisted state once the list refetches.
+      try {
+        unwrap(await ipc().whisperModels.setLanguageModelsEnabled(true));
+      } catch {
+        // Leave the switch to report the saved value.
+      }
+    },
+    onSettled: () => qc.invalidateQueries({ queryKey: whisperKeys.all }),
+  });
+
+  // A download started before Settings unmounted is still running in the
+  // main process. Rejoin it (pull-whisper-model returns the in-flight
+  // promise instead of starting a second download) so the row shows its
+  // progress rather than offering Download again.
+  const { mutate } = mutation;
+  React.useEffect(() => {
+    if (!languageModelKey) return;
+    const names = new Set(languageModelKey.split('\n'));
+    let cancelled = false;
+    void ipc()
+      .whisperModels.activePulls()
+      .then((active) => {
+        if (cancelled || !active || typeof active !== 'object') return;
+        const name = Object.keys(active).find((model) => names.has(model));
+        if (!name) return;
+        setProgress((prev) => ({ ...prev, [name]: active[name] ?? '' }));
+        mutate(name);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [mutate, languageModelKey]);
+
+  return { ...mutation, progress };
 }
 
 export function useSetWhisperModel() {

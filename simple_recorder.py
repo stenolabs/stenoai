@@ -1698,16 +1698,34 @@ def get_whisper_model_cmd():
 def list_whisper_models_cmd():
     """List supported Whisper models with metadata + installed status (UI)."""
     from src.config import get_config
-    from src.whisper_models import SUPPORTED_WHISPER_MODELS, is_installed
+    from src.whisper_models import (
+        LANGUAGE_WHISPER_MODELS,
+        SUPPORTED_WHISPER_MODELS,
+        is_installed,
+    )
     config = get_config()
     current = config.get_whisper_model()
     supported = {
         key: {**meta, "installed": is_installed(key)}
         for key, meta in SUPPORTED_WHISPER_MODELS.items()
     }
+    # Kept out of supported_models: those are the selectable main models,
+    # and the renderer treats supported_models[0] as the Whisper engine's.
+    language_models = {
+        key: {
+            "name": meta["name"],
+            "language": meta["language"],
+            "size": meta["size"],
+            "description": meta["description"],
+            "installed": is_installed(key),
+        }
+        for key, meta in LANGUAGE_WHISPER_MODELS.items()
+    }
     print(json.dumps({
         "current_model": current,
         "supported_models": supported,
+        "language_models": language_models,
+        "language_models_enabled": config.get_language_models_enabled(),
         "provider": "local",
     }))
 
@@ -1717,14 +1735,20 @@ def list_whisper_models_cmd():
 def pull_whisper_model_cmd(model_name):
     """Download a Whisper model from HuggingFace, streaming progress lines."""
     from src.whisper_models import (
+        LANGUAGE_WHISPER_MODELS,
         SUPPORTED_WHISPER_MODELS,
         download_with_progress,
         is_installed,
+        verify_language_model,
     )
-    if model_name not in SUPPORTED_WHISPER_MODELS:
+    if model_name not in SUPPORTED_WHISPER_MODELS and model_name not in LANGUAGE_WHISPER_MODELS:
         print(json.dumps({"success": False, "error": f"Unknown model: {model_name}"}))
         return
-    if is_installed(model_name):
+    # A damaged language model fails verification (which removes it) and is
+    # downloaded again instead of being reported as installed.
+    if is_installed(model_name) and (
+        model_name not in LANGUAGE_WHISPER_MODELS or verify_language_model(model_name)
+    ):
         print(json.dumps({"success": True, "model": model_name, "already_installed": True}))
         return
 
@@ -1754,6 +1778,18 @@ def set_whisper_model_cmd(model_size: str):
             "error": f"Unsupported model: {model_size}",
             "supported_models": list(config.SUPPORTED_WHISPER_MODELS),
         }))
+
+
+@cli.command(name='set-language-models-enabled')
+@click.argument('enabled', type=bool)
+def set_language_models_enabled_cmd(enabled: bool):
+    """Set whether installed language-specific Whisper models are used."""
+    from src.config import get_config
+    config = get_config()
+    if config.set_language_models_enabled(enabled):
+        print(json.dumps({"success": True, "language_models_enabled": enabled}))
+    else:
+        print(json.dumps({"success": False, "error": "Failed to persist setting"}))
 
 
 @cli.command(name='get-transcription-engine')

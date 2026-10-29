@@ -357,6 +357,8 @@ function install({ ipcMain }) {
     autoInstallWhenIdle: true, // idle auto-install toggle (config default on)
     callerIdEnabled: false, // caller recognition (opt-in, macOS)
     transcriptionEngine: process.env.STENOAI_E2E_MOCK_ENGINE || 'parakeet',
+    hebrewModelInstalled: false, // ivrit-large-v3-turbo; flipped by pull-whisper-model
+    languageModelsEnabled: true, // config.language_models_enabled default
     diarizationEngine: 'sortformer',
     // STENOAI_E2E_SPEAKER_MODELS_MISSING=1 simulates an upgraded install whose
     // speaker models predate the current cache layout: every engine reports
@@ -776,6 +778,30 @@ function install({ ipcMain }) {
       state.transcriptionEngine = engine;
       return { success: true, engine };
     },
+
+    // Stateful over the static catalog in DEFAULTS so the Hebrew model row can
+    // go Download -> installed switch -> off (hebrew-model.t1). A pull of the
+    // Hebrew model installs it at once; nothing is downloaded.
+    'list-whisper-models': async () => {
+      const base = DEFAULTS['list-whisper-models'];
+      const hebrew = base.language_models['ivrit-large-v3-turbo'];
+      return {
+        ...base,
+        language_models: {
+          'ivrit-large-v3-turbo': { ...hebrew, installed: state.hebrewModelInstalled },
+        },
+        language_models_enabled: state.languageModelsEnabled,
+      };
+    },
+    'pull-whisper-model': async (_event, name) => {
+      if (name === 'ivrit-large-v3-turbo') state.hebrewModelInstalled = true;
+      return { success: true, model: name };
+    },
+    'set-language-models-enabled': async (_event, enabled) => {
+      state.languageModelsEnabled = enabled === true;
+      return { success: true, language_models_enabled: state.languageModelsEnabled };
+    },
+    'get-active-whisper-pulls': async () => ({}),
 
     'get-diarization-engine': async () => (
       process.env.STENOAI_E2E_DIARIZATION_ENGINE_READ_FAILURE === '1'
@@ -1738,7 +1764,8 @@ function install({ ipcMain }) {
     // cards to look at (manual/dev use) instead of always erroring "Could not
     // load transcription models." Parakeet ships pre-"installed" (matches the
     // fresh-install default engine); Whisper stays uninstalled so the
-    // Download button state is also visible in the same screen.
+    // Download button state is also visible in the same screen. Served through
+    // the stateful MOCKS entry, which shadows this one.
     'list-whisper-models': {
       success: true,
       supported_models: {
@@ -1754,6 +1781,17 @@ function install({ ipcMain }) {
       },
       current_model: '',
       provider: 'whisper',
+      language_models: {
+        'ivrit-large-v3-turbo': {
+          name: 'ivrit.ai Hebrew Turbo',
+          language: 'he',
+          size: '1.6GB',
+          description:
+            'Whisper Large V3 Turbo fine-tuned on Hebrew by ivrit.ai. Used automatically for Hebrew recordings.',
+          installed: false,
+        },
+      },
+      language_models_enabled: true,
     },
     'list-parakeet-models': {
       success: true,

@@ -2157,6 +2157,9 @@ class WhisperTranscriber:
         #     fall back to whisper.cpp as before
         self.model_size = model_size
         self.model = None
+        # Language-specific whisper.cpp models, loaded on first use by
+        # _whisper_decoder_for and kept for the rest of the process.
+        self._language_models: dict = {}
 
         try:
             from src.config import get_config
@@ -2225,6 +2228,58 @@ class WhisperTranscriber:
         logger.info("Loading whisper.cpp model: %s", self.model_size)
         self.model = WhisperCppModel(self.model_size, n_threads=n_threads)
         logger.info("whisper.cpp model loaded (threads=%d)", n_threads)
+
+    def _whisper_decoder_for(self, language: Optional[str]):
+        """Return the whisper.cpp model to transcribe ``language`` with.
+
+        An installed language-specific fine-tune (``LANGUAGE_WHISPER_MODELS``)
+        replaces the main model for its language, unless the user turned
+        language models off. Language detection always stays on the main
+        model: a fine-tune trained on one language has an unreliable
+        language head. The fine-tune is loaded once and reused, so a diarised
+        meeting pays the load for both channels only once. Any failure falls
+        back to the main model rather than failing the transcription.
+
+        Memory: the main model stays loaded for detection, so a Hebrew
+        meeting holds both turbo models in this process (measured on Apple
+        Silicon: about 1.9 GB with the main model alone, 3.7 GB with both).
+        The second model is only loaded once a recording is routed to it.
+        """
+        try:
+            from src import whisper_models
+            from src.config import get_config
+            if not get_config().get_language_models_enabled():
+                return self.model
+            key = whisper_models.language_model_for(language)
+            if key is None:
+                return self.model
+            cache = getattr(self, "_language_models", None)
+            if cache is None:
+                cache = self._language_models = {}
+            if key not in cache:
+                # A damaged file would load as an empty model and crash the
+                # process on transcribe, so check it first.
+                if not whisper_models.verify_language_model(key):
+                    logger.warning(
+                        "Language-specific whisper.cpp model %s failed verification; using %s",
+                        key, self.model_size,
+                    )
+                    return self.model
+                import multiprocessing
+                n_threads = max(1, multiprocessing.cpu_count() - 2)
+                logger.info("Loading language-specific whisper.cpp model: %s", key)
+                # Not a pywhispercpp model name, so load it by file path.
+                cache[key] = WhisperCppModel(
+                    str(whisper_models.model_file_path(key)), n_threads=n_threads,
+                )
+            logger.info("Transcribing language %s with %s", language, key)
+            return cache[key]
+        except Exception as e:
+            logger.warning(
+                "Language-specific whisper.cpp model unavailable; using %s: %s",
+                self.model_size, e,
+            )
+            return self.model
 
     def _build_whisper_fallback(self) -> bool:
         """Try to stand up whisper.cpp as a crash-recovery fallback engine.
@@ -3279,6 +3334,7 @@ class WhisperTranscriber:
                     logger.warning("Failed to auto-detect language; using whisper default: %s", e)
                     resolved_language = None
 
+            decoder = self._whisper_decoder_for(resolved_language)
             transcribe_kwargs = {"media": str(converted_path)}
             if resolved_language and resolved_language != "auto":
                 transcribe_kwargs["language"] = resolved_language
@@ -3289,7 +3345,7 @@ class WhisperTranscriber:
             # Probed by signature so an API change degrades to no heartbeat
             # rather than a TypeError mid-failure-recovery.
             try:
-                if "new_segment_callback" in inspect.signature(self.model.transcribe).parameters:
+                if "new_segment_callback" in inspect.signature(decoder.transcribe).parameters:
                     segment_count = 0
 
                     def _on_segment(_segment):
@@ -3300,7 +3356,7 @@ class WhisperTranscriber:
                     transcribe_kwargs["new_segment_callback"] = _on_segment
             except (TypeError, ValueError):
                 pass
-            segments = self.model.transcribe(**transcribe_kwargs)
+            segments = decoder.transcribe(**transcribe_kwargs)
 
             # Dedup whisper.cpp loop hallucinations: 5+ consecutive identical
             # segments. Preserved from the historical whisper code path.

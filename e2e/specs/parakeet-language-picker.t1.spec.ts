@@ -25,7 +25,7 @@ const EUROPEAN = [
   'Russian',
 ];
 // Non-European: Whisper-only, must NOT appear on Parakeet (it can't transcribe them).
-const NON_EUROPEAN = ['Japanese', 'Chinese', 'Korean', 'Hindi', 'Arabic'];
+const NON_EUROPEAN = ['Japanese', 'Chinese', 'Korean', 'Hindi', 'Arabic', 'Hebrew'];
 
 async function openTranscribeLanguagePicker(page: Page) {
   await page.evaluate(() => {

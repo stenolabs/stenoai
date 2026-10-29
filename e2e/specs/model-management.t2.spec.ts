@@ -20,6 +20,8 @@ type ListResult = {
   current_model?: string;
   supported_models?: Record<string, ModelInfo>;
   provider?: string;
+  language_models?: Record<string, ModelInfo & { language?: string }>;
+  language_models_enabled?: boolean;
 };
 type CurrentModel = { success: boolean; model?: string };
 type StatusResult = { success: boolean; model?: string; installed?: boolean };
@@ -43,6 +45,7 @@ type StenoWindow = Window & {
     whisperModels: {
       list: () => Promise<ListResult>;
       set: (name: string) => Promise<Result>;
+      setLanguageModelsEnabled: (enabled: boolean) => Promise<Result>;
     };
     parakeetModels: {
       list: () => Promise<ListResult>;
@@ -119,6 +122,34 @@ test('whisper models: list reports installed flags; set persists to config.whisp
   await expect
     .poll(async () => (await page.evaluate(() => (window as StenoWindow).stenoai.whisperModels.list())).current_model)
     .toBe('large-v3-turbo');
+});
+
+test('whisper language models: Hebrew model listed apart from main models; toggle persists', async ({
+  launchApp,
+  userDataDir,
+}) => {
+  const { page } = await launchApp();
+
+  const listed = await page.evaluate(() =>
+    (window as StenoWindow).stenoai.whisperModels.list(),
+  );
+  expect(listed.success).toBe(true);
+  assertInstalledShape(listed.language_models);
+  expect(listed.language_models?.['ivrit-large-v3-turbo']?.language).toBe('he');
+  // A single-language model must never be offered (or accepted) as the main model.
+  expect(Object.keys(listed.supported_models ?? {})).not.toContain('ivrit-large-v3-turbo');
+  const rejected = await page.evaluate(() =>
+    (window as StenoWindow).stenoai.whisperModels.set('ivrit-large-v3-turbo'),
+  );
+  expect(rejected.success).toBe(false);
+  expect(readUserConfig(userDataDir).whisper_model).not.toBe('ivrit-large-v3-turbo');
+
+  expect(listed.language_models_enabled).toBe(true);
+  await page.evaluate(() => (window as StenoWindow).stenoai.whisperModels.setLanguageModelsEnabled(false));
+  await expect.poll(() => readUserConfig(userDataDir).language_models_enabled).toBe(false);
+  await expect
+    .poll(async () => (await page.evaluate(() => (window as StenoWindow).stenoai.whisperModels.list())).language_models_enabled)
+    .toBe(false);
 });
 
 test('parakeet models: list + status return a coherent installed shape', async ({

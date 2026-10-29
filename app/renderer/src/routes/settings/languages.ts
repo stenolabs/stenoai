@@ -24,6 +24,7 @@ export const LANGUAGES_WHISPER: LangOption[] = [
   { value: 'ko', label: 'Korean' },
   { value: 'hi', label: 'Hindi' },
   { value: 'ar', label: 'Arabic' },
+  { value: 'he', label: 'Hebrew' },
 ];
 // Parakeet exposes the European subset (see transcription-languages.ts for
 // why pinning matters even though the decoder is language-agnostic). Derived

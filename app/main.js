@@ -9143,6 +9143,14 @@ ipcMain.handle('set-whisper-model', async (event, modelSize) => {
   } catch (e) { return { success: false, error: e.message }; }
 });
 
+ipcMain.handle('set-language-models-enabled', async (event, enabled) => {
+  try {
+    const result = await runPythonScript('simple_recorder.py', ['set-language-models-enabled', (enabled === true).toString()]);
+    const jsonData = JSON.parse(result.trim());
+    return { success: true, ...jsonData };
+  } catch (e) { return { success: false, error: e.message }; }
+});
+
 ipcMain.handle('list-whisper-models', async () => {
   try {
     const result = await runPythonScript('simple_recorder.py', ['list-whisper-models'], true);
@@ -9151,7 +9159,30 @@ ipcMain.handle('list-whisper-models', async () => {
   } catch (e) { return { success: false, error: e.message }; }
 });
 
-ipcMain.handle('pull-whisper-model', async (event, modelName) => {
+// In-flight pull-whisper-model downloads (model -> { promise, progress }). A
+// second pull of the same model joins the running one instead of spawning
+// another multi-GB download, and get-active-whisper-pulls lets a renderer that
+// remounted mid-download (navigated away from Settings and back) find it and
+// rejoin, rather than offering Download again.
+const activeWhisperPulls = new Map();
+
+ipcMain.handle('get-active-whisper-pulls', () => {
+  const result = {};
+  for (const [model, { progress }] of activeWhisperPulls) result[model] = progress;
+  return result;
+});
+
+ipcMain.handle('pull-whisper-model', (event, modelName) => {
+  const active = activeWhisperPulls.get(modelName);
+  if (active) return active.promise;
+  const entry = { progress: '', promise: null };
+  entry.promise = runWhisperPull(modelName, (output) => { entry.progress = output; })
+    .finally(() => activeWhisperPulls.delete(modelName));
+  activeWhisperPulls.set(modelName, entry);
+  return entry.promise;
+});
+
+async function runWhisperPull(modelName, onProgress) {
   try {
     sendDebugLog(`Pulling whisper model: ${modelName}`);
     return new Promise((resolve) => {
@@ -9207,6 +9238,7 @@ ipcMain.handle('pull-whisper-model', async (event, modelName) => {
       }, 30 * 60 * 1000);
       const relayProgress = (output) => {
         if (!output) return;
+        onProgress(output);
         if (mainWindow && !mainWindow.isDestroyed()) {
           mainWindow.webContents.send('whisper-pull-progress', {
             model: modelName,
@@ -9254,7 +9286,7 @@ ipcMain.handle('pull-whisper-model', async (event, modelName) => {
   } catch (e) {
     return { success: false, error: e.message };
   }
-});
+}
 
 ipcMain.handle('pull-parakeet-model', async (event, modelId) => {
   // Mirrors pull-whisper-model: settle-gate + SIGTERM-then-SIGKILL escalation
