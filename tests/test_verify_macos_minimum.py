@@ -10,6 +10,7 @@ POSIX_PERMISSIONS = sys.platform != 'win32' and getattr(os, 'geteuid', lambda: 0
 
 from scripts.verify_macos_minimum import (  # noqa: E402
     InspectionError,
+    _allowed_minimum,
     app_minimum,
     find_violations,
     is_macho,
@@ -75,6 +76,30 @@ class OtoolParsingTests(unittest.TestCase):
 
 
 class FindViolationsTests(unittest.TestCase):
+    def test_only_exact_opt_in_sidecar_gets_macos_26_floor(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            sidecar = root / '_internal' / 'steno-transcribe'
+            other = root / '_internal' / 'libmlx.dylib'
+            wrong_path = root / 'ollama' / 'steno-transcribe'
+            for path in (sidecar, other, wrong_path):
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(b'\xcf\xfa\xed\xfe' + b'\0' * 28)
+            minimums = {os.path.realpath(path): (26,) for path in (sidecar, other, wrong_path)}
+            roots = [str(root)]
+            checked, violations = find_violations(
+                roots, (14, 4), read_minimum=lambda path: minimums[path],
+                allowed_newer=lambda path: _allowed_minimum(path, roots, (14, 4)),
+            )
+            self.assertEqual(checked, 3)
+            self.assertEqual({path for path, _ in violations}, {str(other), str(wrong_path)})
+            minimums[os.path.realpath(sidecar)] = (27,)
+            _, violations = find_violations(
+                roots, (14, 4), read_minimum=lambda path: minimums[path],
+                allowed_newer=lambda path: _allowed_minimum(path, roots, (14, 4)),
+            )
+            self.assertIn((str(sidecar), (27,)), violations)
+
     def test_flags_only_mach_o_files_above_the_limit(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
