@@ -1,10 +1,32 @@
+import logging
 import os
+import ssl
+import sys
+import types
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import patch
 
 from src import parakeet_models
+
+
+def _fake_hub_modules(offline: bool = False, reset_sessions=None) -> dict[str, object]:
+    hub = types.ModuleType("huggingface_hub")
+    constants = types.ModuleType("huggingface_hub.constants")
+    constants.HF_HUB_OFFLINE = offline
+    utils = types.ModuleType("huggingface_hub.utils")
+    http = types.ModuleType("huggingface_hub.utils._http")
+    http.reset_sessions = reset_sessions or (lambda: None)
+    hub.constants = constants
+    hub.utils = utils
+    utils._http = http
+    return {
+        "huggingface_hub": hub,
+        "huggingface_hub.constants": constants,
+        "huggingface_hub.utils": utils,
+        "huggingface_hub.utils._http": http,
+    }
 
 
 class IsInstalledTests(unittest.TestCase):
@@ -157,6 +179,7 @@ class DownloadErrorSurfacingTests(unittest.TestCase):
             2, "No such file or directory", f"{model_id}/config.json"
         )
         with patch("src.parakeet_models.is_installed", return_value=True), patch("src.parakeet.ensure_loaded", side_effect=masking), \
+                patch.dict(sys.modules, _fake_hub_modules()), \
                 self.assertLogs("src.parakeet_models", level="ERROR") as cm:
             ok = parakeet_models.download(model_id)
         self.assertFalse(ok)
@@ -164,8 +187,91 @@ class DownloadErrorSurfacingTests(unittest.TestCase):
         self.assertIn("HF_TOKEN", joined)
         self.assertIn("401", joined)
 
+    def test_ssl_certificate_error_gets_certificate_guidance(self):
+        error = ssl.SSLCertVerificationError(
+            "[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: "
+            "unable to get local issuer certificate (_ssl.c:1006)"
+        )
+        with patch("src.parakeet_models.is_installed", return_value=False), patch("src.parakeet_models._download_snapshot", side_effect=error), \
+                self.assertLogs("src.parakeet_models", level="ERROR") as cm:
+            ok = parakeet_models.download(parakeet_models.DEFAULT_MODEL_ID)
+        self.assertFalse(ok)
+        joined = "\n".join(cm.output)
+        self.assertIn("TLS certificate verification failed", joined)
+        self.assertIn("Check certificate validity and hostname", joined)
+        self.assertIn("SSL_CERT_FILE", joined)
+        self.assertIn("SSL_CERT_DIR", joined)
+        self.assertIn("REQUESTS_CA_BUNDLE", joined)
+        self.assertNotIn("HF_TOKEN", joined)
+        self.assertNotIn("(_ssl.c:1006)", joined)
+
+    def test_structured_certificate_reasons_are_fixed_and_private(self):
+        secret = "https://user:secret@example.test/private-ca.pem"
+        for code, expected in (
+            (9, "certificate is not yet valid"),
+            (10, "certificate expired"),
+            (62, "certificate hostname mismatch"),
+            (20, "certificate issuer is not trusted"),
+            (999, None),
+        ):
+            with self.subTest(code=code):
+                cause = ssl.SSLCertVerificationError(f"private diagnostic {secret}")
+                cause.verify_code = code
+                error = RuntimeError(f"wrapped request {secret}")
+                error.__cause__ = cause
+                with patch("src.parakeet_models.is_installed", return_value=False), \
+                        patch("src.parakeet_models._download_snapshot", side_effect=error), \
+                        self.assertLogs("src.parakeet_models", level="ERROR") as cm:
+                    self.assertFalse(parakeet_models.download(parakeet_models.DEFAULT_MODEL_ID))
+                output = "\n".join(cm.output)
+                last_error = parakeet_models.get_last_download_error()
+                if expected:
+                    self.assertIn(expected, output)
+                    self.assertIn(expected, last_error)
+                else:
+                    self.assertEqual(last_error, "TLS certificate verification failed while contacting Hugging Face")
+                self.assertNotIn(secret, output)
+                self.assertNotIn(secret, last_error)
+
+    def test_wrapped_ssl_certificate_error_gets_certificate_guidance(self):
+        try:
+            raise ssl.SSLCertVerificationError("CERTIFICATE_VERIFY_FAILED")
+        except ssl.SSLCertVerificationError as cause:
+            error = RuntimeError("wrapped hub error")
+            error.__cause__ = cause
+        self.assertTrue(parakeet_models._is_ssl_certificate_error(error))
+
+    def test_huggingface_ssl_warning_survives_generic_final_error(self):
+        for child in ("huggingface_hub.utils._http", "huggingface_hub.file_download"):
+            with self.subTest(child=child):
+                def fail_after_warning(model_id, emit):
+                    logging.getLogger(child).warning(
+                        "'[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: "
+                        "unable to get local issuer certificate (_ssl.c:1006)' thrown while requesting HEAD"
+                    )
+                    raise RuntimeError("Generic cache lookup failure")
+
+                with patch("src.parakeet_models.is_installed", return_value=False), patch("src.parakeet_models._download_snapshot", side_effect=fail_after_warning), \
+                        self.assertNoLogs("huggingface_hub", level="WARNING"), \
+                        self.assertLogs("src.parakeet_models", level="ERROR") as cm:
+                    ok = parakeet_models.download(parakeet_models.DEFAULT_MODEL_ID)
+
+                self.assertFalse(ok)
+                self.assertEqual(
+                    parakeet_models.get_last_download_error(),
+                    "TLS certificate verification failed while contacting Hugging Face",
+                )
+                joined = "\n".join(cm.output)
+                self.assertIn("TLS certificate verification failed", joined)
+                self.assertNotIn("(_ssl.c:1006)", joined)
+                self.assertNotIn(
+                    parakeet_models._SSL_WARNING_FILTER,
+                    logging.getLogger(child).filters,
+                )
+
     def test_unrelated_error_uses_plain_message(self):
         with patch("src.parakeet_models.is_installed", return_value=True), patch("src.parakeet.ensure_loaded", side_effect=RuntimeError("boom")), \
+                patch.dict(sys.modules, _fake_hub_modules()), \
                 self.assertLogs("src.parakeet_models", level="ERROR") as cm:
             ok = parakeet_models.download(parakeet_models.DEFAULT_MODEL_ID)
         self.assertFalse(ok)
@@ -187,7 +293,9 @@ class DownloadProgressTests(unittest.TestCase):
                 from huggingface_hub import constants
                 self.assertTrue(constants.HF_HUB_OFFLINE)
                 self.assertEqual(events[-1]["stage"], "loading")
-            with patch("src.parakeet_models.is_installed", return_value=False), patch("src.parakeet_models._download_snapshot", side_effect=fetch), patch("src.parakeet.ensure_loaded", side_effect=load) as loaded:
+            with patch("src.parakeet_models.is_installed", return_value=False), patch("src.parakeet_models._download_snapshot", side_effect=fetch), \
+                    patch("src.parakeet.ensure_loaded", side_effect=load) as loaded, \
+                    patch.dict(sys.modules, _fake_hub_modules()):
                 self.assertEqual(parakeet_models.download(progress_callback=events.append), not failure)
             expected = ["preparing", "downloading"] + ([] if failure else ["loading", "complete"])
             self.assertEqual([e["stage"] for e in events], expected)
@@ -195,8 +303,6 @@ class DownloadProgressTests(unittest.TestCase):
 
     @patch.dict(os.environ)
     def test_snapshot_progress_and_older_hub_fallback(self):
-        import types
-        import sys
         for modern in (True, False):
             events, calls = [], []
             def old(repo, filename, revision=None, token=None):
@@ -215,6 +321,28 @@ class DownloadProgressTests(unittest.TestCase):
             self.assertTrue(all(c[2] is False for c in calls))
             self.assertEqual(any(e.get("file_bytes") == 100 for e in events), modern)
             self.assertEqual(events[-1]["completed_files"], len(calls))
+
+    @patch.dict(os.environ)
+    def test_snapshot_configures_tls_before_hub_download(self):
+        expected_ca = "/synthetic/cacert.pem"
+        seen_ca_files = []
+
+        def fake_configure():
+            os.environ["SSL_CERT_FILE"] = expected_ca
+            os.environ["REQUESTS_CA_BUNDLE"] = expected_ca
+
+        def download(repo, filename, revision=None, token=None):
+            seen_ca_files.append(os.environ.get("SSL_CERT_FILE"))
+            return "/synthetic/snapshots/abc123/" + filename
+
+        hub = types.ModuleType("huggingface_hub")
+        hub.hf_hub_download = download
+        with patch("src.tls_bootstrap.configure", side_effect=fake_configure), patch.dict(sys.modules, {"huggingface_hub": hub}):
+            parakeet_models._download_snapshot(parakeet_models.DEFAULT_MODEL_ID, lambda event: None)
+
+        self.assertTrue(seen_ca_files)
+        self.assertTrue(all(value == expected_ca for value in seen_ca_files))
+        self.assertEqual(os.environ["REQUESTS_CA_BUNDLE"], expected_ca)
 
     @patch.dict(os.environ)
     def test_snapshot_reports_measured_total_bytes(self):
@@ -304,10 +432,14 @@ class SnapshotSizeFallbackTests(unittest.TestCase):
 
 class OfflineLoadTests(unittest.TestCase):
     def test_offline_sessions_restored_after_load_error(self):
-        from huggingface_hub import constants
-        from huggingface_hub.utils import _http
         states = []
-        with patch("src.parakeet_models.is_installed", return_value=True), patch.object(constants, "HF_HUB_OFFLINE", False), patch.object(_http, "reset_sessions", side_effect=lambda: states.append(constants.HF_HUB_OFFLINE), create=True), patch("src.parakeet.ensure_loaded", side_effect=RuntimeError("synthetic load error")):
+        modules = _fake_hub_modules(
+            offline=False,
+            reset_sessions=lambda: states.append(modules["huggingface_hub.constants"].HF_HUB_OFFLINE),
+        )
+        constants = modules["huggingface_hub.constants"]
+        with patch("src.parakeet_models.is_installed", return_value=True), patch.dict(sys.modules, modules), \
+                patch("src.parakeet.ensure_loaded", side_effect=RuntimeError("synthetic load error")):
             self.assertFalse(parakeet_models.download())
             self.assertFalse(constants.HF_HUB_OFFLINE)
         self.assertEqual(states, [True, False])

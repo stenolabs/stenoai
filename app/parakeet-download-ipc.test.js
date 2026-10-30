@@ -25,6 +25,13 @@ function registration(sourceText, channel) {
   return matches[0].getText(file);
 }
 
+function functionDeclaration(sourceText, name) {
+  const file = ts.createSourceFile('main.js', sourceText, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
+  const matches = file.statements.filter(statement => ts.isFunctionDeclaration(statement) && statement.name?.text === name);
+  assert.equal(matches.length, 1, `Expected exactly one function declaration for ${name}`);
+  return matches[0].getText(file);
+}
+
 test('registration extraction tolerates indentation and nested callbacks', () => {
   const input = `  ipcMain.handle('sample', () => {
     nested(() => {
@@ -36,18 +43,22 @@ test('registration extraction tolerates indentation and nested callbacks', () =>
 });
 
 for (const channel of ['setup-parakeet', 'pull-parakeet-model']) {
-  function start() {
+  function start(platform = 'darwin') {
     let handler;
     const proc = new EventEmitter();
     proc.stdout = new EventEmitter();
     proc.stderr = new EventEmitter();
     const events = [];
-    vm.runInNewContext(registration(source, channel), {
-      ipcMain: { handle: (_, fn) => { handler = fn; } },
-      spawn: () => proc, getBackendPath: () => '/synthetic/backend', getBackendCwd: () => '/synthetic',
-      makeLineReader, sendDebugLog: () => {}, setTimeout, clearTimeout,
-      mainWindow: { isDestroyed: () => false, webContents: { send: (name, data) => events.push([name, data]) } },
-    });
+    vm.runInNewContext(
+      `${functionDeclaration(source, 'describeParakeetDownloadError')}\n${registration(source, channel)}`,
+      {
+        ipcMain: { handle: (_, fn) => { handler = fn; } },
+        spawn: () => proc, getBackendPath: () => '/synthetic/backend', getBackendCwd: () => '/synthetic',
+        makeLineReader, sendDebugLog: () => {}, setTimeout, clearTimeout,
+        process: { platform },
+        mainWindow: { isDestroyed: () => false, webContents: { send: (name, data) => events.push([name, data]) } },
+      },
+    );
     return { proc, events, promise: handler({}, 'synthetic-model') };
   }
   test(`${channel}: split progress and final JSON survive arbitrary stdout chunks`, async () => {
@@ -66,6 +77,46 @@ for (const channel of ['setup-parakeet', 'pull-parakeet-model']) {
       proc.stdout.emit('data', Buffer.from(final));
       proc.emit('close', 0);
       assert.equal((await promise).success, false);
+    });
+  }
+  for (const platform of ['darwin', 'win32', 'linux']) {
+    test(`${channel}: SSL guidance is accurate on ${platform}`, async () => {
+      const { proc, promise } = start(platform);
+      proc.stdout.emit('data', Buffer.from('{"success":false,"error":"[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1006)"}\n'));
+      proc.emit('close', 0);
+      const result = await promise;
+      assert.equal(result.success, false);
+      assert.match(result.error, /could not verify Hugging Face/i);
+      assert.match(result.error, /this computer/i);
+      assert.match(result.error, /corporate VPN, proxy, or antivirus/i);
+      assert.match(result.error, /SSL_CERT_FILE or REQUESTS_CA_BUNDLE/);
+      assert.match(result.error, /SSL_CERT_DIR with an OpenSSL-compatible CA directory/);
+      assert.match(result.error, /suitable PEM bundle/);
+      assert.match(result.error, /start environment before launch/);
+      if (platform === 'darwin') {
+        assert.match(result.error, /shell export is not inherited.*Finder/);
+      } else {
+        assert.doesNotMatch(result.error, /Finder/);
+      }
+      assert.doesNotMatch(result.error, /system trust store/);
+    });
+  }
+  for (const [reason, expected] of [
+    ['certificate is not yet valid', /certificate is not yet valid.*date and time/],
+    ['certificate expired', /certificate has expired/],
+    ['certificate hostname mismatch', /certificate does not match the server name/],
+    ['certificate issuer is not trusted', /certificate issuer is not trusted/],
+  ]) {
+    test(`${channel}: fixed ${reason} reason is shown without raw details`, async () => {
+      const { proc, promise } = start();
+      proc.stdout.emit('data', Buffer.from(JSON.stringify({
+        success: false,
+        error: `TLS certificate verification failed while contacting Hugging Face (${reason}); private=https://user:secret@example.test`,
+      }) + '\n'));
+      proc.emit('close', 0);
+      const result = await promise;
+      assert.match(result.error, expected);
+      assert.doesNotMatch(result.error, /user:secret/);
     });
   }
 }

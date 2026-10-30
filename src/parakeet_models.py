@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import logging
 import os
+import ssl
 import sys
 from pathlib import Path
 from typing import Callable, Optional
@@ -22,6 +23,85 @@ from typing import Callable, Optional
 from src.parakeet import DEFAULT_MODEL_ID  # platform-dispatched
 
 logger = logging.getLogger(__name__)
+
+_LAST_DOWNLOAD_ERROR: str | None = None
+_SAW_SSL_CERTIFICATE_WARNING = False
+
+
+def get_last_download_error() -> str | None:
+    """Return the last sanitized download failure, for CLI JSON responses."""
+    return _LAST_DOWNLOAD_ERROR
+
+
+def _configure_tls_for_huggingface() -> None:
+    """Apply the explicit CA choice or certifi before Hugging Face opens HTTPS.
+
+    ``simple_recorder.py`` imports ``src.tls_bootstrap`` at CLI startup, but this
+    module is also usable directly from tests and future entrypoints. Keep the
+    TLS contract local to the code that imports ``huggingface_hub`` so model
+    downloads do not depend on every caller remembering the bootstrap order.
+    """
+    from src import tls_bootstrap
+
+    tls_bootstrap.configure()
+
+
+def _is_ssl_certificate_text(text: str) -> bool:
+    return "CERTIFICATE_VERIFY_FAILED" in text or "unable to get local issuer certificate" in text
+
+
+def _is_ssl_certificate_error(error: BaseException) -> bool:
+    """Return True for direct or wrapped certificate verification failures."""
+    seen: set[int] = set()
+    current: BaseException | None = error
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        if isinstance(current, ssl.SSLCertVerificationError):
+            return True
+        if _is_ssl_certificate_text(str(current)):
+            return True
+        current = current.__cause__ or current.__context__
+    return False
+
+
+def _ssl_certificate_reason(error: BaseException) -> str | None:
+    """Return only a fixed reason from OpenSSL's structured verify code.
+
+    Exception text can contain request URLs and local CA paths. Never include
+    it in the download error or log, even when a client wraps the SSL error.
+    """
+    reasons = {
+        9: "certificate is not yet valid",
+        10: "certificate expired",
+        62: "certificate hostname mismatch",
+        18: "certificate issuer is not trusted",
+        19: "certificate issuer is not trusted",
+        20: "certificate issuer is not trusted",
+        21: "certificate issuer is not trusted",
+        27: "certificate issuer is not trusted",
+    }
+    seen: set[int] = set()
+    current: BaseException | None = error
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        if isinstance(current, ssl.SSLCertVerificationError):
+            return reasons.get(getattr(current, "verify_code", None))
+        current = current.__cause__ or current.__context__
+    return None
+
+
+class _SslCertificateWarningFilter(logging.Filter):
+    """Remember known Hub TLS warnings without emitting their raw text."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        global _SAW_SSL_CERTIFICATE_WARNING
+        if _is_ssl_certificate_text(record.getMessage()):
+            _SAW_SSL_CERTIFICATE_WARNING = True
+            return False
+        return True
+
+
+_SSL_WARNING_FILTER = _SslCertificateWarningFilter()
 
 
 SUPPORTED_PARAKEET_MODELS: dict[str, dict] = {
@@ -183,7 +263,12 @@ def download(
     sizes it also reports ``downloaded_bytes`` / ``total_bytes`` -- a measured
     percentage, never an estimate or ETA.
     """
+    global _LAST_DOWNLOAD_ERROR, _SAW_SSL_CERTIFICATE_WARNING
+    _LAST_DOWNLOAD_ERROR = None
+    _SAW_SSL_CERTIFICATE_WARNING = False
+
     if model_id not in SUPPORTED_PARAKEET_MODELS:
+        _LAST_DOWNLOAD_ERROR = f"Unknown model: {model_id}"
         logger.error("Unknown Parakeet model: %s", model_id)
         return False
 
@@ -191,13 +276,28 @@ def download(
         emit = progress_callback or (lambda event: None)
         emit({"stage": "preparing"})
         if not is_installed(model_id):
-            _download_snapshot(model_id, emit)
+            # Logger filters do not see propagated child records. Attach at
+            # the known warning emitters so the raw certificate text is not
+            # emitted while the final error remains a fixed, safe message.
+            hub_loggers = (
+                logging.getLogger("huggingface_hub"),
+                logging.getLogger("huggingface_hub.utils._http"),
+                logging.getLogger("huggingface_hub.file_download"),
+            )
+            for hub_logger in hub_loggers:
+                hub_logger.addFilter(_SSL_WARNING_FILTER)
+            try:
+                _download_snapshot(model_id, emit)
+            finally:
+                for hub_logger in hub_loggers:
+                    hub_logger.removeFilter(_SSL_WARNING_FILTER)
         emit({"stage": "loading"})
         from src.parakeet import ensure_loaded
         # The hub was imported during download. Setting HF_HUB_OFFLINE in
         # the loader's environment is now too late for its import-time flag.
         # This CLI operation must load the completed cache, not resolve main
         # online again while the UI says the download has finished.
+        _configure_tls_for_huggingface()
         from huggingface_hub import constants
         from huggingface_hub.utils import _http
         reset_sessions = getattr(_http, "reset_sessions", lambda: None)
@@ -220,7 +320,22 @@ def download(
         # upstream by huggingface_hub). Detect that shape and point at the
         # likely culprits instead of parroting the bogus local path.
         masks_http_failure = isinstance(e, FileNotFoundError) and model_id in str(e)
-        if masks_http_failure:
+        if _is_ssl_certificate_error(e) or _SAW_SSL_CERTIFICATE_WARNING:
+            reason = _ssl_certificate_reason(e)
+            _LAST_DOWNLOAD_ERROR = "TLS certificate verification failed while contacting Hugging Face"
+            if reason:
+                _LAST_DOWNLOAD_ERROR += f" ({reason})"
+            logger.error(
+                "Parakeet model download failed for %s: TLS certificate "
+                "verification failed while contacting Hugging Face%s. Check "
+                "certificate validity and hostname. If HTTPS inspection is "
+                "used, configure an explicit CA override in Steno's start "
+                "environment: SSL_CERT_FILE, SSL_CERT_DIR, or "
+                "REQUESTS_CA_BUNDLE.",
+                model_id, f" ({reason})" if reason else "",
+            )
+        elif masks_http_failure:
+            _LAST_DOWNLOAD_ERROR = "Hugging Face fetch did not complete"
             logger.error(
                 "Parakeet model download failed for %s: the HuggingFace fetch "
                 "did not complete (see the HTTP log line above). Common causes: "
@@ -230,6 +345,7 @@ def download(
                 model_id, e,
             )
         else:
+            _LAST_DOWNLOAD_ERROR = "Download failed"
             logger.error("Parakeet model download/load failed: %s", e)
         return False
 
@@ -243,6 +359,7 @@ def _download_snapshot(model_id: str, emit: Callable[[dict], None]) -> None:
     import inspect
     from tqdm.auto import tqdm
 
+    _configure_tls_for_huggingface()
     disable_implicit_hf_token()
     from huggingface_hub import hf_hub_download
 
