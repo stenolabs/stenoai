@@ -3431,6 +3431,37 @@ def list_meetings():
     print(json.dumps(meetings, separators=(',', ':')))
 
 
+def _backup_meeting_files(paths, stamp=None):
+    """Copy each EXISTING file in `paths` to `<name>.bak-<YYYYmmddHHMMSS>`
+    next to it (shutil.copy2) and return the backup paths. Missing files are
+    skipped. The `.bak-` suffix keeps backups out of every `*_summary.md|json`
+    / `*_speakers.json` enumeration. Raises OSError if a copy fails."""
+    import shutil
+
+    if stamp is None:
+        stamp = datetime.now().strftime("%Y%m%d%H%M%S")
+    backed_up = []
+    try:
+        for existing_path in paths:
+            existing_path = Path(existing_path)
+            if existing_path.exists():
+                backup_path = existing_path.with_name(f"{existing_path.name}.bak-{stamp}")
+                # Recorded before the copy: a copy that fails halfway has
+                # already created (and partly written) its target.
+                backed_up.append(str(backup_path))
+                shutil.copy2(existing_path, backup_path)
+    except OSError:
+        # All or nothing: a caller that aborts on a failed backup must not be
+        # left with the copies that did succeed, nor with a truncated one.
+        for made in backed_up:
+            try:
+                os.unlink(made)
+            except OSError:
+                pass
+        raise
+    return backed_up
+
+
 @cli.command()
 @click.argument('summary_file', required=True)
 @click.option('--regenerate-title', is_flag=True, default=False, help='Also regenerate the meeting title')
@@ -3598,7 +3629,22 @@ def reprocess(summary_file, regenerate_title, retranscribe):
             # clusters either, so the Speakers panel keeps describing the
             # same part of the meeting it did before.
             from src.config import get_data_dirs as _get_data_dirs
-            _persist_speaker_sidecar(_get_data_dirs()["output"], stem, transcribe_result)
+            _output_dir = _get_data_dirs()["output"]
+            # #599: keep the old transcript and speaker clusters before the
+            # first write. All segments transcribed fine and the gates above
+            # passed, so a refused/failed run never leaves a backup behind.
+            # Never rewrite without the safety copy. (The note holds the
+            # old transcript; transcribe_audio has already refreshed the
+            # separate transcripts/*.txt, so that file is not backed up here.)
+            try:
+                _backup_meeting_files(
+                    (summary_path, _output_dir / f"{stem}_speakers.json")
+                )
+            except OSError as backup_err:
+                err_msg = f"could not back up the meeting before re-transcribing: {backup_err}"
+                print(f"STREAM_ERROR:{err_msg.replace(chr(10), ' ').replace(chr(13), ' ')}", flush=True)
+                sys.exit(1)
+            _persist_speaker_sidecar(_output_dir, stem, transcribe_result)
 
         # Get transcript from the data
         transcript = existing_data.get('transcript', '')
@@ -3913,8 +3959,6 @@ def full_reprocess(meeting_stem, audio_file_override):
     speakers need a fresh `confirm-speaker` pass against the new
     {stem}_speakers.json sidecar to relabel the new transcript.
     """
-    import shutil
-
     from src.config import get_config, get_data_dirs
     from src.folders import get_folders_manager
     from src.speaker_suggestions import confirmed_participant_names
@@ -3972,14 +4016,9 @@ def full_reprocess(meeting_stem, audio_file_override):
     # Back up every existing file for this stem before anything is touched --
     # process-streaming itself has zero overwrite protection.
     stamp = datetime.now().strftime("%Y%m%d%H%M%S")
-    backed_up = []
     transcript_path = transcripts_dir / f"{meeting_stem}_transcript.txt"
     speakers_path = output_dir / f"{meeting_stem}_speakers.json"
-    for existing_path in (summary_path, transcript_path, speakers_path):
-        if existing_path.exists():
-            backup_path = existing_path.with_name(f"{existing_path.name}.bak-{stamp}")
-            shutil.copy2(existing_path, backup_path)
-            backed_up.append(str(backup_path))
+    backed_up = _backup_meeting_files((summary_path, transcript_path, speakers_path), stamp)
 
     # Preserve what process-streaming has no way to know about on its own.
     session_name = existing_data.get('session_info', {}).get('name') or meeting_stem
