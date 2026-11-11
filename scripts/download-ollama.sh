@@ -33,8 +33,9 @@ assert_binary() {
 # Conservative floors: the real binaries are tens of MB, while an HTML error page
 # or a truncated transfer is orders of magnitude below these.
 MIN_FFMPEG_BYTES=5000000
-# The audio-only mac build is ~2 MB; a failed link or empty file is far below this.
-MIN_MAC_FFMPEG_BYTES=1000000
+# The audio-only source build (macOS and Linux) is a few MB; a failed link or
+# empty file is far below this.
+MIN_BUILT_FFMPEG_BYTES=1000000
 MIN_OLLAMA_BYTES=1000000
 
 # --- Download ffmpeg ---
@@ -48,7 +49,7 @@ case "$(uname -s)" in
         mkdir -p "$BIN_DIR"
         "$SCRIPT_DIR/build-ffmpeg-minimal.sh" "$BIN_DIR/ffmpeg"
         cd "$BIN_DIR"
-        assert_binary ffmpeg "$MIN_MAC_FFMPEG_BYTES"
+        assert_binary ffmpeg "$MIN_BUILT_FFMPEG_BYTES"
         # Validate the binary before bundling it. Two distinct failure modes:
         #  1. Wrong architecture. An x86_64 ffmpeg runs fine HERE under Rosetta and
         #     would sail through the -version check, then crash on a Rosetta-less
@@ -71,33 +72,18 @@ case "$(uname -s)" in
         cd - > /dev/null
         ;;
     Linux)
-        # Use static build for Linux
-        FFMPEG_URL="https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz"
+        # Build the same checksum-pinned audio-only source as macOS. The Linux
+        # variant links musl statically, so the packaged binary needs no host
+        # ffmpeg or distro-specific shared libraries.
         mkdir -p "$BIN_DIR"
-        # Some upstream/proxy failures return HTTP 200 with an error page,
-        # which curl's HTTP retries cannot detect. Retry invalid archives too.
-        archive_ready=false
-        for attempt in 1 2 3; do
-            if curl --fail --retry 3 --retry-delay 2 --retry-all-errors -L "$FFMPEG_URL" -o "$BIN_DIR/ffmpeg.tar.xz" \
-                && tar -tJf "$BIN_DIR/ffmpeg.tar.xz" > "$BIN_DIR/ffmpeg-archive-contents.txt" 2>/dev/null \
-                && archive_member=$(grep -m 1 -E '^[^/]+/ffmpeg$' "$BIN_DIR/ffmpeg-archive-contents.txt"); then
-                archive_ready=true
-                break
-            fi
-            echo "Linux ffmpeg download attempt $attempt/3 failed or returned an invalid archive" >&2
-            if [ "$attempt" -lt 3 ]; then sleep 2; fi
-        done
-        rm -f "$BIN_DIR/ffmpeg-archive-contents.txt"
-        if [ "$archive_ready" != true ]; then
-            echo "Could not download a valid Linux ffmpeg archive after 3 attempts" >&2
+        "$SCRIPT_DIR/build-ffmpeg-minimal.sh" "$BIN_DIR/ffmpeg"
+        cd "$BIN_DIR"
+        assert_binary ffmpeg "$MIN_BUILT_FFMPEG_BYTES"
+        if ! ( set -o pipefail; ./ffmpeg -version | grep -q "ffmpeg version 7.1.1" ); then
+            echo "Built Linux ffmpeg failed -version or is not 7.1.1" >&2
             exit 1
         fi
-        cd "$BIN_DIR"
-        tar -xf ffmpeg.tar.xz --strip-components=1 "$archive_member"
-        rm ffmpeg.tar.xz
-        chmod +x ffmpeg
-        assert_binary ffmpeg "$MIN_FFMPEG_BYTES"
-        echo "ffmpeg downloaded"
+        echo "ffmpeg 7.1.1 (x86_64, static, audio-only) built"
         cd - > /dev/null
         ;;
     MINGW*|MSYS*|CYGWIN*)

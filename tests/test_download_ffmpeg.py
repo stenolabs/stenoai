@@ -1,90 +1,70 @@
-"""Exercise the Linux ffmpeg download stage with deterministic HTTP payloads."""
-import io
+"""Exercise the Linux ffmpeg build dispatch without network or a toolchain."""
 import os
 from pathlib import Path
 import shutil
 import subprocess
-import tarfile
 import tempfile
 import unittest
 
 
-@unittest.skipUnless(
-    os.name == 'posix' and all(shutil.which(tool) for tool in ('bash', 'tar', 'xz')),
-    'Linux download stage requires a POSIX shell, tar and xz',
-)
-class LinuxFfmpegDownloadTests(unittest.TestCase):
-    def run_download(self, mode):
+@unittest.skipUnless(os.name == 'posix' and shutil.which('bash'), 'needs bash')
+class LinuxFfmpegBuildDispatchTests(unittest.TestCase):
+    def run_stage(self, mode):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             scripts = root / 'scripts'
             scripts.mkdir()
             stubs = root / 'stubs'
             stubs.mkdir()
-            # Execute the actual ffmpeg stage without downloading unrelated Ollama.
             source = (Path(__file__).resolve().parents[1] / 'scripts/download-ollama.sh').read_text()
-            script = scripts / 'download.sh'
+            script = scripts / 'download-ollama.sh'
             script.write_text(source.split('# --- Download Ollama ---')[0])
-            payload = b'fake ffmpeg\n' + b'\0' * 5_000_000
-            with tarfile.open(root / 'valid.tar.xz', 'w:xz') as archive:
-                entry = tarfile.TarInfo('ffmpeg-static/ffmpeg')
-                entry.size = len(payload)
-                archive.addfile(entry, io.BytesIO(payload))
-            with tarfile.open(root / 'missing.tar.xz', 'w:xz') as archive:
-                entry = tarfile.TarInfo('ffmpeg-static/README')
-                archive.addfile(entry, io.BytesIO(b''))
+            builder = scripts / 'build-ffmpeg-minimal.sh'
+            builder.write_text('''#!/bin/bash
+echo "$1" >> "$FIXTURE_ROOT/build-calls"
+if [ "$FIXTURE_MODE" = fail ]; then exit 7; fi
+mkdir -p "$(dirname "$1")"
+printf '#!/bin/sh\\n' > "$1"
+if [ "$FIXTURE_MODE" = bad-version ]; then
+    printf 'echo "ffmpeg version 6.0"\\n' >> "$1"
+else
+    printf 'echo "ffmpeg version 7.1.1"\\n' >> "$1"
+fi
+yes '#' | head -c 1000000 >> "$1"
+chmod +x "$1"
+''')
+            builder.chmod(0o755)
             for name, body in {
-                'uname': 'echo Linux\n',
-                'sleep': 'exit 0\n',
-                'curl': '''count=0
-[ ! -f "$FIXTURE_ROOT/count" ] || count=$(cat "$FIXTURE_ROOT/count")
-count=$((count + 1))
-echo "$count" > "$FIXTURE_ROOT/count"
-while [ "$#" -gt 0 ]; do
-    if [ "$1" = -o ]; then shift; output=$1; fi
-    shift
-done
-case "$FIXTURE_MODE" in
-    invalid) printf '<html>upstream unavailable</html>' > "$output" ;;
-    missing) cp "$FIXTURE_ROOT/missing.tar.xz" "$output" ;;
-    retry)
-        if [ "$count" -eq 1 ]; then
-            printf '<html>upstream unavailable</html>' > "$output"
-        else
-            cp "$FIXTURE_ROOT/valid.tar.xz" "$output"
-        fi ;;
-    valid) cp "$FIXTURE_ROOT/valid.tar.xz" "$output" ;;
-esac
-''',
+                'uname': '#!/bin/sh\necho Linux\n',
+                'curl': '#!/bin/sh\necho unexpected curl >&2; exit 99\n',
             }.items():
                 stub = stubs / name
-                stub.write_text('#!/bin/sh\n' + body)
+                stub.write_text(body)
                 stub.chmod(0o755)
             result = subprocess.run(
                 ['bash', str(script)], capture_output=True, text=True,
                 env={**os.environ, 'PATH': str(stubs) + os.pathsep + os.environ['PATH'],
-                     'FIXTURE_ROOT': str(root), 'FIXTURE_MODE': mode},
-                timeout=30,
+                     'FIXTURE_ROOT': str(root), 'FIXTURE_MODE': mode}, timeout=30,
             )
-            return result, int((root / 'count').read_text()), (root / 'bin/ffmpeg').exists()
+            calls = (root / 'build-calls').read_text().splitlines()
+            return result, calls, (root / 'bin/ffmpeg').exists()
 
-    def test_valid_archive_succeeds_without_retry(self):
-        result, calls, extracted = self.run_download('valid')
+    def test_builds_once_and_uses_local_output(self):
+        result, calls, built = self.run_stage('valid')
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(calls, 1)
-        self.assertTrue(extracted)
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(Path(calls[0]).name, 'ffmpeg')
+        self.assertTrue(built)
 
-    def test_http_200_error_page_is_retried(self):
-        result, calls, extracted = self.run_download('retry')
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(calls, 2)
-        self.assertTrue(extracted)
+    def test_failed_build_stops(self):
+        result, calls, built = self.run_stage('fail')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(len(calls), 1)
+        self.assertFalse(built)
 
-    def test_invalid_payloads_fail_after_bounded_retries(self):
-        for mode in ('invalid', 'missing'):
-            with self.subTest(mode=mode):
-                result, calls, extracted = self.run_download(mode)
-                self.assertNotEqual(result.returncode, 0)
-                self.assertEqual(calls, 3)
-                self.assertFalse(extracted)
-                self.assertIn('after 3 attempts', result.stderr)
+    def test_wrong_version_stops(self):
+        result, calls, built = self.run_stage('bad-version')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(len(calls), 1)
+        self.assertTrue(built)
+        self.assertIn('not 7.1.1', result.stderr)
