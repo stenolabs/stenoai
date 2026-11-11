@@ -25,6 +25,8 @@ The app is a thin Electron shell over a PyInstaller-bundled Python CLI. There is
 - Ad-hoc Python lint: `ruff check .`
 - Enforced Python lint ratchet: `python -m pip install -r requirements-lint.txt && python scripts/ruff_ratchet.py`
 - Intentionally update the reviewed ratchet baseline: `python scripts/ruff_ratchet.py --update`
+- Enforced Python type check (allowlisted modules, pinned mypy): `python -m pip install -r requirements-lint.txt && python -m mypy --config-file mypy.ini`
+- Add a module to the type-check allowlist: append it to `files` in `mypy.ini` (steps in the file header)
 - Run all tests: `python -m unittest discover tests`
 - Run a single test: `python -m unittest tests.test_config.ConfigStoragePathTests.test_set_storage_path_handles_permission_errors`
 
@@ -221,8 +223,8 @@ overrides an agent's own test-level defaults.
   and force-kills the app process tree if a graceful close hangs on teardown (Windows).
 - **CI:** `.github/workflows/e2e.yml` runs per PR. T1 on Ubuntu/xvfb plus the macOS T2 and
   pipeline jobs are required checks for `main`; Windows T2 remains advisory.
-  The protected T1 job runs the privacy scan, Electron main-process ESLint and the pinned
-  Ruff ratchet as unconditional steps, so any of those failures makes the required T1 check fail.
+  The protected T1 job runs the privacy scan, Electron main-process ESLint, the pinned
+  Ruff ratchet and the mypy allowlist check as unconditional steps, so any of those failures makes the required T1 check fail.
   `.github/workflows/e2e-nightly.yml` (scheduled) reuses that suite via
   `workflow_call` for flake/drift detection and adds the T3 long-meeting job. A CI-only
   Playwright `globalSetup` kills a stray Ollama + waits for a clean 11434 before the run.
