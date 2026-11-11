@@ -29,7 +29,9 @@ test('setup.check returns a coherent allGood + checks contract on a clean profil
 
   const res = await page.evaluate(() => (window as StenoWindow).stenoai.setup.check());
 
-  expect(res.success).toBe(true);
+  // The message carries the backend's own error: without it a red run only says
+  // "expected true, received false" (#603).
+  expect(res.success, `setup-check failed: ${res.error ?? 'no error reported'}`).toBe(true);
   // allGood is a boolean verdict (its value is host-dependent — a CI runner
   // without the LLM model reports false — so we assert the type, not the value).
   expect(typeof res.allGood).toBe('boolean');
