@@ -110,7 +110,7 @@ class TemplateGalleryTests(unittest.TestCase):
     write their own prompt. Unlike Standard, these are editable + resettable
     built-ins (locked=False) — same UX as OpenOats-style built-in/custom."""
 
-    GALLERY_IDS = {"detailed", "product-demo", "sales-call", "one-on-one", "standup"}
+    GALLERY_IDS = {"builtin-detailed", "product-demo", "sales-call", "one-on-one", "standup"}
 
     def test_gallery_ids_are_registered_builtins(self):
         self.assertTrue(self.GALLERY_IDS.issubset(set(T.BUILTIN_TEMPLATES)))
@@ -132,10 +132,16 @@ class TemplateGalleryTests(unittest.TestCase):
     def test_detailed_keeps_the_standard_section_headings(self):
         # #254: Detailed is the richer alternative to Standard, so a note
         # written with it has the same four top-level sections.
-        prompt = T.BUILTIN_TEMPLATES["detailed"]["prompt"]
+        prompt = T.BUILTIN_TEMPLATES["builtin-detailed"]["prompt"]
         for heading in ("## Summary", "## Key Topics", "## Key Points", "## Action Items"):
             self.assertIn(heading, prompt)
         self.assertFalse(T.BUILTIN_TEMPLATES["standard"]["prompt"], "Standard stays schema-driven")
+
+    def test_detailed_does_not_take_the_slug_of_a_custom_template(self):
+        # A user's own "Detailed" template has the id "detailed"; the built-in
+        # must not shadow it in the merged list.
+        self.assertEqual(T.new_template_id("Detailed", set()), "detailed")
+        self.assertNotIn("detailed", T.BUILTIN_TEMPLATES)
 
     def test_gallery_templates_are_distinct_from_each_other(self):
         prompts = [T.BUILTIN_TEMPLATES[tid]["prompt"] for tid in self.GALLERY_IDS]

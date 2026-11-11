@@ -45,8 +45,11 @@ BUILTIN_TEMPLATES = {
     # A richer alternative to Standard that leaves the locked Standard
     # contract untouched (#254): free-form markdown, editable and resettable
     # like the rest of the gallery, selectable per meeting or as the default.
-    "detailed": {
-        "id": "detailed",
+    # The id is prefixed on purpose: custom template ids are slugs of their
+    # names, so a plain "detailed" would shadow a custom template a user has
+    # already called "Detailed".
+    "builtin-detailed": {
+        "id": "builtin-detailed",
         "name": "Detailed",
         "icon": "doc",
         "prompt": (
