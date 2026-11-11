@@ -513,6 +513,7 @@
   "settings.ai.engineTagline.whisper": "Most accurate — 99 languages",
   "settings.ai.language.label": "Language",
   "settings.ai.language.description": "Auto-detects by default. Pick one to pin it.",
+  "settings.ai.language.parakeetHint": "Need Chinese, Japanese, Korean, Arabic or another language not listed here? Switch the model below to Whisper.",
   "settings.ai.saveRecordings.label": "Save recordings",
   "settings.ai.saveRecordings.description": "Save audio files to your storage location (see Advanced) after processing. Uses 1–10 MB per minute depending on capture mode.",
   "settings.ai.speakerIdentification.label": "Speaker identification",

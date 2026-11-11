@@ -126,3 +126,27 @@ test('the live transcript bar can select Italian and shares it with Settings', a
   });
   await expect(page.getByTestId('transcription-language-select')).toHaveText('Italian');
 });
+
+async function openTranscribeTab(page: Page) {
+  await page.evaluate(() => {
+    window.location.hash = '#/settings?tab=transcription';
+  });
+  await expect(page.getByTestId('transcription-language-select')).toBeVisible();
+}
+
+test('Parakeet shows a hint pointing to Whisper for other languages', async ({ launchApp }) => {
+  const { page } = await launchApp({ mockIpc: true });
+  await openTranscribeTab(page);
+  await expect(page.getByTestId('language-engine-hint')).toContainText(
+    'Switch the model below to Whisper',
+  );
+});
+
+test('Whisper does not show the Parakeet language hint', async ({ launchApp }) => {
+  const { page } = await launchApp({
+    mockIpc: true,
+    env: { STENOAI_E2E_MOCK_ENGINE: 'whisper' },
+  });
+  await openTranscribeTab(page);
+  await expect(page.getByTestId('language-engine-hint')).toHaveCount(0);
+});
