@@ -232,11 +232,12 @@ function registerObsidianSync({
           version: STATE_VERSION,
           notes: d.notes || {},
           conflicts: d.conflicts || {},
+          failures: d.failures && typeof d.failures === 'object' ? d.failures : {},
           stale: Array.isArray(d.stale) ? d.stale : [],
         };
       }
     } catch (_) { /* missing or corrupt → fresh */ }
-    return { version: STATE_VERSION, notes: {}, conflicts: {}, stale: [] };
+    return { version: STATE_VERSION, notes: {}, conflicts: {}, failures: {}, stale: [] };
   }
 
   // Vault-relative paths whose unlink was blocked by a persistent Windows lock
@@ -287,11 +288,32 @@ function registerObsidianSync({
     idx.conflicts[stem] = { vaultRelPath, detectedAt: new Date().toISOString(), reason };
   }
 
+  // Last sync/remove failure per note (e.g. vault folder not writable or moved).
+  // Without this an `error` left no trace and the user believed notes were
+  // syncing. Only a short error code/class is stored, never paths or contents.
+  // Cleared on the next successful sync/remove of the same note; bounded.
+  const MAX_FAILURES = 50;
+  function recordFailure(idx, stem, err) {
+    if (!stem) return;
+    const message = String((err && (err.code || err.name)) || 'UNKNOWN').slice(0, 40);
+    idx.failures = idx.failures || {};
+    delete idx.failures[stem]; // re-insert so the newest sits last
+    idx.failures[stem] = { message, at: new Date().toISOString() };
+    const stems = Object.keys(idx.failures);
+    if (stems.length > MAX_FAILURES) {
+      stems.sort((a, b) => idx.failures[a].at.localeCompare(idx.failures[b].at));
+      for (const k of stems.slice(0, stems.length - MAX_FAILURES)) delete idx.failures[k];
+    }
+  }
+  function clearFailure(idx, stem) { if (idx.failures) delete idx.failures[stem]; }
+
   // Core: reconcile the vault copy of one note from disk. Returns a status.
   function syncNoteBySummaryPath(summaryPath, { idx } = {}) {
     if (!isActive()) return { status: 'disabled' };
     const ownIdx = !idx;
     idx = idx || loadIndex();
+    const errStem = summaryPath && summaryPath.endsWith(SUMMARY_SUFFIX)
+      ? stemFromSummaryPath(summaryPath) : null;
     try {
       drainStale(idx); // retry any previously-blocked unlink first
       if (!summaryPath || !summaryPath.endsWith(SUMMARY_SUFFIX)) {
@@ -354,6 +376,7 @@ function registerObsidianSync({
       if (destHash === newHash) {
         idx.notes[stem] = { vaultRelPath, lastWrittenHash: newHash, lastSyncedAt: new Date().toISOString() };
         delete idx.conflicts[stem];
+        clearFailure(idx, stem);
         if (ownIdx) saveIndex(idx);
         return { status: 'synced' };
       }
@@ -373,10 +396,13 @@ function registerObsidianSync({
         lastSyncedAt: new Date().toISOString(),
       };
       delete idx.conflicts[stem];
+      clearFailure(idx, stem);
       if (ownIdx) saveIndex(idx);
       return { status: 'synced' };
     } catch (e) {
       log(`sync failed: ${e.code || e.message}`);
+      recordFailure(idx, errStem, e);
+      if (ownIdx) saveIndex(idx);
       return { status: 'error' };
     }
   }
@@ -386,9 +412,9 @@ function registerObsidianSync({
   function removeNoteBySummaryPath(target) {
     if (!isActive()) return { status: 'disabled' };
     const idx = loadIndex();
+    const stem = target && target.endsWith && target.endsWith(SUMMARY_SUFFIX)
+      ? stemFromSummaryPath(target) : target;
     try {
-      const stem = target && target.endsWith && target.endsWith(SUMMARY_SUFFIX)
-        ? stemFromSummaryPath(target) : target;
       const entry = idx.notes[stem];
       if (!entry) return { status: 'absent' };
       const abs = path.join(cached.vaultPath, entry.vaultRelPath);
@@ -401,10 +427,13 @@ function registerObsidianSync({
       try { fs.rmdirSync(path.dirname(abs)); } catch (_) { /* not empty / root */ }
       delete idx.notes[stem];
       delete idx.conflicts[stem];
+      clearFailure(idx, stem);
       saveIndex(idx);
       return { status: 'removed' };
     } catch (e) {
       log(`remove failed: ${e.code || e.message}`);
+      recordFailure(idx, typeof stem === 'string' ? stem : null, e);
+      saveIndex(idx);
       return { status: 'error' };
     }
   }

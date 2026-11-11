@@ -349,6 +349,7 @@ const stenoai = {
     setObsidianVaultPath: (p) => invoke('set-obsidian-vault-path', p),
     pickObsidianVaultFolder: () => invoke('select-obsidian-vault-folder'),
     getObsidianConflicts: () => invoke('get-obsidian-conflicts'),
+    getObsidianFailures: () => invoke('get-obsidian-failures'),
     getAiPrompts: () => invoke('get-ai-prompts'),
     saveDiagnostics: (defaultFilename, content) =>
       invoke('save-diagnostics', defaultFilename, content),

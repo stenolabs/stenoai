@@ -41,6 +41,7 @@ export const settingsKeys = {
   obsidianSync: () => [...settingsKeys.all, 'obsidianSync'] as const,
   obsidianVaultPath: () => [...settingsKeys.all, 'obsidianVaultPath'] as const,
   obsidianConflicts: () => [...settingsKeys.all, 'obsidianConflicts'] as const,
+  obsidianFailures: () => [...settingsKeys.all, 'obsidianFailures'] as const,
 };
 
 /**
@@ -530,6 +531,7 @@ export function useSetObsidianVaultPath() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: settingsKeys.obsidianVaultPath() });
       qc.invalidateQueries({ queryKey: settingsKeys.obsidianConflicts() });
+      qc.invalidateQueries({ queryKey: settingsKeys.obsidianFailures() });
     },
   });
 }
@@ -547,6 +549,15 @@ export function useObsidianConflicts() {
     // The backfill/sync that records conflicts runs async in main (fire-and-
     // forget), so poll while the Integrations tab is mounted to surface a
     // freshly-recorded conflict rather than showing a stale count.
+    refetchInterval: 4000,
+  });
+}
+
+/** Last Obsidian sync failures (vault unwritable/moved), polled like conflicts. */
+export function useObsidianFailures() {
+  return useQuery({
+    queryKey: settingsKeys.obsidianFailures(),
+    queryFn: async () => unwrap(await ipc().settings.getObsidianFailures()).failures,
     refetchInterval: 4000,
   });
 }
