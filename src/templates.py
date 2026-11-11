@@ -42,6 +42,37 @@ BUILTIN_TEMPLATES = {
         "format": "structured",
         "locked": True,
     },
+    # A richer alternative to Standard that leaves the locked Standard
+    # contract untouched (#254): free-form markdown, editable and resettable
+    # like the rest of the gallery, selectable per meeting or as the default.
+    "detailed": {
+        "id": "detailed",
+        "name": "Detailed",
+        "icon": "doc",
+        "prompt": (
+            "Write a thorough, complete summary of this meeting as markdown — not terse. "
+            "Use these sections with these exact headings:\n\n"
+            "## Summary\n"
+            "A 2-4 sentence overview of the main topics, decisions and outcomes.\n\n"
+            "## Key Topics\n"
+            "For each substantive topic, a `### Topic title` followed by a thorough account "
+            "written as flowing prose (plain sentences — NOT a nested bullet list and without "
+            "inline bold labels): the concrete names of people, organizations and products and "
+            "any figures exactly as stated, the reasoning given, and any decision, outcome or "
+            "open question. Cover every substantive topic; do not omit important detail or "
+            "flatten specifics into vague generalities.\n\n"
+            "## Key Points\n"
+            "- The concrete takeaways, keeping specific names, figures and decisions.\n\n"
+            "## Action Items\n"
+            "- Each action; name the responsible person only if explicitly stated.\n\n"
+            "Base everything ONLY on what was explicitly discussed; do not infer or invent. "
+            "Attribute a statement or action to a person ONLY when it is explicitly stated that "
+            "they said or did it — never guess who did what, and never default an action to a "
+            "named participant. Write in the language of the meeting."
+        ),
+        "language": "auto",
+        "format": "markdown",
+    },
     "product-demo": {
         "id": "product-demo",
         "name": "Product Demo",
