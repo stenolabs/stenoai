@@ -8,7 +8,7 @@ import {
 import { mkdtempSync, rmSync } from 'fs';
 import { tmpdir } from 'os';
 import path from 'path';
-import { execSync } from 'child_process';
+import { execFileSync, execSync } from 'child_process';
 import { version } from '../../app/package.json';
 
 // Repo-root/app — the Electron app dir (package.json main: main.js). Resolved
@@ -60,6 +60,28 @@ function descendantPids(pid: number): number[] {
     }
   }
   return found;
+}
+
+// Every live process whose command line mentions this test's user-data dir.
+// The backend children are handed paths below it (`process-streaming
+// <dir>/recordings/...`), and the directory name is unique per test, so this
+// finds them even after Electron has exited and they were reparented - which
+// the tree walk above cannot do for an app the spec closed itself.
+// execFileSync, not execSync: a shell's own command line would match too.
+function pidsMentioning(dir: string): number[] {
+  let out = '';
+  try {
+    out = execFileSync('pgrep', ['-f', path.basename(dir)], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    });
+  } catch {
+    return []; // pgrep exits 1 when nothing matches
+  }
+  return out
+    .split('\n')
+    .map((line) => Number(line.trim()))
+    .filter((pid) => pid > 0 && pid !== process.pid);
 }
 
 type Fixtures = {
@@ -196,6 +218,17 @@ export const test = base.extend<Fixtures>({
       for (const child of children) {
         try {
           process.kill(child, 'SIGKILL');
+        } catch {
+          /* already exited */
+        }
+      }
+    }
+    // An app the spec closed itself (a restart spec) was skipped above, and its
+    // children are already orphans. Sweep by the user-data dir to catch those.
+    if (process.platform !== 'win32') {
+      for (const pid of pidsMentioning(userDataDir)) {
+        try {
+          process.kill(pid, 'SIGKILL');
         } catch {
           /* already exited */
         }
