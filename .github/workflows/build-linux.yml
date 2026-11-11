@@ -21,6 +21,28 @@ on:
       - 'website/**'
     tags:
       - 'v*.*.*'
+  # A PR that changes how the Linux bundle is built gets built before it
+  # merges (#603). Without this the first real build of such a change ran on
+  # main. Limited to the build inputs so ordinary PRs do not pay for a full
+  # package build; the release-attach step below stays tag-only.
+  pull_request:
+    paths:
+      - '.github/workflows/build-linux.yml'
+      - 'scripts/download-ollama.sh'
+      - 'scripts/build-ffmpeg-minimal.sh'
+      - 'scripts/verify_ollama_gpu_bundle.py'
+      - 'scripts/thin-macos-bin.sh'
+      - 'scripts/diarize_bundle_guard.py'
+      - 'stenoai.spec'
+      - 'requirements.txt'
+      - 'app/package.json'
+      - 'app/package-lock.json'
+
+# A newer push to the same PR supersedes the running build. Pushes to main and
+# tags get a group of their own (the run id), so none of them is ever cancelled.
+concurrency:
+  group: build-linux-${{ github.event.pull_request.number && format('pr-{0}', github.event.pull_request.number) || format('run-{0}', github.run_id) }}
+  cancel-in-progress: true
 
 permissions:
   contents: write
@@ -32,6 +54,11 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          # The build runs PR-controlled scripts. Nothing after the checkout
+          # needs git credentials (the release step gets its token through its
+          # own env), so the token is not left in the checkout's git config.
+          persist-credentials: false
 
       - name: Setup Python
         uses: actions/setup-python@v5
