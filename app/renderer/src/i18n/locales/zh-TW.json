@@ -504,6 +504,7 @@
   "settings.ai.engineTagline.whisper": "最準確，支援 99 種語言",
   "settings.ai.language.label": "語言",
   "settings.ai.language.description": "預設自動偵測，選擇語言即可鎖定。",
+  "settings.ai.language.parakeetHint": "需要中文、日文、韓文、阿拉伯文或此處未列出的其他語言？請將語音轉文字引擎切換為 Whisper。",
   "settings.ai.saveRecordings.label": "保留錄音檔案",
   "settings.ai.saveRecordings.description": "處理後將音訊檔儲存至儲存位置（見「進階」）。依錄製模式每分鐘約 1–10 MB。",
   "settings.ai.speakerIdentification.label": "發言者識別",
