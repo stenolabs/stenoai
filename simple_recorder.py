@@ -3441,12 +3441,22 @@ def _backup_meeting_files(paths, stamp=None):
     if stamp is None:
         stamp = datetime.now().strftime("%Y%m%d%H%M%S")
     backed_up = []
-    for existing_path in paths:
-        existing_path = Path(existing_path)
-        if existing_path.exists():
-            backup_path = existing_path.with_name(f"{existing_path.name}.bak-{stamp}")
-            shutil.copy2(existing_path, backup_path)
-            backed_up.append(str(backup_path))
+    try:
+        for existing_path in paths:
+            existing_path = Path(existing_path)
+            if existing_path.exists():
+                backup_path = existing_path.with_name(f"{existing_path.name}.bak-{stamp}")
+                shutil.copy2(existing_path, backup_path)
+                backed_up.append(str(backup_path))
+    except OSError:
+        # All or nothing: a caller that aborts on a failed backup must not be
+        # left with the copies that did succeed.
+        for made in backed_up:
+            try:
+                os.unlink(made)
+            except OSError:
+                pass
+        raise
     return backed_up
 
 

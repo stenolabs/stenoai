@@ -76,6 +76,8 @@ function seedNote(userDataDir: string, stem: string, name: string) {
   // Safety copies left by a re-transcribe (#599): the previous note and the
   // previous speakers sidecar, each a full readable copy of the meeting.
   const noteBackup = path.join(outputDir, `${stem}_summary.json.bak-20240101000000`);
+  // full-reprocess can back up a note under one suffix and rewrite it as the other.
+  const otherSuffixBackup = path.join(outputDir, `${stem}_summary.md.bak-20240101000000`);
   const speakersBackup = path.join(outputDir, `${stem}_speakers.json.bak-20240101000000`);
   const transcriptBackup = path.join(
     transcriptsDir,
@@ -134,6 +136,7 @@ function seedNote(userDataDir: string, stem: string, name: string) {
   writeFileSync(transcriptFile, `transcript for ${name}`);
   writeFileSync(noteBackup, JSON.stringify({ summary: `Previous summary for ${name}` }));
   writeFileSync(speakersBackup, JSON.stringify({ clusters: [] }));
+  writeFileSync(otherSuffixBackup, `Previous markdown note for ${name}`);
   writeFileSync(transcriptBackup, `previous transcript for ${name}`);
   // Minimal but non-empty "audio" payload — the handler never decodes it, so a
   // stub is enough to prove the recording survives the delete window.
@@ -148,6 +151,7 @@ function seedNote(userDataDir: string, stem: string, name: string) {
     originalSidecar,
     callSidecar,
     noteBackup,
+    otherSuffixBackup,
     speakersBackup,
     transcriptBackup,
     transcriptFile,
@@ -354,6 +358,7 @@ test('commit (explicit dismiss) permanently removes the summary + transcript + r
     seed.originalSidecar,
     seed.callSidecar,
     seed.noteBackup,
+    seed.otherSuffixBackup,
     seed.speakersBackup,
     seed.transcriptBackup,
   ];

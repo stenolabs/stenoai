@@ -145,5 +145,38 @@ class RetranscribeBackupTests(unittest.TestCase):
         self.assertEqual(self._baks(), [])
 
 
+class BackupHelperTests(unittest.TestCase):
+    def test_a_failed_copy_removes_the_copies_already_made(self):
+        import shutil
+
+        with tempfile.TemporaryDirectory() as tmp:
+            first = Path(tmp) / "a_summary.md"
+            second = Path(tmp) / "a_speakers.json"
+            first.write_text("note")
+            second.write_text("{}")
+            real_copy2 = shutil.copy2
+
+            def copy_then_fail(src, dst):
+                if Path(src) == second:
+                    raise OSError("disk full")
+                return real_copy2(src, dst)
+
+            with mock.patch("shutil.copy2", side_effect=copy_then_fail):
+                with self.assertRaises(OSError):
+                    simple_recorder._backup_meeting_files((first, second), "20240101000000")
+
+            self.assertEqual(sorted(p.name for p in Path(tmp).iterdir()),
+                             ["a_speakers.json", "a_summary.md"])
+
+    def test_missing_files_are_skipped(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            present = Path(tmp) / "a_summary.md"
+            present.write_text("note")
+            made = simple_recorder._backup_meeting_files(
+                (present, Path(tmp) / "absent.json"), "20240101000000")
+            self.assertEqual([Path(m).name for m in made],
+                             ["a_summary.md.bak-20240101000000"])
+
+
 if __name__ == "__main__":
     unittest.main()

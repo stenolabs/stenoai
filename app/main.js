@@ -5093,7 +5093,10 @@ ipcMain.handle('delete-meeting', async (event, meetingData) => {
     // note's own copies qualify.
     if (stem) {
       const backupSources = [
-        summaryPath,
+        // Both summary suffixes: full-reprocess can back up a legacy .json
+        // note and then write the .md that this delete is called for.
+        path.join(outputDir, `${stem}_summary.md`),
+        path.join(outputDir, `${stem}_summary.json`),
         path.join(outputDir, `${stem}_speakers.json`),
         path.join(path.dirname(outputDir), 'transcripts', `${stem}_transcript.txt`),
       ];
