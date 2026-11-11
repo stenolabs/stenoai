@@ -3446,11 +3446,13 @@ def _backup_meeting_files(paths, stamp=None):
             existing_path = Path(existing_path)
             if existing_path.exists():
                 backup_path = existing_path.with_name(f"{existing_path.name}.bak-{stamp}")
-                shutil.copy2(existing_path, backup_path)
+                # Recorded before the copy: a copy that fails halfway has
+                # already created (and partly written) its target.
                 backed_up.append(str(backup_path))
+                shutil.copy2(existing_path, backup_path)
     except OSError:
         # All or nothing: a caller that aborts on a failed backup must not be
-        # left with the copies that did succeed.
+        # left with the copies that did succeed, nor with a truncated one.
         for made in backed_up:
             try:
                 os.unlink(made)

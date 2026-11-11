@@ -158,6 +158,8 @@ class BackupHelperTests(unittest.TestCase):
 
             def copy_then_fail(src, dst):
                 if Path(src) == second:
+                    # A real copy fails after creating its target.
+                    Path(dst).write_text("{")
                     raise OSError("disk full")
                 return real_copy2(src, dst)
 
