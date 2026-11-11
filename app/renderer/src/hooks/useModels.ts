@@ -542,8 +542,13 @@ export function usePullLanguageModel() {
     (name: string) => mutate({ name, rejoined: false }),
     [mutate],
   );
+  const { mutateAsync } = mutation;
+  const downloadAsync = React.useCallback(
+    (name: string) => mutateAsync({ name, rejoined: false }),
+    [mutateAsync],
+  );
 
-  return { ...mutation, mutate: download, progress };
+  return { ...mutation, mutate: download, mutateAsync: downloadAsync, progress };
 }
 
 export function useSetWhisperModel() {
