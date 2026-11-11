@@ -243,6 +243,13 @@ class RoutingTests(unittest.TestCase):
         self.assertEqual(main.transcribe_calls, [])
         self.assertTrue(self.loaded_paths[0].endswith(f"ggml-{HEBREW_MODEL}.bin"))
 
+    def test_low_confidence_hebrew_detection_stays_on_main_model(self):
+        transcriber = _build_transcriber(FakeWhisperModel("main", detected=("he", 0.3)))
+        result = self._transcribe(transcriber, "auto")
+        self.assertEqual(result["text"], "from main")
+        self.assertEqual(result["detected_language"], "he")
+        self.assertEqual(self.loaded_paths, [])
+
     def test_pinned_hebrew_uses_language_model(self):
         transcriber = _build_transcriber(FakeWhisperModel("main"))
         self.assertEqual(self._transcribe(transcriber, "he")["text"], "from hebrew")

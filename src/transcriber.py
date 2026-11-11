@@ -123,6 +123,13 @@ CHANNEL_DETECT_TIMEOUT_S = 60
 # this gate's only job is to skip channels with effectively zero audio.
 MIN_RMS_THRESHOLD = 0.0003
 
+# Minimum whisper.cpp language-detection probability for a *detected*
+# language to switch decoding to a language-specific fine-tune. A pinned
+# language always switches. Real Hebrew speech detects at ~0.99; near-silent
+# or noise-only channels detect at well under 0.5 (one measured at en 0.27),
+# so those stay on the main model, as they did before language models.
+LANGUAGE_MODEL_MIN_DETECTION_PROBABILITY = 0.5
+
 # Acoustic per-channel speaker diarization (steno-diarize sidecar, macOS
 # only). Merge gap for consecutive same-speaker diarizer segments — reduces
 # diarization flicker and shrinks the gaps that cause boundary sentence
@@ -3334,7 +3341,16 @@ class WhisperTranscriber:
                     logger.warning("Failed to auto-detect language; using whisper default: %s", e)
                     resolved_language = None
 
-            decoder = self._whisper_decoder_for(resolved_language)
+            # A pinned language always routes; a detected one only when the
+            # detection is confident, so a quiet or noisy channel that
+            # barely reads as Hebrew stays on the main model.
+            routing_language = resolved_language
+            if language == "auto" and (
+                detected_language_probability is None
+                or detected_language_probability < LANGUAGE_MODEL_MIN_DETECTION_PROBABILITY
+            ):
+                routing_language = None
+            decoder = self._whisper_decoder_for(routing_language)
             transcribe_kwargs = {"media": str(converted_path)}
             if resolved_language and resolved_language != "auto":
                 transcribe_kwargs["language"] = resolved_language

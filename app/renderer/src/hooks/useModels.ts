@@ -497,8 +497,11 @@ export function usePullLanguageModel() {
   }, []);
 
   const mutation = useMutation({
-    mutationFn: async (name: string) => {
+    mutationFn: async ({ name, rejoined }: { name: string; rejoined: boolean }) => {
       unwrap(await ipc().whisperModels.pull(name));
+      // A rejoined pull leaves the re-enable to the call that started the
+      // download, so switching the model off in between isn't undone.
+      if (rejoined) return;
       // Re-enable in case the user had switched language models off before.
       // Best-effort: the model is installed either way, and the switch shows
       // the persisted state once the list refetches.
@@ -527,7 +530,7 @@ export function usePullLanguageModel() {
         const name = Object.keys(active).find((model) => names.has(model));
         if (!name) return;
         setProgress((prev) => ({ ...prev, [name]: active[name] ?? '' }));
-        mutate(name);
+        mutate({ name, rejoined: true });
       })
       .catch(() => undefined);
     return () => {
@@ -535,7 +538,12 @@ export function usePullLanguageModel() {
     };
   }, [mutate, languageModelKey]);
 
-  return { ...mutation, progress };
+  const download = React.useCallback(
+    (name: string) => mutate({ name, rejoined: false }),
+    [mutate],
+  );
+
+  return { ...mutation, mutate: download, progress };
 }
 
 export function useSetWhisperModel() {
