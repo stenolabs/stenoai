@@ -138,7 +138,7 @@ test('Parakeet shows a hint pointing to Whisper for other languages', async ({ l
   const { page } = await launchApp({ mockIpc: true });
   await openTranscribeTab(page);
   await expect(page.getByTestId('language-engine-hint')).toContainText(
-    'Switch the transcription engine to Whisper',
+    'Switch the model below to Whisper',
   );
 });
 
