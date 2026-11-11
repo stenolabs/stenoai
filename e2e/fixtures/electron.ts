@@ -8,7 +8,7 @@ import {
 import { mkdtempSync, rmSync } from 'fs';
 import { tmpdir } from 'os';
 import path from 'path';
-import { execSync } from 'child_process';
+import { execFileSync, execSync } from 'child_process';
 import { version } from '../../app/package.json';
 
 // Repo-root/app — the Electron app dir (package.json main: main.js). Resolved
@@ -36,6 +36,53 @@ type LaunchOptions = {
 };
 
 type LaunchResult = { app: ElectronApplication; page: Page };
+
+// Every live descendant of `pid`, children first collected breadth-first. Read
+// before the app goes away: once Electron exits its children are reparented to
+// launchd/init and can no longer be traced back to the test that started them.
+function descendantPids(pid: number): number[] {
+  const found: number[] = [];
+  const queue = [pid];
+  while (queue.length) {
+    const parent = queue.shift()!;
+    let out = '';
+    try {
+      out = execSync(`pgrep -P ${parent}`, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+    } catch {
+      continue; // pgrep exits 1 when there are no children
+    }
+    for (const line of out.split('\n')) {
+      const child = Number(line.trim());
+      if (child > 0) {
+        found.push(child);
+        queue.push(child);
+      }
+    }
+  }
+  return found;
+}
+
+// Every live process whose command line mentions this test's user-data dir.
+// The backend children are handed paths below it (`process-streaming
+// <dir>/recordings/...`), and the directory name is unique per test, so this
+// finds them even after Electron has exited and they were reparented - which
+// the tree walk above cannot do for an app the spec closed itself.
+// execFileSync, not execSync: a shell's own command line would match too.
+function pidsMentioning(dir: string): number[] {
+  let out = '';
+  try {
+    out = execFileSync('pgrep', ['-f', path.basename(dir)], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    });
+  } catch {
+    return []; // pgrep exits 1 when nothing matches
+  }
+  return out
+    .split('\n')
+    .map((line) => Number(line.trim()))
+    .filter((pid) => pid > 0 && pid !== process.pid);
+}
 
 type Fixtures = {
   userDataDir: string;
@@ -137,9 +184,16 @@ export const test = base.extend<Fixtures>({
       // pipeline subprocess, a stray `ollama serve`) that keep the Electron main
       // process alive, so a graceful close never returns and Playwright's worker
       // teardown times out. Race the close with a grace window, then force-kill
-      // the whole process tree. macOS closes well within the window, so the
-      // fallback never fires there.
+      // the whole process tree.
+      //
+      // macOS and Linux close well within the window, but a stopped recording
+      // leaves its `stenoai process-streaming` child running: it outlives the
+      // app and keeps transcribing on the CPU (1-2 GB, most of a core each).
+      // Several of those stacked up across specs and starved the macOS runner
+      // until most later specs timed out (#598). Snapshot the tree now and kill
+      // whatever is left once the app is gone.
       if (proc.exitCode !== null || proc.signalCode !== null) continue;
+      const children = process.platform !== 'win32' && proc.pid ? descendantPids(proc.pid) : [];
       try {
         await Promise.race([
           app.close(),
@@ -159,6 +213,24 @@ export const test = base.extend<Fixtures>({
           }
         } catch {
           /* already gone */
+        }
+      }
+      for (const child of children) {
+        try {
+          process.kill(child, 'SIGKILL');
+        } catch {
+          /* already exited */
+        }
+      }
+    }
+    // An app the spec closed itself (a restart spec) was skipped above, and its
+    // children are already orphans. Sweep by the user-data dir to catch those.
+    if (process.platform !== 'win32') {
+      for (const pid of pidsMentioning(userDataDir)) {
+        try {
+          process.kill(pid, 'SIGKILL');
+        } catch {
+          /* already exited */
         }
       }
     }
