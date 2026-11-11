@@ -217,7 +217,18 @@ function registerObsidianSync({
   const log = (msg) => { try { sendDebugLog(`[obsidian-sync] ${msg}`); } catch (_) {} };
 
   function setCachedConfig(cfg) {
+    const previousVault = cached.vaultPath;
     cached = { enabled: !!(cfg && cfg.enabled), vaultPath: (cfg && cfg.vaultPath) || '' };
+    // Failures recorded against another vault say nothing about this one.
+    if (previousVault && previousVault !== cached.vaultPath) {
+      try {
+        const idx = loadIndex();
+        if (idx.failures && Object.keys(idx.failures).length) {
+          idx.failures = {};
+          saveIndex(idx);
+        }
+      } catch (_) { /* best effort */ }
+    }
   }
   function getCachedConfig() { return cached; }
   function isActive() { return cached.enabled && !!cached.vaultPath; }
@@ -293,19 +304,36 @@ function registerObsidianSync({
   // syncing. Only a short error code/class is stored, never paths or contents.
   // Cleared on the next successful sync/remove of the same note; bounded.
   const MAX_FAILURES = 50;
+  const failureTime = (f) => String((f && f.at) || '');
   function recordFailure(idx, stem, err) {
     if (!stem) return;
-    const message = String((err && (err.code || err.name)) || 'UNKNOWN').slice(0, 40);
-    idx.failures = idx.failures || {};
-    delete idx.failures[stem]; // re-insert so the newest sits last
-    idx.failures[stem] = { message, at: new Date().toISOString() };
-    const stems = Object.keys(idx.failures);
-    if (stems.length > MAX_FAILURES) {
-      stems.sort((a, b) => idx.failures[a].at.localeCompare(idx.failures[b].at));
-      for (const k of stems.slice(0, stems.length - MAX_FAILURES)) delete idx.failures[k];
-    }
+    // Bookkeeping must never turn a handled sync error into a thrown one, even
+    // with a hand-edited or damaged index.
+    try {
+      const message = String((err && (err.code || err.name)) || 'UNKNOWN').slice(0, 40);
+      if (!idx.failures || typeof idx.failures !== 'object') idx.failures = {};
+      delete idx.failures[stem]; // re-insert so the newest sits last
+      idx.failures[stem] = { message, at: new Date().toISOString() };
+      const stems = Object.keys(idx.failures);
+      if (stems.length > MAX_FAILURES) {
+        stems.sort((a, b) => failureTime(idx.failures[a]).localeCompare(failureTime(idx.failures[b])));
+        for (const k of stems.slice(0, stems.length - MAX_FAILURES)) delete idx.failures[k];
+      }
+    } catch (_) { /* keep the caller's own error handling intact */ }
   }
   function clearFailure(idx, stem) { if (idx.failures) delete idx.failures[stem]; }
+  // What the renderer may see: reason and time only, oldest first. The index
+  // keys are note stems, which can carry the meeting title, so they stay here.
+  // Empty while sync is off - a failure against a vault that is no longer in
+  // use is not something the user can act on.
+  function listFailures() {
+    if (!isActive()) return [];
+    const failures = loadIndex().failures || {};
+    return Object.values(failures)
+      .filter((f) => f && typeof f.message === 'string')
+      .map((f) => ({ message: f.message, at: failureTime(f) }))
+      .sort((a, b) => a.at.localeCompare(b.at));
+  }
 
   // Core: reconcile the vault copy of one note from disk. Returns a status.
   function syncNoteBySummaryPath(summaryPath, { idx } = {}) {
@@ -416,7 +444,11 @@ function registerObsidianSync({
       ? stemFromSummaryPath(target) : target;
     try {
       const entry = idx.notes[stem];
-      if (!entry) return { status: 'absent' };
+      if (!entry) {
+        // A note whose first export failed has a failure but no entry.
+        if (idx.failures && idx.failures[stem]) { clearFailure(idx, stem); saveIndex(idx); }
+        return { status: 'absent' };
+      }
       const abs = path.join(cached.vaultPath, entry.vaultRelPath);
       if (isExternallyEdited(abs, entry)) {
         recordConflict(idx, stem, entry.vaultRelPath, 'external-edit-on-delete');
@@ -515,6 +547,9 @@ function registerObsidianSync({
             delete idx.notes[stem];
           }
         }
+        for (const stem of Object.keys(idx.failures || {})) {
+          if (!onDisk.has(stem)) clearFailure(idx, stem);
+        }
       }
       saveIndex(idx);
       // 2. Re-sync every present note (hash-aware: an unchanged note is a cheap
@@ -534,7 +569,7 @@ function registerObsidianSync({
     setCachedConfig, getCachedConfig,
     syncNoteBySummaryPath, removeNoteBySummaryPath,
     backfillAll, reconcileOnLaunch,
-    loadIndex, saveIndex,
+    loadIndex, saveIndex, listFailures,
     // exported for tests:
     transformNote, deriveFilename, sanitizeFilename, parseFrontmatter,
   };

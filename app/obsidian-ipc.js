@@ -94,8 +94,7 @@ function registerObsidianIpc({
 
   ipcMain.handle('get-obsidian-failures', async () => {
     try {
-      const idx = obsidianSync.loadIndex();
-      return { success: true, failures: idx.failures || {} };
+      return { success: true, failures: obsidianSync.listFailures() };
     } catch (e) { return { success: false, error: e.message }; }
   });
 }

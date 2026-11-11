@@ -864,7 +864,7 @@ export type GetObsidianVaultPathResponse = Result<{ obsidian_vault_path: string 
 export type ObsidianConflict = { vaultRelPath: string; detectedAt: string; reason: string };
 export type GetObsidianConflictsResponse = Result<{ conflicts: Record<string, ObsidianConflict> }>;
 export type ObsidianFailure = { message: string; at: string };
-export type GetObsidianFailuresResponse = Result<{ failures: Record<string, ObsidianFailure> }>;
+export type GetObsidianFailuresResponse = Result<{ failures: ObsidianFailure[] }>;
 export type GetAiPromptsResponse = Result<{ summarization: string }>;
 
 export type GetAiProviderResponse = Result<{

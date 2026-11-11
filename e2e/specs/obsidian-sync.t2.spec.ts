@@ -23,7 +23,7 @@ type StenoWin = Window & {
       getObsidianConflicts: () => Promise<{ success: boolean; conflicts: Record<string, unknown> }>;
       getObsidianFailures: () => Promise<{
         success: boolean;
-        failures: Record<string, { message: string; at: string }>;
+        failures?: { message: string; at: string }[];
       }>;
     };
     meetings: {
@@ -229,12 +229,15 @@ test('an unusable vault is reported as a sync failure, and clears once the vault
   await expect
     .poll(() => vaultFiles(vault).length, { timeout: 20_000, intervals: [250] })
     .toBe(1);
-  const failures = () =>
-    page.evaluate(async () => {
-      const r = await (window as StenoWin).stenoai.settings.getObsidianFailures();
-      return r.success ? r.failures : {};
-    });
-  expect(Object.keys(await failures())).toEqual([]);
+  // A failed IPC call must fail the test, not read as "no failures".
+  const failures = async () => {
+    const r = await page.evaluate(() =>
+      (window as StenoWin).stenoai.settings.getObsidianFailures(),
+    );
+    expect(r.success).toBe(true);
+    return r.failures ?? [];
+  };
+  expect(await failures()).toEqual([]);
 
   // Break the vault after setup: a regular file where the folder was, so every
   // write underneath fails (ENOTDIR) on all platforms regardless of privileges.
@@ -244,18 +247,21 @@ test('an unusable vault is reported as a sync failure, and clears once the vault
   // A rename runs the per-note sync hook against the broken vault.
   await page.evaluate((f) => (window as StenoWin).stenoai.meetings.update(f, { name: 'Broken Vault Note' }), summaryPath);
   await expect
-    .poll(async () => Object.keys(await failures()), { timeout: 20_000, intervals: [250] })
-    .toContain(STEM);
-  const f = (await failures())[STEM];
+    .poll(async () => (await failures()).length, { timeout: 20_000, intervals: [250] })
+    .toBe(1);
+  const [f] = await failures();
   expect(f.message).toMatch(/^[A-Z_]+$/);
   expect(Number.isNaN(Date.parse(f.at))).toBe(false);
+  // Reason and time only: the note's stem (which can carry its title) stays
+  // in the main process.
+  expect(Object.keys(f).sort()).toEqual(['at', 'message']);
 
   // Repair the vault; the next sync of the same note clears the entry.
   unlinkSync(vault);
   mkdirSync(vault, { recursive: true });
   await page.evaluate((f2) => (window as StenoWin).stenoai.meetings.update(f2, { name: 'Repaired Vault Note' }), summaryPath);
   await expect
-    .poll(async () => Object.keys(await failures()).length, { timeout: 20_000, intervals: [250] })
+    .poll(async () => (await failures()).length, { timeout: 20_000, intervals: [250] })
     .toBe(0);
   expect(vaultFiles(vault).length).toBe(1);
 });

@@ -40,7 +40,7 @@ export function IntegrationsTab() {
   const path = vaultPath.data || '';
   const conflictCount = conflicts.data ? Object.keys(conflicts.data).length : 0;
 
-  const failureList = Object.values(failures.data ?? {});
+  const failureList = failures.data ?? [];
   const failureCount = failureList.length;
   const latestFailure = failureList.reduce<{ message: string; at: string } | null>(
     (acc, f) => (!acc || f.at > acc.at ? f : acc),

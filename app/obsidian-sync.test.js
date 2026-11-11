@@ -331,3 +331,37 @@ test('the failure list is bounded to the 50 most recent', () => {
   assert.ok(failures.n54, 'newest kept');
   fs.rmSync(h.root, { recursive: true, force: true });
 });
+
+test('the renderer view of failures carries reason and time only, and is empty while sync is off', () => {
+  const h = harness();
+  h.writeNote('n1', NOTE);
+  breakVault(h);
+  h.eng.syncNoteBySummaryPath(path.join(h.output, 'n1_summary.md'));
+  const list = h.eng.listFailures();
+  assert.equal(list.length, 1);
+  assert.deepEqual(Object.keys(list[0]).sort(), ['at', 'message']);
+  const cfg = h.eng.getCachedConfig();
+  h.eng.setCachedConfig({ enabled: false, vaultPath: cfg.vaultPath });
+  assert.deepEqual(h.eng.listFailures(), []);
+  fs.rmSync(h.root, { recursive: true, force: true });
+});
+
+test('a failure does not outlive its note, its vault, or a damaged index', () => {
+  const h = harness();
+  h.writeNote('n1', NOTE);
+  const p = path.join(h.output, 'n1_summary.md');
+  breakVault(h);
+  h.eng.syncNoteBySummaryPath(p); // first export fails: failure, no index entry
+  assert.equal(h.eng.removeNoteBySummaryPath(p).status, 'absent');
+  assert.equal(h.eng.loadIndex().failures.n1, undefined, 'cleared when the note is deleted');
+
+  const idx = h.eng.loadIndex();
+  idx.failures.gone = { message: 'EACCES', at: null }; // damaged record
+  h.eng.saveIndex(idx);
+  assert.equal(h.eng.syncNoteBySummaryPath(p).status, 'error', 'a damaged record does not make recording throw');
+
+  const cfg = h.eng.getCachedConfig();
+  h.eng.setCachedConfig({ enabled: true, vaultPath: `${cfg.vaultPath}-other` });
+  assert.deepEqual(h.eng.loadIndex().failures, {}, 'cleared when the vault changes');
+  fs.rmSync(h.root, { recursive: true, force: true });
+});
