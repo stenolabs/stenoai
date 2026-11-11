@@ -219,11 +219,16 @@ jobs:
             console.log('setup-check parsed: allGood=' + payload.allGood + ', failing=' + (failed.join(',') || 'none'));
             // sounddevice is the check libportaudio2 exists for (#502). A model
             // not being downloaded is expected here; a broken native lib is not.
+            // setup-check reports a missing PortAudio library as fail and a
+            // PortAudio that loaded but found no audio server as warn. A
+            // runner has no audio server (ubuntu-26.04's PortAudio tries
+            // PulseAudio first), so warn still proves the library arrived.
             const sd = payload.checks.find((c) => c.name === 'sounddevice');
-            if (!sd || sd.status !== 'pass') {
-              console.error('::error::sounddevice check did not pass — the .deb dependency chain is not delivering PortAudio');
+            if (!sd || sd.status === 'fail') {
+              console.error('::error::sounddevice check failed — the .deb dependency chain is not delivering PortAudio');
               process.exit(1);
             }
+            console.log('sounddevice: ' + sd.status + ' (' + sd.detail + ')');
           "
 
       - name: Verify the AppImage is well-formed
