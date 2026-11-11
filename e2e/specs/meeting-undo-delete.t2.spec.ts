@@ -73,6 +73,14 @@ function seedNote(userDataDir: string, stem: string, name: string) {
   const reportsSidecar = path.join(outputDir, `${stem}_reports.json`);
   const originalSidecar = path.join(outputDir, `${stem}_original.json`);
   const callSidecar = path.join(outputDir, `${stem}_call.json`);
+  // Safety copies left by a re-transcribe (#599): the previous note and the
+  // previous speakers sidecar, each a full readable copy of the meeting.
+  const noteBackup = path.join(outputDir, `${stem}_summary.json.bak-20240101000000`);
+  const speakersBackup = path.join(outputDir, `${stem}_speakers.json.bak-20240101000000`);
+  const transcriptBackup = path.join(
+    transcriptsDir,
+    `${stem}_transcript.txt.bak-20240101000000`,
+  );
   const transcriptFile = path.join(transcriptsDir, `${stem}_transcript.txt`);
   const audioFile = path.join(recordingsDir, `${stem}.wav`);
 
@@ -124,6 +132,9 @@ function seedNote(userDataDir: string, stem: string, name: string) {
     }),
   );
   writeFileSync(transcriptFile, `transcript for ${name}`);
+  writeFileSync(noteBackup, JSON.stringify({ summary: `Previous summary for ${name}` }));
+  writeFileSync(speakersBackup, JSON.stringify({ clusters: [] }));
+  writeFileSync(transcriptBackup, `previous transcript for ${name}`);
   // Minimal but non-empty "audio" payload — the handler never decodes it, so a
   // stub is enough to prove the recording survives the delete window.
   writeFileSync(audioFile, Buffer.from('RIFFstub-wav-bytes'));
@@ -136,6 +147,9 @@ function seedNote(userDataDir: string, stem: string, name: string) {
     reportsSidecar,
     originalSidecar,
     callSidecar,
+    noteBackup,
+    speakersBackup,
+    transcriptBackup,
     transcriptFile,
     audioFile,
     outputDir,
@@ -202,6 +216,9 @@ test('delete hides only the summary (note vanishes from the backend); transcript
   expect(existsSync(seed.reportsSidecar)).toBe(true);
   expect(existsSync(seed.originalSidecar)).toBe(true);
   expect(existsSync(seed.callSidecar)).toBe(true);
+  expect(existsSync(seed.noteBackup)).toBe(true);
+  expect(existsSync(seed.speakersBackup)).toBe(true);
+  expect(existsSync(seed.transcriptBackup)).toBe(true);
 
   // main is the source of truth for the deadline: list-pending-deletes reports it.
   const pending = await page.evaluate(() =>
@@ -254,6 +271,9 @@ test('undo renames the summary back — the note reappears and the scaffold is c
   expect(existsSync(seed.reportsSidecar)).toBe(true);
   expect(existsSync(seed.originalSidecar)).toBe(true);
   expect(existsSync(seed.callSidecar)).toBe(true);
+  expect(existsSync(seed.noteBackup)).toBe(true);
+  expect(existsSync(seed.speakersBackup)).toBe(true);
+  expect(existsSync(seed.transcriptBackup)).toBe(true);
 
   // Nothing left pending.
   const pending = await page.evaluate(() =>
@@ -333,6 +353,9 @@ test('commit (explicit dismiss) permanently removes the summary + transcript + r
     seed.reportsSidecar,
     seed.originalSidecar,
     seed.callSidecar,
+    seed.noteBackup,
+    seed.speakersBackup,
+    seed.transcriptBackup,
   ];
 
   const { page } = await launchApp();

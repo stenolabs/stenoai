@@ -5084,6 +5084,31 @@ ipcMain.handle('delete-meeting', async (event, meetingData) => {
     if (stem) {
       ancillaryCandidates.push(path.join(outputDir, `${stem}_speakers.json`));
     }
+    // Safety copies: `reprocess --retranscribe` and `full-reprocess` copy the
+    // note, the speakers sidecar and the transcript to `<file>.bak-<stamp>`
+    // before they overwrite them (#599). Each copy holds what its original
+    // holds - the whole meeting, or its voice embeddings - and nothing lists
+    // them, so a delete that left them behind would keep the meeting readable
+    // on disk. Matched by exact prefix plus the 14-digit stamp, so only this
+    // note's own copies qualify.
+    if (stem) {
+      const backupSources = [
+        summaryPath,
+        path.join(outputDir, `${stem}_speakers.json`),
+        path.join(path.dirname(outputDir), 'transcripts', `${stem}_transcript.txt`),
+      ];
+      for (const source of backupSources) {
+        const dir = path.dirname(source);
+        const prefix = `${path.basename(source)}.bak-`;
+        try {
+          for (const name of fs.readdirSync(dir)) {
+            if (name.startsWith(prefix) && /^\d{14}$/.test(name.slice(prefix.length))) {
+              ancillaryCandidates.push(path.join(dir, name));
+            }
+          }
+        } catch (_) { /* directory missing - nothing to add */ }
+      }
+    }
     // Imported transfer audio is bound to the same immutable summary stem.
     // Enumerate only canonical track files, never paths from meeting JSON.
     const transferMediaDir = transferMediaDirectory(outputDir, stem);
