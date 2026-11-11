@@ -829,7 +829,7 @@ jobs:
           key: pyinstaller-${{ runner.os }}-${{ hashFiles('stenoai.spec', 'requirements.txt') }}
 
       - name: Install Linux ffmpeg build and test deps
-        run: sudo apt-get update && sudo apt-get install -y musl-tools binutils build-essential ffmpeg
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends musl-tools binutils build-essential ffmpeg
 
       - name: Install Python dependencies
         run: |

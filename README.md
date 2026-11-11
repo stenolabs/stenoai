@@ -264,6 +264,8 @@ source venv/bin/activate
 pip install -r requirements.txt
 
 # Download bundled binaries (Ollama, ffmpeg)
+# On macOS and Linux this builds ffmpeg from source. Linux needs
+# `sudo apt install musl-tools binutils build-essential` first.
 ./scripts/download-ollama.sh
 
 # Build the Python backend

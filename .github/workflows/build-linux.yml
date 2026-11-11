@@ -56,7 +56,7 @@ jobs:
       # Without this, setup-check crashes with "OSError: PortAudio library
       # not found" (also declared as a runtime .deb dependency below).
       - name: Install system audio and ffmpeg build deps
-        run: sudo apt-get update && sudo apt-get install -y libportaudio2 musl-tools binutils build-essential ffmpeg
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libportaudio2 musl-tools binutils build-essential ffmpeg
 
       - name: Install Python dependencies
         run: |

@@ -33,8 +33,9 @@ assert_binary() {
 # Conservative floors: the real binaries are tens of MB, while an HTML error page
 # or a truncated transfer is orders of magnitude below these.
 MIN_FFMPEG_BYTES=5000000
-# The audio-only mac build is ~2 MB; a failed link or empty file is far below this.
-MIN_MAC_FFMPEG_BYTES=1000000
+# The audio-only source build (macOS and Linux) is a few MB; a failed link or
+# empty file is far below this.
+MIN_BUILT_FFMPEG_BYTES=1000000
 MIN_OLLAMA_BYTES=1000000
 
 # --- Download ffmpeg ---
@@ -48,7 +49,7 @@ case "$(uname -s)" in
         mkdir -p "$BIN_DIR"
         "$SCRIPT_DIR/build-ffmpeg-minimal.sh" "$BIN_DIR/ffmpeg"
         cd "$BIN_DIR"
-        assert_binary ffmpeg "$MIN_MAC_FFMPEG_BYTES"
+        assert_binary ffmpeg "$MIN_BUILT_FFMPEG_BYTES"
         # Validate the binary before bundling it. Two distinct failure modes:
         #  1. Wrong architecture. An x86_64 ffmpeg runs fine HERE under Rosetta and
         #     would sail through the -version check, then crash on a Rosetta-less
@@ -77,7 +78,7 @@ case "$(uname -s)" in
         mkdir -p "$BIN_DIR"
         "$SCRIPT_DIR/build-ffmpeg-minimal.sh" "$BIN_DIR/ffmpeg"
         cd "$BIN_DIR"
-        assert_binary ffmpeg "$MIN_MAC_FFMPEG_BYTES"
+        assert_binary ffmpeg "$MIN_BUILT_FFMPEG_BYTES"
         if ! ( set -o pipefail; ./ffmpeg -version | grep -q "ffmpeg version 7.1.1" ); then
             echo "Built Linux ffmpeg failed -version or is not 7.1.1" >&2
             exit 1
