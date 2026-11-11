@@ -112,3 +112,45 @@ class SetupCheckJsonTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SetupCheckAudioImportTests(unittest.TestCase):
+    """`import sounddevice` initialises PortAudio. A failure there must become a
+    check, never an unhandled exception that leaves the app with no result (#603)."""
+
+    def _run_with_import_error(self, error):
+        import builtins
+
+        real_import = builtins.__import__
+
+        def fake_import(name, *args, **kwargs):
+            if name == "sounddevice":
+                raise error
+            return real_import(name, *args, **kwargs)
+
+        with patch("builtins.__import__", side_effect=fake_import):
+            res = CliRunner().invoke(simple_recorder.setup_check, ["--json"])
+        self.assertEqual(res.exit_code, 0, res.output)
+        data = _only_json(res.output)
+        return next(c for c in data["checks"] if c["name"] == "sounddevice")
+
+    def test_portaudio_that_cannot_start_is_a_warning(self):
+        class PortAudioError(Exception):
+            pass
+
+        check = self._run_with_import_error(
+            PortAudioError("Error initializing PortAudio: Can't connect to server"))
+        self.assertEqual(check["status"], "warn")
+        self.assertTrue(check["ok"])
+        self.assertIn("PortAudioError", check["detail"])
+        self.assertNotIn("connect to server", check["detail"])
+
+    def test_missing_portaudio_library_is_a_failure(self):
+        check = self._run_with_import_error(OSError("PortAudio library not found"))
+        self.assertEqual(check["status"], "fail")
+        self.assertIn("libportaudio2", check["detail"])
+
+    def test_missing_package_is_still_a_failure(self):
+        check = self._run_with_import_error(ImportError("No module named 'sounddevice'"))
+        self.assertEqual(check["status"], "fail")
+        self.assertIn("pip install", check["detail"])

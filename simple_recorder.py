@@ -4982,11 +4982,24 @@ def setup_check(as_json):
     # The model will be downloaded during setup if needed
     
     # Check Python dependencies
+    # sounddevice loads and initialises PortAudio at import time, so the import
+    # can fail in more ways than a missing package. Each is reported as a check
+    # instead of crashing the whole command: an unhandled error here made the
+    # app's setup screen fail with no checks at all (#603).
     try:
         import sounddevice
         checks.append(("✅ sounddevice", "audio recording"))
     except ImportError:
         checks.append(("❌ sounddevice", "pip install sounddevice"))
+    except OSError:
+        # The PortAudio shared library is missing (Linux AppImage without
+        # libportaudio2, for example).
+        checks.append(("❌ sounddevice", "PortAudio library not found (install libportaudio2)"))
+    except Exception as audio_err:
+        # PortAudio is present but could not start, typically because no audio
+        # server is running (a headless Linux machine). Recording in the app is
+        # captured by the renderer, so this does not block setup.
+        checks.append(("⚠️ sounddevice", f"audio system not available ({type(audio_err).__name__})"))
     
     # Check for whisper backend (prefer pywhispercpp, fallback to openai-whisper)
     whisper_found = False
