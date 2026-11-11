@@ -47,7 +47,7 @@ def save_sidecar(meeting_path, sidecar: dict) -> None:
 
 def _split_frontmatter(text: str):
     """Return (frontmatter_dict, body). Frontmatter is the first --- ... --- block."""
-    fm = {}
+    fm: dict[str, str | None] = {}
     body = text
     if text.startswith("---"):
         end = text.find("\n---", 3)
