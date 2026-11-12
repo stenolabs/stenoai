@@ -11,6 +11,21 @@ from unittest.mock import patch
 from src import parakeet_models
 
 
+
+def setUpModule():
+    # download() refuses when a CA variable points at a bad path, and the
+    # bootstrap rewrites os.environ. Keep a developer's own CA settings from
+    # deciding these tests, and keep the rewrites from leaking out of them.
+    env = patch.dict(os.environ)
+    env.start()
+    unittest.addModuleCleanup(env.stop)
+    for name in ("SSL_CERT_FILE", "SSL_CERT_DIR", "REQUESTS_CA_BUNDLE"):
+        os.environ.pop(name, None)
+    missing = patch("src.tls_bootstrap.missing_ca_variables", return_value=())
+    missing.start()
+    unittest.addModuleCleanup(missing.stop)
+
+
 def _fake_hub_modules(offline: bool = False, reset_sessions=None) -> dict[str, object]:
     hub = types.ModuleType("huggingface_hub")
     constants = types.ModuleType("huggingface_hub.constants")
@@ -445,6 +460,7 @@ class OfflineLoadTests(unittest.TestCase):
         self.assertEqual(states, [True, False])
 
 
+@patch.dict(os.environ)
 class MissingCaOverrideTests(unittest.TestCase):
     def test_missing_ca_variable_refuses_the_download_and_names_it(self):
         with patch("src.tls_bootstrap.missing_ca_variables", return_value=("SSL_CERT_FILE",)), \
@@ -455,7 +471,7 @@ class MissingCaOverrideTests(unittest.TestCase):
         self.assertFalse(ok)
         snapshot.assert_not_called()
         error = parakeet_models.get_last_download_error()
-        self.assertIn("SSL_CERT_FILE points at a file or folder that does not exist", error)
+        self.assertIn("SSL_CERT_FILE points at a path that doesn't exist or is the wrong kind", error)
 
     def test_several_missing_variables_are_all_named(self):
         with patch("src.tls_bootstrap.missing_ca_variables", return_value=("SSL_CERT_FILE", "REQUESTS_CA_BUNDLE")), \
@@ -478,6 +494,7 @@ class MissingCaOverrideTests(unittest.TestCase):
         loaded.assert_called_once()
 
 
+@patch.dict(os.environ)
 class TransientTlsWarningTests(unittest.TestCase):
     """A certificate warning the Hub recovered from must not label a later,
     unrelated failure as a certificate problem."""

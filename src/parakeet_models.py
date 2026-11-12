@@ -47,7 +47,7 @@ def _configure_tls_for_huggingface() -> None:
 
 
 def _missing_ca_override_error() -> str | None:
-    """A fixed message naming CA variables that point at nothing, if any.
+    """A fixed message naming CA variables whose path is missing or the wrong kind.
 
     tls_bootstrap removes such a variable so unrelated commands keep working,
     which would leave the download trusting certifi instead of the CA the
@@ -63,8 +63,9 @@ def _missing_ca_override_error() -> str | None:
     names = " and ".join(missing)
     verb = "points" if len(missing) == 1 else "point"
     return (
-        f"Parakeet model download failed because {names} {verb} at a file or "
-        "folder that does not exist. Fix or remove it, then restart Steno."
+        f"Parakeet model download failed because {names} {verb} at a path that "
+        "doesn't exist or is the wrong kind (SSL_CERT_FILE needs a file, "
+        "SSL_CERT_DIR a folder). Fix or remove it, then restart Steno."
     )
 
 
