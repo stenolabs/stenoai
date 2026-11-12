@@ -50,25 +50,22 @@ Steno auto-detects the language from the audio -- you do not need to configure t
 
 Some workplace networks inspect HTTPS through a corporate VPN, proxy or antivirus. There, the Parakeet download can fail with "could not verify Hugging Face's certificate", because Steno only trusts public certificate authorities by default.
 
-To fix it, give Steno a certificate bundle that includes your network's root certificate. Your IT team can usually provide one as a `.pem` file. It should also contain the public roots, or other HTTPS connections will stop working.
+To fix it, give Steno a certificate bundle that includes your network's root certificate. Get it from your IT team, not from the network itself: a certificate captured from a connection can't be told apart from an attacker's, and everything in the bundle becomes trusted for every connection Steno makes.
 
-To build one yourself on a Mac, start from the public roots and add the certificates your network presents for Hugging Face. The network's root isn't always in a keychain you can export from, so take it from the connection itself:
+Ask IT for two things: the root certificate (or a ready-made `.pem` bundle) and its SHA-256 fingerprint. Check they match before you use it:
+
+```bash
+openssl x509 -in company-root.pem -noout -fingerprint -sha256
+```
+
+If IT gave you a `.cer` file, convert it first with `openssl x509 -inform der -in company-root.cer -out company-root.pem`.
+
+The bundle also needs the public roots, or other HTTPS connections will stop working. If IT gave you only the root certificate, add it to the public roots on a Mac like this:
 
 ```bash
 security find-certificate -a -p /System/Library/Keychains/SystemRootCertificates.keychain > ~/steno-ca.pem
-openssl s_client -connect huggingface.co:443 -servername huggingface.co -showcerts </dev/null 2>/dev/null \
-  | sed -n '/-----BEGIN CERTIFICATE-----/,/-----END CERTIFICATE-----/p' >> ~/steno-ca.pem
+cat company-root.pem >> ~/steno-ca.pem
 ```
-
-Run this on the managed network, and check the result before you use it: everything you add becomes trusted. The issuer should be your company or its proxy vendor:
-
-```bash
-openssl s_client -connect huggingface.co:443 -servername huggingface.co </dev/null 2>/dev/null | grep issuer
-```
-
-If it isn't, ask IT for the bundle instead.
-
-If your Mac is set to use a proxy server (System Settings → Network → your connection → Details → Proxies), add `-proxy host:port` with its address to both `openssl` commands. Without it, `openssl` goes around the proxy and captures Hugging Face's public certificate, which doesn't help.
 
 Point one of these variables at it:
 
