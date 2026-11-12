@@ -35,6 +35,10 @@ const RED_DOT = '\x1b[31m•\x1b[0m';
 const PAUSE_MARK = '❚❚';
 const isMac = process.platform === 'darwin';
 
+// The stand-in tray is an unpackaged-only seam, like the other main-process
+// hooks, so a run against a packaged app (STENOAI_E2E_APP_PATH) can't see it.
+test.skip(!!process.env.STENOAI_E2E_APP_PATH, 'tray stand-in only exists in unpackaged builds');
+
 test('menu bar indicator follows start, pause, resume and stop', async ({
   launchApp,
   userDataDir,
