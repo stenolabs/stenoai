@@ -63,9 +63,15 @@ test("upgrade waits for foreground, dismisses across restarts, and reopens from 
   const dialog = first.page.getByRole("dialog", { name: title });
   await expect(dialog).toBeVisible();
   await expect(
-    dialog.getByRole("button", { name: "Try Agents" }),
+    dialog.getByRole("button", { name: "Browse notes" }),
   ).toBeVisible();
-  await expect(dialog.getByRole("button", { name: "Open Chat" })).toBeVisible();
+  await expect(dialog.getByRole("button", { name: "Open AI settings" })).toBeVisible();
+  await expect(
+    dialog.getByRole("button", { name: "Open Preferences" }),
+  ).toBeVisible();
+  await expect(
+    dialog.getByRole("button", { name: "Turn on Auto-record" }),
+  ).toBeVisible();
   await dialog.evaluate((node) =>
     node.setAttribute("data-persistence-probe", "retained"),
   );
@@ -107,11 +113,21 @@ test("upgrade waits for foreground, dismisses across restarts, and reopens from 
     path: testInfo.outputPath("whats-new-dark.png"),
     animations: "disabled",
   });
-  await reopened.getByRole("button", { name: "Try Agents" }).click();
-  await expect(
-    second.page.getByRole("heading", { name: "Your notes, in your agent." }),
-  ).toBeVisible();
+  await reopened.getByRole("button", { name: "Open AI settings" }).click();
+  await expect
+    .poll(() => second.page.evaluate(() => location.hash))
+    .toBe("#/settings?tab=ai");
+  await expect(second.page.locator('[data-settings-tab="ai"]')).toBeVisible();
   await expect(reopened).toHaveCount(0);
+  await second.page.evaluate(() => {
+    location.hash = "#/settings?tab=about";
+  });
+  await second.page.getByRole("button", { name: "View highlights" }).click();
+  await second.page
+    .getByRole("dialog", { name: title })
+    .getByRole("button", { name: "Browse notes" })
+    .click();
+  await expect.poll(() => second.page.evaluate(() => location.hash)).toBe("#/");
 });
 
 test("fresh setup establishes a baseline without an announcement", async ({

@@ -80,6 +80,12 @@ const { describeUpdateError, updateErrorPhase, isMissingUpdateFeedError } = requ
 const { isOSUpdateEligible, MIN_MACOS_FOR_AUTOUPDATE } = require('./update-os-gate');
 const processingLog = require('./processing-log');
 const { isMeetingApp, allowsDeviceLevelFallback, isMacos14Plus } = require('./meeting-detect');
+const {
+  loadAutoRecordMeetingsEnabled,
+  buildAutoRecordStartedOptions,
+  createAutoStarts,
+} = require('./auto-record');
+const { normalizeAutoOpenSettings, decideMeetingOpen, planPremeetingTimers, isOverlapping, isMicGuardAvailable, openReservationEndMs, MAX_LEAD_MINUTES } = require('./meeting-open');
 const { isLinuxLoopbackSupported, startLoopbackCapture, createFrameAligner, createSerialQueue } = require('./linux-loopback');
 const { sweepOrphanedLiveSnapshots } = require('./live-snapshot-sweep');
 const { shareTempDir, sweepShareTemp, SHARE_TEMP_MAX_AGE_MS } = require('./share-temp');
@@ -116,6 +122,8 @@ const { parseSpeakerModelStatusOutput } = require('./speaker-model-status');
 const { createSpeakerModelPreparer } = require('./speaker-model-prepare');
 const { reprepareSpeakerModelsAfterUpgrade } = require('./speaker-model-upgrade');
 const { isDiagnosticStdoutLine, sanitizeArgsForLog } = require('./diagnostics-filter');
+const { ImcpClient, IMCP_DOWNLOAD_URL, IMCP_HOMEBREW } = require('./imcp-client');
+const { CallerId } = require('./caller-id');
 // Pure analytics bucketing/classification/sanitization lives in
 // ./analytics-helpers (unit-tested). trackEvent() itself and every IPC
 // handler that calls it stay here, alongside the PostHog client.
@@ -154,6 +162,10 @@ const { autoUpdater } = require('electron-updater');
 //                           STENOAI_E2E_SPEAKER_UPGRADE=1 opts a spec into it
 //   STENOAI_E2E_MOCK_IPC=1 — install deterministic mock IPC handlers
 //   STENOAI_E2E_HEADLESS=1 - keep the main window rendered but never visible/focused
+//   STENOAI_E2E_MIC_EVENTS=1 - expose globalThis.__stenoE2EMicEvent(evt), which
+//                           feeds one mic-monitor line to handleMicEvent, so a
+//                           spec can play a detected meeting (unpackaged only;
+//                           see ALLOW_E2E_PATH_SEAMS for why)
 if (process.env.STENOAI_USER_DATA_DIR) {
   app.setPath('userData', process.env.STENOAI_USER_DATA_DIR);
 }
@@ -1785,6 +1797,10 @@ function createWindow(options = {}) {
 
   mainWindow = new BrowserWindow(windowOpts);
   hardenWindow(mainWindow, { allowExternalLinks: true });
+  const recordingWebContents = mainWindow.webContents;
+  recordingWebContents.on('did-start-navigation', (details) => {
+    if (details.isMainFrame && !details.isSameDocument) abandonCaptureForRenderer(recordingWebContents);
+  });
 
   const rendererDist = path.join(__dirname, 'renderer', 'dist', 'index.html');
   const hash = process.env.STENOAI_RENDERER_HASH;
@@ -1837,6 +1853,7 @@ function createWindow(options = {}) {
   mainWindow.on('focus', () => rewarmParakeet('window-focus'));
 
   mainWindow.on('closed', () => {
+    abandonCaptureForRenderer(recordingWebContents);
     mainWindow = null;
     rendererShortcutReady = false;
     // Abort any in-flight org SSE streams so they don't keep consuming
@@ -2300,6 +2317,7 @@ if (!gotSingleInstanceLock) {
     if (!IS_E2E && loadShowMenuBarIconEnabled()) createTray();
     setupAutoUpdater();
     setupAutoMeetingDetector();
+    setupCallerId();
     setupDevNotificationTriggers();
     // Pre-meeting heads-up scheduler (calendar-time based). Skipped under E2E —
     // tests drive the show-premeeting-notification IPC seam directly; this would
@@ -2593,6 +2611,7 @@ if (!gotSingleInstanceLock) {
   // Same telemetry gate, same "code not content" reasoning; see the
   // uncaughtException handler's comment for the capture-reliability caveat.
   app.on('render-process-gone', (_event, _webContents, details) => {
+    abandonCaptureForRenderer(_webContents);
     try {
       if (telemetryEnabled && posthogClient && anonymousId) {
         captureSanitizedException(
@@ -5031,7 +5050,10 @@ ipcMain.handle('delete-meeting', async (event, meetingData) => {
     //     disk, with no UI that ever shows it - a privacy regression against the
     //     local-first promise, not just untidiness. Same "unlinked only at
     //     commit" semantics as the rest: an undo must restore a COMPLETE note.
-    for (const sidecarSuffix of ['_reports.json', '_original.json']) {
+    //   _call.json     - the phone or FaceTime call the recording captured
+    //     (src/call_info.py): the caller's name and number. Left behind, a
+    //     deleted call would still say whom it was with.
+    for (const sidecarSuffix of ['_reports.json', '_original.json', '_call.json']) {
       let sidecarBase = null;
       for (const suf of ['_summary.md', '_summary.json']) {
         if (summaryBase.endsWith(suf)) {
@@ -5343,6 +5365,8 @@ ipcMain.handle('get-queue-status', async () => {
     sessionName: currentRecordingSessionName,
     recordingId: systemAudioRecordingActive && recordingRuntimeState.startedAtMs
       ? String(recordingRuntimeState.startedAtMs) : null,
+    ...(ALLOW_E2E_PATH_SEAMS && process.env.STENOAI_E2E_HOLD_CAPTURE_ACK === '1'
+      ? { pendingRecordingStarts } : {}),
     chatSummaryFile: systemAudioRecordingActive
       ? (currentRecordingAppendTarget || activeSysAudioSummaryFile) : null,
     // The note (summary-file realpath) an active continue/resume is recording
@@ -5824,6 +5848,27 @@ function loadAutoDetectMeetingsEnabled() {
   }
 }
 
+function loadAutoOpenSettings() {
+  try {
+    const cfgPath = path.join(getUserDataDir(), 'config.json');
+    return normalizeAutoOpenSettings(JSON.parse(fs.readFileSync(cfgPath, 'utf-8')));
+  } catch (_) {
+    return normalizeAutoOpenSettings(null);
+  }
+}
+
+// Caller recognition (iMCP) is opt-in: only a literal true turns it on,
+// matching Config.get_caller_id_enabled.
+function loadCallerIdEnabled() {
+  try {
+    const cfgPath = path.join(getUserDataDir(), 'config.json');
+    if (!fs.existsSync(cfgPath)) return false;
+    return JSON.parse(fs.readFileSync(cfgPath, 'utf-8')).caller_id_enabled === true;
+  } catch (_) {
+    return false;
+  }
+}
+
 // Same sync-read-at-startup pattern as loadAutoDetectMeetingsEnabled(), used
 // to decide whether createTray() should run at all without spawning Python.
 function loadShowMenuBarIconEnabled() {
@@ -6020,11 +6065,14 @@ function resetRecordingRuntimeState() {
 
 function startRecordingRuntimeState() {
   recordingRuntimeState = {
-    startedAtMs: Date.now(),
+    // This timestamp is also the recording ID exposed to the renderer. Keep
+    // it unique even when two starts land in the same millisecond.
+    startedAtMs: Math.max(Date.now(), (startRecordingRuntimeState.lastId || 0) + 1),
     pausedAtMs: null,
     pausedTotalMs: 0,
     isPaused: false
   };
+  startRecordingRuntimeState.lastId = recordingRuntimeState.startedAtMs;
   markRecordingActiveOnDisk();
 }
 
@@ -6495,6 +6543,7 @@ async function processNextInQueue() {
         }
       } catch (_) { /* best-effort cleanup */ }
     }
+    callerId?.processingFinished(processingJobStems(currentProcessingJob));
     isProcessing = false;
     currentProcessingJob = null;
     currentProcessingStartedAtMs = null;
@@ -6734,19 +6783,126 @@ function addToProcessingQueue(audioFile, sessionName, notesFile, liveTranscriptF
   processNextInQueue();
 }
 
+// Caller recognition (macOS, opt-in): finds who a phone or FaceTime recording
+// was with through iMCP. See caller-id.js. Null off macOS, so every hook below
+// is a no-op there.
+let callerId = null;
+
+// The note stem of an audio file (`<stem>.webm`) or a note (`<stem>_summary.md`).
+function noteStem(filePath) {
+  const base = path.basename(filePath || '');
+  return /_summary\.(md|json)$/.test(base)
+    ? base.replace(/_summary\.(md|json)$/, '')
+    : base.replace(/\.[^.]+$/, '');
+}
+
+function processingJobStems(job) {
+  if (!job) return [];
+  return [job.audioFile, job.appendTo, job.summaryFile].filter(Boolean).map(noteStem);
+}
+
+function setupCallerId() {
+  if (process.platform !== 'darwin' || callerId) return;
+  callerId = new CallerId({
+    imcp: new ImcpClient({ clientInfo: { name: 'Steno', version: app.getVersion() }, log: sendDebugLog }),
+    applyCallInfo: async (stem, calls, { sidecarOnly }) => {
+      await runPythonScript('simple_recorder.py', [
+        'apply-call-info', stem, '--calls', JSON.stringify(calls), ...(sidecarOnly ? ['--sidecar-only'] : []),
+      ], true);
+      // A caller added to a finished note fires no processing-complete, so
+      // mirror it to the vault here, as update-meeting does for an edit.
+      if (!sidecarOnly) {
+        try { obsidianSync.syncNoteBySummaryPath(path.join(getOutputDir(), `${stem}_summary.md`)); } catch (_) {}
+      }
+    },
+    isProcessing: (stem) => [currentProcessingJob, ...processingQueue]
+      .some((job) => processingJobStems(job).includes(stem)),
+    log: sendDebugLog,
+  });
+  callerId.imcp.on('status', (status) => {
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('caller-id-status', status);
+  });
+  callerId.setEnabled(loadCallerIdEnabled());
+}
+
 // Continue-recording (append) target: set at start-recording-ui when the
 // renderer asked to record INTO an existing note, consumed (and cleared) when
 // the finished WebM is queued — the pipeline then runs with --append-to so
 // the segment's transcript is folded into that note instead of creating a
 // new one.
 let currentRecordingAppendTarget = null;
+let recordingRequestVersion = 0;
+let pendingRecordingStarts = 0;
+let captureClaimedRecordingId = null;
+let captureOwnerWebContents = null;
+// stop-recording-ui clears the visible state immediately, but the renderer
+// still has to flush and close the WebM. A succeeding start must wait for that
+// handoff so A's final chunk/append target cannot be attributed to B.
+let pendingCaptureStop = null;
+// The renderer's processing handoff for the stopped recording. It reads the
+// global append target and live transcript after an await, so a crash in the
+// middle must not release the next start before it finishes.
+let sysAudioHandoff = null;
+
+// A renderer reload/crash cannot deliver its final inactive report. It also
+// cannot write more audio: abandon only the file owned by that renderer, then
+// release its stop waiter. Keep the partial WebM on disk for recovery.
+function abandonCaptureForRenderer(webContents) {
+  const ownsCapture = captureOwnerWebContents === webContents;
+  const ownsStop = pendingCaptureStop?.owner === webContents;
+  if (!ownsCapture && !ownsStop) return;
+  const abandonedId = pendingCaptureStop?.recordingId || captureClaimedRecordingId;
+  if (activeSysAudioWriteStream) {
+    const stream = activeSysAudioWriteStream;
+    activeSysAudioWriteStream = null;
+    activeSysAudioFilePath = null;
+    activeSysAudioFileRecordingId = null;
+    activeSysAudioBytesWritten = 0;
+    try { stream.end(); } catch (_) { /* preserve the partial file */ }
+  }
+  // Nothing restarts a Linux loopback once the session is abandoned, so stop
+  // pw-record here rather than leave it capturing system audio. Queue it even
+  // with no capture referenced: a start still in the queue sets one later.
+  if (process.platform === 'linux') void stopActiveLinuxLoopback();
+  if (ownsStop) {
+    const stop = pendingCaptureStop;
+    if (sysAudioHandoff) sysAudioHandoff.finally(() => stop.settle());
+    else stop.settle();
+  }
+  captureClaimedRecordingId = null;
+  captureOwnerWebContents = null;
+  if (systemAudioRecordingActive && String(recordingRuntimeState.startedAtMs) === abandonedId) {
+    systemAudioRecordingActive = false;
+    currentRecordingSessionName = null;
+    currentRecordingAppendTarget = null;
+    stopLiveTranscribe();
+    resetRecordingRuntimeState();
+    applyRecordingBackgroundThrottling();
+    updateTrayIcon(false);
+  }
+}
 
 // Valid recording_started `trigger` values. Whitelisted so a stale/forged
 // renderer arg can't smuggle an arbitrary string into PostHog.
-const RECORDING_TRIGGERS = new Set(['manual', 'notification_click', 'hotkey', 'tray', 'url_scheme']);
+const RECORDING_TRIGGERS = new Set(['manual', 'notification_click', 'auto_record', 'hotkey', 'tray', 'url_scheme']);
 
 ipcMain.handle('start-recording-ui', async (_, sessionName, trigger, appendTo) => {
+  const requestVersion = recordingRequestVersion;
   try {
+    if (pendingCaptureStop) {
+      pendingRecordingStarts++;
+      try {
+        await pendingCaptureStop.promise;
+      } finally {
+        pendingRecordingStarts--;
+      }
+      if (requestVersion !== recordingRequestVersion) {
+        return { success: false, cancelled: true, error: 'Recording start cancelled' };
+      }
+      if (pendingCaptureStop) {
+        return { success: false, error: 'Previous recording is still closing' };
+      }
+    }
     if (currentRecordingProcess) {
       return { success: false, error: 'Recording already in progress' };
     }
@@ -6762,15 +6918,24 @@ ipcMain.handle('start-recording-ui', async (_, sessionName, trigger, appendTo) =
     // JSON under them) would otherwise pass and get rewritten into a "note" by
     // _append_segment_to_note. A bad target degrades to a normal new-note
     // recording rather than failing the start.
-    currentRecordingAppendTarget = null;
+    let validatedAppendTarget = null;
     if (appendTo && typeof appendTo === 'string') {
       const validatedAppend = await validateMeetingFilePath(appendTo);
       if (!validatedAppend.error) {
-        currentRecordingAppendTarget = validatedAppend.realPath;
+        validatedAppendTarget = validatedAppend.realPath;
       } else {
         sendDebugLog('[append] invalid or missing append target; recording as a new note');
       }
     }
+    if (requestVersion !== recordingRequestVersion) {
+      return { success: false, cancelled: true, error: 'Recording start cancelled' };
+    }
+    // A second start can pass the first guard while the append-path check is
+    // awaiting I/O. Recheck ownership before mutating the live session.
+    if (currentRecordingProcess || systemAudioRecordingActive) {
+      return { success: false, error: 'Recording already in progress' };
+    }
+    currentRecordingAppendTarget = validatedAppendTarget;
 
     const actualSessionName = sessionName || 'Note';
     // Clear any stale name-keyed draft notes before this recording starts, so a
@@ -6799,8 +6964,11 @@ ipcMain.handle('start-recording-ui', async (_, sessionName, trigger, appendTo) =
     // retired, so there is no longer a mic-XOR-system fork here.
     sendDebugLog(`Starting renderer-driven recording (name ${String(actualSessionName || '').length} chars)`);
     currentRecordingSessionName = actualSessionName;
+    autoStarts.recordingStarted(trigger);
     activeSysAudioSummaryFile = null;
     startRecordingRuntimeState();
+    captureClaimedRecordingId = null;
+    captureOwnerWebContents = null;
     // Flip the active flag immediately so the queue handler reports
     // hasRecording=true on the very next poll, which is what cues the renderer
     // hook to fire startCapture. reportSystemAudioState then re-affirms it on
@@ -6873,12 +7041,14 @@ ipcMain.handle('start-recording-ui', async (_, sessionName, trigger, appendTo) =
     return {
       success: true,
       sessionName: actualSessionName,
+      recordingId: String(recordingRuntimeState.startedAtMs),
       message: 'Renderer-driven recording started',
     };
   } catch (error) {
     console.error('Start recording UI error:', error.message);
     systemAudioRecordingActive = false;
     currentRecordingSessionName = null;
+    autoStarts.startFailed();
     currentRecordingAppendTarget = null;
     resetRecordingRuntimeState();
     updateTrayIcon(false);
@@ -7005,8 +7175,47 @@ ipcMain.handle('resume-recording-ui', async () => {
   }
 });
 
-ipcMain.handle('stop-recording-ui', async () => {
+ipcMain.handle('stop-recording-ui', async (event) => {
+  // Also cancels a start waiting for the previous capture or append validation.
+  recordingRequestVersion++;
   try {
+    if (!systemAudioRecordingActive && !currentRecordingProcess) {
+      // Capture may already have reported inactive (e.g. it failed to start).
+      // The session name is only cleared on stop, and a stale one would keep
+      // suppressing that meeting's reminder and auto-open.
+      currentRecordingSessionName = null;
+      return { success: true, message: 'Recording stopped', summaryFile: null };
+    }
+    const stoppingId = recordingRuntimeState.startedAtMs
+      ? String(recordingRuntimeState.startedAtMs) : null;
+    if (stoppingId && mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('recording-stop-requested', { recordingId: stoppingId });
+    }
+    // Install the waiter before exposing hasRecording=false. The renderer's
+    // final inactive report comes only after the file and processing handoff.
+    if (systemAudioRecordingActive && stoppingId &&
+        (captureClaimedRecordingId === stoppingId || activeSysAudioWriteStream) &&
+        !pendingCaptureStop) {
+      let releaseStopCall;
+      const done = new Promise((resolve) => { releaseStopCall = resolve; });
+      const timeout = setTimeout(() => {
+        sendDebugLog('[sysaudio] capture close timed out; a new recording remains blocked until cleanup');
+        releaseStopCall();
+      }, 8000);
+      const stop = {
+        recordingId: stoppingId,
+        owner: captureOwnerWebContents || event.sender,
+        promise: done,
+        // A crashed renderer's settle can be deferred behind its processing
+        // handoff; it must never clear a later waiter.
+        settle: () => {
+          clearTimeout(timeout);
+          if (pendingCaptureStop === stop) pendingCaptureStop = null;
+          releaseStopCall();
+        },
+      };
+      pendingCaptureStop = stop;
+    }
     // Stopping ends any sleep-pause state — don't prompt Resume on a
     // recording that no longer exists.
     pausedBySleep = false;
@@ -7063,20 +7272,26 @@ ipcMain.handle('stop-recording-ui', async () => {
     if (instantSummaryFile) {
       liveTranscriptState.summaryFile = instantSummaryFile;
     }
+    callerId?.recordingStopped();
     systemAudioRecordingActive = false;
     applyRecordingBackgroundThrottling();
     stopLiveTranscribe();
     currentRecordingSessionName = null;
+    autoStarts.recordingStopped();
     // Captured before resetRecordingRuntimeState() clears startedAtMs.
     const recordingDurationBucket = durationBucket(getRecordingElapsedSeconds());
     resetRecordingRuntimeState();
     updateTrayIcon(false);
     trackEvent('recording_stopped', { duration_bucket: recordingDurationBucket, reason: 'normal' });
+    if (pendingCaptureStop?.recordingId === stoppingId) {
+      await pendingCaptureStop.promise;
+    }
     return { success: true, message: 'Recording stopped', summaryFile: instantSummaryFile };
   } catch (error) {
     console.error('Stop recording UI error:', error.message);
     systemAudioRecordingActive = false;
     currentRecordingSessionName = null;
+    autoStarts.recordingStopped();
     resetRecordingRuntimeState();
     updateTrayIcon(false);
     trackEvent('error_occurred', { error_type: 'stop_recording_ui', reason: classifyErrorReason(error) });
@@ -7604,10 +7819,15 @@ let micMonitorProc = null;
 let micMonitorRespawnTimer = null;
 let micMonitorRespawnDelay = MIC_MONITOR_BACKOFF_BASE_MS;
 const lastNotifiedAt = new Map();
+// Meeting apps currently holding the mic; auto-open downgrades to Ask while non-empty.
+const micActiveApps = new Set();
 // When the user accepts a "Meeting detected" notification we remember the
 // originating app so we can pair its subsequent mic-stop with the recording and
 // auto-stop when the meeting ends.
 let autoStartedSession = null; // { pid, app_id, appName, paused, pauseTimer, autoStopTimer }
+// Auto-record's unattended starts, each with an id, so a "Recording started"
+// toast belongs to exactly one recording and its Stop to that recording only.
+const autoStarts = createAutoStarts();
 
 function humanizeAppName(evt) {
   for (const o of APP_NAME_OVERRIDES) {
@@ -7653,6 +7873,7 @@ function startMicMonitor() {
   proc.on('exit', (code, signal) => {
     clearTimeout(healthyTimer);
     sendDebugLog(`[auto-detect] mic-monitor exited (code=${code}, signal=${signal})`);
+    micActiveApps.clear();
     if (micMonitorProc === proc) {
       micMonitorProc = null;
       micMonitorRespawnTimer = setTimeout(() => {
@@ -7679,6 +7900,7 @@ function stopMicMonitor() {
     try { proc.kill(); } catch (_) {}
   }
   lastNotifiedAt.clear();
+  micActiveApps.clear();
   clearAutoStartedSession();
 }
 
@@ -7691,6 +7913,14 @@ async function handleMicEvent(line) {
     return;
   }
   if (evt.app_id === STENO_BUNDLE_ID) return; // never react to our own recording
+  callerId?.micEvent(evt);
+
+  const micKey = evt.app_id || `pid:${evt.pid || 'unknown'}`;
+  if (evt.event === 'start' && isMeetingApp(evt, { allowDeviceLevelFallback: ALLOW_DEVICE_LEVEL_FALLBACK })) {
+    micActiveApps.add(micKey);
+  } else if (evt.event === 'stop') {
+    micActiveApps.delete(micKey);
+  }
 
   if (evt.event === 'stop') {
     handleMicStop(evt);
@@ -7746,7 +7976,28 @@ async function handleMicEvent(line) {
   if (calEvent) {
     sendDebugLog(`[auto-detect] matched a calendar event`);
   }
+  // Auto-record (#463, opt-in): start at once instead of asking. Focus stays
+  // where it is, so an unattended start doesn't pull the user out of the call
+  // they are joining; the toast after capture starts says what happened.
+  if (loadAutoRecordMeetingsEnabled(path.join(getUserDataDir(), 'config.json'))) {
+    // One unattended start at a time: a second detection before the first
+    // recording has started would otherwise re-point auto-stop and the toast.
+    if (autoStarts.begin({ appName, calendarTitle: calEvent?.title }) === null) {
+      sendDebugLog('[auto-detect] auto-record start already pending; ignoring this detection');
+      return;
+    }
+    sendDebugLog('[auto-detect] auto-record on; starting without asking');
+    if (!requestAutoRecord(appName, evt, calEvent, { focus: false })) autoStarts.startFailed();
+    return;
+  }
   showMeetingDetectedNotification(appName, evt, calEvent);
+}
+
+// E2E: a spec plays a meeting detection by handing in the JSON object
+// mic-monitor would print (auto-record.t2). Gated like the path seams: it can
+// start a recording, so a packaged build never has it.
+if (ALLOW_E2E_PATH_SEAMS && process.env.STENOAI_E2E_MIC_EVENTS === '1') {
+  globalThis.__stenoE2EMicEvent = (evt) => handleMicEvent(JSON.stringify(evt));
 }
 
 function handleMicStop(evt) {
@@ -7811,7 +8062,11 @@ function showMeetingDetectedNotification(appName, originatingEvt, calEvent) {
   notif.show();
 }
 
-function requestAutoRecord(appName, originatingEvt, calEvent) {
+// Starts a recording for a detected meeting and pairs it with the meeting's app
+// for auto-stop. `focus` is false for auto-record's unattended start, which must
+// not bring Steno to the front; a Take Notes tap is an explicit request and
+// does. Returns whether a recording was requested.
+function requestAutoRecord(appName, originatingEvt, calEvent, { focus = true } = {}) {
   // Prefer the calendar event title when we matched one — it's user-authored
   // and recognisable weeks later. Otherwise fall back to the neutral
   // 'Note' placeholder that simple_recorder.py recognises in
@@ -7826,10 +8081,13 @@ function requestAutoRecord(appName, originatingEvt, calEvent) {
   // systemAudioRecordingActive reads false while the recording is still live.
   if (currentRecordingProcess || systemAudioRecordingActive || currentRecordingSessionName) {
     sendDebugLog('[auto-detect] record request ignored: a recording is already running');
-    exposeMainWindow();
-    return;
+    if (focus) exposeMainWindow();
+    return false;
   }
-  sendDebugLog(`[auto-detect] user requested record (calendar-titled: ${calEvent?.title ? 'yes' : 'no'})`);
+  sendDebugLog(
+    `[auto-detect] ${focus ? 'user requested record' : 'auto-record starting'} ` +
+    `(calendar-titled: ${calEvent?.title ? 'yes' : 'no'})`
+  );
 
   // Track the originating app so we can pair its mic-stop with this recording
   // and auto-stop when the meeting ends.
@@ -7848,9 +8106,37 @@ function requestAutoRecord(appName, originatingEvt, calEvent) {
   // explicit tap does.) The renderer's auto-record handler then starts the
   // recording and opens the live-note editor.
   if (mainWindow && !mainWindow.isDestroyed()) {
-    exposeMainWindow();
-    mainWindow.webContents.send('auto-record-requested', { sessionName, appName });
+    if (focus) exposeMainWindow();
+    // `unattended` makes the renderer start it as trigger 'auto_record', which
+    // is what binds it to its pending start (see createAutoStarts).
+    mainWindow.webContents.send('auto-record-requested', { sessionName, appName, unattended: !focus });
+    return true;
   }
+  return false;
+}
+
+// Auto-record's toast, once capture has confirmed the unattended start: passive
+// (it never takes focus), the body opens Steno on the live note, Stop ends the
+// recording the same way the tray's Stop Recording does, but only while that
+// start's recording is still the one running.
+function showAutoRecordStartedNotification({ id, ...details }) {
+  const notif = new Notification(buildAutoRecordStartedOptions(details));
+  notif.on('click', () => {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    exposeMainWindow();
+    // The unattended start left the user's view alone; the tap is the request
+    // to see the live note. Only while that recording is still running.
+    if (autoStarts.isCurrent(id)) mainWindow.webContents.send('open-live-note');
+  });
+  notif.on('action', () => {
+    if (!autoStarts.isCurrent(id)) {
+      sendDebugLog('[auto-detect] Stop from an auto-record toast ignored: its recording is no longer running');
+      return;
+    }
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('tray-stop-recording');
+  });
+  trackNotificationLifecycle(notif, 'auto_record_started');
+  notif.show();
 }
 
 // Auto-stop an ended auto-detected meeting once the mic has stayed released
@@ -9279,6 +9565,41 @@ ipcMain.handle('show-transcript-ready-notification', async (_event, payload) => 
 
 ipcMain.handle('get-notifications', handleGetNotifications);
 
+// Caller recognition (iMCP). Off macOS it reports itself unsupported.
+function callerIdSettings() {
+  return {
+    success: true,
+    supported: process.platform === 'darwin',
+    caller_id_enabled: loadCallerIdEnabled(),
+    meeting_detection: loadAutoDetectMeetingsEnabled(),
+    status: callerId ? callerId.imcp.status : { state: 'unsupported', contacts: false },
+    download_url: IMCP_DOWNLOAD_URL,
+    homebrew: IMCP_HOMEBREW,
+  };
+}
+
+ipcMain.handle('get-caller-id', () => callerIdSettings());
+
+ipcMain.handle('set-caller-id', async (_event, enabled) => {
+  // The setting means nothing off macOS, so it is not saved there either.
+  if (process.platform !== 'darwin') return { success: false, error: 'Caller recognition is macOS only' };
+  try {
+    const result = await runPythonScript('simple_recorder.py', ['set-caller-id', enabled ? 'True' : 'False'], true);
+    const saved = JSON.parse(result.match(/\{.*\}/s)?.[0] || '{}');
+    if (!saved.success) return { success: false, error: saved.error || 'Failed to save the setting' };
+    callerId?.setEnabled(enabled === true);
+    return callerIdSettings();
+  } catch (error) {
+    sendDebugLog(`Error setting caller recognition: ${error.message}`);
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('open-imcp-download', async () => {
+  await shell.openExternal(IMCP_DOWNLOAD_URL);
+  return { success: true };
+});
+
 ipcMain.handle('set-notifications', async (event, enabled) => {
   try {
     sendDebugLog(`Setting notifications to: ${enabled}`);
@@ -9553,7 +9874,76 @@ ipcMain.handle('set-auto-detect-meetings', async (_event, enabled) => {
   }
 });
 
+// Auto-record (#463). No live state to apply: handleMicEvent reads the setting
+// at each detection, so a change takes effect with the next meeting.
+ipcMain.handle('get-auto-record-meetings', async () => {
+  try {
+    const result = await runPythonScript('simple_recorder.py', ['get-auto-record-meetings'], true);
+    return { success: true, ...JSON.parse(result) };
+  } catch (error) {
+    sendDebugLog(`Error getting auto-record setting: ${error.message}`);
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('set-auto-record-meetings', async (_event, enabled) => {
+  try {
+    sendDebugLog(`Setting auto-record to: ${enabled}`);
+    const result = await runPythonScript('simple_recorder.py', ['set-auto-record-meetings', enabled === true ? 'True' : 'False']);
+    const jsonMatch = result.match(/\{.*\}/s);
+    return jsonMatch ? JSON.parse(jsonMatch[0]) : { success: true, auto_record_meetings_enabled: enabled === true };
+  } catch (error) {
+    sendDebugLog(`Error setting auto-record: ${error.message}`);
+    return { success: false, error: error.message };
+  }
+});
+
 ipcMain.handle('get-premeeting-notifications', handleGetPremeetingNotifications);
+
+ipcMain.handle('get-auto-open-meetings', async () => {
+  try {
+    const result = await runPythonScript('simple_recorder.py', ['get-auto-open-meetings']);
+    return { success: true, ...JSON.parse(result) };
+  } catch (error) {
+    sendDebugLog(`Error getting auto-open meetings settings: ${error.message}`);
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('set-auto-open-meetings', async (_event, patch) => {
+  try {
+    const p = patch && typeof patch === 'object' ? patch : {};
+    const args = ['set-auto-open-meetings'];
+    if (p.mode !== undefined) {
+      if (typeof p.mode !== 'string') return { success: false, error: 'invalid mode' };
+      args.push('--mode', p.mode);
+    }
+    if (p.lead_minutes !== undefined) {
+      if (!Number.isInteger(p.lead_minutes) || p.lead_minutes < 0 || p.lead_minutes > MAX_LEAD_MINUTES) return { success: false, error: 'invalid lead_minutes' };
+      args.push('--lead-minutes', String(p.lead_minutes));
+    }
+    if (p.providers !== undefined) {
+      if (!Array.isArray(p.providers) || !p.providers.every((x) => typeof x === 'string')) {
+        return { success: false, error: 'invalid providers' };
+      }
+      args.push('--providers', p.providers.join(','));
+    }
+    if (p.accepted_only !== undefined) {
+      if (typeof p.accepted_only !== 'boolean') return { success: false, error: 'invalid accepted_only' };
+      args.push('--accepted-only', p.accepted_only ? 'true' : 'false');
+    }
+    const result = await runPythonScript('simple_recorder.py', args);
+    const jsonMatch = result.match(/\{.*\}/s);
+    const jsonData = jsonMatch ? JSON.parse(jsonMatch[0]) : { success: false, error: 'no response' };
+    if (jsonData.success && !IS_E2E) {
+      void schedulePreMeetingNotifications();
+    }
+    return jsonData;
+  } catch (error) {
+    sendDebugLog(`Error setting auto-open meetings: ${error.message}`);
+    return parsePythonFailureJson(error);
+  }
+});
 
 ipcMain.handle('set-premeeting-notifications', async (_event, enabled) => {
   try {
@@ -10375,6 +10765,7 @@ ipcMain.handle('get-recordings-dir', async () => {
 // mid-capture) so a stale fd can't outlive its recording.
 let activeSysAudioWriteStream = null;
 let activeSysAudioFilePath = null;
+let activeSysAudioFileRecordingId = null;
 let activeSysAudioBytesWritten = 0;
 // Deterministic summary-file path for the current recording, derived from the
 // audio filename at open. Kept separate from activeSysAudioFilePath (which the
@@ -10382,8 +10773,13 @@ let activeSysAudioBytesWritten = 0;
 // placeholder even if close raced ahead. Reset at the next open.
 let activeSysAudioSummaryFile = null;
 
-ipcMain.handle('open-system-audio-file', async (_event, sessionName) => {
+ipcMain.handle('open-system-audio-file', async (_event, sessionName, recordingId) => {
   try {
+    const currentId = recordingRuntimeState.startedAtMs
+      ? String(recordingRuntimeState.startedAtMs) : null;
+    if (recordingId && (!systemAudioRecordingActive || recordingId !== currentId)) {
+      return { success: false, error: 'Recording is no longer active' };
+    }
     // Reclaim a stream left open by a prior recording that never cleanly
     // stopped (e.g. a renderer reload mid-capture). End (flush) it and leave
     // its partial file on disk under recordings/ — abandoned rather than
@@ -10393,6 +10789,7 @@ ipcMain.handle('open-system-audio-file', async (_event, sessionName) => {
       try { activeSysAudioWriteStream.end(); } catch (_) { /* already ended */ }
       activeSysAudioWriteStream = null;
       activeSysAudioFilePath = null;
+      activeSysAudioFileRecordingId = null;
       activeSysAudioSummaryFile = null;
     }
     const dir = resolveRecordingsDir();
@@ -10410,12 +10807,15 @@ ipcMain.handle('open-system-audio-file', async (_event, sessionName) => {
       if (activeSysAudioWriteStream === stream) {
         activeSysAudioWriteStream = null;
         activeSysAudioFilePath = null;
+        activeSysAudioFileRecordingId = null;
         activeSysAudioBytesWritten = 0;
       }
     });
     activeSysAudioWriteStream = stream;
     activeSysAudioFilePath = filePath;
+    activeSysAudioFileRecordingId = recordingId || null;
     activeSysAudioSummaryFile = summaryFileForAudio(filePath);
+    callerId?.recordingStarted(noteStem(currentRecordingAppendTarget || filePath));
     activeSysAudioBytesWritten = 0;
     sendDebugLog(`[sysaudio] opened ${filename} for incremental write`);
     return { success: true, filePath };
@@ -10425,8 +10825,11 @@ ipcMain.handle('open-system-audio-file', async (_event, sessionName) => {
   }
 });
 
-ipcMain.handle('append-system-audio-chunk', async (_event, payload) => {
+ipcMain.handle('append-system-audio-chunk', async (_event, payload, recordingId) => {
   try {
+    if (recordingId && recordingId !== activeSysAudioFileRecordingId) {
+      return { success: false, error: 'Recording file belongs to another session' };
+    }
     if (!activeSysAudioWriteStream) {
       return { success: false, error: 'No open system audio file' };
     }
@@ -10456,13 +10859,18 @@ ipcMain.handle('append-system-audio-chunk', async (_event, payload) => {
   }
 });
 
-ipcMain.handle('close-system-audio-file', async () => {
+ipcMain.handle('close-system-audio-file', async (_event, recordingId) => {
+  if (recordingId && recordingId !== activeSysAudioFileRecordingId) {
+    return { success: false, error: 'Recording file belongs to another session' };
+  }
   const stream = activeSysAudioWriteStream;
   const filePath = activeSysAudioFilePath;
   const bytesWritten = activeSysAudioBytesWritten;
   activeSysAudioWriteStream = null;
   activeSysAudioFilePath = null;
+  activeSysAudioFileRecordingId = null;
   activeSysAudioBytesWritten = 0;
+  callerId?.recordingStopped(); // no-op if stop-recording-ui already said so
   if (!stream) {
     return { success: false, error: 'No open system audio file' };
   }
@@ -10537,15 +10945,19 @@ ipcMain.handle('start-linux-loopback', () => queueLinuxLoopback(async () => {
   }
 }));
 
-ipcMain.handle('stop-linux-loopback', () => queueLinuxLoopback(async () => {
-  const capture = activeLinuxLoopback;
-  activeLinuxLoopback = null;
-  if (!capture) return { success: true };
-  capture.stdout.removeAllListeners('data');
-  await capture.stop();
-  sendDebugLog('[linux-loopback] stopped');
-  return { success: true };
-}));
+function stopActiveLinuxLoopback() {
+  return queueLinuxLoopback(async () => {
+    const capture = activeLinuxLoopback;
+    activeLinuxLoopback = null;
+    if (!capture) return { success: true };
+    capture.stdout.removeAllListeners('data');
+    await capture.stop();
+    sendDebugLog('[linux-loopback] stopped');
+    return { success: true };
+  });
+}
+
+ipcMain.handle('stop-linux-loopback', () => stopActiveLinuxLoopback());
 
 // A failed renderer-side capture (mic permission denied, no audio device)
 // would otherwise be silent — the optimistic "recording" pill is dropped via
@@ -10572,10 +10984,33 @@ ipcMain.on('recording-capture-error', (_event, message, name, phase) => {
   // error's name and the caller's phase; see buildCaptureErrorBody for why the
   // message itself is never consulted.
   sendDebugLog(`[sysaudio] capture error (${phase || 'start'}): ${name ? `${name}: ` : ''}${message}`);
+  if ((phase || 'start') === 'start') {
+    // Capture failed to start a recording main had accepted; never a capture
+    // flap ('ongoing' covers those). Drop its pending auto-record announcement,
+    // and the session name the start set: it names no recording now, and
+    // requestAutoRecord's guard (#566) would otherwise refuse every later
+    // detection until the next recording replaced it.
+    //
+    // 'request' is different: start-recording-ui itself refused the start (a
+    // recording was already running) or failed and cleaned up after itself.
+    // Either way main's state is already right, and after a refusal it belongs
+    // to the recording that is still running, so it is left alone.
+    autoStarts.startFailed();
+    if (!currentRecordingProcess) currentRecordingSessionName = null;
+  }
   showRecordingFailedNotification(buildCaptureErrorBody({ name, phase }));
 });
 
-ipcMain.handle('process-system-audio-recording', async (event, audioFilePath, sessionName) => {
+ipcMain.handle('process-system-audio-recording', (_event, audioFilePath, sessionName) => {
+  const handoff = queueSystemAudioRecording(audioFilePath, sessionName);
+  sysAudioHandoff = handoff;
+  handoff.finally(() => {
+    if (sysAudioHandoff === handoff) sysAudioHandoff = null;
+  });
+  return handoff;
+});
+
+async function queueSystemAudioRecording(audioFilePath, sessionName) {
   try {
     sendDebugLog(`Queuing system audio recording for processing: ${audioFilePath}`);
 
@@ -10587,6 +11022,12 @@ ipcMain.handle('process-system-audio-recording', async (event, audioFilePath, se
 
     if (!fs.existsSync(audioFilePath)) {
       return { success: false, error: 'Audio file not found' };
+    }
+
+    // Capture-only T2: keep the real recorder/file IPC and stop handoff, but
+    // avoid starting the model pipeline for a synthetic-audio regression.
+    if (ALLOW_E2E_PATH_SEAMS && process.env.STENOAI_E2E_CAPTURE_ONLY === '1') {
+      return { success: true, message: 'Capture-only test handoff complete' };
     }
 
     const actualSessionName = sessionName || 'Note';
@@ -10658,16 +11099,56 @@ ipcMain.handle('process-system-audio-recording', async (event, audioFilePath, se
     trackEvent('error_occurred', { error_type: 'process_system_audio', reason: classifyErrorReason(error) });
     return { success: false, error: error.message };
   }
-});
+}
 
 // Track system audio recording state for tray icon. Also resets the elapsed
 // counter when the renderer reports inactive without a Python process —
 // covers the case where startCapture failed (permission denied) and we'd
 // otherwise leak recordingRuntimeState.startedAtMs.
-ipcMain.on('system-audio-recording-state', (event, isRecording) => {
+ipcMain.handle('claim-system-audio-capture', (event, recordingId) => {
+  if (ALLOW_E2E_PATH_SEAMS && process.env.STENOAI_E2E_REJECT_CAPTURE_CLAIM === '1') {
+    return { success: false, cancelled: true };
+  }
+  const currentId = recordingRuntimeState.startedAtMs
+    ? String(recordingRuntimeState.startedAtMs) : null;
+  if (!systemAudioRecordingActive || !recordingId || recordingId !== currentId) {
+    return { success: false, cancelled: true };
+  }
+  captureClaimedRecordingId = recordingId;
+  captureOwnerWebContents = event.sender;
+  return { success: true };
+});
+
+ipcMain.on('system-audio-recording-state', (event, isRecording, recordingId) => {
+  if (!isRecording && pendingCaptureStop &&
+      (recordingId == null || pendingCaptureStop.recordingId === recordingId)) {
+    // Deterministic T2 seam for Stop while the next Start waits. Packaged
+    // builds cannot hold a capture acknowledgement through environment flags.
+    if (!(ALLOW_E2E_PATH_SEAMS && process.env.STENOAI_E2E_HOLD_CAPTURE_ACK === '1')) {
+      pendingCaptureStop.settle();
+    }
+  }
+  const currentId = recordingRuntimeState.startedAtMs
+    ? String(recordingRuntimeState.startedAtMs) : null;
+  // A previous MediaRecorder can finish closing after a new start has already
+  // been accepted. Its final inactive report must not clear the new session.
+  // Keep the old boolean-only bridge contract for callers without an ID.
+  if (recordingId != null && recordingId !== currentId) {
+    sendDebugLog(`[sysaudio] ignored stale state for recording ${recordingId}`);
+    return;
+  }
+  if (isRecording && currentId) {
+    // Compatibility with callers that report active without an explicit claim.
+    captureClaimedRecordingId = currentId;
+    captureOwnerWebContents = event.sender;
+  }
   sendDebugLog(`[sysaudio] state -> ${isRecording ? 'true' : 'false'} (was ${systemAudioRecordingActive})`);
   systemAudioRecordingActive = isRecording;
   applyRecordingBackgroundThrottling();
+  if (isRecording) {
+    const autoRecordStart = autoStarts.captureConfirmed();
+    if (autoRecordStart) showAutoRecordStartedNotification(autoRecordStart);
+  }
   if (!isRecording && !currentRecordingProcess) {
     // Reset the elapsed counter (avoids leaking startedAtMs when startCapture
     // fails), but DON'T blank currentRecordingSessionName here: this is a
@@ -11153,7 +11634,7 @@ ipcMain.handle('open-release-page', async (event, url) => {
 // Generic external-URL opener for renderer-triggered links (e.g. meeting
 // join URLs on Home). Http/https only — rejects custom schemes so a
 // compromised renderer cannot launch arbitrary protocol handlers.
-ipcMain.handle('open-external', async (event, url) => {
+ipcMain.handle('open-external', async (event, url, eventId) => {
   try {
     if (typeof url !== 'string' || !url) {
       return { success: false, error: 'invalid url' };
@@ -11165,7 +11646,24 @@ ipcMain.handle('open-external', async (event, url) => {
     if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
       return { success: false, error: 'unsupported scheme' };
     }
-    await shell.openExternal(url);
+    const joiningMeeting = typeof eventId === 'string' && eventId;
+    const nowMs = Date.now();
+    const known = joiningMeeting ? knownEventTimes.get(eventId) : null;
+    const previousOpen = lastMeetingOpen;
+    const reserved = joiningMeeting
+      ? { at: nowMs, endMs: Math.max(previousOpen?.endMs ?? nowMs, known ? openReservationEndMs(known, nowMs) : nowMs) }
+      : null;
+    if (reserved) lastMeetingOpen = reserved;
+    try {
+      await shell.openExternal(parsed.href);
+    } catch (error) {
+      if (reserved && lastMeetingOpen === reserved) lastMeetingOpen = previousOpen;
+      throw error;
+    }
+    if (typeof eventId === 'string' && eventId) {
+      openedMeetingIds.set(eventId, known?.startMs ?? null);
+      if (!IS_E2E) void schedulePreMeetingNotifications();
+    }
     return { success: true };
   } catch (error) {
     return { success: false, error: error.message };
@@ -11183,6 +11681,10 @@ function decodeJwtPayload(jwt) {
 
 // ── Google Calendar: Token Storage ──────────────────────────────────────
 
+// A refresh may finish after disconnect or a new OAuth connection. Only the
+// token generation that started it may write or clear credentials.
+let googleTokenGeneration = 0;
+
 function getTokenFilePath() {
   // getUserDataDir() like every other app-managed file — the old hardcoded
   // ~/Library/Application Support literal was macOS-only (wrong dir on Windows)
@@ -11191,7 +11693,7 @@ function getTokenFilePath() {
   return path.join(getUserDataDir(), '.google-tokens');
 }
 
-function saveGoogleTokens(tokens) {
+function saveGoogleTokens(tokens, { refresh = false } = {}) {
   try {
     const tokenDir = path.dirname(getTokenFilePath());
     if (!fs.existsSync(tokenDir)) {
@@ -11199,6 +11701,7 @@ function saveGoogleTokens(tokens) {
     }
     const encrypted = getSafeStorage().encryptString(JSON.stringify(tokens));
     fs.writeFileSync(getTokenFilePath(), encrypted);
+    if (!refresh) googleTokenGeneration += 1;
     console.log('Google tokens saved');
   } catch (error) {
     console.error('Failed to save Google tokens:', error.message);
@@ -11220,6 +11723,7 @@ function loadGoogleTokens() {
 }
 
 function deleteGoogleTokens() {
+  googleTokenGeneration += 1;
   try {
     const tokenPath = getTokenFilePath();
     if (fs.existsSync(tokenPath)) {
@@ -11504,6 +12008,7 @@ function exchangeCodeForTokens(code, codeVerifier, port) {
 async function getValidAccessToken() {
   const tokens = loadGoogleTokens();
   if (!tokens) return null;
+  const tokenGeneration = googleTokenGeneration;
 
   // Check if token is expired or about to expire (5-min buffer)
   const bufferMs = 5 * 60 * 1000;
@@ -11522,6 +12027,7 @@ async function getValidAccessToken() {
 
   try {
     const newTokens = await refreshAccessToken(tokens.refresh_token);
+    if (googleTokenGeneration !== tokenGeneration) return null;
     // Preserve the refresh token (Google may not return it again)
     newTokens.refresh_token = newTokens.refresh_token || tokens.refresh_token;
     newTokens.expires_at = Date.now() + (newTokens.expires_in * 1000);
@@ -11530,9 +12036,10 @@ async function getValidAccessToken() {
     // refresh grant can't upgrade a pre-existing connection to scopes it
     // wasn't originally consented to.
     newTokens.email = newTokens.email || tokens.email;
-    saveGoogleTokens(newTokens);
+    saveGoogleTokens(newTokens, { refresh: true });
     return newTokens.access_token;
   } catch (error) {
+    if (googleTokenGeneration !== tokenGeneration) return null;
     console.error('Token refresh failed:', error.message);
     if (error.message && (error.message.includes('invalid_grant') || error.message.includes('Token has been expired or revoked'))) {
       deleteGoogleTokens();
@@ -11665,7 +12172,7 @@ async function fetchCalendarEvents(accessToken, maxResults = 50, signal) {
     maxResults: String(maxResults),
     singleEvents: 'true',
     orderBy: 'startTime',
-    fields: 'items(id,status,summary,description,start,end,attendees,htmlLink,conferenceData,colorId)'
+    fields: 'items(id,status,summary,description,start,end,attendees,organizer,htmlLink,hangoutLink,conferenceData,colorId)'
   });
 
   const calendars = await fetchGoogleCalendarList(accessToken, signal);
@@ -11681,6 +12188,9 @@ async function fetchCalendarEvents(accessToken, maxResults = 50, signal) {
       items.forEach(item => {
         item.calendarBackgroundColor = cal.backgroundColor;
         item._sourceCalendarId = cal.id;
+        // attendee/organizer `self` is relative to the calendar copy, so only the
+        // account's own primary calendar can vouch for "I accepted/organize this".
+        item._ownCalendar = cal.primary === true;
       });
       return items;
     });
@@ -12075,6 +12585,7 @@ async function fetchOutlookCalendarEvents(accessToken, maxResults = 50, signal) 
 
   const calendars = await fetchOutlookCalendarList(accessToken, signal);
   if (calendars.length === 0) return [];
+  const accountEmail = String(loadOutlookTokens()?.email || '').toLowerCase();
 
   const results = [];
   const concurrency = 3;
@@ -12100,6 +12611,8 @@ async function fetchOutlookCalendarEvents(accessToken, maxResults = 50, signal) 
       items.forEach(item => {
         item.calendarBackgroundColor = hexColor;
         item.id = `${cal.id}_${item.id}`;
+        item._ownCalendar = cal.isDefaultCalendar === true
+          || Boolean(accountEmail && String(cal.owner?.address || '').toLowerCase() === accountEmail);
       });
       return items;
     });
@@ -12191,7 +12704,9 @@ ipcMain.handle('google-auth-start', async () => {
   try {
     await startGoogleAuth();
     // Only disconnect Outlook after Google auth succeeds
+    invalidatePreMeetingCalendar();
     deleteOutlookTokens();
+    if (!IS_E2E) void schedulePreMeetingNotifications();
     trackEvent('calendar_connected', { provider: 'google' });
     refreshIdentitySuperProperties();
     return { success: true };
@@ -12217,8 +12732,12 @@ ipcMain.handle('google-auth-cancel', async () => {
 
 ipcMain.handle('google-auth-disconnect', async () => {
   try {
+    invalidatePreMeetingCalendar();
     // Best-effort token revocation
     const tokens = loadGoogleTokens();
+    // Disconnect locally before awaiting the remote revocation. A scheduler
+    // fetch started during that await must not rediscover this connection.
+    deleteGoogleTokens();
     if (tokens && tokens.access_token) {
       try {
         await new Promise((resolve) => {
@@ -12237,7 +12756,7 @@ ipcMain.handle('google-auth-disconnect', async () => {
       }
     }
 
-    deleteGoogleTokens();
+    if (!IS_E2E) void schedulePreMeetingNotifications();
 
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send('google-auth-changed');
@@ -12314,7 +12833,9 @@ function normalizeCalendarEvent(event) {
         responseStatus = 'unknown';
       }
     } else {
-      responseStatus = 'organizer';
+      // Attendee-less on a calendar the user doesn't own (shared/subscribed) is
+      // someone else's event: not 'organizer', or accepted-only would auto-open it.
+      responseStatus = !event.organizer || event.organizer.self === true ? 'organizer' : 'unknown';
     }
   }
 
@@ -12369,9 +12890,11 @@ function normalizeCalendarEvent(event) {
       event.hangoutLink ||
       event.onlineMeeting?.joinUrl ||
       event.meeting_url ||
+      event.conferenceData?.entryPoints?.find((p) => p.entryPointType === 'video')?.uri ||
       undefined,
     is_all_day: isAllDay,
     response_status: responseStatus,
+    own_calendar: event._ownCalendar === true,
     color: eventColor,
   };
 }
@@ -12497,10 +13020,13 @@ async function getCalendarEventForNow(timeoutMs = 1500) {
 // prompts to record): this is calendar-time based and only focuses — never
 // records — so there's no recording conflict. Suppressed for a meeting we're
 // already recording (matched by calendar event id).
-const PREMEETING_LEAD_MS = 2 * 60 * 1000;          // fire this long before start
 const PREMEETING_RESCHEDULE_MS = 10 * 60 * 1000;   // re-poll the calendar this often
 const premeetingTimers = new Map();                // eventId -> setTimeout handle
-const premeetingFiredIds = new Set();              // ids already fired this app session
+const premeetingFiredIds = new Map();              // eventId -> start (ms) when it fired
+const openedMeetingIds = new Map();                // eventId -> start (ms) of the occurrence whose link was opened (click or auto)
+let knownEventTimes = new Map();                   // eventId -> { startMs, start, end } from the last scheduler fetch
+let lastMeetingOpen = null;                        // { at, endMs } of the latest successful link open
+let calendarConnectionGeneration = 0;             // invalidate in-flight fetches on disconnect
 let premeetingRescheduleTimer = null;
 
 // Fetch upcoming events from whichever provider is connected (mirrors
@@ -12513,26 +13039,38 @@ let premeetingRescheduleTimer = null;
 const SCHEDULER_FETCH_FAILED = Symbol('scheduler-fetch-failed');
 
 async function fetchCalendarEventsForScheduler(timeoutMs = 4000) {
+  const generation = calendarConnectionGeneration;
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const googleToken = await getValidAccessToken();
+    if (generation !== calendarConnectionGeneration) return null;
     if (googleToken) {
       const raw = await fetchCalendarEvents(googleToken, 50, controller.signal);
+      if (generation !== calendarConnectionGeneration) return null;
       return raw.map(normalizeCalendarEvent).filter(Boolean);
     }
     const outlookToken = await getValidOutlookAccessToken();
+    if (generation !== calendarConnectionGeneration) return null;
     if (outlookToken) {
       const raw = await fetchOutlookCalendarEvents(outlookToken, 50, controller.signal);
+      if (generation !== calendarConnectionGeneration) return null;
       return raw.map(normalizeCalendarEvent).filter(Boolean);
     }
     return null; // no calendar connected
   } catch (err) {
+    if (generation !== calendarConnectionGeneration) return null;
     sendDebugLog(`[premeeting] calendar fetch failed: ${err.message}`);
     return SCHEDULER_FETCH_FAILED; // transient — caller keeps existing timers
   } finally {
     clearTimeout(timeoutId);
   }
+}
+
+function invalidatePreMeetingCalendar() {
+  calendarConnectionGeneration += 1;
+  clearPreMeetingTimers();
+  knownEventTimes.clear();
 }
 
 // Content-free periodic snapshot of the connected calendar -- the usage
@@ -12594,28 +13132,90 @@ function maybeTrackCalendarSnapshot(events, now = new Date()) {
   trackEvent('calendar_snapshot', { window: 'week', ...week });
 }
 
-// Mirrors the per-event predicates of Home.tsx's `upcomingToday` (timed/
-// not-all-day, not declined, start in the future) — but deliberately WITHOUT
-// Home's start-of-tomorrow upper bound: a 2-min-before reminder should arm for
-// any upcoming meeting in the fetch window, not just today's.
-function isPremeetingEligible(e, nowMs) {
-  if (!e || typeof e.start !== 'string') return false;
-  if (!e.start.includes('T')) return false;      // all-day events are date-only
-  if (e.is_all_day === true) return false;
-  if (e.response_status === 'declined') return false;
-  const startMs = new Date(e.start).getTime();
-  return isFinite(startMs) && startMs > nowMs;
-}
-
 // The single fire path, shared by the armed timer and the
-// show-premeeting-notification test seam. Returns whether the banner was shown.
-// No internal firedIds dedupe (the scheduler owns that, skipping already-fired
-// ids on re-poll) so the seam can drive it repeatedly in tests.
-async function firePreMeetingNotification(event) {
+// show-premeeting-notification test seam. Returns {shown, action} with action
+// 'auto' | 'ask' | 'heads-up' | null. No internal firedIds dedupe (the scheduler
+// owns that, skipping already-fired ids on re-poll) so the seam can drive it
+// repeatedly in tests. `allowAuto` is false for renderer-supplied events so a
+// production renderer can never trigger a no-click open.
+async function firePreMeetingNotification(event, { allowAuto = true, verifyFresh = false, fetchFresh = fetchCalendarEventsForScheduler, testMicGuardAvailable } = {}) {
   premeetingTimers.delete(event.id);
+  const decide = (ev) => {
+    const nowMs = Date.now();
+    // Already recording this meeting: never open or ask, whatever the mode.
+    if (currentRecordingSessionName && currentRecordingSessionName === ev.title) return null;
+    return decideMeetingOpen(ev, loadAutoOpenSettings(), {
+      alreadyOpened: openedMeetingIds.has(ev.id),
+      micActive: micActiveApps.size > 0 || !(
+        testMicGuardAvailable !== undefined && ALLOW_E2E_PATH_SEAMS
+          ? testMicGuardAvailable === true
+          : isMicGuardAvailable({
+            platform: process.platform,
+            supported: isAutoDetectSupported(),
+            enabled: loadAutoDetectMeetingsEnabled(),
+            monitorRunning: Boolean(micMonitorProc && Number.isInteger(micMonitorProc.pid)
+              && micMonitorProc.exitCode === null && !micMonitorProc.killed),
+          })
+      ),
+      recordingOther: Boolean(currentRecordingSessionName),
+      overlapping: isOverlapping(lastMeetingOpen, ev, nowMs),
+      allowAuto,
+    }, nowMs);
+  };
+  let action = decide(event);
+
+  // The armed event can be up to PREMEETING_RESCHEDULE_MS stale. Both automatic
+  // opens and Ask prompts must use the current calendar state.
+  if ((action === 'auto' || action === 'ask') && verifyFresh) {
+    const fresh = await fetchFresh();
+    if (Array.isArray(fresh)) {
+      const current = fresh.find((e) => e.id === event.id);
+      if (!current || current.response_status === 'declined') return { shown: false, action: null };
+      if (current.start !== event.start) {
+        void schedulePreMeetingNotifications();
+        return { shown: false, action: null };
+      }
+      event = current;
+      action = decide(event);
+    } else if (fresh === SCHEDULER_FETCH_FAILED) {
+      if (action === 'auto') action = 'ask';
+    } else {
+      return { shown: false, action: null };
+    }
+  }
+  const startMs = new Date(event.start).getTime();
+  if (action) {
+    premeetingFiredIds.set(event.id, startMs);
+  }
+
+  if (action === 'auto') {
+    // Reserve the slot before the await so a concurrent fire sees this open and
+    // downgrades to ask; restored below if the open fails.
+    const openedAt = Date.now();
+    const reserved = { at: openedAt, endMs: openReservationEndMs(event, openedAt) };
+    const prevOpen = lastMeetingOpen;
+    lastMeetingOpen = reserved;
+    openedMeetingIds.set(event.id, startMs);
+    try {
+      await shell.openExternal(new URL(event.meeting_url).href);
+      showMeetingOpenToast(event, 'auto');
+      return { shown: true, action: 'auto' };
+    } catch (e) {
+      sendDebugLog(`[premeeting] auto-open failed, asking instead: ${e.message}`);
+      if (lastMeetingOpen === reserved) lastMeetingOpen = prevOpen;
+      openedMeetingIds.delete(event.id);
+      showMeetingOpenToast(event, 'ask');
+      return { shown: true, action: 'ask' };
+    }
+  }
+  if (action === 'ask') {
+    showMeetingOpenToast(event, 'ask');
+    return { shown: true, action: 'ask' };
+  }
+
   // Gate: the dedicated "Scheduled meetings" toggle — independent of the
   // "Post meeting notifications" master switch (see premeetingNotificationsEnabled).
-  if (!(await premeetingNotificationsEnabled())) return false;
+  if (!(await premeetingNotificationsEnabled())) return { shown: false, action: null };
   // Suppress only while we're recording THIS meeting — matched by name. A
   // recording started from a calendar event is named after its title (auto-detect
   // accept + Home upcoming-card both pass event.title), so the live session name
@@ -12630,7 +13230,7 @@ async function firePreMeetingNotification(event) {
   // heads-up notification.
   if (currentRecordingSessionName && currentRecordingSessionName === event.title) {
     sendDebugLog(`[premeeting] suppressed — already recording "${event.title}"`);
-    return false;
+    return { shown: false, action: null };
   }
 
   const notif = new Notification({ title: event.title || 'Meeting starting' });
@@ -12644,6 +13244,7 @@ async function firePreMeetingNotification(event) {
     ? new Date(event.start).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
     : '';
   notif.payload.meeting_url = event.meeting_url;
+  notif.payload.event_id = event.id;
   // The calendar's own colour for the accent bar; the toast stays neutral
   // without one (#412).
   if (event.color) notif.payload.color = event.color;
@@ -12676,8 +13277,29 @@ async function firePreMeetingNotification(event) {
 
   // Mark fired only after we've actually shown it, so an unshowable notif
   // (no OS support) isn't permanently skipped by the scheduler's dedupe.
-  premeetingFiredIds.add(event.id);
-  return true;
+  premeetingFiredIds.set(event.id, new Date(event.start).getTime());
+  return { shown: true, action: 'heads-up' };
+}
+
+// Toast for the auto-open flow. 'auto' is informational (explains the window that
+// just appeared, so no Join); 'ask' carries autoOpen so the toast renders "Open".
+function showMeetingOpenToast(event, kind) {
+  const title = String(event.title || 'meeting').replace(/\p{Cc}+/gu, ' ');
+  const notif = new Notification({ title: kind === 'auto' ? `Opening ${title}` : `Open ${title}?` });
+  if (kind === 'ask') {
+    notif.payload.premeeting = true;
+    notif.payload.autoOpen = 'ask';
+    notif.payload.meeting_url = event.meeting_url;
+    notif.payload.event_id = event.id;
+    // Shown under the title so a misleading title can't hide where the link goes.
+    try { notif.payload.body = new URL(event.meeting_url).hostname; } catch (_) { /* decide already vetted the URL */ }
+    notif.payload.time = event.start
+      ? new Date(event.start).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      : '';
+    if (event.color) notif.payload.color = event.color;
+  }
+  notif.once('show', () => trackEvent('notification_shown', { type: kind === 'auto' ? 'meeting_open_auto' : 'meeting_open_ask' }));
+  notif.show();
 }
 
 // Renderer → main: the active toast was closed by an explicit user action (a
@@ -12745,16 +13367,26 @@ function clearPreMeetingTimers() {
 // snapshots involved are seconds apart and the next re-poll self-heals, but
 // coalescing overlapping calls onto the same in-flight run closes it outright.
 let premeetingScheduleInFlight = null;
+let premeetingRearmRequested = false;
 
 function schedulePreMeetingNotifications() {
-  if (premeetingScheduleInFlight) return premeetingScheduleInFlight;
+  if (premeetingScheduleInFlight) {
+    // The in-flight run may have read settings before this change; rerun once after it.
+    premeetingRearmRequested = true;
+    return premeetingScheduleInFlight;
+  }
   premeetingScheduleInFlight = schedulePreMeetingNotificationsImpl().finally(() => {
     premeetingScheduleInFlight = null;
+    if (premeetingRearmRequested) {
+      premeetingRearmRequested = false;
+      void schedulePreMeetingNotifications();
+    }
   });
   return premeetingScheduleInFlight;
 }
 
 async function schedulePreMeetingNotificationsImpl() {
+  const generation = calendarConnectionGeneration;
   // Fetched once, shared by the calendar_snapshot metric (below) and the
   // premeeting-arming logic (further down) -- avoids a second calendar API
   // call every 10-min re-poll. The snapshot is intentionally NOT gated on
@@ -12762,11 +13394,15 @@ async function schedulePreMeetingNotificationsImpl() {
   // gating it would bias the "% of meetings recorded" metric toward users
   // who have notifications on.
   const events = await fetchCalendarEventsForScheduler();
+  if (generation !== calendarConnectionGeneration) return;
   if (events && events !== SCHEDULER_FETCH_FAILED) {
     maybeTrackCalendarSnapshot(events);
   }
 
-  if (!(await premeetingNotificationsEnabled())) {
+  const settings = loadAutoOpenSettings();
+  const premeetingEnabled = await premeetingNotificationsEnabled();
+  if (generation !== calendarConnectionGeneration) return;
+  if (!premeetingEnabled && settings.mode === 'off') {
     clearPreMeetingTimers();
     return;
   }
@@ -12778,25 +13414,27 @@ async function schedulePreMeetingNotificationsImpl() {
     return;
   }
   const nowMs = Date.now();
-  // Forget fired ids that are no longer a just-fired occurrence: pruned if the
-  // event dropped out of the fetch (cancelled / rolled past the window) OR its
-  // start is now in the future again (a recurring meeting reusing the same id —
-  // re-firing in the pre-start gap is already prevented by the delay<=0 guard
-  // below). Keeps the Set bounded across a long-running session.
+  // Forget fired ids once the event left the fetch (cancelled / past the window)
+  // or was rescheduled (start differs from when it fired), so it can fire again.
+  // Keeps both sets bounded across a long-running session.
   const startById = new Map(events.map((e) => [e.id, new Date(e.start).getTime()]));
-  for (const id of premeetingFiredIds) {
+  for (const [id, firedStart] of premeetingFiredIds) {
     const startMs = startById.get(id);
-    if (startMs === undefined || (isFinite(startMs) && startMs > nowMs)) {
+    if (startMs === undefined || startMs !== firedStart) {
       premeetingFiredIds.delete(id);
     }
   }
+  knownEventTimes = new Map(events.map((e) => [e.id, { startMs: new Date(e.start).getTime(), start: e.start, end: e.end }]));
+  // null = opened before the scheduler knew the event; adopt the current start.
+  for (const [id, openedStart] of openedMeetingIds) {
+    const startMs = startById.get(id);
+    if (startMs === undefined || (openedStart !== null && openedStart !== startMs)) openedMeetingIds.delete(id);
+    else if (openedStart === null) openedMeetingIds.set(id, startMs);
+  }
   clearPreMeetingTimers();
-  for (const e of events) {
-    if (!isPremeetingEligible(e, nowMs)) continue;
-    if (premeetingFiredIds.has(e.id)) continue;
-    const delay = new Date(e.start).getTime() - PREMEETING_LEAD_MS - nowMs;
-    if (delay <= 0) continue; // already within the lead window — don't backfire
-    premeetingTimers.set(e.id, setTimeout(() => { void firePreMeetingNotification(e); }, delay));
+  const plan = planPremeetingTimers(events, settings, { premeetingEnabled, firedIds: premeetingFiredIds, openedIds: openedMeetingIds }, nowMs);
+  for (const { event: e, delayMs } of plan) {
+    premeetingTimers.set(e.id, setTimeout(() => { void firePreMeetingNotification(e, { verifyFresh: true }); }, delayMs));
   }
   sendDebugLog(`[premeeting] armed ${premeetingTimers.size} notification(s)`);
 }
@@ -12819,8 +13457,28 @@ ipcMain.handle('show-premeeting-notification', async (_event, payload) => {
   try {
     const event = payload && payload.event;
     if (!event || !event.id) return { success: false, error: 'event with id required' };
-    const shown = await firePreMeetingNotification(event);
-    return { success: true, shown };
+    // Synthetic scheduler inputs are available only in unpackaged E2E runs.
+    // In production the renderer cannot claim a live mic guard or fresh event.
+    const testState = ALLOW_E2E_PATH_SEAMS ? payload.testState : null;
+    if (testState && Array.isArray(testState.knownEvents)) {
+      knownEventTimes = new Map(testState.knownEvents.map((e) =>
+        [e.id, { startMs: new Date(e.start).getTime(), start: e.start, end: e.end }]));
+    }
+    if (testState && Number.isFinite(testState.ageLastOpenMs) && lastMeetingOpen) {
+      lastMeetingOpen.at = Date.now() - testState.ageLastOpenMs;
+    }
+    if (testState && testState.skipFire === true) return { success: true, shown: false, action: null };
+    const options = { allowAuto: ALLOW_E2E_PATH_SEAMS };
+    if (testState) {
+      options.testMicGuardAvailable = testState.micGuardAvailable;
+      if (testState.freshEvents !== undefined) {
+        options.verifyFresh = true;
+        options.fetchFresh = async () => testState.freshEvents === 'failed'
+          ? SCHEDULER_FETCH_FAILED : testState.freshEvents;
+      }
+    }
+    const { shown, action } = await firePreMeetingNotification(event, options);
+    return { success: true, shown, action };
   } catch (e) {
     sendDebugLog(`Failed to show pre-meeting notification: ${e.message}`);
     return { success: false, error: e.message };
@@ -12833,7 +13491,9 @@ ipcMain.handle('outlook-auth-start', async () => {
   try {
     await startOutlookAuth();
     // Only disconnect Google after Outlook auth succeeds
+    invalidatePreMeetingCalendar();
     deleteGoogleTokens();
+    if (!IS_E2E) void schedulePreMeetingNotifications();
     trackEvent('calendar_connected', { provider: 'outlook' });
     refreshIdentitySuperProperties();
     return { success: true };
@@ -12859,7 +13519,9 @@ ipcMain.handle('outlook-auth-cancel', async () => {
 
 ipcMain.handle('outlook-auth-disconnect', async () => {
   try {
+    invalidatePreMeetingCalendar();
     deleteOutlookTokens();
+    if (!IS_E2E) void schedulePreMeetingNotifications();
 
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send('outlook-auth-changed');

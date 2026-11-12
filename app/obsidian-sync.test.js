@@ -119,6 +119,21 @@ test('sync writes a readable file under the folder subdir', () => {
   fs.rmSync(h.root, { recursive: true, force: true });
 });
 
+test("a call recording's numbers stay out of the vault copy", () => {
+  // Caller recognition keeps numbers in <stem>_call.json only (src/call_info.py):
+  // the vault may sync elsewhere or be read by other tools. Invented data.
+  const h = harness();
+  h.writeNote('n1', NOTE);
+  fs.writeFileSync(path.join(h.output, 'n1_call.json'), JSON.stringify({ calls: [
+    { name: 'Erika Mustermann', number: '+12025550100', direction: 'incoming', service: 'phone' },
+  ] }));
+  h.eng.syncNoteBySummaryPath(path.join(h.output, 'n1_summary.md'));
+  const written = fs.readFileSync(path.join(h.vault, 'Sales', '2026-07-15 Acme Q3 Planning.md'), 'utf8');
+  assert.ok(!written.includes('+12025550100'));
+  assert.ok(!/call_numbers/.test(written));
+  fs.rmSync(h.root, { recursive: true, force: true });
+});
+
 test('backfillAll mirrors every existing note (one-time export on enable)', async () => {
   const h = harness();
   h.writeNote('n1', NOTE);

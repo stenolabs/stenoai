@@ -31,13 +31,13 @@ export function UpcomingCard({ event }: UpcomingCardProps) {
   const onJoin = (e: React.MouseEvent) => {
     e.stopPropagation();
     if (!meetingUrl) return;
-    void ipc().shell.openExternal(meetingUrl);
+    void ipc().shell.openExternal(meetingUrl, event.id);
   };
 
   const onStartAndJoin = (e: React.MouseEvent) => {
     e.stopPropagation();
     onStart();
-    if (meetingUrl) void ipc().shell.openExternal(meetingUrl);
+    if (meetingUrl) void ipc().shell.openExternal(meetingUrl, event.id);
   };
 
   // Use the explicit calendar color if provided by the backend, otherwise default to a pleasant blue

@@ -19,6 +19,12 @@ import type { Meeting, QueueStatus, RecordingTrigger } from '@/lib/ipc';
 export type RecordingStatus = 'idle' | 'recording' | 'paused' | 'processing';
 
 const queueKey = ['recording', 'queue'] as const;
+// Shared across the many useRecording consumers. A Stop invalidates any Start
+// still awaiting queue cancellation or main's previous-capture handoff.
+let recordingStopVersion = 0;
+// A later Start owns the shared draft key, so a cancelled earlier Start must
+// not restore its snapshot over it.
+let recordingStartVersion = 0;
 
 // ── Shared window-visibility subscription ───────────────────────────────
 //
@@ -120,6 +126,8 @@ export function useRecording() {
 
   const startRecording = React.useCallback(
     async (name?: string, trigger: RecordingTrigger = 'manual', appendTo?: string) => {
+      const requestStopVersion = recordingStopVersion;
+      const requestStartVersion = ++recordingStartVersion;
       // Optimistic cache write so the UI flips to status='recording'
       // instantly. The backend's start-recording-ui has a 2s warm-up and
       // the next queue poll (1s) will reconcile sessionName + elapsed.
@@ -156,6 +164,10 @@ export function useRecording() {
       // (the standard onMutate pattern) instead of showing a phantom
       // "recording" pill until an invalidate round-trips.
       await qc.cancelQueries({ queryKey: queueKey });
+      if (requestStopVersion !== recordingStopVersion) {
+        if (priorDraft) useLiveDraftStore.getState().restore(optimisticName, priorDraft);
+        return;
+      }
       const priorQueue = qc.getQueryData<QueueStatus>(queueKey);
       qc.setQueryData(queueKey, {
         success: true,
@@ -163,6 +175,7 @@ export function useRecording() {
         queueSize: 0,
         currentJob: null,
         hasRecording: true,
+        recordingId: null,
         isPaused: false,
         elapsedSeconds: 0,
         sessionName: optimisticName,
@@ -176,10 +189,32 @@ export function useRecording() {
       // whatever route the user is on; /recording stays reachable as an
       // optional live-note editor but is never forced.
       try {
-        const data = unwrap(await ipc().recording.start(name, trigger, appendTo));
+        const response = await ipc().recording.start(name, trigger, appendTo);
+        if (!response.success && response.cancelled) {
+          // A Stop cancelled this start before it began, so the draft cleared
+          // above still belongs to the previous session. Restore it even when
+          // that Stop already owns the queue cache.
+          if (priorDraft && requestStartVersion === recordingStartVersion) {
+            useLiveDraftStore.getState().restore(optimisticName, priorDraft);
+          }
+          if (requestStopVersion !== recordingStopVersion) return;
+          qc.setQueryData(queueKey, priorQueue);
+          qc.invalidateQueries({ queryKey: queueKey });
+          return;
+        }
+        if (requestStopVersion !== recordingStopVersion) return;
+        const data = unwrap(response);
+        if (data.recordingId) {
+          qc.setQueryData<QueueStatus>(queueKey, (current) =>
+            current?.hasRecording
+              ? { ...current, recordingId: data.recordingId }
+              : current
+          );
+        }
         qc.invalidateQueries({ queryKey: queueKey });
         return data;
       } catch (err) {
+        if (requestStopVersion !== recordingStopVersion) return;
         // Roll back optimistic state. Restore the prior draft too — the
         // recording never started so the previous session (probably still
         // mid-processing) shouldn't lose its in-memory title / notes.
@@ -191,11 +226,14 @@ export function useRecording() {
         // Every caller is fire-and-forget (`void startRecording()`), so an
         // IPC-level failure would otherwise be a silent no-op: the pill
         // flashes out with no explanation. Route it through the same native
-        // notification the renderer-capture failure path uses.
+        // notification the renderer-capture failure path uses. As 'request',
+        // not 'start': main refused this start (a recording is already
+        // running, e.g. a second URL-scheme start) or failed it and cleaned up
+        // itself, so main must not reset the state of the running recording.
         ipc().recording.reportCaptureError(
           err instanceof Error ? err.message : 'Recording could not start',
           undefined,
-          'start'
+          'request'
         );
         throw err;
       }
@@ -204,6 +242,7 @@ export function useRecording() {
   );
 
   const stopRecording = React.useCallback(async ({ navigateToNote = true }: { navigateToNote?: boolean } = {}) => {
+    recordingStopVersion++;
     // Optimistic: flip the queue cache to processing so the UI can swap the
     // pill for the processing dock instantly, before the backend SIGTERM
     // round-trip.
@@ -213,6 +252,7 @@ export function useRecording() {
       queueSize: prev?.queueSize ?? 0,
       currentJob: prev?.sessionName ?? prev?.currentJob ?? null,
       hasRecording: false,
+      recordingId: null,
       isPaused: false,
       elapsedSeconds: 0,
       sessionName: prev?.sessionName ?? null,
@@ -350,18 +390,28 @@ export function useRecordingEvents() {
       bridge.on.shortcutStopRecording(() => {
         void stopRecording();
       }),
-      bridge.on.autoRecordRequested(({ sessionName }) => {
-        // Suggested by the mic-monitor auto-detect notification ("Take Notes").
+      bridge.on.autoRecordRequested(({ sessionName, unattended }) => {
+        // Suggested by the mic-monitor auto-detect notification ("Take Notes"),
+        // or started without asking when Auto-record detected meetings is on
+        // (`unattended`, tracked as its own trigger and what main uses to tie
+        // the "Recording started" toast to this recording).
         // Allow start when idle OR when a previous note is still processing
         // — the user explicitly opted in by clicking "Take Notes", and the
         // background queue handles the previous summary fine. Only skip if
         // an active recording (recording/paused) is already in progress —
         // user already manually started or is mid-meeting.
         if (status === 'recording' || status === 'paused') return;
-        void startRecording(sessionName ?? undefined, 'notification_click');
+        void startRecording(sessionName ?? undefined, unattended ? 'auto_record' : 'notification_click');
         // "Take Notes" is an explicit intent to write notes, so open the
         // live-note editor (main already brought the window forward). Mirrors
-        // the toolbar New-note button.
+        // the toolbar New-note button. An unattended start does not: it would
+        // take over whatever the user has open in Steno, or put up the note
+        // editor's unsaved-changes prompt, because a call began. Its toast
+        // opens the live note instead (openLiveNote below).
+        if (!unattended) navigate('/recording');
+      }),
+      bridge.on.openLiveNote(() => {
+        // The "Recording started" toast was tapped (auto-record).
         navigate('/recording');
       }),
       bridge.on.autoPauseRequested(() => {

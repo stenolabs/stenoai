@@ -100,6 +100,8 @@ test('a new processing generation cannot inherit the previous diarization timer'
   await emit(app, 'processing-progress', { line: 'PROGRESS:diarize:You:start' });
   await expect(label).toHaveText('Diarizing You channel…');
 
+  // A second start is refused while a recording is active, so stop first.
+  await page.evaluate(() => window.stenoai.recording.stop());
   await page.evaluate(() => window.stenoai.recording.start('second-session'));
   await expect(page.getByRole('heading', { name: 'second-session' })).toBeVisible();
   await expect(label).toHaveText('Analyzing transcript');

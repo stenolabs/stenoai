@@ -13,30 +13,36 @@ type ReleaseHighlight = {
 };
 export const RELEASE_HIGHLIGHTS: readonly ReleaseHighlight[] = [
   {
-    id: 'agents',
-    title: 'Your meeting notes, in your agent',
+    id: 'note-editing',
+    title: 'Edit a generated note',
     description:
-      'Connect Claude Code or Codex to Steno with a copyable install prompt and a setup guide.',
-    action: 'Try Agents',
-    route: '/agents',
-    visual: 'agents',
+      'Change generated sections in a saved note. The original model output stays available.',
+    action: 'Browse notes',
+    route: '/',
   },
   {
-    id: 'charts',
-    title: 'See the numbers in your notes',
+    id: 'speaker-engine',
+    title: 'Choose speaker detection',
     description:
-      'Ask Chat for a bar or line chart based on your meeting notes. Open View data to inspect the values.',
-    action: 'Open Chat',
-    route: '/chat',
-    visual: 'chart',
-  },
-  {
-    id: 'speaker-models',
-    title: 'Choose when to add individual speakers',
-    description:
-      'On macOS, speaker models are optional during setup. Download them later in AI settings, with progress shown as they install.',
+      'On macOS, keep Sortformer or select optional Nemotron 3 in AI settings.',
     action: 'Open AI settings',
     route: '/settings?tab=ai',
+  },
+  {
+    id: 'open-meetings',
+    title: 'Open meetings on time',
+    description:
+      'With a calendar connected, Steno can open the meeting link shortly before it starts, or ask first.',
+    action: 'Open Preferences',
+    route: '/settings?tab=general',
+  },
+  {
+    id: 'auto-record',
+    title: 'Record detected meetings',
+    description:
+      'Turn on Auto-record, and Steno starts recording a detected meeting without waiting for a tap.',
+    action: 'Turn on Auto-record',
+    route: '/settings?tab=general',
   },
 ];
 

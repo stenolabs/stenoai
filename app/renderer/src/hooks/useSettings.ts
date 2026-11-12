@@ -1,5 +1,13 @@
+import { useEffect } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ipc, type TelemetryToggleSource } from '@/lib/ipc';
+import {
+  ipc,
+  type AutoOpenMeetingsPatch,
+  type AutoOpenMode,
+  type AutoOpenProvider,
+  type GetCallerIdResponse,
+  type TelemetryToggleSource,
+} from '@/lib/ipc';
 import { unwrap } from '@/lib/result';
 
 export const settingsKeys = {
@@ -13,8 +21,11 @@ export const settingsKeys = {
   systemAudio: () => [...settingsKeys.all, 'systemAudio'] as const,
   systemAudioSupport: () => [...settingsKeys.all, 'systemAudioSupport'] as const,
   autoDetectMeetings: () => [...settingsKeys.all, 'autoDetectMeetings'] as const,
+  callerId: () => [...settingsKeys.all, 'callerId'] as const,
   premeetingNotifications: () => [...settingsKeys.all, 'premeetingNotifications'] as const,
+  autoRecordMeetings: () => [...settingsKeys.all, 'autoRecordMeetings'] as const,
   launchOnLogin: () => [...settingsKeys.all, 'launchOnLogin'] as const,
+  autoOpenMeetings: () => [...settingsKeys.all, 'autoOpenMeetings'] as const,
   silenceAutoStop: () => [...settingsKeys.all, 'silenceAutoStop'] as const,
   language: () => [...settingsKeys.all, 'language'] as const,
   microphone: () => [...settingsKeys.all, 'microphone'] as const,
@@ -225,6 +236,46 @@ export function useSetAutoDetectMeetings() {
   );
 }
 
+type CallerIdSettings = Extract<GetCallerIdResponse, { success: true }>;
+
+/** Caller recognition (iMCP): the setting plus iMCP's live status. */
+export function useCallerIdSetting() {
+  const qc = useQueryClient();
+  // iMCP's status changes on its own (started, approved, Phone switched on),
+  // so refetch whenever main reports a change rather than polling.
+  useEffect(
+    () => ipc().on.callerIdStatus(() => qc.invalidateQueries({ queryKey: settingsKeys.callerId() })),
+    [qc],
+  );
+  return useQuery({
+    queryKey: settingsKeys.callerId(),
+    queryFn: async (): Promise<CallerIdSettings> => unwrap(await ipc().settings.getCallerId()),
+  });
+}
+
+export function useSetCallerId() {
+  const qc = useQueryClient();
+  const queryKey = settingsKeys.callerId();
+  return useMutation({
+    mutationFn: async (v: boolean): Promise<CallerIdSettings> =>
+      unwrap(await ipc().settings.setCallerId(v)),
+    // As useToggleSetting: the switch moves at once, and goes back if the save
+    // fails. The answer then replaces the guess, since it carries iMCP's status.
+    onMutate: async (v: boolean) => {
+      await qc.cancelQueries({ queryKey });
+      const previous = qc.getQueryData<CallerIdSettings>(queryKey);
+      if (previous) {
+        qc.setQueryData<CallerIdSettings>(queryKey, { ...previous, caller_id_enabled: v });
+      }
+      return { previous };
+    },
+    onError: (_err, _v, ctx) => {
+      if (ctx?.previous) qc.setQueryData(queryKey, ctx.previous);
+    },
+    onSuccess: (settings) => qc.setQueryData(queryKey, settings),
+  });
+}
+
 export function usePremeetingNotificationsSetting() {
   return useQuery({
     queryKey: settingsKeys.premeetingNotifications(),
@@ -236,6 +287,20 @@ export function usePremeetingNotificationsSetting() {
 export function useSetPremeetingNotifications() {
   return useToggleSetting(settingsKeys.premeetingNotifications(), async (v) =>
     unwrap(await ipc().settings.setPremeetingNotifications(v)),
+  );
+}
+
+export function useAutoRecordMeetingsSetting() {
+  return useQuery({
+    queryKey: settingsKeys.autoRecordMeetings(),
+    queryFn: async () =>
+      unwrap(await ipc().settings.getAutoRecordMeetings()).auto_record_meetings_enabled,
+  });
+}
+
+export function useSetAutoRecordMeetings() {
+  return useToggleSetting(settingsKeys.autoRecordMeetings(), async (v) =>
+    unwrap(await ipc().settings.setAutoRecordMeetings(v)),
   );
 }
 
@@ -539,4 +604,59 @@ export function useSetSilenceAutoStopMinutes() {
   return useSilenceAutoStopField<number>('minutes', async (v) =>
     unwrap(await ipc().settings.setSilenceAutoStopMinutes(v)),
   );
+}
+
+type AutoOpenMeetings = {
+  mode: AutoOpenMode;
+  leadMinutes: number;
+  providers: AutoOpenProvider[];
+  acceptedOnly: boolean;
+};
+
+export function useAutoOpenMeetingsSetting() {
+  return useQuery({
+    queryKey: settingsKeys.autoOpenMeetings(),
+    queryFn: async (): Promise<AutoOpenMeetings> => {
+      const res = unwrap(await ipc().settings.getAutoOpenMeetings());
+      return {
+        mode: res.auto_open_meetings,
+        leadMinutes: res.auto_open_lead_minutes,
+        providers: res.auto_open_providers,
+        acceptedOnly: res.auto_open_accepted_only,
+      };
+    },
+  });
+}
+
+export function useSetAutoOpenMeetings() {
+  const qc = useQueryClient();
+  const key = settingsKeys.autoOpenMeetings();
+  return useMutation({
+    mutationFn: async (patch: AutoOpenMeetingsPatch) =>
+      unwrap(await ipc().settings.setAutoOpenMeetings(patch)),
+    onMutate: async (patch: AutoOpenMeetingsPatch) => {
+      await qc.cancelQueries({ queryKey: key });
+      const previous = qc.getQueryData<AutoOpenMeetings>(key);
+      if (previous) {
+        qc.setQueryData<AutoOpenMeetings>(key, {
+          mode: patch.mode ?? previous.mode,
+          leadMinutes: patch.lead_minutes ?? previous.leadMinutes,
+          providers: patch.providers ?? previous.providers,
+          acceptedOnly: patch.accepted_only ?? previous.acceptedOnly,
+        });
+      }
+      return { previous };
+    },
+    onError: (_err, _patch, ctx) => {
+      if (ctx?.previous) qc.setQueryData<AutoOpenMeetings>(key, ctx.previous);
+    },
+    onSuccess: (res) => {
+      qc.setQueryData<AutoOpenMeetings>(key, {
+        mode: res.auto_open_meetings,
+        leadMinutes: res.auto_open_lead_minutes,
+        providers: res.auto_open_providers,
+        acceptedOnly: res.auto_open_accepted_only,
+      });
+    },
+  });
 }

@@ -23,8 +23,10 @@ type StenoWindow = Window & {
       }) => Promise<ShowResult>;
     };
     recording: {
-      start: (name?: string) => Promise<{ success: boolean }>;
+      start: (name?: string) => Promise<{ success: boolean; recordingId?: string }>;
       stop: () => Promise<{ success: boolean }>;
+      getQueue: () => Promise<{ sessionName: string | null }>;
+      reportSystemAudioState: (active: boolean, recordingId: string) => void;
     };
   };
 };
@@ -67,15 +69,15 @@ test('pre-meeting notification is suppressed for the meeting being recorded (nam
 }) => {
   const realDirBefore = fileSig(realUserDataDir());
   enableDeterministicRecording(userDataDir);
-  const { page } = await launchApp();
+  // fakeAudio gives the renderer a microphone, so the recording really runs on
+  // every runner, including one with no audio device.
+  const { page } = await launchApp({ fakeAudio: true });
 
   // Start a recording NAMED after the meeting (a calendar-started recording is
   // named after its event title). The live recording's session name then equals
   // the reminder's event.title, which is the suppression match. Suppression keys
-  // off currentRecordingSessionName — set synchronously by start-recording-ui and
-  // cleared only on a real stop — so it's deterministic on every platform (no
-  // dependence on real audio capture sustaining active, which a headless Windows
-  // runner with no audio device can't do).
+  // off currentRecordingSessionName, set synchronously by start-recording-ui and
+  // cleared on stop, or when capture fails to start (next test).
   const started = await page.evaluate(
     (name) => (window as StenoWindow).stenoai.recording.start(name),
     EVT.title,
@@ -92,6 +94,57 @@ test('pre-meeting notification is suppressed for the meeting being recorded (nam
   await expect.poll(async () => (await showPremeeting(page, EVT)).shown).not.toBe(false);
 
   expect(fileSig(realUserDataDir())).toBe(realDirBefore);
+});
+
+test("a recording that fails to start does not suppress its meeting's reminder", async ({
+  launchApp,
+  userDataDir,
+}) => {
+  enableDeterministicRecording(userDataDir);
+  const { page } = await launchApp();
+
+  // Microphone access denied: capture fails at start, and nothing records.
+  await page.evaluate(() => {
+    navigator.mediaDevices.getUserMedia = () =>
+      Promise.reject(new DOMException('Permission denied', 'NotAllowedError'));
+  });
+  const started = await page.evaluate(
+    (name) => (window as StenoWindow).stenoai.recording.start(name),
+    EVT.title,
+  );
+  expect(started.success).toBe(true);
+
+  // The failed start leaves no session behind...
+  await expect
+    .poll(() => page.evaluate(async () => (await (window as StenoWindow).stenoai.recording.getQueue()).sessionName))
+    .toBeNull();
+  // ...so the reminder for that meeting still fires.
+  expect((await showPremeeting(page, EVT)).shown).not.toBe(false);
+});
+
+test('stop clears the suppression even when capture already reported inactive', async ({
+  launchApp,
+  userDataDir,
+}) => {
+  // A runner without a capture device (Linux CI) reports inactive right after
+  // start. Stop must still clear the session name, or the reminder for that
+  // meeting stays suppressed until the next recording.
+  enableDeterministicRecording(userDataDir);
+  const { page } = await launchApp();
+
+  const started = await page.evaluate(
+    (name) => (window as StenoWindow).stenoai.recording.start(name),
+    EVT.title,
+  );
+  expect(started.success).toBe(true);
+  await page.evaluate(
+    (id) => (window as StenoWindow).stenoai.recording.reportSystemAudioState(false, id),
+    started.recordingId!,
+  );
+  await expect.poll(async () => (await showPremeeting(page, EVT)).shown).toBe(false);
+
+  await page.evaluate(() => (window as StenoWindow).stenoai.recording.stop());
+  await expect.poll(async () => (await showPremeeting(page, EVT)).shown).not.toBe(false);
 });
 
 test("the pre-meeting toast's accent bar carries the calendar event's colour (#412)", async ({

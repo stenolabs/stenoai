@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { t } from '@/i18n';
 import { Search } from 'lucide-react';
 import { useMeetings } from '@/hooks/useMeetings';
 import { isLiveRowFile } from '@/lib/liveMeetingRow';
@@ -60,6 +61,7 @@ const SETTINGS_INDEX: SettingsEntry[] = [
   { id: 'general-calendar', tab: 'general', title: 'Connect calendar', sub: 'Google, Outlook' },
   { id: 'general-scheduled', tab: 'general', title: 'Scheduled meetings', sub: 'Upcoming calendar events' },
   { id: 'general-autodetect', tab: 'general', title: 'Auto-detected meetings', sub: 'Notify when another app uses the microphone' },
+  { id: 'general-autorecord', tab: 'general', title: t('settings.general.autoRecord.label'), sub: t('settings.general.autoRecord.search') },
   { id: 'general-notifications', tab: 'general', title: 'Post meeting notifications', sub: 'Desktop notifications when notes are ready' },
   { id: 'general-mic', tab: 'general', title: 'Microphone', sub: 'Input device' },
   { id: 'general-system-audio', tab: 'general', title: 'Record system audio', sub: 'Capture other participants', macOnly: true },

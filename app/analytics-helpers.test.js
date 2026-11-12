@@ -606,3 +606,10 @@ test('withTimeout supports a custom fallback value', async () => {
   const result = await withTimeout(neverSettles, 20, 'timed-out');
   assert.strictEqual(result, 'timed-out');
 });
+
+test('sanitizeTrackProperties keeps meeting_open_ask for notification_dismissed', () => {
+  assert.deepStrictEqual(
+    sanitizeTrackProperties('notification_dismissed', { type: 'meeting_open_ask' }),
+    { type: 'meeting_open_ask' },
+  );
+});

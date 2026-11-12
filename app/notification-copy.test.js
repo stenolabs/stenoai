@@ -108,6 +108,13 @@ test('a write failure DURING a recording does not claim the recording never star
   assert.doesNotMatch(body, /didn't start|find a microphone|permission/);
 });
 
+test('a start request main refused reads as a start that did not happen', () => {
+  assert.strictEqual(
+    buildCaptureErrorBody({ phase: 'request' }),
+    "Steno couldn't start the recording. Try again in a moment.",
+  );
+});
+
 test('a failed stop is described as a failed stop', () => {
   const body = buildCaptureErrorBody({ phase: 'stop' });
   assert.match(body, /couldn't finish the recording/);

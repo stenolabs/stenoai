@@ -27,7 +27,8 @@ type SettingKind =
   | 'dockIcon'
   | 'launchOnLogin'
   | 'menuBarIcon'
-  | 'premeetingNotifications';
+  | 'premeetingNotifications'
+  | 'autoRecordMeetings';
 
 type SettingsBridge = {
   settings: {
@@ -49,6 +50,7 @@ type SettingsBridge = {
     setLaunchOnLogin: (v: boolean) => Promise<unknown>;
     setMenuBarIcon: (v: boolean) => Promise<unknown>;
     setPremeetingNotifications: (v: boolean) => Promise<unknown>;
+    setAutoRecordMeetings: (v: boolean) => Promise<unknown>;
     setStoragePath: (p: string) => Promise<{ success?: boolean; error?: string }>;
     setMicrophone: (
       deviceId: string,
@@ -93,6 +95,8 @@ const CASES: Case[] = [
   // also does is IS_E2E-gated (main.js), so there's no window here.
   { kind: 'menuBarIcon', value: false, configKey: 'show_menu_bar_icon' },
   { kind: 'premeetingNotifications', value: false, configKey: 'premeeting_notifications_enabled' },
+  // Defaults false (it records without asking) — true flips it.
+  { kind: 'autoRecordMeetings', value: true, configKey: 'auto_record_meetings_enabled' },
 ];
 
 function applySetting(
@@ -132,6 +136,8 @@ function applySetting(
           return s.settings.setMenuBarIcon(value as boolean);
         case 'premeetingNotifications':
           return s.settings.setPremeetingNotifications(value as boolean);
+        case 'autoRecordMeetings':
+          return s.settings.setAutoRecordMeetings(value as boolean);
         case 'transcriptionEngine':
           return s.transcriptionEngine.set(value as string);
         default:

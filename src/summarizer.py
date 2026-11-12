@@ -155,6 +155,12 @@ def resolve_num_ctx(model_name: str) -> int:
 
 
 class OllamaSummarizer:
+    # What the recorder knows about this meeting beyond its transcript,
+    # prefixed to every summary, report and title prompt. Today: who a phone
+    # or FaceTime call was with (src.call_info.meeting_context). A class
+    # default, so an instance made without __init__ has it too.
+    meeting_context = ""
+
     def __init__(self, model_name: Optional[str] = None, ai_provider: Optional[str] = None, config: Optional['Config'] = None):
         """
         Initialize the summarizer with automatic service management.
@@ -473,7 +479,7 @@ class OllamaSummarizer:
         )
 
         return (
-            f"{notes_context}"
+            f"{self.meeting_context}{notes_context}"
             f"The following are structured extracts from {n} segments of a long meeting.\n"
             "Merge and deduplicate into a single coherent summary. "
             "Do not refer to \"the extracts\" or \"the segments\" — "
@@ -1100,7 +1106,7 @@ names, jargon, or context that helps interpret the transcript more accurately.
 
 """
 
-        return f"""{diarisation_note}{notes_context}You are a helpful meeting assistant. Summarise this meeting transcript into discussion areas, key points and any next steps mentioned. Only base your summary on what was explicitly discussed in the transcript.
+        return f"""{self.meeting_context}{diarisation_note}{notes_context}You are a helpful meeting assistant. Summarise this meeting transcript into discussion areas, key points and any next steps mentioned. Only base your summary on what was explicitly discussed in the transcript.
 
 IMPORTANT: Do not infer or assume information that wasn't directly mentioned.
 
@@ -1416,7 +1422,7 @@ Return ONLY the response in this exact JSON format:
         if notes and notes.strip():
             notes_context = f"USER NOTES (written during the meeting):\n{notes.strip()}\n\n"
 
-        return f"""{diarisation_note}{notes_context}Summarise this meeting transcript as markdown. Output ONLY the markdown below with no preamble, commentary, or explanation. Start directly with ## Summary.
+        return f"""{self.meeting_context}{diarisation_note}{notes_context}Summarise this meeting transcript as markdown. Output ONLY the markdown below with no preamble, commentary, or explanation. Start directly with ## Summary.
 
 ## Summary
 A 1-3 sentence overview of the main topics and outcomes, written directly. Do not refer to "the transcript", "the meeting", or "the recording", and do not open with phrases like "The transcript discusses" or "In this meeting".
@@ -1461,7 +1467,7 @@ TRANSCRIPT:
         if "[You]" in transcript and "[Others]" in transcript:
             diarisation_note = "NOTE: [You] is the recorder, [Others] are remote participants.\n\n"
         return (
-            f"{diarisation_note}{notes_context}{template_prompt.strip()}\n\n"
+            f"{self.meeting_context}{diarisation_note}{notes_context}{template_prompt.strip()}\n\n"
             "Base the report only on what was explicitly discussed; do not infer. "
             "Output the report as markdown with no preamble."
             f"{language_instruction}\n\nTRANSCRIPT:\n{transcript}"
@@ -1729,7 +1735,7 @@ TRANSCRIPT:
             else:
                 lang_instruction = ""
 
-            prompt = f"""Generate a short, descriptive title for this meeting based on the summary below.
+            prompt = f"""{self.meeting_context}Generate a short, descriptive title for this meeting based on the summary below.
 
 RULES:
 1. Maximum 6 words

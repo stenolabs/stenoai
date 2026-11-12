@@ -328,6 +328,14 @@ const AUDIO_SEED_MEETINGS = [
   },
 ];
 
+function callerIdSettings(state) {
+  return {
+    success: true, supported: true, caller_id_enabled: state.callerIdEnabled, meeting_detection: true,
+    status: { state: state.callerIdEnabled ? 'not-installed' : 'off', contacts: false },
+    download_url: 'https://imcp.app/download', homebrew: 'brew install --cask mattt/tap/iMCP',
+  };
+}
+
 function install({ ipcMain }) {
   // Renderer tests can save and reopen chat turns without a backend or disk.
   let chatSessions = { sessions: [] };
@@ -338,6 +346,7 @@ function install({ ipcMain }) {
   // mocks so a test can assert the UI reacts to its own actions.
   const state = {
     language: 'auto',
+    autoOpen: { mode: 'off', lead_minutes: 1, providers: [], accepted_only: true },
     provider: 'local', // 'local' | 'remote' | 'cloud' | 'adapter'
     orgSession: null, // { adapterUrl, email, name, orgId, exp } when signed in
     everSignedIn: false,
@@ -346,6 +355,7 @@ function install({ ipcMain }) {
     cloudModel: 'gpt-4o',
     remoteUrl: '', // remote Ollama URL (empty = not configured)
     autoInstallWhenIdle: true, // idle auto-install toggle (config default on)
+    callerIdEnabled: false, // caller recognition (opt-in, macOS)
     transcriptionEngine: process.env.STENOAI_E2E_MOCK_ENGINE || 'parakeet',
     diarizationEngine: 'sortformer',
     // STENOAI_E2E_SPEAKER_MODELS_MISSING=1 simulates an upgraded install whose
@@ -605,15 +615,21 @@ function install({ ipcMain }) {
       });
     },
     'start-recording-ui': async (_event, name, _trigger, appendTo) => {
+      if (rec.active) return { success: false, error: 'Recording already in progress' };
       rec.active = true;
       rec.paused = false;
       rec.processing = false;
       rec.sessionName = name && String(name).trim() ? String(name).trim() : 'Note';
       rec.appendTo = appendTo && String(appendTo).trim() ? String(appendTo).trim() : null;
       rec.startedAt = Date.now();
-      rec.recordingId = String(rec.startedAt);
-      return { success: true, sessionName: rec.sessionName };
+      // Unique even for two starts in one millisecond, like main.js.
+      rec.lastRecordingId = Math.max(rec.startedAt, (rec.lastRecordingId || 0) + 1);
+      rec.recordingId = String(rec.lastRecordingId);
+      return { success: true, sessionName: rec.sessionName, recordingId: rec.recordingId };
     },
+    'claim-system-audio-capture': async (_event, recordingId) => ({
+      success: rec.active && rec.recordingId === recordingId,
+    }),
     'stop-recording-ui': async () => {
       rec.active = false;
       rec.paused = false;
@@ -734,6 +750,24 @@ function install({ ipcMain }) {
       return { success: true, language };
     },
 
+    'get-auto-open-meetings': async () => ({
+      success: true,
+      auto_open_meetings: state.autoOpen.mode,
+      auto_open_lead_minutes: state.autoOpen.lead_minutes,
+      auto_open_providers: state.autoOpen.providers,
+      auto_open_accepted_only: state.autoOpen.accepted_only,
+    }),
+    'set-auto-open-meetings': async (_event, patch) => {
+      Object.assign(state.autoOpen, patch || {});
+      return {
+        success: true,
+        auto_open_meetings: state.autoOpen.mode,
+        auto_open_lead_minutes: state.autoOpen.lead_minutes,
+        auto_open_providers: state.autoOpen.providers,
+        auto_open_accepted_only: state.autoOpen.accepted_only,
+      };
+    },
+
     'get-transcription-engine': async () => ({
       success: true,
       engine: state.transcriptionEngine,
@@ -839,6 +873,16 @@ function install({ ipcMain }) {
     'set-auto-install-when-idle': async (_event, enabled) => {
       state.autoInstallWhenIdle = !!enabled;
       return { success: true, auto_install_when_idle: state.autoInstallWhenIdle };
+    },
+
+    // Caller recognition row: macOS-shaped and stateful like the toggle above.
+    // set answers with the whole settings shape, as main does, since the
+    // renderer caches that answer as the row's data. No iMCP under mock IPC,
+    // so switched on it reads as not installed.
+    'get-caller-id': async () => callerIdSettings(state),
+    'set-caller-id': async (_event, enabled) => {
+      state.callerIdEnabled = enabled === true;
+      return callerIdSettings(state);
     },
 
     // Seed meetings for the specs that need them, gated per env so the
@@ -1682,6 +1726,8 @@ function install({ ipcMain }) {
     // row + the hero copy). Default enabled + registered so T1 renderer specs
     // render the ON state without a real globalShortcut registration.
     'get-record-hotkey': { success: true, enabled: true, registered: true },
+    // Auto-record (#463) defaults off; answered so its row isn't stuck loading.
+    'get-auto-record-meetings': { success: true, auto_record_meetings_enabled: false },
     // parakeet-status lives in MOCKS (env-gated installed flag).
     // Transcribe tab reads this on first paint. (The engine itself moved to
     // MOCKS so STENOAI_E2E_MOCK_ENGINE can override it; default parakeet keeps

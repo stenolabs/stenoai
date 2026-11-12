@@ -72,6 +72,7 @@ function seedNote(userDataDir: string, stem: string, name: string) {
   const summaryFile = path.join(outputDir, `${stem}_summary.json`);
   const reportsSidecar = path.join(outputDir, `${stem}_reports.json`);
   const originalSidecar = path.join(outputDir, `${stem}_original.json`);
+  const callSidecar = path.join(outputDir, `${stem}_call.json`);
   const transcriptFile = path.join(transcriptsDir, `${stem}_transcript.txt`);
   const audioFile = path.join(recordingsDir, `${stem}.wav`);
 
@@ -106,6 +107,22 @@ function seedNote(userDataDir: string, stem: string, name: string) {
       edited_at: null,
     }),
   );
+  // Caller recognition's sidecar (src/call_info.py): who the call was with,
+  // by name and number. Invented data.
+  writeFileSync(
+    callSidecar,
+    JSON.stringify({
+      calls: [
+        {
+          name: 'Erika Mustermann',
+          number: '+12025550100',
+          direction: 'incoming',
+          service: 'phone',
+          started_at: '2024-01-01T00:00:00Z',
+        },
+      ],
+    }),
+  );
   writeFileSync(transcriptFile, `transcript for ${name}`);
   // Minimal but non-empty "audio" payload — the handler never decodes it, so a
   // stub is enough to prove the recording survives the delete window.
@@ -118,6 +135,7 @@ function seedNote(userDataDir: string, stem: string, name: string) {
     summaryFile,
     reportsSidecar,
     originalSidecar,
+    callSidecar,
     transcriptFile,
     audioFile,
     outputDir,
@@ -183,6 +201,7 @@ test('delete hides only the summary (note vanishes from the backend); transcript
   expect(existsSync(seed.audioFile)).toBe(true);
   expect(existsSync(seed.reportsSidecar)).toBe(true);
   expect(existsSync(seed.originalSidecar)).toBe(true);
+  expect(existsSync(seed.callSidecar)).toBe(true);
 
   // main is the source of truth for the deadline: list-pending-deletes reports it.
   const pending = await page.evaluate(() =>
@@ -234,6 +253,7 @@ test('undo renames the summary back — the note reappears and the scaffold is c
   expect(existsSync(seed.audioFile)).toBe(true);
   expect(existsSync(seed.reportsSidecar)).toBe(true);
   expect(existsSync(seed.originalSidecar)).toBe(true);
+  expect(existsSync(seed.callSidecar)).toBe(true);
 
   // Nothing left pending.
   const pending = await page.evaluate(() =>
@@ -312,6 +332,7 @@ test('commit (explicit dismiss) permanently removes the summary + transcript + r
     seed.audioFile,
     seed.reportsSidecar,
     seed.originalSidecar,
+    seed.callSidecar,
   ];
 
   const { page } = await launchApp();

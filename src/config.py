@@ -1035,6 +1035,10 @@ class Config:
             # of notifications_enabled (which now only covers note-ready/
             # silence-auto-stop). Requires a connected calendar to fire at all.
             "premeeting_notifications_enabled": True,
+            "auto_open_meetings": "off",
+            "auto_open_lead_minutes": 1,
+            "auto_open_providers": [],
+            "auto_open_accepted_only": True,
             # Default ON — mirrors hide_dock_icon's absence from this dict
             # (both use a .get() fallback); listed explicitly here since it's
             # new and the default matters for the "both hidden" warning logic.
@@ -1056,6 +1060,11 @@ class Config:
             # any non-Steno app starts capturing the mic. Helper is gated
             # to macOS 14+ in main.js; users can flip off in Settings.
             "auto_detect_meetings_enabled": True,
+            # Default OFF — opt-in, because it records without asking. When
+            # on, a detected meeting starts recording at once instead of
+            # posting "Meeting detected"; a passive toast says it started and
+            # offers Stop. Only acts while auto_detect_meetings_enabled is on.
+            "auto_record_meetings_enabled": False,
             # Default ON — Steno auto-starts (hidden, in the tray/menu bar)
             # when the user logs in. main.js registers/removes the OS login
             # item and suppresses the first window show on a login launch.
@@ -1992,6 +2001,17 @@ class Config:
         self._config["notifications_enabled"] = enabled
         return self._save()
 
+    def get_caller_id_enabled(self) -> bool:
+        """Whether phone and FaceTime recordings are matched to the caller
+        through iMCP (macOS; see src/call_info.py). Opt-in: only a literal
+        ``True`` enables it, matching the Electron-side ``=== true`` read."""
+        return self._config.get("caller_id_enabled") is True
+
+    def set_caller_id_enabled(self, enabled: bool) -> bool:
+        """Turn caller recognition on or off. Returns True if saved."""
+        self._config["caller_id_enabled"] = bool(enabled)
+        return self._save()
+
     def get_record_hotkey_enabled(self) -> bool:
         """Get whether the global record shortcut is registered at startup.
 
@@ -2031,6 +2051,75 @@ class Config:
             True if saved successfully, False otherwise
         """
         self._config["premeeting_notifications_enabled"] = enabled
+        return self._save()
+
+    AUTO_OPEN_MODES = ("off", "ask", "auto")
+    AUTO_OPEN_PROVIDERS = ("meet", "zoom", "teams")
+    AUTO_OPEN_MAX_LEAD_MINUTES = 30
+
+    @classmethod
+    def _valid_auto_open_lead(cls, value) -> bool:
+        # bool is an int subclass; True must not read as 1 minute.
+        return (
+            isinstance(value, int)
+            and not isinstance(value, bool)
+            and 0 <= value <= cls.AUTO_OPEN_MAX_LEAD_MINUTES
+        )
+
+    @classmethod
+    def _clean_auto_open_providers(cls, value) -> list:
+        # Keep known entries so a hand-edited list never widens past what the
+        # user chose; mirrors normalizeAutoOpenSettings in app/meeting-open.js.
+        if not isinstance(value, list):
+            return []
+        return list(dict.fromkeys(p for p in value if isinstance(p, str) and p in cls.AUTO_OPEN_PROVIDERS))
+
+    def get_auto_open_meetings(self) -> dict:
+        """Get the auto-open-meetings settings; each key falls back to its
+        default independently when the stored value is invalid."""
+        defaults = self._get_default_config()
+        mode = self._config.get("auto_open_meetings")
+        lead = self._config.get("auto_open_lead_minutes")
+        providers = self._config.get("auto_open_providers")
+        accepted = self._config.get("auto_open_accepted_only")
+        return {
+            "auto_open_meetings": mode if mode in self.AUTO_OPEN_MODES else defaults["auto_open_meetings"],
+            "auto_open_lead_minutes": lead if self._valid_auto_open_lead(lead) else defaults["auto_open_lead_minutes"],
+            "auto_open_providers": self._clean_auto_open_providers(providers),
+            "auto_open_accepted_only": accepted if isinstance(accepted, bool) else defaults["auto_open_accepted_only"],
+        }
+
+    def set_auto_open_meetings(self, mode=None, lead_minutes=None, providers=None, accepted_only=None) -> bool:
+        """Set any subset of the auto-open-meetings settings in one save.
+
+        Every provided field is validated first; on any invalid field a
+        ValueError is raised and nothing is written.
+        """
+        if mode is not None and mode not in self.AUTO_OPEN_MODES:
+            raise ValueError(f"mode must be one of {', '.join(self.AUTO_OPEN_MODES)}")
+        if lead_minutes is not None and not self._valid_auto_open_lead(lead_minutes):
+            raise ValueError(f"lead_minutes must be an integer from 0 to {self.AUTO_OPEN_MAX_LEAD_MINUTES}")
+        if providers is not None:
+            if not isinstance(providers, (list, tuple)):
+                raise ValueError("providers must be a list")
+            unknown = [p for p in providers if p not in self.AUTO_OPEN_PROVIDERS]
+            if unknown:
+                raise ValueError(
+                    f"unknown provider(s): {', '.join(map(str, unknown))}; "
+                    f"expected {', '.join(self.AUTO_OPEN_PROVIDERS)}"
+                )
+            providers = list(dict.fromkeys(providers))
+        if accepted_only is not None and not isinstance(accepted_only, bool):
+            raise ValueError("accepted_only must be a boolean")
+
+        if mode is not None:
+            self._config["auto_open_meetings"] = mode
+        if lead_minutes is not None:
+            self._config["auto_open_lead_minutes"] = lead_minutes
+        if providers is not None:
+            self._config["auto_open_providers"] = providers
+        if accepted_only is not None:
+            self._config["auto_open_accepted_only"] = accepted_only
         return self._save()
 
     def get_telemetry_enabled(self) -> bool:
@@ -2463,6 +2552,15 @@ class Config:
     def set_auto_detect_meetings_enabled(self, enabled: bool) -> bool:
         """Set whether auto-detect meetings is enabled."""
         self._config["auto_detect_meetings_enabled"] = enabled
+        return self._save()
+
+    def get_auto_record_meetings_enabled(self) -> bool:
+        """Get whether a detected meeting is recorded without asking."""
+        return self._config.get("auto_record_meetings_enabled", False) is True
+
+    def set_auto_record_meetings_enabled(self, enabled: bool) -> bool:
+        """Set whether a detected meeting is recorded without asking."""
+        self._config["auto_record_meetings_enabled"] = bool(enabled)
         return self._save()
 
     def get_launch_on_login(self) -> bool:
