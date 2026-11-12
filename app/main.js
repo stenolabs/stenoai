@@ -167,6 +167,10 @@ const { autoUpdater } = require('electron-updater');
 //                           feeds one mic-monitor line to handleMicEvent, so a
 //                           spec can play a detected meeting (unpackaged only;
 //                           see ALLOW_E2E_PATH_SEAMS for why)
+//   STENOAI_E2E_TRAY=1     - give the menu bar recording indicator a stand-in
+//                           tray and expose globalThis.__stenoE2ETray() to read
+//                           its title, tooltip and whether the timer ticks
+//                           (unpackaged only)
 if (process.env.STENOAI_USER_DATA_DIR) {
   app.setPath('userData', process.env.STENOAI_USER_DATA_DIR);
 }
@@ -1889,7 +1893,10 @@ function createTray() {
 }
 
 function updateTrayIcon(recording) {
-  if (!tray) return;
+  if (!tray) {
+    syncTrayRecordingIndicator();
+    return;
+  }
   // macOS shows the recording state as a small red dot + timer in the tray title
   // (see syncTrayRecordingIndicator), so the icon stays the plain dragonfly
   // there. Windows has no tray title and keeps the dotted recording icon.
@@ -1904,6 +1911,30 @@ function updateTrayIcon(recording) {
 // recording is live, and only on macOS where the tray has a title.
 let trayIndicatorTimer = null;
 
+// E2E: the real tray is skipped (no menu bar on CI runners), so a spec opts in
+// to this stand-in and reads what the menu bar would show (tray-indicator.t2).
+// Gated like the other main-process seams, so a packaged build never has it.
+const e2eTrayStandIn = ALLOW_E2E_PATH_SEAMS && process.env.STENOAI_E2E_TRAY === '1'
+  ? {
+      title: '',
+      tooltip: '',
+      setTitle(title) { this.title = title; },
+      setToolTip(tooltip) { this.tooltip = tooltip; },
+      isDestroyed: () => false,
+    }
+  : null;
+if (e2eTrayStandIn) {
+  globalThis.__stenoE2ETray = () => ({
+    title: e2eTrayStandIn.title,
+    tooltip: e2eTrayStandIn.tooltip,
+    ticking: trayIndicatorTimer !== null,
+  });
+}
+
+function trayIndicatorTarget() {
+  return tray || e2eTrayStandIn;
+}
+
 function stopTrayIndicatorTimer() {
   if (trayIndicatorTimer) {
     clearInterval(trayIndicatorTimer);
@@ -1912,13 +1943,14 @@ function stopTrayIndicatorTimer() {
 }
 
 function renderTrayRecordingTitle() {
-  if (!tray || tray.isDestroyed()) {
+  const target = trayIndicatorTarget();
+  if (!target || target.isDestroyed()) {
     stopTrayIndicatorTimer();
     return;
   }
   const recording = (currentRecordingProcess !== null || systemAudioRecordingActive)
     && Boolean(recordingRuntimeState.startedAtMs);
-  tray.setTitle(
+  target.setTitle(
     buildTrayRecordingTitle({
       recording,
       paused: recordingRuntimeState.isPaused,
@@ -1930,12 +1962,13 @@ function renderTrayRecordingTitle() {
 }
 
 function syncTrayRecordingIndicator() {
-  if (!tray) {
+  const target = trayIndicatorTarget();
+  if (!target) {
     stopTrayIndicatorTimer();
     return;
   }
   const recording = currentRecordingProcess !== null || systemAudioRecordingActive;
-  tray.setToolTip(buildTrayTooltip({ recording, paused: recording && recordingRuntimeState.isPaused }));
+  target.setToolTip(buildTrayTooltip({ recording, paused: recording && recordingRuntimeState.isPaused }));
   if (process.platform !== 'darwin') return;
 
   renderTrayRecordingTitle();
@@ -1961,6 +1994,9 @@ function showAndFocusWindow() {
 }
 
 function updateTrayMenu() {
+  // Every recording state change (start, stop, pause, resume) passes through
+  // here, so the menu bar indicator follows it without extra call sites.
+  syncTrayRecordingIndicator();
   if (!tray) return;
   const isRecording = currentRecordingProcess !== null || systemAudioRecordingActive;
 
@@ -2027,9 +2063,6 @@ function updateTrayMenu() {
   ]);
 
   tray.setContextMenu(contextMenu);
-  // Every recording state change (start, stop, pause, resume) passes through
-  // here, so the menu bar indicator follows it without extra call sites.
-  syncTrayRecordingIndicator();
 }
 
 // ── Parakeet warm-up ────────────────────────────────────────────────────
