@@ -385,13 +385,31 @@ class MainRefTests(unittest.TestCase):
             self.assertTrue(parakeet_models.maybe_enable_offline(self.MODEL))
         self.assertEqual(self._main_ref(), self.SHA)
 
-    def test_an_existing_ref_is_left_alone(self):
-        self._complete_snapshot(self.SHA)
+    def test_a_ref_to_a_complete_snapshot_is_left_alone(self):
+        self._complete_snapshot("c" * 40)
+        self._complete_snapshot(self.SHA)  # newer, but main already loads
         (self.repo / "refs").mkdir()
         (self.repo / "refs" / "main").write_text("c" * 40)
         with patch.dict(os.environ, {}, clear=False):
             parakeet_models.maybe_enable_offline(self.MODEL)
         self.assertEqual(self._main_ref(), "c" * 40)
+
+    def test_ref_to_a_partial_snapshot_moves_to_the_complete_one(self):
+        self._complete_snapshot(self.SHA)
+        partial = self.repo / "snapshots" / ("d" * 40)
+        partial.mkdir(parents=True)
+        (partial / "config.json").write_bytes(b"present")
+        (self.repo / "refs").mkdir()
+        (self.repo / "refs" / "main").write_text("d" * 40)
+        parakeet_models._repair_main_ref(self.MODEL)
+        self.assertEqual(self._main_ref(), self.SHA)
+
+    def test_ref_to_a_deleted_snapshot_moves_to_the_complete_one(self):
+        self._complete_snapshot(self.SHA)
+        (self.repo / "refs").mkdir()
+        (self.repo / "refs" / "main").write_text("e" * 40)
+        parakeet_models._repair_main_ref(self.MODEL)
+        self.assertEqual(self._main_ref(), self.SHA)
 
     def test_incomplete_install_gets_no_ref(self):
         snapshot = self.repo / "snapshots" / self.SHA

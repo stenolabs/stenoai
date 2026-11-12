@@ -146,17 +146,25 @@ def _write_main_ref(model_id: str, revision: str) -> None:
 
 
 def _repair_main_ref(model_id: str) -> None:
-    """Give an installed model a ``refs/main`` if a pinned download left none.
+    """Make ``refs/main`` point at a complete snapshot before going offline.
 
     A pinned download from before _download_snapshot wrote the ref is complete
     but unloadable, and is_installed() means it is never downloaded again; this
-    lets it load as it is. An existing ref is left alone.
+    lets it load as it is. A ref to a partial or deleted snapshot (an
+    interrupted download of a newer revision, say) would fail the same way
+    while an older complete one sits beside it, so that is moved too. A ref
+    that already points at a complete snapshot is left alone.
     """
-    if (_hf_cache_dir_for(model_id) / "refs" / "main").is_file():
-        return
     complete = _complete_snapshots(model_id)
-    if complete:
-        _write_main_ref(model_id, complete[0].name)
+    if not complete:
+        return
+    ref = _hf_cache_dir_for(model_id) / "refs" / "main"
+    try:
+        if ref.is_file() and ref.read_text().strip() in {snapshot.name for snapshot in complete}:
+            return
+    except (OSError, UnicodeError):
+        pass
+    _write_main_ref(model_id, complete[0].name)
 
 
 def maybe_enable_offline(model_id: str = DEFAULT_MODEL_ID) -> bool:
