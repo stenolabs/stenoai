@@ -1,4 +1,6 @@
 import os
+import sys
+import types
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
@@ -311,6 +313,108 @@ class OfflineLoadTests(unittest.TestCase):
             self.assertFalse(parakeet_models.download())
             self.assertFalse(constants.HF_HUB_OFFLINE)
         self.assertEqual(states, [True, False])
+
+
+class MainRefTests(unittest.TestCase):
+    """The app loads by repo id, which resolves ``main``. Offline, the hub
+    needs ``refs/main`` for that, and a download pinned to a commit hash
+    never writes it."""
+
+    MODEL = "mlx-community/parakeet-tdt-0.6b-v3"
+    SHA = "a" * 40
+
+    def setUp(self):
+        self._cache = TemporaryDirectory()
+        patcher = patch.dict(os.environ, {"HF_HUB_CACHE": self._cache.name})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.addCleanup(self._cache.cleanup)
+        self.repo = parakeet_models._hf_cache_dir_for(self.MODEL)
+
+    def _complete_snapshot(self, revision):
+        snapshot = self.repo / "snapshots" / revision
+        snapshot.mkdir(parents=True)
+        for name in parakeet_models._REQUIRED_SNAPSHOT_FILES[self.MODEL]:
+            (snapshot / name).write_bytes(b"present")
+        return snapshot
+
+    def _main_ref(self):
+        ref = self.repo / "refs" / "main"
+        return ref.read_text() if ref.is_file() else None
+
+    def _hub(self, sha):
+        """A hub whose metadata pins ``sha`` and whose download, like the real
+        one given a commit hash, writes the snapshot but no ref."""
+        test = self
+
+        class Api:
+            def model_info(self, repo, token=None):
+                return types.SimpleNamespace(sha=sha)
+
+            def get_paths_info(self, repo, paths, revision=None, token=None):
+                return [types.SimpleNamespace(path=p, size=7) for p in paths]
+
+        def hf_hub_download(repo, filename, revision=None, token=None):
+            path = test.repo / "snapshots" / revision / filename
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(b"present")
+            return str(path)
+
+        hub = types.ModuleType("huggingface_hub")
+        hub.hf_hub_download, hub.HfApi = hf_hub_download, Api
+        return hub
+
+    def test_pinned_download_records_main(self):
+        with patch.dict(sys.modules, {"huggingface_hub": self._hub(self.SHA)}):
+            parakeet_models._download_snapshot(self.MODEL, lambda event: None)
+        self.assertEqual(self._main_ref(), self.SHA)
+
+    def test_pinned_download_moves_main_to_the_new_snapshot(self):
+        self._complete_snapshot("b" * 40)
+        (self.repo / "refs").mkdir()
+        (self.repo / "refs" / "main").write_text("b" * 40)
+        with patch.dict(sys.modules, {"huggingface_hub": self._hub(self.SHA)}):
+            parakeet_models._download_snapshot(self.MODEL, lambda event: None)
+        self.assertEqual(self._main_ref(), self.SHA)
+
+    def test_going_offline_repairs_an_install_with_no_ref(self):
+        self._complete_snapshot(self.SHA)
+        self.assertIsNone(self._main_ref())
+        with patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("HF_HUB_OFFLINE", None)
+            self.assertTrue(parakeet_models.maybe_enable_offline(self.MODEL))
+        self.assertEqual(self._main_ref(), self.SHA)
+
+    def test_an_existing_ref_is_left_alone(self):
+        self._complete_snapshot(self.SHA)
+        (self.repo / "refs").mkdir()
+        (self.repo / "refs" / "main").write_text("c" * 40)
+        with patch.dict(os.environ, {}, clear=False):
+            parakeet_models.maybe_enable_offline(self.MODEL)
+        self.assertEqual(self._main_ref(), "c" * 40)
+
+    def test_incomplete_install_gets_no_ref(self):
+        snapshot = self.repo / "snapshots" / self.SHA
+        snapshot.mkdir(parents=True)
+        (snapshot / "config.json").write_bytes(b"present")
+        parakeet_models._repair_main_ref(self.MODEL)
+        self.assertIsNone(self._main_ref())
+
+    def test_real_hub_resolves_main_offline_after_repair(self):
+        try:
+            from huggingface_hub import hf_hub_download
+        except ImportError:
+            self.skipTest("huggingface_hub unavailable")
+        from huggingface_hub.errors import LocalEntryNotFoundError
+
+        self._complete_snapshot(self.SHA)
+        with self.assertRaises(LocalEntryNotFoundError):
+            hf_hub_download(self.MODEL, "config.json", cache_dir=self._cache.name,
+                            local_files_only=True)
+        parakeet_models._repair_main_ref(self.MODEL)
+        path = hf_hub_download(self.MODEL, "config.json", cache_dir=self._cache.name,
+                               local_files_only=True)
+        self.assertEqual(Path(path).parent.name, self.SHA)
 
 
 if __name__ == "__main__":

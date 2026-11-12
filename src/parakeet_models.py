@@ -96,13 +96,17 @@ def is_installed(model_id: str = DEFAULT_MODEL_ID) -> bool:
     ``maybe_enable_offline`` must set its environment before the hub is first
     imported.
     """
+    return bool(_complete_snapshots(model_id))
+
+
+def _complete_snapshots(model_id: str) -> list[Path]:
+    """Snapshot directories holding every runtime file, newest first."""
     required_files = _REQUIRED_SNAPSHOT_FILES.get(model_id)
     if required_files is None:
-        return False
+        return []
 
     snapshots = _hf_cache_dir_for(model_id) / "snapshots"
-    if not snapshots.is_dir():
-        return False
+    complete = []
     try:
         for snapshot in snapshots.iterdir():
             if not snapshot.is_dir():
@@ -113,12 +117,46 @@ def is_installed(model_id: str = DEFAULT_MODEL_ID) -> bool:
                     and (snapshot / name).stat().st_size > 0
                     for name in required_files
                 ):
-                    return True
+                    complete.append((snapshot.stat().st_mtime, snapshot))
             except OSError:
                 continue
     except OSError:
-        return False
-    return False
+        return []
+    return [snapshot for _, snapshot in sorted(complete, reverse=True)]
+
+
+def _write_main_ref(model_id: str, revision: str) -> None:
+    """Point the cache's ``refs/main`` at ``revision``.
+
+    The app loads models by repo id, which resolves ``main``. Offline, the hub
+    can only do that through ``refs/main``, and it writes that file only when a
+    download asks for ``main`` by name. A download pinned to a commit hash
+    leaves no ref, so the model sits complete on disk and still can't load.
+    """
+    ref = _hf_cache_dir_for(model_id) / "refs" / "main"
+    try:
+        if ref.is_file() and ref.read_text().strip() == revision:
+            return
+        ref.parent.mkdir(parents=True, exist_ok=True)
+        tmp = ref.with_name(f".main.{os.getpid()}.tmp")
+        tmp.write_text(revision)
+        os.replace(tmp, ref)
+    except OSError as e:
+        logger.warning("Could not record refs/main for %s: %s", model_id, e)
+
+
+def _repair_main_ref(model_id: str) -> None:
+    """Give an installed model a ``refs/main`` if a pinned download left none.
+
+    A pinned download from before _download_snapshot wrote the ref is complete
+    but unloadable, and is_installed() means it is never downloaded again; this
+    lets it load as it is. An existing ref is left alone.
+    """
+    if (_hf_cache_dir_for(model_id) / "refs" / "main").is_file():
+        return
+    complete = _complete_snapshots(model_id)
+    if complete:
+        _write_main_ref(model_id, complete[0].name)
 
 
 def maybe_enable_offline(model_id: str = DEFAULT_MODEL_ID) -> bool:
@@ -140,6 +178,7 @@ def maybe_enable_offline(model_id: str = DEFAULT_MODEL_ID) -> bool:
     """
     if not is_installed(model_id):
         return False
+    _repair_main_ref(model_id)
     os.environ.setdefault("HF_HUB_OFFLINE", "1")
     os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
     return True
@@ -252,6 +291,7 @@ def _download_snapshot(model_id: str, emit: Callable[[dict], None]) -> None:
     # sizes and the downloads describe the same files. Otherwise the first
     # download resolves it, as before.
     revision, sizes = _snapshot_file_sizes(model_id, files)
+    pinned = revision is not None
     done_bytes = 0
     for index, filename in enumerate(files):
         base = {"stage": "downloading", "completed_files": index, "total_files": len(files)}
@@ -287,6 +327,10 @@ def _download_snapshot(model_id: str, emit: Callable[[dict], None]) -> None:
             done_bytes += sizes[filename]
             finished["downloaded_bytes"] = done_bytes
         emit(finished)
+    if pinned:
+        # Pinned downloads never write refs/main (see _write_main_ref). The
+        # metadata's revision is what main pointed to, so record it.
+        _write_main_ref(model_id, revision)
 
 
 def _snapshot_file_sizes(
