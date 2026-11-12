@@ -863,6 +863,8 @@ export type GetObsidianSyncResponse = Result<{ obsidian_sync_enabled: boolean }>
 export type GetObsidianVaultPathResponse = Result<{ obsidian_vault_path: string }>;
 export type ObsidianConflict = { vaultRelPath: string; detectedAt: string; reason: string };
 export type GetObsidianConflictsResponse = Result<{ conflicts: Record<string, ObsidianConflict> }>;
+export type ObsidianFailure = { message: string; at: string };
+export type GetObsidianFailuresResponse = Result<{ failures: ObsidianFailure[] }>;
 export type GetAiPromptsResponse = Result<{ summarization: string }>;
 
 export type GetAiProviderResponse = Result<{
@@ -1499,6 +1501,7 @@ export interface StenoaiBridge {
     setObsidianVaultPath: RequestFn<[p: string], Result<Record<string, never>>>;
     pickObsidianVaultFolder: RequestFn<[], PickStorageFolderResponse>;
     getObsidianConflicts: RequestFn<[], GetObsidianConflictsResponse>;
+    getObsidianFailures: RequestFn<[], GetObsidianFailuresResponse>;
     getAiPrompts: RequestFn<[], GetAiPromptsResponse>;
     saveDiagnostics: RequestFn<
       [defaultFilename: string, content: string],

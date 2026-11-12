@@ -262,3 +262,106 @@ test('first sync never clobbers a pre-existing untracked vault file (H1)', () =>
     'mirror written to a free, stem-suffixed name');
   fs.rmSync(h.root, { recursive: true, force: true });
 });
+
+// --- failure persistence (#602) -------------------------------------------
+
+// Make the vault unwritable portably: replace the vault dir with a regular
+// file, so mkdir/write inside it fails with ENOTDIR on every platform.
+function breakVault(h) {
+  fs.rmSync(h.vault, { recursive: true, force: true });
+  fs.writeFileSync(h.vault, 'not a directory');
+}
+function fixVault(h) {
+  fs.rmSync(h.vault, { force: true });
+  fs.mkdirSync(h.vault, { recursive: true });
+}
+
+test('a sync error is recorded with a short reason and timestamp, then cleared by a later success', () => {
+  const h = harness();
+  h.writeNote('n1', NOTE);
+  const p = path.join(h.output, 'n1_summary.md');
+  breakVault(h);
+  assert.equal(h.eng.syncNoteBySummaryPath(p).status, 'error');
+  const f = h.eng.loadIndex().failures.n1;
+  assert.ok(f, 'failure recorded');
+  assert.match(f.message, /^[A-Z_]+$/, 'short error code, not a path or message');
+  assert.ok(!Number.isNaN(Date.parse(f.at)), 'ISO timestamp');
+  fixVault(h);
+  assert.equal(h.eng.syncNoteBySummaryPath(p).status, 'synced');
+  assert.equal(h.eng.loadIndex().failures.n1, undefined, 'cleared on success');
+  fs.rmSync(h.root, { recursive: true, force: true });
+});
+
+test('a successful remove clears the recorded failure of that note', () => {
+  const h = harness();
+  h.writeNote('n1', NOTE);
+  const p = path.join(h.output, 'n1_summary.md');
+  h.eng.syncNoteBySummaryPath(p);
+  const idx = h.eng.loadIndex();
+  idx.failures.n1 = { message: 'EACCES', at: new Date().toISOString() };
+  h.eng.saveIndex(idx);
+  assert.equal(h.eng.removeNoteBySummaryPath(p).status, 'removed');
+  assert.equal(h.eng.loadIndex().failures.n1, undefined);
+  fs.rmSync(h.root, { recursive: true, force: true });
+});
+
+test('disabled and skipped results record no failure', () => {
+  const h = harness();
+  h.writeNote('n1', NOTE);
+  const p = path.join(h.output, 'n1_summary.md');
+  h.eng.setCachedConfig({ enabled: false, vaultPath: h.vault });
+  assert.equal(h.eng.syncNoteBySummaryPath(p).status, 'disabled');
+  h.eng.setCachedConfig({ enabled: true, vaultPath: h.vault });
+  assert.equal(h.eng.syncNoteBySummaryPath(path.join(h.output, 'x.txt')).status, 'skipped');
+  assert.equal(h.eng.syncNoteBySummaryPath(path.join(h.output, 'gone_summary.md')).status, 'skipped');
+  assert.deepEqual(h.eng.loadIndex().failures, {});
+  fs.rmSync(h.root, { recursive: true, force: true });
+});
+
+test('the failure list is bounded to the 50 most recent', () => {
+  const h = harness();
+  breakVault(h);
+  for (let i = 0; i < 55; i += 1) {
+    const stem = `n${String(i).padStart(2, '0')}`;
+    h.writeNote(stem, NOTE);
+    assert.equal(h.eng.syncNoteBySummaryPath(path.join(h.output, `${stem}_summary.md`)).status, 'error');
+  }
+  const failures = h.eng.loadIndex().failures;
+  assert.equal(Object.keys(failures).length, 50);
+  assert.ok(failures.n54, 'newest kept');
+  fs.rmSync(h.root, { recursive: true, force: true });
+});
+
+test('the renderer view of failures carries reason and time only, and is empty while sync is off', () => {
+  const h = harness();
+  h.writeNote('n1', NOTE);
+  breakVault(h);
+  h.eng.syncNoteBySummaryPath(path.join(h.output, 'n1_summary.md'));
+  const list = h.eng.listFailures();
+  assert.equal(list.length, 1);
+  assert.deepEqual(Object.keys(list[0]).sort(), ['at', 'message']);
+  const cfg = h.eng.getCachedConfig();
+  h.eng.setCachedConfig({ enabled: false, vaultPath: cfg.vaultPath });
+  assert.deepEqual(h.eng.listFailures(), []);
+  fs.rmSync(h.root, { recursive: true, force: true });
+});
+
+test('a failure does not outlive its note, its vault, or a damaged index', () => {
+  const h = harness();
+  h.writeNote('n1', NOTE);
+  const p = path.join(h.output, 'n1_summary.md');
+  breakVault(h);
+  h.eng.syncNoteBySummaryPath(p); // first export fails: failure, no index entry
+  assert.equal(h.eng.removeNoteBySummaryPath(p).status, 'absent');
+  assert.equal(h.eng.loadIndex().failures.n1, undefined, 'cleared when the note is deleted');
+
+  const idx = h.eng.loadIndex();
+  idx.failures.gone = { message: 'EACCES', at: null }; // damaged record
+  h.eng.saveIndex(idx);
+  assert.equal(h.eng.syncNoteBySummaryPath(p).status, 'error', 'a damaged record does not make recording throw');
+
+  const cfg = h.eng.getCachedConfig();
+  h.eng.setCachedConfig({ enabled: true, vaultPath: `${cfg.vaultPath}-other` });
+  assert.deepEqual(h.eng.loadIndex().failures, {}, 'cleared when the vault changes');
+  fs.rmSync(h.root, { recursive: true, force: true });
+});

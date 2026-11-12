@@ -3,6 +3,7 @@ import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import {
   useObsidianConflicts,
+  useObsidianFailures,
   useObsidianSyncSetting,
   useObsidianVaultPath,
   usePickObsidianVaultFolder,
@@ -24,6 +25,7 @@ export function IntegrationsTab() {
   const setVaultPath = useSetObsidianVaultPath();
   const pickFolder = usePickObsidianVaultFolder();
   const conflicts = useObsidianConflicts();
+  const failures = useObsidianFailures();
 
   const chooseFolder = async () => {
     try {
@@ -37,6 +39,13 @@ export function IntegrationsTab() {
 
   const path = vaultPath.data || '';
   const conflictCount = conflicts.data ? Object.keys(conflicts.data).length : 0;
+
+  const failureList = failures.data ?? [];
+  const failureCount = failureList.length;
+  const latestFailure = failureList.reduce<{ message: string; at: string } | null>(
+    (acc, f) => (!acc || f.at > acc.at ? f : acc),
+    null,
+  );
 
   return (
     <section data-settings-tab="integrations">
@@ -119,6 +128,17 @@ export function IntegrationsTab() {
               : t('settings.integrations.conflicts.skipped.other', { count: conflictCount })}
           </span>{' '}
           {t('settings.integrations.conflicts.afterCount')}
+        </div>
+      )}
+
+      {failureCount > 0 && latestFailure && (
+        <div className="py-3 text-[13px]" style={{ color: 'var(--fg-2)' }} data-obsidian-failures>
+          <span style={{ color: 'var(--fg-1)' }}>
+            {failureCount === 1
+              ? t('settings.integrations.failures.count.one', { count: failureCount })
+              : t('settings.integrations.failures.count.other', { count: failureCount })}
+          </span>{' '}
+          {t('settings.integrations.failures.latest', { reason: latestFailure.message })}
         </div>
       )}
     </section>
