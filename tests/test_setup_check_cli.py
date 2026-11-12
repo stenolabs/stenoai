@@ -110,15 +110,11 @@ class SetupCheckJsonTests(unittest.TestCase):
         run_speaker_check.assert_not_called()
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class SetupCheckAudioImportTests(unittest.TestCase):
     """`import sounddevice` initialises PortAudio. A failure there must become a
     check, never an unhandled exception that leaves the app with no result (#603)."""
 
-    def _run_with_import_error(self, error):
+    def _run_with_import_error(self, error, platform="linux"):
         import builtins
 
         real_import = builtins.__import__
@@ -128,7 +124,16 @@ class SetupCheckAudioImportTests(unittest.TestCase):
                 raise error
             return real_import(name, *args, **kwargs)
 
-        with patch("builtins.__import__", side_effect=fake_import):
+        # Only the sounddevice check is under test: stub the Ollama, ffmpeg and
+        # speaker-model probes so the host decides nothing here.
+        with patch("builtins.__import__", side_effect=fake_import), patch(
+            "simple_recorder.sys.platform", platform
+        ), patch("src.ollama_manager.get_ollama_binary", return_value=None), patch(
+            "subprocess.run"
+        ), patch(
+            "simple_recorder._run_speaker_model_command",
+            return_value={"success": False, "ready": False},
+        ):
             res = CliRunner().invoke(simple_recorder.setup_check, ["--json"])
         self.assertEqual(res.exit_code, 0, res.output)
         data = _only_json(res.output)
@@ -145,12 +150,30 @@ class SetupCheckAudioImportTests(unittest.TestCase):
         self.assertIn("PortAudioError", check["detail"])
         self.assertNotIn("connect to server", check["detail"])
 
+    def test_other_import_errors_still_fail(self):
+        check = self._run_with_import_error(AttributeError("broken sounddevice build"))
+        self.assertEqual(check["status"], "fail")
+        self.assertIn("AttributeError", check["detail"])
+
     def test_missing_portaudio_library_is_a_failure(self):
         check = self._run_with_import_error(OSError("PortAudio library not found"))
         self.assertEqual(check["status"], "fail")
         self.assertIn("libportaudio2", check["detail"])
 
+    def test_missing_portaudio_library_hint_off_linux(self):
+        for platform in ("darwin", "win32"):
+            with self.subTest(platform=platform):
+                check = self._run_with_import_error(
+                    OSError("PortAudio library not found"), platform=platform)
+                self.assertEqual(check["status"], "fail")
+                self.assertNotIn("libportaudio2", check["detail"])
+                self.assertIn("reinstall", check["detail"])
+
     def test_missing_package_is_still_a_failure(self):
         check = self._run_with_import_error(ImportError("No module named 'sounddevice'"))
         self.assertEqual(check["status"], "fail")
         self.assertIn("pip install", check["detail"])
+
+
+if __name__ == "__main__":
+    unittest.main()

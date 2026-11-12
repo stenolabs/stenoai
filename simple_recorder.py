@@ -4992,14 +4992,22 @@ def setup_check(as_json):
     except ImportError:
         checks.append(("❌ sounddevice", "pip install sounddevice"))
     except OSError:
-        # The PortAudio shared library is missing (Linux AppImage without
-        # libportaudio2, for example).
-        checks.append(("❌ sounddevice", "PortAudio library not found (install libportaudio2)"))
+        # The PortAudio shared library is missing. On Linux it is a system
+        # package (an AppImage without libportaudio2, for example); the macOS
+        # and Windows wheels bundle it, so there it means a broken install.
+        audio_hint = "install libportaudio2" if sys.platform.startswith("linux") else "reinstall the app"
+        checks.append(("❌ sounddevice", f"PortAudio library not found ({audio_hint})"))
     except Exception as audio_err:
-        # PortAudio is present but could not start, typically because no audio
-        # server is running (a headless Linux machine). Recording in the app is
-        # captured by the renderer, so this does not block setup.
-        checks.append(("⚠️ sounddevice", f"audio system not available ({type(audio_err).__name__})"))
+        # The failed import leaves no sounddevice module to take PortAudioError
+        # from, so match the class name. Only that error means PortAudio is
+        # present but could not start, typically because no audio server is
+        # running (a headless Linux machine). Recording in the app is captured
+        # by the renderer, so this does not block setup. Any other error is a
+        # broken sounddevice and still fails the check.
+        if type(audio_err).__name__ == "PortAudioError":
+            checks.append(("⚠️ sounddevice", "audio system not available (PortAudioError)"))
+        else:
+            checks.append(("❌ sounddevice", f"sounddevice failed to load ({type(audio_err).__name__})"))
     
     # Check for whisper backend (prefer pywhispercpp, fallback to openai-whisper)
     whisper_found = False
