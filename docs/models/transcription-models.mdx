@@ -52,6 +52,22 @@ Some workplace networks inspect HTTPS through a corporate VPN, proxy or antiviru
 
 To fix it, give Steno a certificate bundle that includes your network's root certificate. Your IT team can usually provide one as a `.pem` file. It should also contain the public roots, or other HTTPS connections will stop working.
 
+To build one yourself on a Mac, start from the public roots and add the certificates your network presents for Hugging Face. The network's root isn't always in a keychain you can export from, so take it from the connection itself:
+
+```bash
+security find-certificate -a -p /System/Library/Keychains/SystemRootCertificates.keychain > ~/steno-ca.pem
+openssl s_client -connect huggingface.co:443 -servername huggingface.co -showcerts </dev/null 2>/dev/null \
+  | sed -n '/-----BEGIN CERTIFICATE-----/,/-----END CERTIFICATE-----/p' >> ~/steno-ca.pem
+```
+
+Run this on the managed network, and check the result before you use it: everything you add becomes trusted. The issuer should be your company or its proxy vendor:
+
+```bash
+openssl s_client -connect huggingface.co:443 -servername huggingface.co </dev/null 2>/dev/null | grep issuer
+```
+
+If it isn't, ask IT for the bundle instead.
+
 Point one of these variables at it:
 
 - `SSL_CERT_FILE` or `REQUESTS_CA_BUNDLE`: the path to a `.pem` bundle
