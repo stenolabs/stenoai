@@ -107,7 +107,7 @@ class TlsBootstrapTests(unittest.TestCase):
                 "https://huggingface.co", {}, None, None, None,
             )["verify"], tmp)
 
-    def test_missing_explicit_requests_ca_fails_closed_for_httpx(self):
+    def test_missing_explicit_requests_ca_is_removed_and_recorded(self):
         (httpx,) = self._require_clients("httpx")
 
         with tempfile.TemporaryDirectory() as tmp:
@@ -115,27 +115,42 @@ class TlsBootstrapTests(unittest.TestCase):
             os.environ.pop("SSL_CERT_FILE", None)
             os.environ.pop("SSL_CERT_DIR", None)
             os.environ["REQUESTS_CA_BUNDLE"] = missing
-            self._reimport()
-            self.assertEqual(os.environ["SSL_CERT_FILE"], missing)
-            self.assertEqual(os.environ["REQUESTS_CA_BUNDLE"], missing)
-            with self.assertRaises((OSError, FileNotFoundError)):
-                httpx.create_ssl_context()
+            module = self._reimport()
+            self.assertEqual(module.missing_ca_variables(), ("REQUESTS_CA_BUNDLE",))
+            self.assertNotEqual(os.environ.get("REQUESTS_CA_BUNDLE"), missing)
+            self.assertNotEqual(os.environ.get("SSL_CERT_FILE"), missing)
+            httpx.create_ssl_context()  # no longer raises at client construction
 
-    def test_missing_explicit_ssl_dir_is_not_replaced_with_certifi(self):
-        (httpx,) = self._require_clients("httpx")
-
+    def test_missing_explicit_ssl_dir_is_removed_and_recorded(self):
         with tempfile.TemporaryDirectory() as tmp:
             missing = str(Path(tmp) / "missing-ca-dir")
             os.environ.pop("SSL_CERT_FILE", None)
             os.environ["SSL_CERT_DIR"] = missing
             os.environ.pop("REQUESTS_CA_BUNDLE", None)
-            self._reimport()
-            self.assertIsNone(os.environ.get("SSL_CERT_FILE"))
-            self.assertEqual(os.environ["SSL_CERT_DIR"], missing)
-            self.assertEqual(os.environ["REQUESTS_CA_BUNDLE"], missing)
-            with mock.patch("ssl.create_default_context", wraps=ssl.create_default_context) as create:
-                httpx.create_ssl_context()
-            create.assert_called_once_with(capath=missing)
+            module = self._reimport()
+            self.assertEqual(module.missing_ca_variables(), ("SSL_CERT_DIR",))
+            self.assertIsNone(os.environ.get("SSL_CERT_DIR"))
+            self.assertNotEqual(os.environ.get("REQUESTS_CA_BUNDLE"), missing)
+
+    def test_ssl_cert_file_pointing_at_a_directory_counts_as_missing(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            os.environ["SSL_CERT_FILE"] = tmp
+            os.environ.pop("SSL_CERT_DIR", None)
+            os.environ.pop("REQUESTS_CA_BUNDLE", None)
+            module = self._reimport()
+            self.assertEqual(module.missing_ca_variables(), ("SSL_CERT_FILE",))
+
+    def test_valid_explicit_ca_survives_a_missing_sibling(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            custom = str(Path(tmp) / "operator.pem")
+            Path(custom).write_text("synthetic CA fixture")
+            os.environ["SSL_CERT_FILE"] = custom
+            os.environ.pop("SSL_CERT_DIR", None)
+            os.environ["REQUESTS_CA_BUNDLE"] = str(Path(tmp) / "gone.pem")
+            module = self._reimport()
+            self.assertEqual(module.missing_ca_variables(), ("REQUESTS_CA_BUNDLE",))
+            self.assertEqual(os.environ["SSL_CERT_FILE"], custom)
+            self.assertEqual(os.environ["REQUESTS_CA_BUNDLE"], custom)
 
     def test_distinct_explicit_file_and_directory_remain_distinct(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -163,13 +178,29 @@ class TlsBootstrapTests(unittest.TestCase):
             self.assertEqual(os.environ["SSL_CERT_FILE"], ssl_ca)
             self.assertEqual(os.environ["REQUESTS_CA_BUNDLE"], requests_ca)
 
-    def test_broken_explicit_ca_is_not_silently_replaced(self):
+    def test_missing_ca_is_remembered_across_configure_calls(self):
         broken = "/nonexistent/explicit-operator-ca.pem"
         os.environ["SSL_CERT_FILE"] = broken
+        os.environ.pop("SSL_CERT_DIR", None)
         os.environ.pop("REQUESTS_CA_BUNDLE", None)
-        self._reimport()
-        self.assertEqual(os.environ["SSL_CERT_FILE"], broken)
-        self.assertEqual(os.environ["REQUESTS_CA_BUNDLE"], broken)
+        module = self._reimport()
+        module.configure()  # the download path configures again
+        self.assertEqual(module.missing_ca_variables(), ("SSL_CERT_FILE",))
+        self.assertNotEqual(os.environ.get("SSL_CERT_FILE"), broken)
+
+    def test_cli_starts_when_an_inherited_ca_path_is_missing(self):
+        # import ollama builds an HTTPX client at import time, which opens
+        # SSL_CERT_FILE. A stale path used to stop every command, record included.
+        self._require_clients("ollama", "click")
+        env = {**os.environ, "SSL_CERT_FILE": "/nonexistent/stale-ca.pem"}
+        env.pop("SSL_CERT_DIR", None)
+        env.pop("REQUESTS_CA_BUNDLE", None)
+        result = subprocess.run(
+            [sys.executable, "simple_recorder.py", "--help"],
+            env=env, cwd=str(REPO_ROOT), capture_output=True, text=True, timeout=120,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr[-2000:])
+        self.assertNotIn("FileNotFoundError", result.stderr)
 
     def test_httpx_and_requests_use_explicit_ca_without_network(self):
         # HF Hub 1.x uses HTTPX; older Hub uses Requests. Check each client's

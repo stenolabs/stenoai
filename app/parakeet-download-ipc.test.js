@@ -80,7 +80,7 @@ for (const channel of ['setup-parakeet', 'pull-parakeet-model']) {
     });
   }
   for (const platform of ['darwin', 'win32', 'linux']) {
-    test(`${channel}: SSL guidance is accurate on ${platform}`, async () => {
+    test(`${channel}: SSL guidance points at the docs on ${platform}`, async () => {
       const { proc, promise } = start(platform);
       proc.stdout.emit('data', Buffer.from('{"success":false,"error":"[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1006)"}\n'));
       proc.emit('close', 0);
@@ -89,15 +89,9 @@ for (const channel of ['setup-parakeet', 'pull-parakeet-model']) {
       assert.match(result.error, /could not verify Hugging Face/i);
       assert.match(result.error, /this computer/i);
       assert.match(result.error, /corporate VPN, proxy, or antivirus/i);
-      assert.match(result.error, /SSL_CERT_FILE or REQUESTS_CA_BUNDLE/);
-      assert.match(result.error, /SSL_CERT_DIR with an OpenSSL-compatible CA directory/);
-      assert.match(result.error, /suitable PEM bundle/);
-      assert.match(result.error, /start environment before launch/);
-      if (platform === 'darwin') {
-        assert.match(result.error, /shell export is not inherited.*Finder/);
-      } else {
-        assert.doesNotMatch(result.error, /Finder/);
-      }
+      assert.match(result.error, /docs\.stenoai\.co\/models\/transcription-models#downloading-models-on-a-managed-network/);
+      // The how-to (variables, Finder launches) lives in the docs, not the error.
+      assert.doesNotMatch(result.error, /Finder/);
       assert.doesNotMatch(result.error, /system trust store/);
     });
   }

@@ -46,6 +46,31 @@ Steno auto-detects the language from the audio -- you do not need to configure t
 - **Use system audio capture** -- capturing both call sides is more accurate than microphone-only for virtual meetings
 - **Switch to Whisper for non-European languages** -- Parakeet covers 25 European languages, including English; Whisper covers the full 99-language set
 
+## Downloading models on a managed network
+
+Some workplace networks inspect HTTPS through a corporate VPN, proxy or antivirus. There, the Parakeet download can fail with "could not verify Hugging Face's certificate", because Steno only trusts public certificate authorities by default.
+
+To fix it, give Steno a certificate bundle that includes your network's root certificate. Your IT team can usually provide one as a `.pem` file. It should also contain the public roots, or other HTTPS connections will stop working.
+
+Point one of these variables at it:
+
+- `SSL_CERT_FILE` or `REQUESTS_CA_BUNDLE`: the path to a `.pem` bundle
+- `SSL_CERT_DIR`: an OpenSSL-style folder of certificates
+
+Steno reads them only when it starts, so set the variable, then quit and reopen Steno.
+
+**macOS.** Apps opened from Finder or the Dock don't see variables exported in your shell profile. Use `launchctl` instead:
+
+```bash
+launchctl setenv SSL_CERT_FILE /path/to/network-bundle.pem
+```
+
+This lasts until you restart your Mac. Run it again after a restart, or ask IT to set it through your device management.
+
+**Windows.** Search for "Edit environment variables for your account", add `SSL_CERT_FILE` with the path to the bundle, then quit and reopen Steno. If it still isn't picked up, sign out and back in.
+
+If the variable points at a file or folder that doesn't exist, Steno keeps working but refuses the download and tells you which variable to fix.
+
 ---
 
 <Accordion title="Which engine should I start with?">

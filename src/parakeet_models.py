@@ -46,6 +46,28 @@ def _configure_tls_for_huggingface() -> None:
     tls_bootstrap.configure()
 
 
+def _missing_ca_override_error() -> str | None:
+    """A fixed message naming CA variables that point at nothing, if any.
+
+    tls_bootstrap removes such a variable so unrelated commands keep working,
+    which would leave the download trusting certifi instead of the CA the
+    operator meant. Refuse and name the variable (never its value, which is a
+    local path) so the fix is obvious.
+    """
+    from src import tls_bootstrap
+
+    _configure_tls_for_huggingface()
+    missing = tls_bootstrap.missing_ca_variables()
+    if not missing:
+        return None
+    names = " and ".join(missing)
+    verb = "points" if len(missing) == 1 else "point"
+    return (
+        f"Parakeet model download failed because {names} {verb} at a file or "
+        "folder that does not exist. Fix or remove it, then restart Steno."
+    )
+
+
 def _is_ssl_certificate_text(text: str) -> bool:
     return "CERTIFICATE_VERIFY_FAILED" in text or "unable to get local issuer certificate" in text
 
@@ -276,6 +298,11 @@ def download(
         emit = progress_callback or (lambda event: None)
         emit({"stage": "preparing"})
         if not is_installed(model_id):
+            ca_error = _missing_ca_override_error()
+            if ca_error:
+                _LAST_DOWNLOAD_ERROR = ca_error
+                logger.error("Parakeet model download for %s refused: %s", model_id, ca_error)
+                return False
             # Logger filters do not see propagated child records. Attach at
             # the known warning emitters so the raw certificate text is not
             # emitted while the final error remains a fixed, safe message.
@@ -356,6 +383,7 @@ def _download_snapshot(model_id: str, emit: Callable[[dict], None]) -> None:
     Older hub releases lack per-file tqdm injection: they still report actual
     completed files. Newer releases expose byte callbacks for HTTP and Xet.
     """
+    global _SAW_SSL_CERTIFICATE_WARNING
     import inspect
     from tqdm.auto import tqdm
 
@@ -399,6 +427,10 @@ def _download_snapshot(model_id: str, emit: Callable[[dict], None]) -> None:
         # files to that same snapshot so an upstream update cannot mix weights.
         if revision is None:
             revision = Path(cached).parent.name
+        # The Hub retries internally. A certificate warning followed by a
+        # completed file was transient, so a later unrelated failure (a full
+        # disk, say) must not be reported as a certificate problem.
+        _SAW_SSL_CERTIFICATE_WARNING = False
         finished = {**base, "completed_files": index + 1}
         if sizes:
             done_bytes += sizes[filename]

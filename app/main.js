@@ -8667,6 +8667,9 @@ ipcMain.handle('setup-ollama-and-model', async () => {
 });
 
 function describeParakeetDownloadError(raw) {
+  // How to give Steno a managed network's CA, per platform. The steps don't fit
+  // in an error string, and on macOS a shell export never reaches a Finder launch.
+  const docsUrl = 'https://docs.stenoai.co/models/transcription-models#downloading-models-on-a-managed-network';
   const text = String(raw || '');
   if (/CERTIFICATE_VERIFY_FAILED|unable to get local issuer certificate|TLS certificate verification failed/i.test(text)) {
     const reason = text.includes('(certificate is not yet valid)') ? ' The certificate is not yet valid. Check this computer’s date and time.'
@@ -8675,8 +8678,8 @@ function describeParakeetDownloadError(raw) {
         : text.includes('(certificate issuer is not trusted)') ? ' The certificate issuer is not trusted.' : '';
     return 'Parakeet model download failed because this computer could not verify Hugging Face’s certificate.'
       + reason
-      + ' Steno uses its bundled public CA bundle unless an explicit CA override is configured. Check the certificate’s validity and server name. If a corporate VPN, proxy, or antivirus inspects HTTPS, configure SSL_CERT_FILE or REQUESTS_CA_BUNDLE with a suitable PEM bundle, or SSL_CERT_DIR with an OpenSSL-compatible CA directory containing that network’s root and any required public roots. These variables must be in Steno’s start environment before launch.'
-      + (process.platform === 'darwin' ? ' A shell export is not inherited when Steno is opened from Finder.' : '');
+      + ' If a corporate VPN, proxy, or antivirus inspects HTTPS, Steno needs that network’s root certificate:'
+      + ` see ${docsUrl}`;
   }
   return text || 'Download failed';
 }

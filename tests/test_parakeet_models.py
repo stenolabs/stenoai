@@ -445,5 +445,84 @@ class OfflineLoadTests(unittest.TestCase):
         self.assertEqual(states, [True, False])
 
 
+class MissingCaOverrideTests(unittest.TestCase):
+    def test_missing_ca_variable_refuses_the_download_and_names_it(self):
+        with patch("src.tls_bootstrap.missing_ca_variables", return_value=("SSL_CERT_FILE",)), \
+                patch("src.parakeet_models.is_installed", return_value=False), \
+                patch("src.parakeet_models._download_snapshot") as snapshot, \
+                self.assertLogs("src.parakeet_models", level="ERROR"):
+            ok = parakeet_models.download(parakeet_models.DEFAULT_MODEL_ID)
+        self.assertFalse(ok)
+        snapshot.assert_not_called()
+        error = parakeet_models.get_last_download_error()
+        self.assertIn("SSL_CERT_FILE points at a file or folder that does not exist", error)
+
+    def test_several_missing_variables_are_all_named(self):
+        with patch("src.tls_bootstrap.missing_ca_variables", return_value=("SSL_CERT_FILE", "REQUESTS_CA_BUNDLE")), \
+                patch("src.parakeet_models.is_installed", return_value=False), \
+                patch("src.parakeet_models._download_snapshot"), \
+                self.assertLogs("src.parakeet_models", level="ERROR"):
+            parakeet_models.download(parakeet_models.DEFAULT_MODEL_ID)
+        self.assertIn(
+            "SSL_CERT_FILE and REQUESTS_CA_BUNDLE point at",
+            parakeet_models.get_last_download_error(),
+        )
+
+    def test_installed_model_still_loads_with_a_missing_ca_variable(self):
+        with patch("src.tls_bootstrap.missing_ca_variables", return_value=("SSL_CERT_FILE",)), \
+                patch("src.parakeet_models.is_installed", return_value=True), \
+                patch("src.parakeet.ensure_loaded") as loaded, \
+                patch.dict(sys.modules, _fake_hub_modules()):
+            ok = parakeet_models.download(parakeet_models.DEFAULT_MODEL_ID)
+        self.assertTrue(ok)
+        loaded.assert_called_once()
+
+
+class TransientTlsWarningTests(unittest.TestCase):
+    """A certificate warning the Hub recovered from must not label a later,
+    unrelated failure as a certificate problem."""
+
+    def _download_with(self, hf_hub_download):
+        class OfflineApi:
+            def model_info(self, *a, **k):
+                raise OSError("metadata unavailable")
+
+        hub = types.ModuleType("huggingface_hub")
+        hub.hf_hub_download = hf_hub_download
+        hub.HfApi = OfflineApi
+        with patch("src.parakeet_models.is_installed", return_value=False), \
+                patch.dict(sys.modules, {"huggingface_hub": hub}), \
+                self.assertLogs("src.parakeet_models", level="ERROR"):
+            return parakeet_models.download(parakeet_models.DEFAULT_MODEL_ID)
+
+    @staticmethod
+    def _warn_tls():
+        logging.getLogger("huggingface_hub.utils._http").warning(
+            "'[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: "
+            "unable to get local issuer certificate (_ssl.c:1006)' thrown while requesting HEAD"
+        )
+
+    def test_warning_then_completed_file_then_disk_full_is_not_tls(self):
+        calls = []
+
+        def hf_hub_download(repo, filename, revision=None, token=None):
+            calls.append(filename)
+            if len(calls) == 1:
+                self._warn_tls()  # the Hub retried and the file completed
+                return "/s/snapshots/abc/" + filename
+            raise OSError(28, "No space left on device")
+
+        self.assertFalse(self._download_with(hf_hub_download))
+        self.assertEqual(parakeet_models.get_last_download_error(), "Download failed")
+
+    def test_warning_on_the_failing_file_is_still_tls(self):
+        def hf_hub_download(repo, filename, revision=None, token=None):
+            self._warn_tls()
+            raise RuntimeError("Generic cache lookup failure")
+
+        self.assertFalse(self._download_with(hf_hub_download))
+        self.assertIn("TLS certificate verification failed", parakeet_models.get_last_download_error())
+
+
 if __name__ == "__main__":
     unittest.main()
