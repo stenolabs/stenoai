@@ -52,7 +52,7 @@ Some workplace networks inspect HTTPS through a corporate VPN, proxy or antiviru
 
 To fix it, give Steno a certificate bundle that includes your network's root certificate. Get it from your IT team, not from the network itself: a certificate captured from a connection can't be told apart from an attacker's, and everything in the bundle becomes trusted for every connection Steno makes.
 
-Ask IT for two things: the root certificate (or a ready-made `.pem` bundle) and its SHA-256 fingerprint. Check they match before you use it:
+Ask IT for two things: the root certificate on its own, as a single file, and its SHA-256 fingerprint. Check they match before you use it:
 
 ```bash
 openssl x509 -in company-root.pem -noout -fingerprint -sha256
@@ -60,7 +60,7 @@ openssl x509 -in company-root.pem -noout -fingerprint -sha256
 
 If IT gave you a `.cer` file, convert it first with `openssl x509 -inform der -in company-root.cer -out company-root.pem`.
 
-The bundle also needs the public roots, or other HTTPS connections will stop working. If IT gave you only the root certificate, add it to the public roots on a Mac like this:
+The bundle also needs the public roots, or other HTTPS connections will stop working. Once the fingerprint matches, add the root to them. On a Mac:
 
 ```bash
 security find-certificate -a -p /System/Library/Keychains/SystemRootCertificates.keychain > ~/steno-ca.pem
