@@ -1,6 +1,15 @@
 import { test, expect } from '../fixtures/electron';
 import { realUserDataDir, fileSig } from '../fixtures/real-user-data';
-import { mkdirSync, writeFileSync, readFileSync, existsSync, readdirSync, unlinkSync, rmSync } from 'fs';
+import {
+  mkdirSync,
+  writeFileSync,
+  readFileSync,
+  existsSync,
+  readdirSync,
+  unlinkSync,
+  rmSync,
+  realpathSync,
+} from 'fs';
 import path from 'path';
 
 /**
@@ -214,13 +223,23 @@ test('an unusable vault is reported as a sync failure, and clears once the vault
   test.setTimeout(120_000);
   test.skip(!existsSync(BACKEND), 'backend bundle not built');
 
-  const outputDir = path.join(userDataDir, 'output');
+  // The Windows runner's temp dir is an 8.3 short path (C:\Users\RUNNER~1\...).
+  // update-meeting resolves the note with the native realpath (long form) and
+  // the sync then checks it against the data dir as configured (short form),
+  // so the per-note sync is skipped there and no failure can be recorded.
+  // Hand the app the long form so this test exercises the failure report, not
+  // that mismatch. No-op where the temp dir has no short form.
+  const dataDir = process.platform === 'win32' ? realpathSync.native(userDataDir) : userDataDir;
+  // eslint-disable-next-line no-console
+  console.log(`[t2] obsidian failure test data dir: short-form=${dataDir !== userDataDir}`);
+
+  const outputDir = path.join(dataDir, 'output');
   mkdirSync(outputDir, { recursive: true });
   const summaryPath = path.join(outputDir, `${STEM}_summary.md`);
   writeFileSync(summaryPath, NOTE_MD, 'utf8');
-  const vault = path.join(userDataDir, 'obs-vault');
+  const vault = path.join(dataDir, 'obs-vault');
 
-  const { page } = await launchApp();
+  const { page } = await launchApp({ env: { STENOAI_USER_DATA_DIR: dataDir } });
   await page.evaluate(async (v) => {
     const s = (window as StenoWin).stenoai.settings;
     await s.setObsidianVaultPath(v); // the CLI creates the folder
