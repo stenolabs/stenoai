@@ -43,10 +43,10 @@ if sys.platform == "win32":
     except (AttributeError, OSError):
         pass
 
-# Wire stdlib SSL up to certifi's CA bundle before anything tries to make
-# an HTTPS call. PyInstaller's compiled-in cert paths don't exist on a
-# customer's Mac, so without this the adapter request in summarizer.py
-# fails with CERTIFICATE_VERIFY_FAILED.
+# Wire stdlib SSL up to an explicit operator CA or certifi before any HTTPS
+# call. PyInstaller's compiled-in cert paths may not exist on a customer
+# machine, so the adapter request in summarizer.py could otherwise fail with
+# CERTIFICATE_VERIFY_FAILED.
 from src import tls_bootstrap  # noqa: F401
 
 # Import modules with graceful fallback for missing dependencies
@@ -2047,6 +2047,7 @@ def download_parakeet_model_cmd(model_id):
         DEFAULT_MODEL_ID,
         SUPPORTED_PARAKEET_MODELS,
         download,
+        get_last_download_error,
         is_installed,
     )
     target = model_id or DEFAULT_MODEL_ID
@@ -2064,7 +2065,7 @@ def download_parakeet_model_cmd(model_id):
     if ok:
         print(json.dumps({"success": True, "model": target}))
     else:
-        print(json.dumps({"success": False, "error": "Download failed"}))
+        print(json.dumps({"success": False, "error": get_last_download_error() or "Download failed"}))
 
 
 @cli.command(name='get-keep-recordings')

@@ -8666,6 +8666,24 @@ ipcMain.handle('setup-ollama-and-model', async () => {
   }
 });
 
+function describeParakeetDownloadError(raw) {
+  // How to give Steno a managed network's CA, per platform. The steps don't fit
+  // in an error string, and on macOS a shell export never reaches a Finder launch.
+  const docsUrl = 'https://docs.stenoai.co/models/transcription-models#downloading-models-on-a-managed-network';
+  const text = String(raw || '');
+  if (/CERTIFICATE_VERIFY_FAILED|unable to get local issuer certificate|TLS certificate verification failed/i.test(text)) {
+    const reason = text.includes('(certificate is not yet valid)') ? ' The certificate is not yet valid. Check this computer’s date and time.'
+      : text.includes('(certificate expired)') ? ' The certificate has expired.'
+      : text.includes('(certificate hostname mismatch)') ? ' The certificate does not match the server name.'
+        : text.includes('(certificate issuer is not trusted)') ? ' The certificate issuer is not trusted.' : '';
+    return 'Parakeet model download failed because this computer could not verify Hugging Face’s certificate.'
+      + reason
+      + ' If a corporate VPN, proxy, or antivirus inspects HTTPS, Steno needs that network’s root certificate:'
+      + ` see ${docsUrl}`;
+  }
+  return text || 'Download failed';
+}
+
 ipcMain.handle('setup-parakeet', async () => {
   try {
     // Download Parakeet TDT v3 via the bundled backend. Used by
@@ -8711,15 +8729,18 @@ ipcMain.handle('setup-parakeet', async () => {
           sendDebugLog('Parakeet model ready');
           resolve({ success: true, message: 'Parakeet model ready' });
         } else {
-          const err = (parsed && parsed.error) || `Parakeet download exited with code ${code}`;
+          const err = describeParakeetDownloadError(
+            (parsed && parsed.error) || `Parakeet download exited with code ${code}`,
+          );
           sendDebugLog(err);
           resolve({ success: false, error: err });
         }
       });
 
       proc.on('error', (error) => {
-        sendDebugLog(`Process error: ${error.message}`);
-        resolve({ success: false, error: error.message });
+        const err = describeParakeetDownloadError(error.message);
+        sendDebugLog(`Process error: ${err}`);
+        resolve({ success: false, error: err });
       });
     });
   } catch (error) {
@@ -9332,7 +9353,7 @@ ipcMain.handle('pull-parakeet-model', async (event, modelId) => {
         } else {
           const errorMsg = timedOut
             ? 'Download timed out after 30 minutes'
-            : (pullResult && pullResult.error) || `Process exited with code ${code}`;
+            : describeParakeetDownloadError((pullResult && pullResult.error) || `Process exited with code ${code}`);
           finishOnce(
             { success: false, error: errorMsg },
             { model: modelId, success: false, error: errorMsg },
@@ -9340,9 +9361,10 @@ ipcMain.handle('pull-parakeet-model', async (event, modelId) => {
         }
       });
       proc.on('error', (error) => {
+        const errorMsg = describeParakeetDownloadError(error.message);
         finishOnce(
-          { success: false, error: error.message },
-          { model: modelId, success: false, error: error.message },
+          { success: false, error: errorMsg },
+          { model: modelId, success: false, error: errorMsg },
         );
       });
     });
