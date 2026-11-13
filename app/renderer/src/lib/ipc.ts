@@ -717,10 +717,23 @@ export type GetActivePullsResponse = Record<
 >;
 export type CancelPullResponse = { success: boolean; error: string | null };
 
+/** A single-language Whisper fine-tune (src/whisper_models.py
+ *  LANGUAGE_WHISPER_MODELS), used in place of the main model for recordings
+ *  in `language`. Never selectable as the main model. */
+export interface RawLanguageModel {
+  name: string;
+  language: string;
+  size: string;
+  description: string;
+  installed: boolean;
+}
+
 export type ListWhisperModelsResponse = Result<{
   supported_models: Record<string, RawSupportedModel>;
   current_model: string;
   provider: string;
+  language_models?: Record<string, RawLanguageModel>;
+  language_models_enabled?: boolean;
 }>;
 
 export type ListParakeetModelsResponse = Result<{
@@ -1354,6 +1367,12 @@ export interface StenoaiBridge {
     list: RequestFn<[], ListWhisperModelsResponse>;
     set: RequestFn<[name: string], Result<Record<string, never>>>;
     pull: RequestFn<[name: string], Result<Record<string, never>>>;
+    setLanguageModelsEnabled: RequestFn<
+      [enabled: boolean],
+      Result<{ language_models_enabled: boolean }>
+    >;
+    /** In-flight whisper/language-model downloads: model -> last progress line. */
+    activePulls: RequestFn<[], Record<string, string>>;
   };
 
   parakeetModels: {

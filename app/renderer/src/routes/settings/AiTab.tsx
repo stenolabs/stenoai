@@ -50,11 +50,13 @@ import {
   useOpenAiAsrConfig,
   useParakeetModels,
   usePullModel,
+  usePullLanguageModel,
   usePullParakeetModel,
   usePullWhisperModel,
   useSetActiveTranscription,
   useSetCurrentModel,
   useSetDiarizationEngine,
+  useSetLanguageModelsEnabled,
   useSetOpenAiAsrConfig,
   useSetOpenAiAsrKey,
   useSwitchToFasterBuild,
@@ -153,6 +155,8 @@ function TranscriptionSection() {
         </Select>
       </SettingRow>
 
+      {engine === 'whisper' && <HebrewModelSetting />}
+
       <SettingRow
         label={t('settings.ai.saveRecordings.label')}
         description={t('settings.ai.saveRecordings.description')}
@@ -172,6 +176,67 @@ function TranscriptionSection() {
 
       <TranscriptionModelList />
     </div>
+  );
+}
+
+/**
+ * Opt-in download of ivrit.ai's Hebrew Whisper (Whisper engine only). Once
+ * installed, the backend uses it in place of the main model for any recording
+ * pinned to or detected as Hebrew; the switch turns that off without deleting
+ * the download. Other languages always stay on the main model.
+ */
+function HebrewModelSetting() {
+  const whisper = useWhisperModels();
+  const pull = usePullLanguageModel();
+  const setEnabled = useSetLanguageModelsEnabled();
+
+  const model = whisper.data?.languageModels.find((m) => m.language === 'he');
+  if (!model) return null;
+
+  let control: React.ReactNode;
+  if (pull.isPending) {
+    control = (
+      <DownloadProgressBar
+        className="w-[200px]"
+        data-testid="hebrew-model-progress"
+        label={t('settings.ai.hebrewModel.downloading')}
+        percent={parsePullPercent(pull.progress[model.name])}
+        aria-label={t('settings.ai.hebrewModel.ariaLabel')}
+      />
+    );
+  } else if (model.installed) {
+    control = (
+      <Switch
+        aria-label={t('settings.ai.hebrewModel.label')}
+        aria-describedby="hebrew-model-description"
+        checked={whisper.data?.languageModelsEnabled ?? true}
+        onCheckedChange={(value) => setEnabled.mutate(value)}
+        disabled={setEnabled.isPending}
+      />
+    );
+  } else {
+    control = (
+      <Button size="sm" variant="outline" onClick={() => pull.mutate(model.name)}>
+        {pull.isError ? t('settings.ai.hebrewModel.retry') : t('settings.ai.hebrewModel.download')}
+      </Button>
+    );
+  }
+
+  return (
+    <SettingRow
+      label={t('settings.ai.hebrewModel.label')}
+      description={t('settings.ai.hebrewModel.description', {
+        size: formatModelSize(model.size_gb) ?? t('settings.ai.unknownSize'),
+      })}
+      descriptionId="hebrew-model-description"
+    >
+      {control}
+      {pull.isError && (
+        <p role="alert" className="mt-2 max-w-[240px] text-xs text-muted-foreground">
+          {t('settings.ai.hebrewModel.failed')}
+        </p>
+      )}
+    </SettingRow>
   );
 }
 

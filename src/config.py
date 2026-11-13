@@ -424,6 +424,7 @@ class Config:
         "ko": "Korean",
         "hi": "Hindi",
         "ar": "Arabic",
+        "he": "Hebrew",
     }
 
     # Full ISO 639-1 language names for auto-detect passthrough.
@@ -2392,6 +2393,18 @@ class Config:
             logger.error(f"Unsupported Whisper model: {model_size}")
             return False
         self._config["whisper_model"] = model_size
+        return self._save()
+
+    def get_language_models_enabled(self) -> bool:
+        """Get whether an installed language-specific Whisper model (see
+        ``LANGUAGE_WHISPER_MODELS``) replaces the main model for recordings in
+        its language. Default on: such a model is only ever present because
+        the user downloaded it, so turning this off is the opt-out."""
+        return self._config.get("language_models_enabled", True)
+
+    def set_language_models_enabled(self, enabled: bool) -> bool:
+        """Set whether installed language-specific Whisper models are used."""
+        self._config["language_models_enabled"] = enabled
         return self._save()
 
     # ------------------------------------------------------------------
