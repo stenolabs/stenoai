@@ -85,6 +85,7 @@ const {
   buildAutoRecordStartedOptions,
   createAutoStarts,
 } = require('./auto-record');
+const { buildTrayRecordingTitle, buildTrayTooltip } = require('./tray-indicator');
 const { normalizeAutoOpenSettings, decideMeetingOpen, planPremeetingTimers, isOverlapping, isMicGuardAvailable, openReservationEndMs, MAX_LEAD_MINUTES } = require('./meeting-open');
 const { isLinuxLoopbackSupported, startLoopbackCapture, createFrameAligner, createSerialQueue } = require('./linux-loopback');
 const { sweepOrphanedLiveSnapshots } = require('./live-snapshot-sweep');
@@ -166,6 +167,10 @@ const { autoUpdater } = require('electron-updater');
 //                           feeds one mic-monitor line to handleMicEvent, so a
 //                           spec can play a detected meeting (unpackaged only;
 //                           see ALLOW_E2E_PATH_SEAMS for why)
+//   STENOAI_E2E_TRAY=1     - give the menu bar recording indicator a stand-in
+//                           tray and expose globalThis.__stenoE2ETray() to read
+//                           its title, tooltip and whether the timer ticks
+//                           (unpackaged only)
 if (process.env.STENOAI_USER_DATA_DIR) {
   app.setPath('userData', process.env.STENOAI_USER_DATA_DIR);
 }
@@ -1888,12 +1893,100 @@ function createTray() {
 }
 
 function updateTrayIcon(recording) {
-  if (!tray) return;
-  const icon = nativeImage.createFromPath(getTrayIconPath(recording));
+  if (!tray) {
+    syncTrayRecordingIndicator();
+    return;
+  }
+  // macOS shows the recording state as a small red dot + timer in the tray title
+  // (see syncTrayRecordingIndicator), so the icon stays the plain dragonfly
+  // there. Windows has no tray title and keeps the dotted recording icon.
+  const showRecordingIcon = recording && process.platform !== 'darwin';
+  const icon = nativeImage.createFromPath(getTrayIconPath(showRecordingIcon));
   icon.setTemplateImage(true);
   tray.setImage(icon);
-  tray.setToolTip(recording ? 'Steno - Recording' : 'Steno');
   updateTrayMenu();
+}
+
+// Ticks the menu bar timer once a second while recording. Only runs while a
+// recording is live, and only on macOS where the tray has a title.
+let trayIndicatorTimer = null;
+
+// E2E: the real tray is skipped (no menu bar on CI runners), so a spec opts in
+// to this stand-in and reads what the menu bar would show (tray-indicator.t2).
+// Gated like the other main-process seams, so a packaged build never has it.
+const e2eTrayStandIn = ALLOW_E2E_PATH_SEAMS && process.env.STENOAI_E2E_TRAY === '1'
+  ? {
+      title: '',
+      tooltip: '',
+      setTitle(title) { this.title = title; },
+      setToolTip(tooltip) { this.tooltip = tooltip; },
+      isDestroyed: () => false,
+    }
+  : null;
+if (e2eTrayStandIn) {
+  globalThis.__stenoE2ETray = () => ({
+    title: e2eTrayStandIn.title,
+    tooltip: e2eTrayStandIn.tooltip,
+    ticking: trayIndicatorTimer !== null,
+  });
+}
+
+function trayIndicatorTarget() {
+  return tray || e2eTrayStandIn;
+}
+
+function stopTrayIndicatorTimer() {
+  if (trayIndicatorTimer) {
+    clearInterval(trayIndicatorTimer);
+    trayIndicatorTimer = null;
+  }
+}
+
+function renderTrayRecordingTitle() {
+  const target = trayIndicatorTarget();
+  if (!target || target.isDestroyed()) {
+    stopTrayIndicatorTimer();
+    return;
+  }
+  const recording = (currentRecordingProcess !== null || systemAudioRecordingActive)
+    && Boolean(recordingRuntimeState.startedAtMs);
+  target.setTitle(
+    buildTrayRecordingTitle({
+      recording,
+      paused: recordingRuntimeState.isPaused,
+      elapsedSeconds: getRecordingElapsedSeconds(),
+    }),
+    // Fixed-width digits so the menu bar item doesn't jitter every second.
+    { fontType: 'monospacedDigit' }
+  );
+}
+
+function syncTrayRecordingIndicator() {
+  const target = trayIndicatorTarget();
+  if (!target) {
+    stopTrayIndicatorTimer();
+    return;
+  }
+  const recording = currentRecordingProcess !== null || systemAudioRecordingActive;
+  target.setToolTip(buildTrayTooltip({ recording, paused: recording && recordingRuntimeState.isPaused }));
+  if (process.platform !== 'darwin') return;
+
+  renderTrayRecordingTitle();
+  // A paused timer doesn't move, so the tick only runs while actively recording.
+  const ticking = recording && Boolean(recordingRuntimeState.startedAtMs) && !recordingRuntimeState.isPaused;
+  if (ticking && !trayIndicatorTimer) {
+    trayIndicatorTimer = setInterval(renderTrayRecordingTitle, 1000);
+  } else if (!ticking) {
+    stopTrayIndicatorTimer();
+  }
+}
+
+function destroyTray() {
+  stopTrayIndicatorTimer();
+  if (tray) {
+    tray.destroy();
+    tray = null;
+  }
 }
 
 function showAndFocusWindow() {
@@ -1901,6 +1994,9 @@ function showAndFocusWindow() {
 }
 
 function updateTrayMenu() {
+  // Every recording state change (start, stop, pause, resume) passes through
+  // here, so the menu bar indicator follows it without extra call sites.
+  syncTrayRecordingIndicator();
   if (!tray) return;
   const isRecording = currentRecordingProcess !== null || systemAudioRecordingActive;
 
@@ -2544,10 +2640,7 @@ if (!gotSingleInstanceLock) {
 
   app.on('will-quit', async () => {
     globalShortcut.unregisterAll();
-    if (tray) {
-      tray.destroy();
-      tray = null;
-    }
+    destroyTray();
     // Kill Ollama on quit. The process may have been started by Electron or
     // the Python backend — both write the PID to ollama.pid in _internal/.
     // killProcessTree tears down ollama's child runner subprocesses too, so
@@ -9852,8 +9945,7 @@ ipcMain.handle('set-menu-bar-icon', async (event, enabled) => {
           updateTrayIcon(currentRecordingProcess !== null || systemAudioRecordingActive);
         }
       } else if (tray) {
-        tray.destroy();
-        tray = null;
+        destroyTray();
       }
     }
 
