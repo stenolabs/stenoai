@@ -23,6 +23,7 @@ The app is a thin Electron shell over a PyInstaller-bundled Python CLI. There is
 - Inspect CLI surface: `dist/stenoai/stenoai --help`
 - Most relevant CLI commands for debugging: `status`, `setup-check`, `list_failed`, `reprocess path/to/summary.json`, `query transcript.txt`, `pipeline filename.wav`
 - Ad-hoc Python lint: `ruff check .`
+- Lint and type-check setup requires Python 3.10+ (the application runtime remains Python 3.9+).
 - Enforced Python lint ratchet: `python -m pip install -r requirements-lint.txt && python scripts/ruff_ratchet.py`
 - Intentionally update the reviewed ratchet baseline: `python scripts/ruff_ratchet.py --update`
 - Enforced Python type check (allowlisted modules, pinned mypy): `python -m pip install -r requirements-lint.txt && python -m mypy --config-file mypy.ini`
