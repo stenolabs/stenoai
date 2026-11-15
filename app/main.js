@@ -87,6 +87,7 @@ const {
   buildAutoRecordStartedOptions,
   createAutoStarts,
 } = require('./auto-record');
+const { buildTrayRecordingTitle, buildTrayTooltip } = require('./tray-indicator');
 const { normalizeAutoOpenSettings, decideMeetingOpen, planPremeetingTimers, isOverlapping, isMicGuardAvailable, openReservationEndMs, MAX_LEAD_MINUTES } = require('./meeting-open');
 const { isLinuxLoopbackSupported, startLoopbackCapture, createFrameAligner, createSerialQueue } = require('./linux-loopback');
 const { sweepOrphanedLiveSnapshots } = require('./live-snapshot-sweep');
@@ -168,6 +169,10 @@ const { autoUpdater } = require('electron-updater');
 //                           feeds one mic-monitor line to handleMicEvent, so a
 //                           spec can play a detected meeting (unpackaged only;
 //                           see ALLOW_E2E_PATH_SEAMS for why)
+//   STENOAI_E2E_TRAY=1     - give the menu bar recording indicator a stand-in
+//                           tray and expose globalThis.__stenoE2ETray() to read
+//                           its title, tooltip and whether the timer ticks
+//                           (unpackaged only)
 if (process.env.STENOAI_USER_DATA_DIR) {
   app.setPath('userData', process.env.STENOAI_USER_DATA_DIR);
 }
@@ -1890,12 +1895,100 @@ function createTray() {
 }
 
 function updateTrayIcon(recording) {
-  if (!tray) return;
-  const icon = nativeImage.createFromPath(getTrayIconPath(recording));
+  if (!tray) {
+    syncTrayRecordingIndicator();
+    return;
+  }
+  // macOS shows the recording state as a small red dot + timer in the tray title
+  // (see syncTrayRecordingIndicator), so the icon stays the plain dragonfly
+  // there. Windows has no tray title and keeps the dotted recording icon.
+  const showRecordingIcon = recording && process.platform !== 'darwin';
+  const icon = nativeImage.createFromPath(getTrayIconPath(showRecordingIcon));
   icon.setTemplateImage(true);
   tray.setImage(icon);
-  tray.setToolTip(recording ? 'Steno - Recording' : 'Steno');
   updateTrayMenu();
+}
+
+// Ticks the menu bar timer once a second while recording. Only runs while a
+// recording is live, and only on macOS where the tray has a title.
+let trayIndicatorTimer = null;
+
+// E2E: the real tray is skipped (no menu bar on CI runners), so a spec opts in
+// to this stand-in and reads what the menu bar would show (tray-indicator.t2).
+// Gated like the other main-process seams, so a packaged build never has it.
+const e2eTrayStandIn = ALLOW_E2E_PATH_SEAMS && process.env.STENOAI_E2E_TRAY === '1'
+  ? {
+      title: '',
+      tooltip: '',
+      setTitle(title) { this.title = title; },
+      setToolTip(tooltip) { this.tooltip = tooltip; },
+      isDestroyed: () => false,
+    }
+  : null;
+if (e2eTrayStandIn) {
+  globalThis.__stenoE2ETray = () => ({
+    title: e2eTrayStandIn.title,
+    tooltip: e2eTrayStandIn.tooltip,
+    ticking: trayIndicatorTimer !== null,
+  });
+}
+
+function trayIndicatorTarget() {
+  return tray || e2eTrayStandIn;
+}
+
+function stopTrayIndicatorTimer() {
+  if (trayIndicatorTimer) {
+    clearInterval(trayIndicatorTimer);
+    trayIndicatorTimer = null;
+  }
+}
+
+function renderTrayRecordingTitle() {
+  const target = trayIndicatorTarget();
+  if (!target || target.isDestroyed()) {
+    stopTrayIndicatorTimer();
+    return;
+  }
+  const recording = (currentRecordingProcess !== null || systemAudioRecordingActive)
+    && Boolean(recordingRuntimeState.startedAtMs);
+  target.setTitle(
+    buildTrayRecordingTitle({
+      recording,
+      paused: recordingRuntimeState.isPaused,
+      elapsedSeconds: getRecordingElapsedSeconds(),
+    }),
+    // Fixed-width digits so the menu bar item doesn't jitter every second.
+    { fontType: 'monospacedDigit' }
+  );
+}
+
+function syncTrayRecordingIndicator() {
+  const target = trayIndicatorTarget();
+  if (!target) {
+    stopTrayIndicatorTimer();
+    return;
+  }
+  const recording = currentRecordingProcess !== null || systemAudioRecordingActive;
+  target.setToolTip(buildTrayTooltip({ recording, paused: recording && recordingRuntimeState.isPaused }));
+  if (process.platform !== 'darwin') return;
+
+  renderTrayRecordingTitle();
+  // A paused timer doesn't move, so the tick only runs while actively recording.
+  const ticking = recording && Boolean(recordingRuntimeState.startedAtMs) && !recordingRuntimeState.isPaused;
+  if (ticking && !trayIndicatorTimer) {
+    trayIndicatorTimer = setInterval(renderTrayRecordingTitle, 1000);
+  } else if (!ticking) {
+    stopTrayIndicatorTimer();
+  }
+}
+
+function destroyTray() {
+  stopTrayIndicatorTimer();
+  if (tray) {
+    tray.destroy();
+    tray = null;
+  }
 }
 
 function showAndFocusWindow() {
@@ -1903,6 +1996,9 @@ function showAndFocusWindow() {
 }
 
 function updateTrayMenu() {
+  // Every recording state change (start, stop, pause, resume) passes through
+  // here, so the menu bar indicator follows it without extra call sites.
+  syncTrayRecordingIndicator();
   if (!tray) return;
   const isRecording = currentRecordingProcess !== null || systemAudioRecordingActive;
 
@@ -2546,10 +2642,7 @@ if (!gotSingleInstanceLock) {
 
   app.on('will-quit', async () => {
     globalShortcut.unregisterAll();
-    if (tray) {
-      tray.destroy();
-      tray = null;
-    }
+    destroyTray();
     // Kill Ollama on quit. The process may have been started by Electron or
     // the Python backend — both write the PID to ollama.pid in _internal/.
     // killProcessTree tears down ollama's child runner subprocesses too, so
@@ -8520,6 +8613,24 @@ ipcMain.handle('setup-ollama-and-model', async () => {
   }
 });
 
+function describeParakeetDownloadError(raw) {
+  // How to give Steno a managed network's CA, per platform. The steps don't fit
+  // in an error string, and on macOS a shell export never reaches a Finder launch.
+  const docsUrl = 'https://docs.stenoai.co/models/transcription-models#downloading-models-on-a-managed-network';
+  const text = String(raw || '');
+  if (/CERTIFICATE_VERIFY_FAILED|unable to get local issuer certificate|TLS certificate verification failed/i.test(text)) {
+    const reason = text.includes('(certificate is not yet valid)') ? ' The certificate is not yet valid. Check this computer’s date and time.'
+      : text.includes('(certificate expired)') ? ' The certificate has expired.'
+      : text.includes('(certificate hostname mismatch)') ? ' The certificate does not match the server name.'
+        : text.includes('(certificate issuer is not trusted)') ? ' The certificate issuer is not trusted.' : '';
+    return 'Parakeet model download failed because this computer could not verify Hugging Face’s certificate.'
+      + reason
+      + ' If a corporate VPN, proxy, or antivirus inspects HTTPS, Steno needs that network’s root certificate:'
+      + ` see ${docsUrl}`;
+  }
+  return text || 'Download failed';
+}
+
 ipcMain.handle('setup-parakeet', async () => {
   try {
     // Download Parakeet TDT v3 via the bundled backend. Used by
@@ -8565,15 +8676,18 @@ ipcMain.handle('setup-parakeet', async () => {
           sendDebugLog('Parakeet model ready');
           resolve({ success: true, message: 'Parakeet model ready' });
         } else {
-          const err = (parsed && parsed.error) || `Parakeet download exited with code ${code}`;
+          const err = describeParakeetDownloadError(
+            (parsed && parsed.error) || `Parakeet download exited with code ${code}`,
+          );
           sendDebugLog(err);
           resolve({ success: false, error: err });
         }
       });
 
       proc.on('error', (error) => {
-        sendDebugLog(`Process error: ${error.message}`);
-        resolve({ success: false, error: error.message });
+        const err = describeParakeetDownloadError(error.message);
+        sendDebugLog(`Process error: ${err}`);
+        resolve({ success: false, error: err });
       });
     });
   } catch (error) {
@@ -8997,6 +9111,14 @@ ipcMain.handle('set-whisper-model', async (event, modelSize) => {
   } catch (e) { return { success: false, error: e.message }; }
 });
 
+ipcMain.handle('set-language-models-enabled', async (event, enabled) => {
+  try {
+    const result = await runPythonScript('simple_recorder.py', ['set-language-models-enabled', (enabled === true).toString()]);
+    const jsonData = JSON.parse(result.trim());
+    return { success: true, ...jsonData };
+  } catch (e) { return { success: false, error: e.message }; }
+});
+
 ipcMain.handle('list-whisper-models', async () => {
   try {
     const result = await runPythonScript('simple_recorder.py', ['list-whisper-models'], true);
@@ -9005,7 +9127,30 @@ ipcMain.handle('list-whisper-models', async () => {
   } catch (e) { return { success: false, error: e.message }; }
 });
 
-ipcMain.handle('pull-whisper-model', async (event, modelName) => {
+// In-flight pull-whisper-model downloads (model -> { promise, progress }). A
+// second pull of the same model joins the running one instead of spawning
+// another multi-GB download, and get-active-whisper-pulls lets a renderer that
+// remounted mid-download (navigated away from Settings and back) find it and
+// rejoin, rather than offering Download again.
+const activeWhisperPulls = new Map();
+
+ipcMain.handle('get-active-whisper-pulls', () => {
+  const result = {};
+  for (const [model, { progress }] of activeWhisperPulls) result[model] = progress;
+  return result;
+});
+
+ipcMain.handle('pull-whisper-model', (event, modelName) => {
+  const active = activeWhisperPulls.get(modelName);
+  if (active) return active.promise;
+  const entry = { progress: '', promise: null };
+  entry.promise = runWhisperPull(modelName, (output) => { entry.progress = output; })
+    .finally(() => activeWhisperPulls.delete(modelName));
+  activeWhisperPulls.set(modelName, entry);
+  return entry.promise;
+});
+
+async function runWhisperPull(modelName, onProgress) {
   try {
     sendDebugLog(`Pulling whisper model: ${modelName}`);
     return new Promise((resolve) => {
@@ -9061,6 +9206,7 @@ ipcMain.handle('pull-whisper-model', async (event, modelName) => {
       }, 30 * 60 * 1000);
       const relayProgress = (output) => {
         if (!output) return;
+        onProgress(output);
         if (mainWindow && !mainWindow.isDestroyed()) {
           mainWindow.webContents.send('whisper-pull-progress', {
             model: modelName,
@@ -9108,7 +9254,7 @@ ipcMain.handle('pull-whisper-model', async (event, modelName) => {
   } catch (e) {
     return { success: false, error: e.message };
   }
-});
+}
 
 ipcMain.handle('pull-parakeet-model', async (event, modelId) => {
   // Mirrors pull-whisper-model: settle-gate + SIGTERM-then-SIGKILL escalation
@@ -9186,7 +9332,7 @@ ipcMain.handle('pull-parakeet-model', async (event, modelId) => {
         } else {
           const errorMsg = timedOut
             ? 'Download timed out after 30 minutes'
-            : (pullResult && pullResult.error) || `Process exited with code ${code}`;
+            : describeParakeetDownloadError((pullResult && pullResult.error) || `Process exited with code ${code}`);
           finishOnce(
             { success: false, error: errorMsg },
             { model: modelId, success: false, error: errorMsg },
@@ -9194,9 +9340,10 @@ ipcMain.handle('pull-parakeet-model', async (event, modelId) => {
         }
       });
       proc.on('error', (error) => {
+        const errorMsg = describeParakeetDownloadError(error.message);
         finishOnce(
-          { success: false, error: error.message },
-          { model: modelId, success: false, error: error.message },
+          { success: false, error: errorMsg },
+          { model: modelId, success: false, error: errorMsg },
         );
       });
     });
@@ -9652,8 +9799,7 @@ ipcMain.handle('set-menu-bar-icon', async (event, enabled) => {
           updateTrayIcon(currentRecordingProcess !== null || systemAudioRecordingActive);
         }
       } else if (tray) {
-        tray.destroy();
-        tray = null;
+        destroyTray();
       }
     }
 

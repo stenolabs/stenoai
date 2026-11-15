@@ -46,6 +46,48 @@ Steno auto-detects the language from the audio -- you do not need to configure t
 - **Use system audio capture** -- capturing both call sides is more accurate than microphone-only for virtual meetings
 - **Switch to Whisper for non-European languages** -- Parakeet covers 25 European languages, including English; Whisper covers the full 99-language set
 
+## Downloading models on a managed network
+
+Some workplace networks inspect HTTPS through a corporate VPN, proxy or antivirus. There, the Parakeet download can fail with "could not verify Hugging Face's certificate", because Steno only trusts public certificate authorities by default.
+
+To fix it, give Steno a certificate bundle that includes your network's root certificate. Get it from your IT team, not from the network itself: a certificate captured from a connection can't be told apart from an attacker's, and everything in the bundle becomes trusted for every connection Steno makes.
+
+Ask IT for two things: the root certificate on its own, as a single file, and its SHA-256 fingerprint. Check they match before you use it:
+
+```bash
+openssl x509 -in company-root.pem -noout -fingerprint -sha256
+```
+
+If IT gave you a `.cer` file, convert it first with `openssl x509 -inform der -in company-root.cer -out company-root.pem`.
+
+The bundle also needs the public roots, or other HTTPS connections will stop working. Once the fingerprint matches, add the root to them. On a Mac:
+
+```bash
+security find-certificate -a -p /System/Library/Keychains/SystemRootCertificates.keychain > ~/steno-ca.pem
+cat company-root.pem >> ~/steno-ca.pem
+```
+
+Point one of these variables at it:
+
+- `SSL_CERT_FILE` or `REQUESTS_CA_BUNDLE`: the path to a `.pem` bundle
+- `SSL_CERT_DIR`: an OpenSSL-style folder of certificates
+
+Steno reads them only when it starts, so set the variable, then quit and reopen Steno.
+
+**macOS.** Apps opened from Finder or the Dock don't see variables exported in your shell profile. Use `launchctl` instead:
+
+```bash
+launchctl setenv SSL_CERT_FILE /path/to/network-bundle.pem
+```
+
+This lasts until you restart your Mac. Run it again after a restart, or ask IT to set it through your device management.
+
+**Windows.** Search for "Edit environment variables for your account", add `SSL_CERT_FILE` with the path to the bundle, then quit and reopen Steno. If it still isn't picked up, sign out and back in.
+
+**Linux.** Export the variable where Steno is started from: `export SSL_CERT_FILE=/path/to/network-bundle.pem` before launching it from a terminal, or in `~/.profile` so desktop launches see it after you sign out and back in.
+
+If the variable points at a path that doesn't exist, or at the wrong kind of path (a folder in `SSL_CERT_FILE`, say), Steno keeps working but refuses the download and tells you which variable to fix.
+
 ---
 
 <Accordion title="Which engine should I start with?">
