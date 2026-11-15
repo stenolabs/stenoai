@@ -215,20 +215,16 @@ function registerObsidianSync({
   let backfillQueued = false;
 
   const log = (msg) => { try { sendDebugLog(`[obsidian-sync] ${msg}`); } catch (_) {} };
+  const failureVaultPath = () => cached.vaultPath ? path.resolve(cached.vaultPath) : '';
 
   function setCachedConfig(cfg) {
-    const previousVault = cached.vaultPath;
     cached = { enabled: !!(cfg && cfg.enabled), vaultPath: (cfg && cfg.vaultPath) || '' };
-    // Failures recorded against another vault say nothing about this one.
-    if (previousVault && previousVault !== cached.vaultPath) {
-      try {
-        const idx = loadIndex();
-        if (idx.failures && Object.keys(idx.failures).length) {
-          idx.failures = {};
-          saveIndex(idx);
-        }
-      } catch (_) { /* best effort */ }
-    }
+    // Compare persisted identity, including on the first config read after a
+    // restart. Keep the full path: two targets can have the same folder name.
+    try {
+      const idx = loadIndex();
+      if (idx.failureVaultPath !== failureVaultPath()) saveIndex(idx);
+    } catch (_) { /* best effort */ }
   }
   function getCachedConfig() { return cached; }
   function isActive() { return cached.enabled && !!cached.vaultPath; }
@@ -243,12 +239,19 @@ function registerObsidianSync({
           version: STATE_VERSION,
           notes: d.notes || {},
           conflicts: d.conflicts || {},
-          failures: d.failures && typeof d.failures === 'object' ? d.failures : {},
+          failureVaultPath: d.failureVaultPath || '',
+          // Legacy failures without an identity cannot safely be attributed to
+          // this vault. Retain the note index and its conflict/delete guards.
+          failures: d.failureVaultPath === failureVaultPath() && d.failures &&
+            typeof d.failures === 'object' ? d.failures : {},
           stale: Array.isArray(d.stale) ? d.stale : [],
         };
       }
     } catch (_) { /* missing or corrupt → fresh */ }
-    return { version: STATE_VERSION, notes: {}, conflicts: {}, failures: {}, stale: [] };
+    return {
+      version: STATE_VERSION, notes: {}, conflicts: {}, failures: {},
+      failureVaultPath: failureVaultPath(), stale: [],
+    };
   }
 
   // Vault-relative paths whose unlink was blocked by a persistent Windows lock
@@ -268,7 +271,10 @@ function registerObsidianSync({
   }
 
   function saveIndex(idx) {
-    try { atomicWriteFileSync(statePath(), JSON.stringify(idx, null, 2)); }
+    try {
+      idx.failureVaultPath = failureVaultPath();
+      atomicWriteFileSync(statePath(), JSON.stringify(idx, null, 2));
+    }
     catch (e) { log(`state write failed: ${e.code || e.message}`); }
   }
 
@@ -310,10 +316,10 @@ function registerObsidianSync({
     // Bookkeeping must never turn a handled sync error into a thrown one, even
     // with a hand-edited or damaged index.
     try {
-      const message = String((err && (err.code || err.name)) || 'UNKNOWN').slice(0, 40);
+      const code = String((err && (err.code || err.name)) || 'UNKNOWN').slice(0, 40);
       if (!idx.failures || typeof idx.failures !== 'object') idx.failures = {};
       delete idx.failures[stem]; // re-insert so the newest sits last
-      idx.failures[stem] = { message, at: new Date().toISOString() };
+      idx.failures[stem] = { code, at: new Date().toISOString() };
       const stems = Object.keys(idx.failures);
       if (stems.length > MAX_FAILURES) {
         stems.sort((a, b) => failureTime(idx.failures[a]).localeCompare(failureTime(idx.failures[b])));
@@ -330,8 +336,8 @@ function registerObsidianSync({
     if (!isActive()) return [];
     const failures = loadIndex().failures || {};
     return Object.values(failures)
-      .filter((f) => f && typeof f.message === 'string')
-      .map((f) => ({ message: f.message, at: failureTime(f) }))
+      .filter((f) => f && typeof f.code === 'string')
+      .map((f) => ({ code: f.code, at: failureTime(f) }))
       .sort((a, b) => a.at.localeCompare(b.at));
   }
 
@@ -547,6 +553,10 @@ function registerObsidianSync({
             delete idx.notes[stem];
           }
         }
+      }
+      // A complete empty scan can retire obsolete error records without
+      // authorizing the vault-file deletions guarded above.
+      if (scan.complete) {
         for (const stem of Object.keys(idx.failures || {})) {
           if (!onDisk.has(stem)) clearFailure(idx, stem);
         }

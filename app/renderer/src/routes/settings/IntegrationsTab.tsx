@@ -12,6 +12,7 @@ import {
 } from '@/hooks/useSettings';
 import { COMPACT_BTN } from './primitives';
 import { t } from '@/i18n';
+import type { ObsidianFailure } from '@/lib/ipc';
 
 /**
  * Integrations settings (#413). Currently: Obsidian vault sync — a one-way
@@ -42,9 +43,9 @@ export function IntegrationsTab() {
 
   const failureList = failures.data ?? [];
   const failureCount = failureList.length;
-  const latestFailure = failureList.reduce<{ message: string; at: string } | null>(
+  const latestFailure = failureList.reduce<ObsidianFailure | null>(
     (acc, f) => (!acc || f.at > acc.at ? f : acc),
-    null,
+    null
   );
 
   return (
@@ -131,14 +132,14 @@ export function IntegrationsTab() {
         </div>
       )}
 
-      {failureCount > 0 && latestFailure && (
+      {enabled.data && path && failureCount > 0 && latestFailure && (
         <div className="py-3 text-[13px]" style={{ color: 'var(--fg-2)' }} data-obsidian-failures>
           <span style={{ color: 'var(--fg-1)' }}>
             {failureCount === 1
               ? t('settings.integrations.failures.count.one', { count: failureCount })
               : t('settings.integrations.failures.count.other', { count: failureCount })}
           </span>{' '}
-          {t('settings.integrations.failures.latest', { reason: latestFailure.message })}
+          {t('settings.integrations.failures.latest', { code: latestFailure.code })}
         </div>
       )}
     </section>

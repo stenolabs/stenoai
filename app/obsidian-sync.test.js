@@ -87,16 +87,21 @@ function harness() {
   fs.mkdirSync(vault, { recursive: true });
   fs.writeFileSync(path.join(dataDir, 'folders.json'),
     JSON.stringify({ folders: [{ id: 'fold1234', name: 'Sales' }] }));
-  const eng = registerObsidianSync({
-    getUserDataDir: () => dataDir,
-    getAllowedBaseDirs: () => [dataDir],
-    validateSafeFilePath: () => true,
-    resolveFoldersJsonPath: () => path.join(dataDir, 'folders.json'),
-  });
-  eng.setCachedConfig({ enabled: true, vaultPath: vault });
+  const createEngine = (vaultPath = vault, overrides = {}) => {
+    const engine = registerObsidianSync({
+      getUserDataDir: () => dataDir,
+      getAllowedBaseDirs: () => [dataDir],
+      validateSafeFilePath: () => true,
+      resolveFoldersJsonPath: () => path.join(dataDir, 'folders.json'),
+      ...overrides,
+    });
+    engine.setCachedConfig({ enabled: true, vaultPath });
+    return engine;
+  };
+  const eng = createEngine();
   const writeNote = (stem, content) =>
     fs.writeFileSync(path.join(output, `${stem}_summary.md`), content);
-  return { root, dataDir, vault, output, eng, writeNote };
+  return { root, dataDir, vault, output, eng, writeNote, createEngine };
 }
 
 test('off by default: no write, no state file when disabled', () => {
@@ -284,7 +289,7 @@ test('a sync error is recorded with a short reason and timestamp, then cleared b
   assert.equal(h.eng.syncNoteBySummaryPath(p).status, 'error');
   const f = h.eng.loadIndex().failures.n1;
   assert.ok(f, 'failure recorded');
-  assert.match(f.message, /^[A-Z_]+$/, 'short error code, not a path or message');
+  assert.match(f.code, /^[A-Z_]+$/, 'short error code, not a path or message');
   assert.ok(!Number.isNaN(Date.parse(f.at)), 'ISO timestamp');
   fixVault(h);
   assert.equal(h.eng.syncNoteBySummaryPath(p).status, 'synced');
@@ -298,7 +303,7 @@ test('a successful remove clears the recorded failure of that note', () => {
   const p = path.join(h.output, 'n1_summary.md');
   h.eng.syncNoteBySummaryPath(p);
   const idx = h.eng.loadIndex();
-  idx.failures.n1 = { message: 'EACCES', at: new Date().toISOString() };
+  idx.failures.n1 = { code: 'EACCES', at: new Date().toISOString() };
   h.eng.saveIndex(idx);
   assert.equal(h.eng.removeNoteBySummaryPath(p).status, 'removed');
   assert.equal(h.eng.loadIndex().failures.n1, undefined);
@@ -339,10 +344,14 @@ test('the renderer view of failures carries reason and time only, and is empty w
   h.eng.syncNoteBySummaryPath(path.join(h.output, 'n1_summary.md'));
   const list = h.eng.listFailures();
   assert.equal(list.length, 1);
-  assert.deepEqual(Object.keys(list[0]).sort(), ['at', 'message']);
+  assert.deepEqual(Object.keys(list[0]).sort(), ['at', 'code']);
   const cfg = h.eng.getCachedConfig();
   h.eng.setCachedConfig({ enabled: false, vaultPath: cfg.vaultPath });
   assert.deepEqual(h.eng.listFailures(), []);
+  assert.equal(Object.keys(h.eng.loadIndex().failures).length, 1, 'disabling preserves retry state');
+  assert.equal(h.createEngine().listFailures().length, 1, 'same-vault errors survive disabled state');
+  h.eng.setCachedConfig({ enabled: true, vaultPath: '' });
+  assert.deepEqual(h.eng.listFailures(), [], 'also hidden without a vault');
   fs.rmSync(h.root, { recursive: true, force: true });
 });
 
@@ -356,7 +365,7 @@ test('a failure does not outlive its note, its vault, or a damaged index', () =>
   assert.equal(h.eng.loadIndex().failures.n1, undefined, 'cleared when the note is deleted');
 
   const idx = h.eng.loadIndex();
-  idx.failures.gone = { message: 'EACCES', at: null }; // damaged record
+  idx.failures.gone = { code: 'EACCES', at: null }; // damaged record
   h.eng.saveIndex(idx);
   assert.equal(h.eng.syncNoteBySummaryPath(p).status, 'error', 'a damaged record does not make recording throw');
 
@@ -364,4 +373,116 @@ test('a failure does not outlive its note, its vault, or a damaged index', () =>
   h.eng.setCachedConfig({ enabled: true, vaultPath: `${cfg.vaultPath}-other` });
   assert.deepEqual(h.eng.loadIndex().failures, {}, 'cleared when the vault changes');
   fs.rmSync(h.root, { recursive: true, force: true });
+});
+
+test('failures survive a restart for the same vault and clear after a successful retry', async (t) => {
+  const h = harness();
+  t.after(() => fs.rmSync(h.root, { recursive: true, force: true }));
+  h.writeNote('n1', NOTE);
+  breakVault(h);
+  assert.equal(h.eng.syncNoteBySummaryPath(path.join(h.output, 'n1_summary.md')).status, 'error');
+  const failures = h.eng.listFailures();
+
+  const restarted = h.createEngine();
+  assert.deepEqual(restarted.listFailures(), failures);
+  fixVault(h);
+  await restarted.reconcileOnLaunch();
+  assert.deepEqual(restarted.listFailures(), []);
+  assert.ok(restarted.loadIndex().notes.n1);
+  assert.deepEqual(h.createEngine().listFailures(), [], 'retry persisted the cleared state');
+});
+
+test('a vault change while closed drops failures even when both vaults have the same basename', (t) => {
+  const h = harness();
+  t.after(() => fs.rmSync(h.root, { recursive: true, force: true }));
+  h.writeNote('n1', NOTE);
+  breakVault(h);
+  h.eng.syncNoteBySummaryPath(path.join(h.output, 'n1_summary.md'));
+  assert.equal(h.eng.listFailures().length, 1);
+
+  const otherVault = path.join(h.root, 'other', path.basename(h.vault));
+  fs.mkdirSync(otherVault, { recursive: true });
+  const restarted = h.createEngine(otherVault);
+  assert.deepEqual(restarted.listFailures(), [], 'old vault failures are not actionable here');
+  assert.deepEqual(restarted.loadIndex().failures, {});
+  assert.deepEqual(h.createEngine().listFailures(), [], 'switching back cannot resurrect stale failures');
+});
+
+test('legacy failures without a vault identity are discarded without resetting note or conflict protection', (t) => {
+  const h = harness();
+  t.after(() => fs.rmSync(h.root, { recursive: true, force: true }));
+  h.writeNote('n1', NOTE);
+  const summaryPath = path.join(h.output, 'n1_summary.md');
+  h.eng.syncNoteBySummaryPath(summaryPath);
+  const idx = h.eng.loadIndex();
+  const vaultFile = path.join(h.vault, idx.notes.n1.vaultRelPath);
+  fs.writeFileSync(vaultFile, 'synthetic external edit');
+  assert.equal(h.eng.syncNoteBySummaryPath(summaryPath).status, 'conflict');
+  const legacy = h.eng.loadIndex();
+  delete legacy.failureVaultPath;
+  legacy.failures.n1 = { message: 'EACCES', at: '2026-11-15T10:00:00.000Z' };
+  fs.writeFileSync(path.join(h.dataDir, '.obsidian-sync-state.json'), JSON.stringify(legacy));
+
+  const restarted = h.createEngine();
+  assert.deepEqual(restarted.loadIndex().failures, {});
+  assert.deepEqual(restarted.loadIndex().notes, legacy.notes);
+  assert.deepEqual(restarted.loadIndex().conflicts, legacy.conflicts);
+  assert.equal(restarted.removeNoteBySummaryPath(summaryPath).status, 'conflict');
+  assert.equal(fs.readFileSync(vaultFile, 'utf8'), 'synthetic external edit');
+});
+
+for (const complete of [true, false]) {
+  test(`a ${complete ? 'complete' : 'failed'} empty scan ${complete ? 'clears' : 'preserves'} failures and preserves indexed vault files`, async (t) => {
+    const h = harness();
+    t.after(() => fs.rmSync(h.root, { recursive: true, force: true }));
+    h.writeNote('n1', NOTE);
+    const summaryPath = path.join(h.output, 'n1_summary.md');
+    h.eng.syncNoteBySummaryPath(summaryPath);
+    const idx = h.eng.loadIndex();
+    idx.failures.n1 = { code: 'EACCES', at: new Date().toISOString() };
+    idx.failures.unindexed = { code: 'EACCES', at: new Date().toISOString() };
+    h.eng.saveIndex(idx);
+    const vaultFile = path.join(h.vault, idx.notes.n1.vaultRelPath);
+    const contents = fs.readFileSync(vaultFile, 'utf8');
+    fs.unlinkSync(summaryPath);
+    if (!complete) {
+      const readdir = fs.readdirSync;
+      t.mock.method(fs, 'readdirSync', (dir, ...args) => {
+        if (dir === h.output) throw Object.assign(new Error('synthetic scan failure'), { code: 'EIO' });
+        return readdir(dir, ...args);
+      });
+    }
+
+    await h.createEngine().reconcileOnLaunch();
+    assert.deepEqual(h.eng.loadIndex().failures, complete ? {} : idx.failures);
+    assert.deepEqual(h.eng.loadIndex().notes, idx.notes, 'empty scans never authorize vault deletes');
+    assert.equal(fs.readFileSync(vaultFile, 'utf8'), contents);
+  });
+}
+
+test('a partial scan preserves failures and indexed files from an unreadable base', async (t) => {
+  const h = harness();
+  t.after(() => fs.rmSync(h.root, { recursive: true, force: true }));
+  h.writeNote('n1', NOTE);
+  h.eng.syncNoteBySummaryPath(path.join(h.output, 'n1_summary.md'));
+  const idx = h.eng.loadIndex();
+  idx.failures.n1 = { code: 'EACCES', at: new Date().toISOString() };
+  h.eng.saveIndex(idx);
+  const vaultFile = path.join(h.vault, idx.notes.n1.vaultRelPath);
+  const contents = fs.readFileSync(vaultFile, 'utf8');
+  const otherBase = path.join(h.root, 'other-base');
+  fs.mkdirSync(path.join(otherBase, 'output'), { recursive: true });
+  fs.writeFileSync(path.join(otherBase, 'output', 'n2_summary.md'), NOTE);
+  const readdir = fs.readdirSync;
+  t.mock.method(fs, 'readdirSync', (dir, ...args) => {
+    if (dir === h.output) throw Object.assign(new Error('synthetic scan failure'), { code: 'EIO' });
+    return readdir(dir, ...args);
+  });
+
+  const restarted = h.createEngine(h.vault, { getAllowedBaseDirs: () => [h.dataDir, otherBase] });
+  await restarted.reconcileOnLaunch();
+  assert.deepEqual(restarted.loadIndex().failures, idx.failures);
+  assert.deepEqual(restarted.loadIndex().notes.n1, idx.notes.n1);
+  assert.equal(fs.readFileSync(vaultFile, 'utf8'), contents);
+  assert.ok(restarted.loadIndex().notes.n2, 'readable notes still sync');
 });

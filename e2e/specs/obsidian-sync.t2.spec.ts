@@ -1,5 +1,5 @@
 import { test, expect } from '../fixtures/electron';
-import { realUserDataDir, fileSig } from '../fixtures/real-user-data';
+import { writeUserConfig } from '../fixtures/user-config';
 import {
   mkdirSync,
   writeFileSync,
@@ -32,7 +32,7 @@ type StenoWin = Window & {
       getObsidianConflicts: () => Promise<{ success: boolean; conflicts: Record<string, unknown> }>;
       getObsidianFailures: () => Promise<{
         success: boolean;
-        failures?: { message: string; at: string }[];
+        failures?: { code: string; at: string }[];
       }>;
     };
     meetings: {
@@ -84,8 +84,6 @@ test('backfill writes a transcript-free note; rename moves it; external edits an
   test.setTimeout(180_000);
   test.skip(!existsSync(BACKEND), 'backend bundle not built');
 
-  const realDirBefore = fileSig(realUserDataDir());
-
   // Seed a note directly in output/ (no pipeline needed).
   const outputDir = path.join(userDataDir, 'output');
   mkdirSync(outputDir, { recursive: true });
@@ -96,7 +94,8 @@ test('backfill writes a transcript-free note; rename moves it; external edits an
   const vault = path.join(userDataDir, 'obs-vault');
   mkdirSync(vault, { recursive: true });
 
-  const { page } = await launchApp();
+  const { app, page } = await launchApp();
+  expect(await app.evaluate(() => process.env.STENOAI_USER_DATA_DIR)).toBe(userDataDir);
 
   // Enable sync + point at the vault → backfill mirrors the seeded note.
   await page.evaluate(async (v) => {
@@ -167,9 +166,38 @@ test('backfill writes a transcript-free note; rename moves it; external edits an
   await expect
     .poll(() => !vaultFiles(vault).includes(renamedName), { timeout: 20_000, intervals: [250] })
     .toBe(true);
+});
 
-  // Never touched the developer's real data dir.
-  expect(fileSig(realUserDataDir())).toBe(realDirBefore);
+test('a vault changed while closed drops persisted failures for a same-name target', async ({
+  launchApp,
+  userDataDir,
+}) => {
+  test.skip(!existsSync(BACKEND), 'backend bundle not built');
+  const dataDir = process.platform === 'win32' ? realpathSync.native(userDataDir) : userDataDir;
+  const oldVault = path.join(dataDir, 'old', 'vault');
+  const newVault = path.join(dataDir, 'new', 'vault');
+  mkdirSync(oldVault, { recursive: true });
+  mkdirSync(newVault, { recursive: true });
+  writeUserConfig(dataDir, {
+    // No reconcile/backfill: this tests identity comparison at config load.
+    obsidian_sync_enabled: false,
+    obsidian_vault_path: newVault,
+  });
+  const statePath = path.join(dataDir, '.obsidian-sync-state.json');
+  writeFileSync(statePath, JSON.stringify({
+    version: 1, notes: {}, conflicts: {}, stale: [], failureVaultPath: oldVault,
+    failures: { synthetic_note: { code: 'EACCES', at: '2026-11-15T10:00:00.000Z' } },
+  }));
+
+  const { app, page } = await launchApp({ env: { STENOAI_USER_DATA_DIR: dataDir } });
+  expect(await app.evaluate(() => process.env.STENOAI_USER_DATA_DIR)).toBe(dataDir);
+  await expect.poll(() => {
+    const state = JSON.parse(readFileSync(statePath, 'utf8'));
+    return { failureVaultPath: state.failureVaultPath, failures: state.failures };
+  }).toEqual({ failureVaultPath: newVault, failures: {} });
+  await page.evaluate(() => (window as StenoWin).stenoai.settings.setObsidianSync(true));
+  expect(await page.evaluate(() => (window as StenoWin).stenoai.settings.getObsidianFailures()))
+    .toEqual({ success: true, failures: [] });
 });
 
 test("a call recording's caller reaches the vault copy by name, its number nowhere", async ({
@@ -239,7 +267,8 @@ test('an unusable vault is reported as a sync failure, and clears once the vault
   writeFileSync(summaryPath, NOTE_MD, 'utf8');
   const vault = path.join(dataDir, 'obs-vault');
 
-  const { page } = await launchApp({ env: { STENOAI_USER_DATA_DIR: dataDir } });
+  let { app, page } = await launchApp({ env: { STENOAI_USER_DATA_DIR: dataDir } });
+  expect(await app.evaluate(() => process.env.STENOAI_USER_DATA_DIR)).toBe(dataDir);
   await page.evaluate(async (v) => {
     const s = (window as StenoWin).stenoai.settings;
     await s.setObsidianVaultPath(v); // the CLI creates the folder
@@ -269,15 +298,27 @@ test('an unusable vault is reported as a sync failure, and clears once the vault
     .poll(async () => (await failures()).length, { timeout: 20_000, intervals: [250] })
     .toBe(1);
   const [f] = await failures();
-  expect(f.message).toMatch(/^[A-Z_]+$/);
+  expect(f.code).toMatch(/^[A-Z_]+$/);
   expect(Number.isNaN(Date.parse(f.at))).toBe(false);
   // Reason and time only: the note's stem (which can carry its title) stays
   // in the main process.
-  expect(Object.keys(f).sort()).toEqual(['at', 'message']);
+  expect(Object.keys(f).sort()).toEqual(['at', 'code']);
+
+  // Restart against the same broken, isolated vault, then disable sync. Errors
+  // stay durable on disk but are not exposed while the feature is off.
+  await app.close();
+  ({ app, page } = await launchApp({ env: { STENOAI_USER_DATA_DIR: dataDir } }));
+  await expect.poll(async () => (await failures()).length).toBe(1);
+  await page.evaluate(() => (window as StenoWin).stenoai.settings.setObsidianSync(false));
+  expect(await failures()).toEqual([]);
+  const persisted = JSON.parse(readFileSync(path.join(dataDir, '.obsidian-sync-state.json'), 'utf8'));
+  expect(persisted.failures[STEM].code).toBe(f.code);
+  expect(persisted.failureVaultPath).toBe(vault);
 
   // Repair the vault; the next sync of the same note clears the entry.
   unlinkSync(vault);
   mkdirSync(vault, { recursive: true });
+  await page.evaluate(() => (window as StenoWin).stenoai.settings.setObsidianSync(true));
   await page.evaluate((f2) => (window as StenoWin).stenoai.meetings.update(f2, { name: 'Repaired Vault Note' }), summaryPath);
   await expect
     .poll(async () => (await failures()).length, { timeout: 20_000, intervals: [250] })
