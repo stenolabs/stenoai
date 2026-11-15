@@ -95,7 +95,7 @@ export function AiTab() {
   );
 }
 
-function TranscriptionSection() {
+export function TranscriptionSection() {
   const language = useLanguageSetting();
   const setLanguage = useSetLanguage();
   const keepRecordings = useKeepRecordingsSetting();
@@ -135,7 +135,7 @@ function TranscriptionSection() {
             {t('settings.ai.language.description')}
             {/* Parakeet cannot transcribe the Whisper-only languages and the
                 picker hides them, so say where they went (#429). */}
-            {engine === 'parakeet' && (
+            {engineQuery.data === 'parakeet' && (
               <span className="mt-1 block" data-testid="language-engine-hint">
                 {t('settings.ai.language.parakeetHint')}
               </span>
