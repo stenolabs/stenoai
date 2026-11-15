@@ -146,6 +146,57 @@ class RetranscribeBackupTests(unittest.TestCase):
 
 
 class BackupHelperTests(unittest.TestCase):
+    def test_failed_close_rolls_back_only_the_current_invocation(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            note = Path(tmp) / "note.md"
+            note.write_text("first")
+            first = simple_recorder._backup_meeting_files([note], "20240101000000")[0]
+            note.write_text("second")
+            second = simple_recorder._backup_meeting_files([note], "20240101000000")[0]
+            before = {p.name: p.read_bytes() for p in Path(tmp).iterdir()}
+            real_close = os.close
+            calls = 0
+            error = OSError("close failed")
+
+            def close_then_fail(fd):
+                nonlocal calls
+                real_close(fd)
+                calls += 1
+                if calls == 2:
+                    raise error
+
+            # The first copy succeeds before closing the second reservation fails.
+            with mock.patch("os.close", side_effect=close_then_fail):
+                with self.assertRaises(OSError) as raised:
+                    simple_recorder._backup_meeting_files([note, note], "20240101000000")
+
+            self.assertIs(raised.exception, error)
+            self.assertEqual({p.name: p.read_bytes() for p in Path(tmp).iterdir()}, before)
+            self.assertEqual(Path(first).read_text(), "first")
+            self.assertEqual(Path(second).read_text(), "second")
+
+    def test_failed_cleanup_keeps_the_original_close_error(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            note = Path(tmp) / "note.md"
+            note.write_text("first")
+            earlier = Path(simple_recorder._backup_meeting_files([note], "20240101000000")[0])
+            real_close = os.close
+            error = OSError("close failed")
+
+            def close_then_fail(fd):
+                real_close(fd)
+                raise error
+
+            with mock.patch("os.close", side_effect=close_then_fail):
+                with mock.patch("os.unlink", side_effect=OSError("cleanup failed")) as unlink:
+                    with self.assertRaises(OSError) as raised:
+                        simple_recorder._backup_meeting_files([note], "20240101000000")
+
+            self.assertIs(raised.exception, error)
+            unlink.assert_called_once()
+            self.assertNotEqual(Path(unlink.call_args.args[0]), earlier)
+            self.assertEqual(earlier.read_text(), "first")
+
     def test_a_failed_copy_removes_the_copies_already_made(self):
         import shutil
 

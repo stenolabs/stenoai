@@ -3450,10 +3450,10 @@ def _backup_meeting_files(paths, stamp=None):
                 # Reserve exclusively: neither concurrent runs nor rollback may
                 # overwrite or remove an earlier invocation's safety copy.
                 fd = os.open(backup_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-                os.close(fd)
-                # Recorded before the copy: a copy that fails halfway has
-                # already created (and partly written) its target.
+                # Track the reservation before close or copy can fail, so
+                # rollback includes empty placeholders and partial copies.
                 backed_up.append(str(backup_path))
+                os.close(fd)
                 shutil.copy2(existing_path, backup_path)
     except OSError:
         # All or nothing: a caller that aborts on a failed backup must not be
