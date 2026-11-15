@@ -3057,7 +3057,7 @@ def test():
 def _parse_meeting_markdown(md_path):
     """Parse a .md meeting file into the standard meeting dict.
 
-    Mirrored by parseMeetingMarkdown in app/main.js (the detail-page /
+    Mirrored by parseMeetingMarkdown in app/meeting-markdown.js (the detail-page /
     get-meeting parser, which reads the .md directly to avoid a Python
     round-trip). The two MUST surface the same session_info / meeting-dict
     contract — they drift silently otherwise (see #346, and #313 for a prior
@@ -3065,13 +3065,15 @@ def _parse_meeting_markdown(md_path):
     """
     content = md_path.read_text(encoding='utf-8')
 
-    # Split frontmatter
+    # Match the exact delimiter lines used by app/meeting-markdown.js. Inline
+    # `---`, `----` and `---suffix` are content, not frontmatter boundaries.
     meta = {}
     body = content
-    if content.startswith('---'):
-        parts = content.split('---', 2)
-        if len(parts) >= 3:
-            for line in parts[1].strip().split('\n'):
+    if content.startswith('---\n'):
+        rest = content[4:]
+        close = re.search(r'^---(?:\n|\Z)', rest, re.MULTILINE)
+        if close:
+            for line in rest[:close.start()].strip().split('\n'):
                 if ':' in line:
                     key, _, value = line.partition(':')
                     value = value.strip()
@@ -3095,7 +3097,7 @@ def _parse_meeting_markdown(md_path):
                         except (ValueError, TypeError):
                             pass
                     meta[key.strip()] = value
-            body = parts[2].strip()
+            body = rest[close.end():].strip()
 
     body = _normalize_markdown_for_parsing(body)
 

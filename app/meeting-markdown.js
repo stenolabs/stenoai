@@ -1,6 +1,6 @@
 'use strict';
 
-// Extracted verbatim from main.js (RFC #327 phase 1). Pure: no electron, fs or module state.
+// Extracted from main.js (RFC #327 phase 1). Pure: no electron, fs or module state.
 const path = require('path');
 const { normalizeMarkdownForParsing } = require('./note-sections');
 
@@ -10,16 +10,19 @@ const { normalizeMarkdownForParsing } = require('./note-sections');
 // meeting dict — they drift silently otherwise (see #346, and #313 for a prior
 // drift). Any change here has to land in _parse_meeting_markdown too.
 function parseMeetingMarkdown(content, mdPath) {
-  // Split frontmatter
+  // Python's read_text normalises CRLF before parsing. Do the same so section
+  // text, not just metadata, agrees between the list and detail paths.
+  content = content.replace(/\r\n/g, '\n');
+  // Only complete delimiter lines enclose frontmatter. Inline `---`, `----`
+  // and `---suffix` are content, including inside quoted metadata values.
   const meta = {};
   let body = content;
-  if (content.startsWith('---')) {
-    const parts = content.split('---');
-    // content.split('---', 2) in Python keeps the remainder; replicate by
-    // re-joining everything after the second delimiter.
-    if (parts.length >= 3) {
-      const fmText = parts[1].trim();
-      body = parts.slice(2).join('---').trim();
+  if (content.startsWith('---\n')) {
+    const rest = content.slice(4);
+    const close = /^---(?:\n|$)/m.exec(rest);
+    if (close) {
+      const fmText = rest.slice(0, close.index).trim();
+      body = rest.slice(close.index + close[0].length).trim();
       for (const line of fmText.split('\n')) {
         const colon = line.indexOf(':');
         if (colon === -1) continue;
@@ -111,6 +114,8 @@ function parseMeetingMarkdown(content, mdPath) {
     duration_seconds: meta.duration_seconds ?? null,
     summary_file: mdPath,
     output_language: meta.language ?? null,
+    configured_language: meta.configured_language ?? null,
+    detected_language: meta.detected_language ?? null,
   };
   if (meta.transcription_failed) {
     sessionInfo.transcription_failed = true;

@@ -4,6 +4,27 @@ const { test } = require('node:test');
 const assert = require('node:assert');
 
 const { parseMeetingMarkdown } = require('./meeting-markdown');
+const fixtures = require('../tests/fixtures/meeting-markdown.json');
+
+// The Python list parser consumes the same expected meeting dicts. Compare
+// the whole shape so new fields cannot silently disappear from the detail path.
+for (const fixture of fixtures.cases) {
+  for (const [label, eol] of [['LF', '\n'], ['CRLF', '\r\n']]) {
+    test(`shared parser contract: ${fixture.name} (${label})`, () => {
+      const mdPath = '/synthetic/fixture.md';
+      const expected = {
+        ...fixtures.defaults,
+        ...fixture.expected,
+        session_info: {
+          ...fixtures.defaults.session_info,
+          ...fixture.expected.session_info,
+          summary_file: mdPath,
+        },
+      };
+      assert.deepStrictEqual(parseMeetingMarkdown(fixture.content.replace(/\n/g, eol), mdPath), expected);
+    });
+  }
+}
 
 const MD_PATH = '/data/output/2026-01-02_standup.md';
 
@@ -64,6 +85,8 @@ test('parses a complete note: metadata, every section', () => {
     duration_seconds: 125,
     summary_file: MD_PATH,
     output_language: 'de',
+    configured_language: null,
+    detected_language: null,
   });
   assert.strictEqual(r.summary, 'We agreed.');
   assert.deepStrictEqual(r.participants, ['Ann', 'Bob', 'Cy']);
@@ -89,6 +112,8 @@ test('no frontmatter: defaults, name falls back to file stem', () => {
     duration_seconds: null,
     summary_file: MD_PATH,
     output_language: null,
+    configured_language: null,
+    detected_language: null,
   });
   assert.strictEqual(r.summary, 'hi');
   assert.deepStrictEqual(r.participants, []);
