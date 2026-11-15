@@ -3432,11 +3432,12 @@ def list_meetings():
 
 
 def _backup_meeting_files(paths, stamp=None):
-    """Copy each EXISTING file in `paths` to `<name>.bak-<YYYYmmddHHMMSS>`
+    """Copy each EXISTING file in `paths` to `<name>.bak-<YYYYmmddHHMMSS>-<unique id>`
     next to it (shutil.copy2) and return the backup paths. Missing files are
     skipped. The `.bak-` suffix keeps backups out of every `*_summary.md|json`
     / `*_speakers.json` enumeration. Raises OSError if a copy fails."""
     import shutil
+    import uuid
 
     if stamp is None:
         stamp = datetime.now().strftime("%Y%m%d%H%M%S")
@@ -3445,7 +3446,11 @@ def _backup_meeting_files(paths, stamp=None):
         for existing_path in paths:
             existing_path = Path(existing_path)
             if existing_path.exists():
-                backup_path = existing_path.with_name(f"{existing_path.name}.bak-{stamp}")
+                backup_path = existing_path.with_name(f"{existing_path.name}.bak-{stamp}-{uuid.uuid4().hex}")
+                # Reserve exclusively: neither concurrent runs nor rollback may
+                # overwrite or remove an earlier invocation's safety copy.
+                fd = os.open(backup_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+                os.close(fd)
                 # Recorded before the copy: a copy that fails halfway has
                 # already created (and partly written) its target.
                 backed_up.append(str(backup_path))

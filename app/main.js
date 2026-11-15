@@ -5089,7 +5089,7 @@ ipcMain.handle('delete-meeting', async (event, meetingData) => {
     // before they overwrite them (#599). Each copy holds what its original
     // holds - the whole meeting, or its voice embeddings - and nothing lists
     // them, so a delete that left them behind would keep the meeting readable
-    // on disk. Matched by exact prefix plus the 14-digit stamp, so only this
+    // on disk. Matched by exact prefix, timestamp and optional unique id, so only this
     // note's own copies qualify.
     if (stem) {
       const backupSources = [
@@ -5105,11 +5105,13 @@ ipcMain.handle('delete-meeting', async (event, meetingData) => {
         const prefix = `${path.basename(source)}.bak-`;
         try {
           for (const name of fs.readdirSync(dir)) {
-            if (name.startsWith(prefix) && /^\d{14}$/.test(name.slice(prefix.length))) {
+            if (name.startsWith(prefix) && /^\d{14}(?:-[0-9a-f]{32})?$/.test(name.slice(prefix.length))) {
               ancillaryCandidates.push(path.join(dir, name));
             }
           }
-        } catch (_) { /* directory missing - nothing to add */ }
+        } catch (err) {
+          if (err.code !== 'ENOENT') throw err;
+        }
       }
     }
     // Imported transfer audio is bound to the same immutable summary stem.

@@ -73,9 +73,9 @@ function seedNote(userDataDir: string, stem: string, name: string) {
   const reportsSidecar = path.join(outputDir, `${stem}_reports.json`);
   const originalSidecar = path.join(outputDir, `${stem}_original.json`);
   const callSidecar = path.join(outputDir, `${stem}_call.json`);
-  // Safety copies left by a re-transcribe (#599): the previous note and the
-  // previous speakers sidecar, each a full readable copy of the meeting.
-  const noteBackup = path.join(outputDir, `${stem}_summary.json.bak-20240101000000`);
+  // Re-transcribe copies the previous note and voice-embedding sidecar (#599).
+  // full-reprocess can also copy the transcript.
+  const noteBackup = path.join(outputDir, `${stem}_summary.json.bak-20240101000000-0123456789abcdef0123456789abcdef`);
   // full-reprocess can back up a note under one suffix and rewrite it as the other.
   const otherSuffixBackup = path.join(outputDir, `${stem}_summary.md.bak-20240101000000`);
   const speakersBackup = path.join(outputDir, `${stem}_speakers.json.bak-20240101000000`);

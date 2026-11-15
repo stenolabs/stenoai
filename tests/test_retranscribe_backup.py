@@ -170,14 +170,30 @@ class BackupHelperTests(unittest.TestCase):
             self.assertEqual(sorted(p.name for p in Path(tmp).iterdir()),
                              ["a_speakers.json", "a_summary.md"])
 
+    def test_repeated_stamp_preserves_each_safety_copy(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            note = Path(tmp) / "note.md"
+            note.write_text("first")
+            first = simple_recorder._backup_meeting_files([note], "20240101000000")[0]
+            note.write_text("second")
+            second = simple_recorder._backup_meeting_files([note], "20240101000000")[0]
+            self.assertNotEqual(first, second)
+            self.assertEqual(Path(first).read_text(), "first")
+            self.assertEqual(Path(second).read_text(), "second")
+            with mock.patch("shutil.copy2", side_effect=OSError("disk full")):
+                with self.assertRaises(OSError):
+                    simple_recorder._backup_meeting_files([note], "20240101000000")
+            self.assertEqual(sorted(p.name for p in Path(tmp).glob("*.bak-*")),
+                             sorted([Path(first).name, Path(second).name]))
+
     def test_missing_files_are_skipped(self):
         with tempfile.TemporaryDirectory() as tmp:
             present = Path(tmp) / "a_summary.md"
             present.write_text("note")
             made = simple_recorder._backup_meeting_files(
                 (present, Path(tmp) / "absent.json"), "20240101000000")
-            self.assertEqual([Path(m).name for m in made],
-                             ["a_summary.md.bak-20240101000000"])
+            self.assertEqual(len(made), 1)
+            self.assertRegex(Path(made[0]).name, r"^a_summary\.md\.bak-20240101000000-[0-9a-f]{32}$")
 
 
 if __name__ == "__main__":
