@@ -49,7 +49,7 @@ type Template = {
 type Report = { id: string; template_id: string; template_name: string; content: string };
 type Sidecar = { reports: Report[]; active_report: string | null };
 type Result = { success: boolean; error?: string };
-type StenoWindow = Window & {
+type StenoWindow = typeof window & {
   stenoai: {
     templates: {
       list: () => Promise<Result & { templates: Template[]; default_template_id: string }>;
