@@ -1,4 +1,4 @@
-"""Build-time guard: no bundled Mach-O may require a newer macOS than the app.
+"""Build-time guard for the app's macOS floor and one OS-gated opt-in helper.
 
 The DMG advertises `build.mac.minimumSystemVersion` from app/package.json
 (14.4). pip, however, installs the newest wheel the *build host* accepts, so on
@@ -6,7 +6,8 @@ the macos-15 release runner it picked mlx's macosx_15_0 build. Its libmlx.dylib
 then refused to load on macOS 14.x and Parakeet, the default engine, failed at
 model load (#531). This script reads the minimum OS (LC_BUILD_VERSION minos, or
 the older LC_VERSION_MIN_MACOSX) of every Mach-O file under the given paths and
-fails if any is above the app's minimum.
+fails if any is above the app's minimum. The optional, runtime-gated
+``_internal/steno-transcribe`` helper alone may require macOS 26.
 
 Run it after `pyinstaller stenoai.spec --noconfirm`:
 
@@ -109,7 +110,8 @@ def minimum_os(path: str) -> tuple[int, ...] | None:
     return minimum_os_from_otool(result.stdout)
 
 
-def find_violations(roots, limit, read_minimum=minimum_os, errors=None):
+def find_violations(roots, limit, read_minimum=minimum_os, errors=None,
+                    allowed_newer=None):
     """(path, version) for every Mach-O under roots that needs more than limit.
 
     Symlinked files and directories are followed and each real file is checked
@@ -149,13 +151,27 @@ def find_violations(roots, limit, read_minimum=minimum_os, errors=None):
                     if errors is not None:
                         errors.append((path, str(exc)))
                     continue
-                if version is not None and version > limit:
+                permitted = allowed_newer(path) if allowed_newer else limit
+                if version is not None and version > permitted:
                     violations.append((path, version))
     return checked, violations
 
 
 def _fmt(version: tuple[int, ...]) -> str:
     return '.'.join(str(p) for p in version)
+
+
+def _allowed_minimum(path: str, roots, app_floor: tuple[int, ...]) -> tuple[int, ...]:
+    """Only the macOS 26 opt-in helper may exceed the 14.4 app floor.
+
+    The Python bridge checks the host OS before every sidecar spawn. Keep this
+    exception tied to its exact bundled path; every other Mach-O still has to
+    load on the oldest supported Mac.
+    """
+    for root in roots:
+        if os.path.relpath(path, root) == os.path.join('_internal', 'steno-transcribe'):
+            return (26,)
+    return app_floor
 
 
 def main(argv: list[str]) -> int:
@@ -169,7 +185,10 @@ def main(argv: list[str]) -> int:
         return 1
     limit = app_minimum()
     errors: list[tuple[str, str]] = []
-    checked, violations = find_violations(roots, limit, errors=errors)
+    checked, violations = find_violations(
+        roots, limit, errors=errors,
+        allowed_newer=lambda path: _allowed_minimum(path, roots, limit),
+    )
     if checked == 0:
         print('verify_macos_minimum: no Mach-O files found', file=sys.stderr)
         return 1
@@ -189,7 +208,8 @@ def main(argv: list[str]) -> int:
         return 1
     if errors:
         return 1
-    print(f"verify_macos_minimum: {checked} Mach-O files, none above macOS {_fmt(limit)}")
+    print(f"verify_macos_minimum: {checked} Mach-O files, app floor {_fmt(limit)}; "
+          "only steno-transcribe may require macOS 26")
     return 0
 
 
