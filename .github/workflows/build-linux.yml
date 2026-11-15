@@ -35,8 +35,9 @@ on:
       - 'scripts/diarize_bundle_guard.py'
       - 'stenoai.spec'
       - 'requirements.txt'
-      - 'app/package.json'
-      - 'app/package-lock.json'
+      - 'simple_recorder.py'
+      - 'src/**'
+      - 'app/**'
 
 # A newer push to the same PR supersedes the running build. Pushes to main and
 # tags get a group of their own (the run id), so none of them is ever cancelled.
@@ -45,11 +46,13 @@ concurrency:
   cancel-in-progress: true
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   build-linux:
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.package_version.outputs.version }}
 
     steps:
       - name: Checkout code
@@ -288,6 +291,19 @@ jobs:
             app/dist/*.AppImage
           retention-days: 14
           if-no-files-found: warn
+
+  release-linux:
+    needs: build-linux
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download verified Linux installers
+        uses: actions/download-artifact@v4
+        with:
+          name: stenoai-linux-${{ needs.build-linux.outputs.version }}
+          path: app/dist
 
       # Mirrors build-windows.yml's attach step. Linux publishes no
       # latest-linux.yml: electron-builder emits one, but auto-update is not
