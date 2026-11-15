@@ -176,7 +176,8 @@ Have questions or suggestions? [Join our Discord](https://discord.gg/DZ6vcQnxxu)
 
 **Transcription Models:**
 - `Parakeet TDT v3` (572 MB): Highest quality, supports live transcription, 25 European languages (English, Spanish, French, German, Italian, Portuguese, Dutch, Russian, Polish, Czech, and 15 others). Apple Silicon only via MLX. **(default on fresh installs)**
-- `Whisper Large V3 Turbo` (1.6 GB): Best-accuracy Whisper engine for the languages Parakeet can't speak (Chinese, Japanese, Korean, Arabic, Hindi, and 94 others). Post-stop only.
+- `Whisper Large V3 Turbo` (1.6 GB): Best-accuracy Whisper engine for the languages Parakeet can't speak (Chinese, Japanese, Korean, Arabic, Hindi, Hebrew, and 93 others). Post-stop only.
+- `ivrit.ai Hebrew Turbo` (1.6 GB, optional): A Hebrew fine-tune of Whisper Large V3 Turbo by [ivrit.ai](https://huggingface.co/ivrit-ai). Download it in Settings → AI → Transcription; the Whisper engine then uses it for recordings pinned to Hebrew, and for recordings auto-detected as Hebrew with a detection probability of at least 0.5 (weaker detections stay on the main model).
 
 **Summarization Models** (Ollama):
 - `gemma4:e2b-it-qat` (4.3GB): Lightest Gemma 4, quantization-aware, with a real 128K context **(default)**
