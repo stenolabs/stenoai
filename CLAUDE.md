@@ -174,6 +174,10 @@ overrides an agent's own test-level defaults.
     starts a recording without asking or navigating, its toast belongs to that
     recording, a second detection is refused, Stop ends it, and a later manual
     recording gets no toast; macOS only),
+    `tray-indicator.t2` (the menu bar recording indicator through a stand-in tray,
+    `STENOAI_E2E_TRAY=1`: the tooltip on every platform, and on macOS only the
+    title too - red dot + timer while recording, pause mark and frozen time while
+    paused, idle and timer torn down on stop; skipped for packaged runs),
     `diarization-engine.t2` (the Speaker detection setting: Sortformer default, a non-default engine refused
     while its models are missing, IPC allowlist, and a pre-0.17 Sortformer
     cache reading as missing on macOS; its UI half, the download-then-save
