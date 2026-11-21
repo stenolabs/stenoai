@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ipc } from '@/lib/ipc';
 import { unwrap } from '@/lib/result';
 import { meetingsKeys } from './meetingKeys';
+import { meetingStemFromSummaryFile, speakersKeys } from './useSpeakerSuggestions';
 import { orgKeys } from './useOrg';
 import { useLiveDraftStore } from './liveDraftStore';
 import { navigate, routeFromHash } from '@/lib/router';
@@ -562,6 +563,19 @@ export function useRecordingProcessingEffects() {
           });
       }
       qc.invalidateQueries({ queryKey: meetingsKeys.all });
+      // A processing run may create or replace its speaker sidecar while the
+      // note stays open. The detail refetch above updates has_speaker_sidecar,
+      // but speaker suggestions live under a separate query key. Invalidate
+      // that one as well so cached clusters cannot leave the review panel
+      // stale until the user navigates away and back.
+      const completedSummaryFile =
+        data.summaryFile ?? data.meetingData?.session_info.summary_file;
+      const completedMeetingStem = data.success
+        ? meetingStemFromSummaryFile(completedSummaryFile)
+        : null;
+      if (completedMeetingStem) {
+        qc.invalidateQueries({ queryKey: speakersKeys.suggestions(completedMeetingStem) });
+      }
       qc.invalidateQueries({ queryKey: queueKey });
       // Clear any streamCache entry for the finished session. MeetingDetail
       // does its own cleanup when mounted (with a 400ms grace so the "done"
