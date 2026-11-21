@@ -1,6 +1,7 @@
 import { test, expect } from '../fixtures/electron';
 import { writeUserConfig, writeMeetingSummary } from '../fixtures/user-config';
 import { startMockOllama } from '../fixtures/mock-ollama';
+import { killOllama } from '../fixtures/kill-ollama';
 import { readFileSync } from 'fs';
 
 /**
@@ -39,6 +40,11 @@ type StenoWindow = Window & {
 };
 
 test.describe('Map-reduce summarization @map-reduce', () => {
+  // Each test waits up to 60 s for summaryComplete, so the default 30 s test
+  // timeout cut a slow runner off mid-reprocess (main, Oct 29). Give the whole
+  // launch + reprocess + teardown room to finish inside its own budget.
+  test.describe.configure({ timeout: 90_000 });
+
   test('long transcript triggers N+1 chat calls (4 map + 1 reduce)', async ({
     launchApp,
     userDataDir,
@@ -51,6 +57,9 @@ test.describe('Map-reduce summarization @map-reduce', () => {
       transcript: LONG_TRANSCRIPT,
     });
 
+    // Same guard as live-transcript-fallback: a stray `ollama serve` left on
+    // 11434 would fail this hard bind (EADDRINUSE) or answer instead of the mock.
+    killOllama();
     // Map calls get compact extraction replies; reduce call gets the full summary.
     // One queued reply per map chunk (4), then the reduce call falls through to
     // chatReply once the queue is exhausted.
@@ -134,6 +143,9 @@ test.describe('Map-reduce summarization @map-reduce', () => {
       transcript: 'Speaker A: Hello, let us begin.\nSpeaker B: Agreed, let us proceed.\n',
     });
 
+    // Same guard as live-transcript-fallback: a stray `ollama serve` left on
+    // 11434 would fail this hard bind (EADDRINUSE) or answer instead of the mock.
+    killOllama();
     const ollama = await startMockOllama({
       chatReply:
         '## Summary\nBrief meeting.\n\n## Key Points\n- Started well\n\n## Action Items\n- None',
