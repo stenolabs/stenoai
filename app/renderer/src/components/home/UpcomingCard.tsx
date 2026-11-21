@@ -42,24 +42,23 @@ export function UpcomingCard({ event }: UpcomingCardProps) {
 
   // Use the explicit calendar color if provided by the backend, otherwise default to Paper + Ink neutral
   const color = event.color || 'var(--fg-2)';
-  const accentRef = React.useRef<HTMLDivElement>(null);
 
   return (
     <div
       className={cn(
-        'group relative flex min-h-[44px] items-center justify-between py-2 transition-colors hover:bg-[color:var(--surface-hover)] -mx-3 px-3 rounded-lg',
+        'group relative flex min-h-[44px] cursor-pointer items-center justify-between py-2 transition-colors hover:bg-[color:var(--surface-hover)] -mx-3 px-3 rounded-lg',
         urgent && 'opacity-100',
         !urgent && 'opacity-90 hover:opacity-100'
       )}
-      // Padding and the colour bar sit outside the inner button but still
-      // highlight on hover; keep them starting the recording as before.
+      // Padding, the colour bar and the CTA strip sit outside the inner
+      // button but still highlight on hover; a click there starts the
+      // recording as before. Clicks on any button keep their own action.
       onClick={(e) => {
-        if (e.target === e.currentTarget || e.target === accentRef.current) onStart();
+        if (!(e.target as HTMLElement).closest('button')) onStart();
       }}
     >
       {/* Left indicator bar */}
       <div
-        ref={accentRef}
         aria-hidden="true"
         className="absolute left-0 top-2 bottom-2 w-0.5 rounded-full"
         style={{ backgroundColor: color }}

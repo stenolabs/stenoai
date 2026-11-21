@@ -223,12 +223,13 @@ class FoldersManager:
             frontmatter = ''
             body = content
             had_frontmatter = False
-            if content.startswith('---'):
-                parts = content.split('---', 2)
-                if len(parts) >= 3:
-                    frontmatter = parts[1]
-                    body = parts[2]
-                    had_frontmatter = True
+            # Fences are whole lines: a value containing '---' (a title such
+            # as 'Q3 --- Planning') must not end the block early.
+            fm = _re.match(r'---(\r?\n(?:.*?\r?\n)?)---(?=\r?\n|$)', content, _re.DOTALL)
+            if fm:
+                frontmatter = fm.group(1)
+                body = content[fm.end():]
+                had_frontmatter = True
 
             current: List[str] = []
             m = _re.search(r'^folders:\s*(.+)$', frontmatter, _re.MULTILINE)

@@ -10199,8 +10199,11 @@ def check_adapter_cmd(url: str):
     import urllib.parse
     import urllib.request
 
-    parsed = urllib.parse.urlparse(url)
-    if parsed.scheme not in ("http", "https") or not parsed.netloc:
+    try:
+        parsed = urllib.parse.urlparse(url)
+    except ValueError:
+        parsed = None
+    if parsed is None or parsed.scheme not in ("http", "https") or not parsed.netloc:
         print(f"FAIL {url}")
         print("Invalid URL: only http and https URLs are supported")
         sys.exit(1)

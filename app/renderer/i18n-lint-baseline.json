@@ -1,5 +1,5 @@
 {
-  "total": 253,
+  "total": 252,
   "files": {
     "renderer/src/components/ChatHistoryRow.tsx": 5,
     "renderer/src/components/CommandPalette.tsx": 16,
@@ -14,7 +14,6 @@
     "renderer/src/components/UpdateToast.tsx": 5,
     "renderer/src/components/home/PreviousRow.tsx": 7,
     "renderer/src/components/home/UpcomingCard.tsx": 3,
-    "renderer/src/components/ui/confirm-dialog.tsx": 1,
     "renderer/src/components/ui/dialog.tsx": 1,
     "renderer/src/routes/ChatConversation.tsx": 14,
     "renderer/src/routes/OrgShared.tsx": 20,

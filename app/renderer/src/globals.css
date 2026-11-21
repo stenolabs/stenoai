@@ -813,13 +813,15 @@
   50% { opacity: 0; }
 }
 
+/* Reduced motion drops movement from transitions and smooth scrolling.
+   Animations are left alone: spinners and indeterminate bars are status, and
+   freezing them reads as a hung app. */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
+  .glass-input-wrapper:focus-within { transform: none; }
 }
 .chat-markdown pre { overflow-x: auto; padding: 0.75rem; margin: 0.5rem 0; border-radius: 6px; background: var(--surface-active); }
 .chat-markdown code { font-family: var(--font-mono); font-size: 0.9em; background: var(--surface-active); border-radius: 3px; padding: 0.1em 0.25em; }

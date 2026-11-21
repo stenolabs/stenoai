@@ -524,11 +524,14 @@ function TranscriptionModelList() {
       if (parakeetModel.installed) {
         setActive.mutate({ engine: 'parakeet' });
       } else {
+        // Only the download just started should report an error.
+        pullWhisper.reset();
         pullParakeet.mutate(parakeetModel.name);
       }
     } else if (whisperModel.installed) {
       setActive.mutate({ engine: 'whisper', whisperModel: whisperModel.name });
     } else {
+      pullParakeet.reset();
       pullWhisper.mutate(whisperModel.name);
     }
   };

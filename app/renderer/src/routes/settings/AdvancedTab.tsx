@@ -167,6 +167,7 @@ export function AdvancedTab() {
         title={t('settings.advanced.clearState.label')}
         description={t('settings.advanced.clearState.description')}
         confirmLabel={t('settings.advanced.clearState.action')}
+        pendingLabel={t('settings.advanced.clearState.clearing')}
         cancelLabel={t('quitDialog.cancel')}
         destructive
         isPending={clearState.isPending}

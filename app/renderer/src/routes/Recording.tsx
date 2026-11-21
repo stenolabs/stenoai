@@ -131,7 +131,7 @@ function EditableTitle({ value, onChange, placeholder }: EditableTitleProps) {
       value={value}
       onChange={(e) => onChange(e.target.value)}
       placeholder={placeholder}
-      aria-label={placeholder}
+      aria-label={t('recording.titleLabel')}
       spellCheck={false}
       className="w-full rounded-sm border-0 bg-transparent p-0 text-[34px] outline-none focus-visible:ring-1 focus-visible:ring-[color:var(--focus-ring)]"
       style={{

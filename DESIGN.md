@@ -9,7 +9,7 @@ description: >-
   whole UI reads as one neutral paper+ink palette. The only non-neutral colors
   are reserved status hues (danger red, success green, recording red). Type is a
   humanist sans (Inter) for UI, a calligraphic serif (Ovo) for the two
-  largest display headings only, and JetBrains Mono for transcripts/code. Depth
+  largest display headings only, and JetBrains Mono for code and raw logs. Depth
   comes from soft shadows and surface tints, not borders (borders are rare —
   whitespace is preferred). Full light + dark parity is mandatory. macOS-only
   window chrome (traffic-light insets) is gated behind html.is-mac.
@@ -267,7 +267,7 @@ view needs all three.
   (`{colors.accent}` == `{colors.ink-900}` light / `#EDEAE0` dark).
 - Status colors only: `{colors.danger}`, `{colors.success}`, `{colors.recording}`.
 - Humanist sans (Inter) for everything UI; calligraphic serif (Ovo) for the
-  two largest headings only (h1/h2); JetBrains Mono for transcripts + code.
+  two largest headings only (h1/h2); JetBrains Mono for code and raw logs.
 - **Depth via soft shadows + surface tints, not borders.** Borders are rare and
   faint (`{colors.border-subtle}`); whitespace does the separating.
 - Full **light + dark parity** is mandatory — every surface/text/state has a
@@ -322,8 +322,8 @@ Status colors are never used for navigation, emphasis, or decoration.
   for `h1` and `h2` (and the `.serif` class). Weight 400 (Ovo ships one weight —
   never fake-bold it), negative tracking (-0.02em / -0.01em). This restrained
   serif is the editorial signature; do not extend it to body or buttons.
-- **JetBrains Mono** (`{typography.mono}`) — transcripts, code, anything
-  monospaced (`code`, `pre`, `.mono`).
+- **JetBrains Mono** (`{typography.mono}`) — code, raw logs, anything
+  monospaced (`code`, `pre`, `.mono`). Transcript bubbles use the UI sans.
 
 ### Scale
 | Token | Size | Weight | Line | Use |
@@ -336,7 +336,7 @@ Status colors are never used for navigation, emphasis, or decoration.
 | `{typography.body-sm}` | 14px | 400 | 1.5 | dense lists, secondary rows |
 | `{typography.caption}` | 12px | 500 | 1.4 | chips, badges, metadata labels |
 | `{typography.button}` | 14px | 500 | 1.0 | button labels |
-| `{typography.mono}` | 14px | 400 | 1.6 | transcripts, code blocks |
+| `{typography.mono}` | 14px | 400 | 1.6 | code blocks, raw logs |
 
 ### Principles
 - Serif is reserved for h1/h2 only — never bold it (stays 400) and keep the
@@ -473,7 +473,8 @@ Every view that waits on the backend must define all three:
 - Don't color links; Steno links are ink with underline-on-hover.
 - Don't set the display serif (Ovo) on body, buttons, or anything past h2,
   and don't bold it.
-- Don't set transcripts in the sans face; transcripts are JetBrains Mono.
+- Don't set conversational transcript bubbles in mono; they are long-form
+  dialogue and use `--font-sans`.
 - Don't lean on borders to separate content when space will do.
 - Don't ship a light-only (or dark-only) treatment.
 - Don't leave an async view with no empty/error state.

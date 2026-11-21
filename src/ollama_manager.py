@@ -205,6 +205,11 @@ def _clear_pid() -> None:
         pass
 
 
+# How long to keep polling after our own `ollama serve` exited, in case a
+# concurrently started server owns the port and is still starting.
+OLLAMA_EXIT_GRACE_SECONDS = 5
+
+
 def start_ollama_server(wait: bool = True, timeout: int = 30) -> bool:
     """
     Start the Ollama server if not already running.
@@ -257,8 +262,17 @@ def start_ollama_server(wait: bool = True, timeout: int = 30) -> bool:
                 logger.info("Ollama server is ready")
                 return True
             if proc.poll() is not None:
-                logger.error(f"Ollama server exited prematurely with code {proc.returncode}")
+                # Our process is gone. It may have lost the port to another
+                # `ollama serve` that is still coming up, so give that one a
+                # short grace period before reporting failure.
                 _clear_pid()
+                grace_deadline = min(start_time + timeout, time.time() + OLLAMA_EXIT_GRACE_SECONDS)
+                while time.time() < grace_deadline:
+                    if is_ollama_running():
+                        logger.info("Ollama server is ready (started by another process)")
+                        return True
+                    time.sleep(0.5)
+                logger.error(f"Ollama server exited prematurely with code {proc.returncode}")
                 return False
             time.sleep(0.5)
 

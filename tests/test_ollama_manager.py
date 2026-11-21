@@ -56,5 +56,39 @@ class GetOllamaEnvMLXMetalPathTests(unittest.TestCase):
         self.assertIn(str(bundled_dir), env["DYLD_LIBRARY_PATH"])
 
 
+
+class StartOllamaServerExitTests(unittest.TestCase):
+    """start_ollama_server when its own `ollama serve` exits during the wait."""
+
+    def _start(self, running_answers):
+        from unittest.mock import MagicMock
+        from src import ollama_manager
+
+        proc = MagicMock(pid=4242, returncode=1)
+        proc.poll.return_value = 1
+        with patch.object(ollama_manager, "is_ollama_running", side_effect=running_answers), \
+             patch.object(ollama_manager, "get_ollama_binary", return_value=Path("/bin/ollama")), \
+             patch.object(ollama_manager, "get_ollama_env", return_value={}), \
+             patch.object(ollama_manager, "_write_pid"), \
+             patch.object(ollama_manager, "_clear_pid") as clear_pid, \
+             patch.object(ollama_manager.subprocess, "Popen", return_value=proc), \
+             patch.object(ollama_manager.time, "sleep"):
+            ok = ollama_manager.start_ollama_server(wait=True, timeout=30)
+        return ok, clear_pid
+
+    def test_server_started_elsewhere_counts_as_ready(self):
+        # Initial check, first wait-loop check, then the grace poll sees it.
+        ok, clear_pid = self._start([False, False, True])
+        self.assertTrue(ok)
+        clear_pid.assert_called_once()
+
+    def test_reports_failure_when_nothing_comes_up(self):
+        from src import ollama_manager
+
+        ticks = iter(range(0, 1000))
+        with patch.object(ollama_manager.time, "time", side_effect=lambda: next(ticks)):
+            ok, _ = self._start(lambda: False)
+        self.assertFalse(ok)
+
 if __name__ == "__main__":
     unittest.main()

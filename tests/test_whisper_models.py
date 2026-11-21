@@ -1,3 +1,4 @@
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -21,12 +22,22 @@ class IsInstalledTests(unittest.TestCase):
 
 class DownloadWithProgressTests(unittest.TestCase):
     def setUp(self):
-        # tls_bootstrap records broken CA variables in module state, which other
-        # suites (test_tls_bootstrap reloads it) can leave populated. Pin it to
-        # "nothing missing" so these tests do not depend on run order.
-        missing = patch("src.tls_bootstrap.missing_ca_variables", return_value=())
-        missing.start()
-        self.addCleanup(missing.stop)
+        # tls_bootstrap rewrites CA variables in os.environ and records broken
+        # ones in module state, which other suites can leave populated. Stub
+        # it and restore the environment so these tests neither depend on nor
+        # change the run order.
+        env = patch.dict(os.environ)
+        env.start()
+        self.addCleanup(env.stop)
+        for name in ("SSL_CERT_FILE", "SSL_CERT_DIR", "REQUESTS_CA_BUNDLE"):
+            os.environ.pop(name, None)
+        for target, kwargs in (
+            ("src.tls_bootstrap.configure", {}),
+            ("src.tls_bootstrap.missing_ca_variables", {"return_value": ()}),
+        ):
+            patcher = patch(target, **kwargs)
+            patcher.start()
+            self.addCleanup(patcher.stop)
 
     def test_refuses_download_when_ca_override_is_broken(self):
         with tempfile.TemporaryDirectory() as tmp_dir:

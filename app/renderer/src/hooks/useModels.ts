@@ -665,6 +665,7 @@ export function usePullParakeetModel() {
   // matches the Whisper hook shape so the UI doesn't fork on engine.
   const [progress, setProgress] = React.useState<Record<string, ParakeetPullProgressEvent>>({});
   const pendingSelectRef = React.useRef<string | null>(null);
+  const inFlightPullsRef = React.useRef(new Set<string>());
 
   React.useEffect(() => {
     const offProgress = ipc().on.parakeetPullProgress((event) => {
@@ -703,12 +704,19 @@ export function usePullParakeetModel() {
   }, [qc]);
 
   const pullAndSelect = async (id: string) => {
+    // Main does not reject a second pull of the same model; it would run a
+    // second downloader whose completion could clear the selection the first
+    // one still owes. Join the running pull instead (its events drive the UI).
+    if (inFlightPullsRef.current.has(id)) return;
+    inFlightPullsRef.current.add(id);
     pendingSelectRef.current = id;
     try {
       unwrap(await ipc().parakeetModels.pull(id));
     } catch (err) {
       if (pendingSelectRef.current === id) pendingSelectRef.current = null;
       throw err;
+    } finally {
+      inFlightPullsRef.current.delete(id);
     }
   };
 

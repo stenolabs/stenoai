@@ -240,6 +240,7 @@
   "folder.notes": "Notes",
   "folder.empty.title": "Nothing here yet",
   "folder.empty.body": "Notes you save to this folder will show up here.",
+  "recording.titleLabel": "Note title",
   "recording.backHomeAria": "Back to home",
   "recording.backHome": "Home",
   "recording.titlePlaceholder": "New note",

@@ -327,14 +327,14 @@ export function Sidebar({
               data-testid="sidebar-search-trigger"
               onClick={() => palette.open()}
               className="flex h-[30px] w-full items-center rounded-md border-0 px-[10px] pl-[30px] text-left text-[13px] outline-none transition-colors hover:shadow-[inset_0_0_0_1px_hsl(var(--border))] focus-visible:shadow-[inset_0_0_0_1px_hsl(var(--border))]"
-              style={{ background: 'var(--surface-sunken)', color: 'var(--fg-2)', fontFamily: 'var(--font-sans)' }}
+              style={{ background: 'var(--surface-active)', color: 'var(--fg-2)', fontFamily: 'var(--font-sans)' }}
               aria-label={t('sidebar.searchNotes')}
             >
               {t('sidebar.search')}
             </button>
             <span
               className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 rounded px-1.5 py-px text-[11px] tabular-nums tracking-[0.02em]"
-              style={{ color: 'var(--fg-2)', background: 'var(--surface-hover)', fontFamily: 'var(--font-sans)' }}
+              style={{ color: 'var(--fg-2)', background: 'var(--surface-active)', fontFamily: 'var(--font-sans)' }}
             >
               {searchShortcutHint}
             </span>

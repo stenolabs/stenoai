@@ -106,63 +106,26 @@ export function useRecordingShellState() {
       // Same derivation as useRecording().sessionName (see the comment
       // there): the live capture owns the label, else the in-flight job.
       sessionName: q.hasRecording ? (q.sessionName ?? null) : (q.currentJob ?? null),
+      recordingId: q.recordingId ?? null,
     }),
   });
 
   return {
     status: queue.data?.status ?? ('idle' as RecordingStatus),
     sessionName: queue.data?.sessionName ?? null,
+    recordingId: queue.data?.recordingId ?? null,
     isLoading: queue.isLoading,
   };
 }
 
-export function useRecording() {
+/**
+ * The recording commands alone. They depend only on the query client, so a
+ * component that issues commands without rendering queue state (App-level
+ * listeners) uses this instead of useRecording() and does not re-render on
+ * every queue poll.
+ */
+export function useRecordingActions() {
   const qc = useQueryClient();
-
-  // Backed by a shared module-level listener (see useIsWindowVisible at
-  // the top of this file) so 12+ useRecording consumers don't each
-  // attach their own document listener.
-  const isVisible = useIsWindowVisible();
-
-  const queue = useQuery({
-    queryKey: queueKey,
-    queryFn: async () => {
-      const res = await ipc().recording.getQueue();
-      if (!res.success) throw new Error(res.error);
-      return res;
-    },
-    refetchInterval: (query) => {
-      // Hidden: 10s regardless of state. The user can't see a 1s update
-      // anyway; when they bring the window back, react-query's
-      // refetchOnWindowFocus + the visibilitychange listener flipping
-      // isVisible will both trigger a fresh fetch.
-      if (!isVisible) return 10_000;
-      return query.state.data?.hasRecording ? 1000 : 2000;
-    },
-  });
-
-  const status: RecordingStatus = React.useMemo(() => {
-    const q = queue.data;
-    if (q?.hasRecording) return q.isPaused ? 'paused' : 'recording';
-    if (q?.isProcessing) return 'processing';
-    return 'idle';
-  }, [queue.data]);
-
-  // Memoised so the Set reference is stable across renders when the
-  // backend's currentReprocesses array contents haven't changed —
-  // useMeetings's dependency on this is then satisfied by a referential
-  // equality check rather than re-running the meeting-list map on every
-  // queue poll.
-  const reprocessingSummaryFiles = React.useMemo(() => {
-    const arr = queue.data?.currentReprocesses;
-    if (!arr || arr.length === 0) return EMPTY_REPROCESS_SET;
-    return new Set(arr.map((r) => r.summaryFile));
-  }, [queue.data?.currentReprocesses]);
-
-  // NOTE: processing-complete handling lives in useRecordingProcessingEffects
-  // below, mounted ONCE at App level. Putting it here would attach a fresh
-  // listener for every consumer of useRecording (12+ at last count), causing
-  // duplicate cache invalidations and N navigations per recording.
 
   const startRecording = React.useCallback(
     async (name?: string, trigger: RecordingTrigger = 'manual', appendTo?: string) => {
@@ -340,6 +303,57 @@ export function useRecording() {
     return data;
   }, [qc]);
 
+  return { startRecording, stopRecording, pauseRecording, resumeRecording };
+}
+
+export function useRecording() {
+  // Backed by a shared module-level listener (see useIsWindowVisible at
+  // the top of this file) so 12+ useRecording consumers don't each
+  // attach their own document listener.
+  const isVisible = useIsWindowVisible();
+
+  const queue = useQuery({
+    queryKey: queueKey,
+    queryFn: async () => {
+      const res = await ipc().recording.getQueue();
+      if (!res.success) throw new Error(res.error);
+      return res;
+    },
+    refetchInterval: (query) => {
+      // Hidden: 10s regardless of state. The user can't see a 1s update
+      // anyway; when they bring the window back, react-query's
+      // refetchOnWindowFocus + the visibilitychange listener flipping
+      // isVisible will both trigger a fresh fetch.
+      if (!isVisible) return 10_000;
+      return query.state.data?.hasRecording ? 1000 : 2000;
+    },
+  });
+
+  const status: RecordingStatus = React.useMemo(() => {
+    const q = queue.data;
+    if (q?.hasRecording) return q.isPaused ? 'paused' : 'recording';
+    if (q?.isProcessing) return 'processing';
+    return 'idle';
+  }, [queue.data]);
+
+  // Memoised so the Set reference is stable across renders when the
+  // backend's currentReprocesses array contents haven't changed —
+  // useMeetings's dependency on this is then satisfied by a referential
+  // equality check rather than re-running the meeting-list map on every
+  // queue poll.
+  const reprocessingSummaryFiles = React.useMemo(() => {
+    const arr = queue.data?.currentReprocesses;
+    if (!arr || arr.length === 0) return EMPTY_REPROCESS_SET;
+    return new Set(arr.map((r) => r.summaryFile));
+  }, [queue.data?.currentReprocesses]);
+
+  // NOTE: processing-complete handling lives in useRecordingProcessingEffects
+  // below, mounted ONCE at App level. Putting it here would attach a fresh
+  // listener for every consumer of useRecording (12+ at last count), causing
+  // duplicate cache invalidations and N navigations per recording.
+
+  const { startRecording, stopRecording, pauseRecording, resumeRecording } = useRecordingActions();
+
   return {
     status,
     elapsed: queue.data?.elapsedSeconds ?? 0,
@@ -403,7 +417,10 @@ export function useRecording() {
  * flushed.
  */
 export function useRecordingEvents() {
-  const { status, startRecording, stopRecording, pauseRecording, resumeRecording } = useRecording();
+  // Neither the status nor the commands need the full queue object, so the
+  // App-level host of these listeners does not re-render on every poll.
+  const { status } = useRecordingShellState();
+  const { startRecording, stopRecording, pauseRecording, resumeRecording } = useRecordingActions();
   const statusRef = React.useRef(status);
   const actionsRef = React.useRef({ startRecording, stopRecording, pauseRecording, resumeRecording });
 

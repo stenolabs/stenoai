@@ -165,10 +165,6 @@ class FoldersSaveTests(unittest.TestCase):
             self.assertEqual(on_disk["folders"][0]["name"], "Neuer Name")
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class MarkdownFolderFrontmatterTests(unittest.TestCase):
     """_update_md_folders rewrites a note's frontmatter; the body is the user's note."""
 
@@ -203,3 +199,17 @@ class MarkdownFolderFrontmatterTests(unittest.TestCase):
             note.write_text('---\nfolders: []\n---\nBody\n', encoding="utf-8")
             self.assertTrue(self._mgr(tmp_dir).add_meeting_to_folder(note, "a\\1b"))
             self.assertIn('folders: ["a\\\\1b"]', note.read_text(encoding="utf-8"))
+
+
+    def test_value_containing_dashes_does_not_end_the_frontmatter(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            note = Path(tmp_dir) / "note.md"
+            note.write_text('---\ntitle: "Q3 --- Planning"\nfolders: []\n---\nBody\n', encoding="utf-8")
+            self.assertTrue(self._mgr(tmp_dir).add_meeting_to_folder(note, "aaa"))
+            self.assertEqual(
+                note.read_text(encoding="utf-8"),
+                '---\ntitle: "Q3 --- Planning"\nfolders: ["aaa"]\n---\nBody\n',
+            )
+
+if __name__ == "__main__":
+    unittest.main()

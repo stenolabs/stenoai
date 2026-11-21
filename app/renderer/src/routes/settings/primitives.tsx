@@ -110,7 +110,9 @@ interface SectionHeadingProps {
 export function SectionHeading({ children, first = false }: SectionHeadingProps) {
   return (
     <h2
-      className="text-[15px] font-semibold"
+      // Opt out of the base h1/h2 display serif: settings section headings
+      // are UI labels in the sans face.
+      className="font-sans text-[15px] font-semibold leading-[inherit] tracking-normal"
       style={{
         // Bold + normal case + dark ink, so the section name is the loudest
         // thing on the page — settings underneath it read quieter by

@@ -151,9 +151,8 @@ export function NotificationToast() {
             type="button"
             onClick={handleClose}
             aria-label={t('notificationToast.close')}
-            className="absolute -top-2 -left-2 flex h-6 w-6 items-center justify-center rounded-full border shadow-sm opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring hover:bg-[color:var(--surface-hover)]"
+            className="absolute -top-2 -left-2 flex h-6 w-6 items-center justify-center rounded-full border shadow-sm opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring bg-[color:var(--surface-raised)] hover:bg-[color:var(--surface-hover)]"
             style={{
-              background: 'var(--surface-raised)',
               borderColor: 'var(--border-subtle)',
               color: 'var(--fg-2)',
             }}
@@ -202,10 +201,9 @@ export function NotificationToast() {
                   type="button"
                   key={action.id}
                   onClick={(e) => handleGenericAction(action.id, e)}
-                  className="flex items-center justify-center rounded-[10px] border px-3 py-1.5 text-[12px] font-medium transition-all hover:bg-[color:var(--surface-hover)] hover:shadow-sm active:scale-[0.98] shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  className="flex items-center justify-center rounded-[10px] border px-3 py-1.5 text-[12px] font-medium transition-all bg-[color:var(--surface-raised)] hover:bg-[color:var(--surface-hover)] hover:shadow-sm active:scale-[0.98] shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                   style={{
                     borderColor: 'var(--border-subtle)',
-                    background: 'var(--surface-raised)',
                     color: 'var(--fg-1)',
                   }}
                 >
@@ -218,10 +216,9 @@ export function NotificationToast() {
               <button
                 type="button"
                 onClick={data.autoOpen === 'ask' ? handleOpen : handleJoin}
-                className="flex items-center gap-2 rounded-[10px] border px-3 py-1.5 text-[13px] font-medium transition-all hover:bg-[color:var(--surface-hover)] hover:shadow-sm active:scale-[0.98] shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                className="flex items-center gap-2 rounded-[10px] border px-3 py-1.5 text-[13px] font-medium transition-all bg-[color:var(--surface-raised)] hover:bg-[color:var(--surface-hover)] hover:shadow-sm active:scale-[0.98] shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 style={{
                   borderColor: 'var(--border-subtle)',
-                  background: 'var(--surface-raised)',
                   color: 'var(--fg-1)',
                 }}
               >
