@@ -232,7 +232,7 @@ function HebrewModelSetting() {
     >
       {control}
       {pull.isError && (
-        <p role="alert" className="mt-2 max-w-[240px] text-xs text-muted-foreground">
+        <p role="alert" className="mt-2 max-w-[240px] text-xs" style={{ color: 'var(--danger)' }}>
           {t('settings.ai.hebrewModel.failed')}
         </p>
       )}
@@ -365,7 +365,7 @@ export function SpeakerSeparationSetting() {
         </div>
       </SettingRow>
       {alert && (
-        <div role="alert" className="-mt-2 flex items-center gap-2 pb-3 text-[12px]" style={{ color: 'var(--fg-2)' }}>
+        <div role="alert" className="-mt-2 flex items-center gap-2 pb-3 text-[12px]" style={{ color: 'var(--danger)' }}>
           <span>{alert}</span>
           {engine.isError && (
             <Button
@@ -524,11 +524,14 @@ function TranscriptionModelList() {
       if (parakeetModel.installed) {
         setActive.mutate({ engine: 'parakeet' });
       } else {
+        // Only the download just started should report an error.
+        pullWhisper.reset();
         pullParakeet.mutate(parakeetModel.name);
       }
     } else if (whisperModel.installed) {
       setActive.mutate({ engine: 'whisper', whisperModel: whisperModel.name });
     } else {
+      pullParakeet.reset();
       pullWhisper.mutate(whisperModel.name);
     }
   };
@@ -592,7 +595,11 @@ function TranscriptionModelList() {
             {parakeetProgressLabel(pullParakeet.progress[parakeetModel.name])}
           </p>
         )}
-        {pullParakeet.isError && <p role="alert">{String(pullParakeet.error.message)}</p>}
+        {(pullParakeet.isError || pullWhisper.isError) && (
+          <p role="alert" className="mt-2 max-w-[240px] text-xs" style={{ color: 'var(--danger)' }}>
+            {String((pullParakeet.isError ? pullParakeet.error : pullWhisper.error)?.message ?? '')}
+          </p>
+        )}
       </SettingRow>
 
       {activeEngine === 'openai-asr' && <OpenAiAsrConfig />}
@@ -708,7 +715,7 @@ function OpenAiAsrConfig() {
         <label
           htmlFor="openai-asr-api-url"
           className="mb-1 block text-[12px] font-medium uppercase"
-          style={{ letterSpacing: '0.06em', color: 'var(--fg-muted)' }}
+          style={{ letterSpacing: '0.06em', color: 'var(--fg-2)' }}
         >
           {t('settings.ai.cloudAsr.apiBaseUrlLabel')}
         </label>
@@ -737,7 +744,7 @@ function OpenAiAsrConfig() {
         <label
           htmlFor="openai-asr-model"
           className="mb-1 block text-[12px] font-medium uppercase"
-          style={{ letterSpacing: '0.06em', color: 'var(--fg-muted)' }}
+          style={{ letterSpacing: '0.06em', color: 'var(--fg-2)' }}
         >
           {t('settings.ai.cloudAsr.modelLabel')}
         </label>
@@ -765,7 +772,7 @@ function OpenAiAsrConfig() {
         <label
           htmlFor="openai-asr-api-key"
           className="mb-1 block text-[12px] font-medium uppercase"
-          style={{ letterSpacing: '0.06em', color: 'var(--fg-muted)' }}
+          style={{ letterSpacing: '0.06em', color: 'var(--fg-2)' }}
         >
           {t('settings.ai.cloudAsr.apiKeyLabel')}
         </label>

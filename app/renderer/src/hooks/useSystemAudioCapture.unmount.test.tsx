@@ -24,9 +24,13 @@ const h = vi.hoisted(() => ({
   getUserMedia: vi.fn(),
 }));
 
-vi.mock('./useRecording', () => ({
-  useRecording: () => ({ status: h.status, sessionName: 'Unmount note', recordingId: h.status === 'recording' ? 'test-recording' : null }),
-}));
+vi.mock('./useRecording', () => {
+  const state = () => ({ status: h.status, sessionName: 'Unmount note', recordingId: h.status === 'recording' ? 'test-recording' : null });
+  return {
+    useRecording: state,
+    useRecordingShellState: () => ({ ...state(), isLoading: false }),
+  };
+});
 vi.mock('./useModels', () => ({
   useTranscriptionEngine: () => ({ data: 'parakeet' }),
 }));

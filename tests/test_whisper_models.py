@@ -1,3 +1,4 @@
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -20,6 +21,43 @@ class IsInstalledTests(unittest.TestCase):
 
 
 class DownloadWithProgressTests(unittest.TestCase):
+    def setUp(self):
+        # tls_bootstrap rewrites CA variables in os.environ and records broken
+        # ones in module state, which other suites can leave populated. Stub
+        # it and restore the environment so these tests neither depend on nor
+        # change the run order.
+        env = patch.dict(os.environ)
+        env.start()
+        self.addCleanup(env.stop)
+        for name in ("SSL_CERT_FILE", "SSL_CERT_DIR", "REQUESTS_CA_BUNDLE"):
+            os.environ.pop(name, None)
+        for target, kwargs in (
+            ("src.tls_bootstrap.configure", {}),
+            ("src.tls_bootstrap.missing_ca_variables", {"return_value": ()}),
+        ):
+            patcher = patch(target, **kwargs)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+    def test_refuses_download_when_ca_override_is_broken(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            with patch("src.tls_bootstrap.missing_ca_variables", return_value=("SSL_CERT_FILE",)), \
+                 patch.object(whisper_models, "get_models_dir", return_value=Path(tmp_dir)), \
+                 patch("requests.get") as mock_get:
+                ok = whisper_models.download_with_progress("large-v3-turbo", lambda *a: None)
+            self.assertFalse(ok)
+            mock_get.assert_not_called()
+
+    def test_installed_model_ignores_broken_ca_override(self):
+        # The CA check guards the network fetch only; a model already on disk
+        # must keep loading.
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            (Path(tmp_dir) / "ggml-large-v3-turbo.bin").write_bytes(b"abc")
+            with patch("src.tls_bootstrap.missing_ca_variables", return_value=("SSL_CERT_FILE",)), \
+                 patch.object(whisper_models, "get_models_dir", return_value=Path(tmp_dir)):
+                ok = whisper_models.download_with_progress("large-v3-turbo", lambda *a: None)
+            self.assertTrue(ok)
+
     def test_rejects_unknown_model_name(self):
         # Guards the HF URL construction: anything not in the registry must
         # never reach `requests.get`.

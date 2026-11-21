@@ -1,5 +1,7 @@
 import * as React from 'react';
 import { cn } from '@/lib/utils';
+import { Input } from '@/components/ui/input';
+import { Switch } from '@/components/ui/switch';
 
 // ---------------------------------------------------------------------------
 // Shared Settings primitives — style helpers + layout rows used across more
@@ -24,6 +26,12 @@ interface SettingRowProps {
   muted?: boolean;
 }
 
+// Controls that have no visible name of their own, so the row's label is their
+// accessible name. Buttons and links already name themselves through their
+// text; pointing aria-labelledby at the row label would replace that name.
+// Select roots do not forward ARIA props (the trigger would need them).
+const ROW_LABELLED_CONTROLS: ReadonlySet<unknown> = new Set([Switch, Input]);
+
 export function SettingRow({
   label,
   description,
@@ -36,6 +44,27 @@ export function SettingRow({
   noBorder = false,
   muted = false,
 }: SettingRowProps) {
+  const labelId = React.useId();
+  const generatedDescId = React.useId();
+  const resolvedDescId = description ? (descriptionId ?? generatedDescId) : undefined;
+
+  let labeledChildren = children;
+  if (
+    React.isValidElement<Record<string, unknown>>(children) &&
+    ROW_LABELLED_CONTROLS.has(children.type)
+  ) {
+    const props = children.props;
+    const hasAccessibleName =
+      typeof props['aria-label'] === 'string' || typeof props['aria-labelledby'] === 'string';
+    const hasDescribedBy = typeof props['aria-describedby'] === 'string';
+    if (!hasAccessibleName || (resolvedDescId && !hasDescribedBy)) {
+      const injected: Record<string, unknown> = {};
+      if (!hasAccessibleName) injected['aria-labelledby'] = labelId;
+      if (resolvedDescId && !hasDescribedBy) injected['aria-describedby'] = resolvedDescId;
+      labeledChildren = React.cloneElement(children, injected);
+    }
+  }
+
   return (
     <div
       className={cn(
@@ -49,6 +78,7 @@ export function SettingRow({
     >
       <div className="min-w-0 flex-1">
         <div
+          id={labelId}
           className="text-[14px] font-normal"
           style={{ color: 'var(--fg-1)', marginBottom: 2 }}
         >
@@ -56,7 +86,7 @@ export function SettingRow({
         </div>
         {description && (
           <div
-            id={descriptionId}
+            id={resolvedDescId}
             className="text-[13px] leading-[1.5]"
             style={{ color: 'var(--fg-2)' }}
           >
@@ -64,7 +94,7 @@ export function SettingRow({
           </div>
         )}
       </div>
-      <div className="shrink-0">{children}</div>
+      <div className="shrink-0">{labeledChildren}</div>
     </div>
   );
 }
@@ -79,8 +109,10 @@ interface SectionHeadingProps {
 
 export function SectionHeading({ children, first = false }: SectionHeadingProps) {
   return (
-    <div
-      className="text-[15px] font-semibold"
+    <h2
+      // Opt out of the base h1/h2 display serif: settings section headings
+      // are UI labels in the sans face.
+      className="font-sans text-[15px] font-semibold leading-[inherit] tracking-normal"
       style={{
         // Bold + normal case + dark ink, so the section name is the loudest
         // thing on the page — settings underneath it read quieter by
@@ -94,6 +126,6 @@ export function SectionHeading({ children, first = false }: SectionHeadingProps)
       }}
     >
       {children}
-    </div>
+    </h2>
   );
 }

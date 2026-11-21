@@ -137,6 +137,12 @@
       "!build/**/*",
       "!assets/**/*",
       "!.git/**/*",
+      "!**/*.test.js",
+      "!**/*.test.mjs",
+      "!**/*.test.ts",
+      "!**/*.test.tsx",
+      "!e2e-mock-ipc.js",
+      "!renderer/src/**/*",
       "renderer/dist/**",
       "preload.js"
     ],

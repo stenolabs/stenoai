@@ -233,6 +233,7 @@
   "folder.notes": "筆記",
   "folder.empty.title": "此資料夾尚無內容",
   "folder.empty.body": "儲存到此資料夾的筆記將會顯示在此。",
+  "recording.titleLabel": "筆記標題",
   "recording.backHomeAria": "返回首頁",
   "recording.backHome": "首頁",
   "recording.titlePlaceholder": "新筆記",
