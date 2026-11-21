@@ -29,9 +29,21 @@ const diarization = vi.hoisted(() => ({
   },
 }));
 
+const transcription = vi.hoisted(() => ({
+  engine: {
+    data: undefined as 'parakeet' | 'whisper' | 'openai-asr' | undefined,
+    isLoading: true,
+    isError: false,
+  },
+}));
+
 vi.mock('@/hooks/useSettings', () => ({
   useIdentityMatchingEnabledSetting: () => ({ data: false }),
   useSetIdentityMatchingEnabled: () => ({ mutate: vi.fn() }),
+  useLanguageSetting: () => ({ data: 'auto' }),
+  useSetLanguage: () => idleMutation(),
+  useKeepRecordingsSetting: () => ({ data: false }),
+  useSetKeepRecordings: () => idleMutation(),
 }));
 
 vi.mock('@/hooks/useModels', async (importOriginal) => ({
@@ -40,9 +52,51 @@ vi.mock('@/hooks/useModels', async (importOriginal) => ({
   useDiarizationModelsState: () => diarization.models,
   useDownloadDiarizationModels: () => diarization.download,
   useSetDiarizationEngine: () => diarization.mutation,
+  useTranscriptionEngine: () => transcription.engine,
+  useParakeetModels: () => ({ data: undefined }),
+  useWhisperModels: () => ({ data: undefined }),
+  usePullLanguageModel: () => idleMutation(),
+  useSetLanguageModelsEnabled: () => idleMutation(),
+  useSetActiveTranscription: () => idleMutation(),
+  usePullParakeetModel: () => idleMutation(),
+  usePullWhisperModel: () => idleMutation(),
 }));
 
-import { SpeakerIdentificationSetting, SpeakerSeparationSetting } from './AiTab';
+import {
+  SpeakerIdentificationSetting,
+  SpeakerSeparationSetting,
+  TranscriptionSection,
+} from './AiTab';
+
+describe('Parakeet language hint', () => {
+  beforeEach(() => {
+    transcription.engine = { data: undefined, isLoading: true, isError: false };
+  });
+
+  test('waits for a resolved Parakeet engine even when the model picker is absent', () => {
+    const { rerender } = render(<TranscriptionSection />);
+    expect(screen.queryByTestId('language-engine-hint')).toBeNull();
+
+    transcription.engine = { data: 'parakeet', isLoading: false, isError: false };
+    rerender(<TranscriptionSection />);
+    expect(screen.getByTestId('language-engine-hint').textContent).toContain(
+      'Switch to Whisper in the model settings.',
+    );
+    expect(screen.queryByTestId('transcription-model-select')).toBeNull();
+  });
+
+  test.each(['whisper', 'openai-asr'] as const)('hides the hint for %s', (engine) => {
+    transcription.engine = { data: engine, isLoading: false, isError: false };
+    render(<TranscriptionSection />);
+    expect(screen.queryByTestId('language-engine-hint')).toBeNull();
+  });
+
+  test('hides the hint when reading the engine fails', () => {
+    transcription.engine = { data: undefined, isLoading: false, isError: true };
+    render(<TranscriptionSection />);
+    expect(screen.queryByTestId('language-engine-hint')).toBeNull();
+  });
+});
 
 describe('Speaker identification setting', () => {
   test('describes itself to assistive technology', () => {
