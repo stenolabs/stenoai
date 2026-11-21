@@ -197,22 +197,10 @@ def _write_pid(pid: int) -> None:
         logger.debug(f"Could not write Ollama PID file: {e}")
 
 
-def _clear_pid(expected_pid: int | None = None) -> None:
-    """Remove the PID file.
-
-    With ``expected_pid``, remove it only while it still names that process:
-    a concurrently started server may already have written its own PID.
-    """
+def _clear_pid() -> None:
+    """Remove the PID file."""
     try:
-        pid_file = _get_pid_file()
-        if expected_pid is not None:
-            try:
-                recorded = int(pid_file.read_text(encoding='utf-8').strip())
-            except (OSError, ValueError):
-                return
-            if recorded != expected_pid:
-                return
-        pid_file.unlink(missing_ok=True)
+        _get_pid_file().unlink(missing_ok=True)
     except Exception:
         pass
 
@@ -262,22 +250,29 @@ def start_ollama_server(wait: bool = True, timeout: int = 30) -> bool:
         else:
             popen_kwargs["start_new_session"] = True
         proc = subprocess.Popen([str(ollama_binary), 'serve'], **popen_kwargs)
-        _write_pid(proc.pid)
 
         if not wait:
+            _write_pid(proc.pid)
             return True
+
+        # Record our PID only once we know our process is the one serving (or
+        # still running at the deadline). Writing it at spawn would overwrite
+        # the PID of a concurrently started server that wins the port, and
+        # Electron's quit handler would then kill our dead PID instead.
 
         # Wait for server to be ready (bail early if ollama serve exits)
         start_time = time.time()
         while time.time() - start_time < timeout:
             if is_ollama_running():
+                if proc.poll() is None:
+                    _write_pid(proc.pid)
                 logger.info("Ollama server is ready")
                 return True
             if proc.poll() is not None:
                 # Our process is gone. It may have lost the port to another
                 # `ollama serve` that is still coming up, so give that one a
-                # short grace period before reporting failure.
-                _clear_pid(expected_pid=proc.pid)
+                # short grace period before reporting failure. Its PID was
+                # never recorded, so the PID file is left alone.
                 grace_deadline = min(start_time + timeout, time.time() + OLLAMA_EXIT_GRACE_SECONDS)
                 while time.time() < grace_deadline:
                     if is_ollama_running():
@@ -288,6 +283,9 @@ def start_ollama_server(wait: bool = True, timeout: int = 30) -> bool:
                 return False
             time.sleep(0.5)
 
+        if proc.poll() is None:
+            # Still starting: keep it tracked so quit can stop it.
+            _write_pid(proc.pid)
         logger.error(f"Ollama server did not start within {timeout} seconds")
         return False
 

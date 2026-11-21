@@ -57,63 +57,56 @@ class GetOllamaEnvMLXMetalPathTests(unittest.TestCase):
 
 
 
-class StartOllamaServerExitTests(unittest.TestCase):
-    """start_ollama_server when its own `ollama serve` exits during the wait."""
 
-    def _start(self, running_answers):
+class StartOllamaServerPidTests(unittest.TestCase):
+    """start_ollama_server records its PID only for a process it owns."""
+
+    def _start(self, running_answers, poll_answers):
         from unittest.mock import MagicMock
         from src import ollama_manager
 
         proc = MagicMock(pid=4242, returncode=1)
-        proc.poll.return_value = 1
+        proc.poll.side_effect = poll_answers
         with patch.object(ollama_manager, "is_ollama_running", side_effect=running_answers), \
              patch.object(ollama_manager, "get_ollama_binary", return_value=Path("/bin/ollama")), \
              patch.object(ollama_manager, "get_ollama_env", return_value={}), \
-             patch.object(ollama_manager, "_write_pid"), \
+             patch.object(ollama_manager, "_write_pid") as write_pid, \
              patch.object(ollama_manager, "_clear_pid") as clear_pid, \
              patch.object(ollama_manager.subprocess, "Popen", return_value=proc), \
              patch.object(ollama_manager.time, "sleep"):
             ok = ollama_manager.start_ollama_server(wait=True, timeout=30)
-        return ok, clear_pid
+        return ok, write_pid, clear_pid
 
-    def test_server_started_elsewhere_counts_as_ready(self):
-        # Initial check, first wait-loop check, then the grace poll sees it.
-        ok, clear_pid = self._start([False, False, True])
+    def test_own_server_ready_records_its_pid(self):
+        # Initial check, then ready while our process is alive.
+        ok, write_pid, _ = self._start([False, True], lambda: None)
         self.assertTrue(ok)
-        clear_pid.assert_called_once_with(expected_pid=4242)
+        write_pid.assert_called_once_with(4242)
+
+    def test_server_started_elsewhere_counts_as_ready_and_keeps_its_pid(self):
+        # Our process exited; the grace poll then sees the other server.
+        ok, write_pid, clear_pid = self._start([False, False, True], lambda: 1)
+        self.assertTrue(ok)
+        write_pid.assert_not_called()
+        clear_pid.assert_not_called()
 
     def test_reports_failure_when_nothing_comes_up(self):
         from src import ollama_manager
 
         ticks = iter(range(0, 1000))
         with patch.object(ollama_manager.time, "time", side_effect=lambda: next(ticks)):
-            ok, _ = self._start(lambda: False)
+            ok, write_pid, _ = self._start(lambda: False, lambda: 1)
         self.assertFalse(ok)
+        write_pid.assert_not_called()
 
-
-class ClearPidOwnershipTests(unittest.TestCase):
-    def _pid_file(self, tmp_dir, content):
-        path = Path(tmp_dir) / "ollama.pid"
-        path.write_text(content, encoding="utf-8")
-        return path
-
-    def test_keeps_a_pid_written_by_another_server(self):
+    def test_still_starting_at_the_deadline_stays_tracked(self):
         from src import ollama_manager
 
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            path = self._pid_file(tmp_dir, "5555")
-            with patch.object(ollama_manager, "_get_pid_file", return_value=path):
-                ollama_manager._clear_pid(expected_pid=4242)
-            self.assertEqual(path.read_text(encoding="utf-8"), "5555")
-
-    def test_removes_its_own_pid(self):
-        from src import ollama_manager
-
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            path = self._pid_file(tmp_dir, "4242")
-            with patch.object(ollama_manager, "_get_pid_file", return_value=path):
-                ollama_manager._clear_pid(expected_pid=4242)
-            self.assertFalse(path.exists())
+        ticks = iter(range(0, 1000, 10))
+        with patch.object(ollama_manager.time, "time", side_effect=lambda: next(ticks)):
+            ok, write_pid, _ = self._start(lambda: False, lambda: None)
+        self.assertFalse(ok)
+        write_pid.assert_called_once_with(4242)
 
 if __name__ == "__main__":
     unittest.main()
