@@ -80,7 +80,7 @@ class StartOllamaServerExitTests(unittest.TestCase):
         # Initial check, first wait-loop check, then the grace poll sees it.
         ok, clear_pid = self._start([False, False, True])
         self.assertTrue(ok)
-        clear_pid.assert_called_once()
+        clear_pid.assert_called_once_with(expected_pid=4242)
 
     def test_reports_failure_when_nothing_comes_up(self):
         from src import ollama_manager
@@ -89,6 +89,31 @@ class StartOllamaServerExitTests(unittest.TestCase):
         with patch.object(ollama_manager.time, "time", side_effect=lambda: next(ticks)):
             ok, _ = self._start(lambda: False)
         self.assertFalse(ok)
+
+
+class ClearPidOwnershipTests(unittest.TestCase):
+    def _pid_file(self, tmp_dir, content):
+        path = Path(tmp_dir) / "ollama.pid"
+        path.write_text(content, encoding="utf-8")
+        return path
+
+    def test_keeps_a_pid_written_by_another_server(self):
+        from src import ollama_manager
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            path = self._pid_file(tmp_dir, "5555")
+            with patch.object(ollama_manager, "_get_pid_file", return_value=path):
+                ollama_manager._clear_pid(expected_pid=4242)
+            self.assertEqual(path.read_text(encoding="utf-8"), "5555")
+
+    def test_removes_its_own_pid(self):
+        from src import ollama_manager
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            path = self._pid_file(tmp_dir, "4242")
+            with patch.object(ollama_manager, "_get_pid_file", return_value=path):
+                ollama_manager._clear_pid(expected_pid=4242)
+            self.assertFalse(path.exists())
 
 if __name__ == "__main__":
     unittest.main()

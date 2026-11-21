@@ -197,10 +197,22 @@ def _write_pid(pid: int) -> None:
         logger.debug(f"Could not write Ollama PID file: {e}")
 
 
-def _clear_pid() -> None:
-    """Remove the PID file."""
+def _clear_pid(expected_pid: int | None = None) -> None:
+    """Remove the PID file.
+
+    With ``expected_pid``, remove it only while it still names that process:
+    a concurrently started server may already have written its own PID.
+    """
     try:
-        _get_pid_file().unlink(missing_ok=True)
+        pid_file = _get_pid_file()
+        if expected_pid is not None:
+            try:
+                recorded = int(pid_file.read_text(encoding='utf-8').strip())
+            except (OSError, ValueError):
+                return
+            if recorded != expected_pid:
+                return
+        pid_file.unlink(missing_ok=True)
     except Exception:
         pass
 
@@ -265,7 +277,7 @@ def start_ollama_server(wait: bool = True, timeout: int = 30) -> bool:
                 # Our process is gone. It may have lost the port to another
                 # `ollama serve` that is still coming up, so give that one a
                 # short grace period before reporting failure.
-                _clear_pid()
+                _clear_pid(expected_pid=proc.pid)
                 grace_deadline = min(start_time + timeout, time.time() + OLLAMA_EXIT_GRACE_SECONDS)
                 while time.time() < grace_deadline:
                     if is_ollama_running():
