@@ -356,6 +356,8 @@ function install({ ipcMain }) {
     remoteUrl: '', // remote Ollama URL (empty = not configured)
     autoInstallWhenIdle: true, // idle auto-install toggle (config default on)
     callerIdEnabled: false, // caller recognition (opt-in, macOS)
+    obsidianEnabled: !!process.env.STENOAI_E2E_OBSIDIAN_VAULT,
+    obsidianVaultPath: process.env.STENOAI_E2E_OBSIDIAN_VAULT || '',
     transcriptionEngine: process.env.STENOAI_E2E_MOCK_ENGINE || 'parakeet',
     hebrewModelInstalled: false, // ivrit-large-v3-turbo; flipped by pull-whisper-model
     languageModelsEnabled: true, // config.language_models_enabled default
@@ -910,6 +912,25 @@ function install({ ipcMain }) {
       state.callerIdEnabled = enabled === true;
       return callerIdSettings(state);
     },
+
+    'get-obsidian-sync': async () => ({ success: true, obsidian_sync_enabled: state.obsidianEnabled }),
+    'set-obsidian-sync': async (_event, enabled) => {
+      state.obsidianEnabled = !!enabled;
+      return { success: true, obsidian_sync_enabled: state.obsidianEnabled };
+    },
+    'get-obsidian-vault-path': async () => ({ success: true, obsidian_vault_path: state.obsidianVaultPath }),
+    'set-obsidian-vault-path': async (_event, vaultPath) => {
+      state.obsidianVaultPath = vaultPath;
+      return { success: true, obsidian_vault_path: vaultPath };
+    },
+    'get-obsidian-conflicts': async () => ({ success: true, conflicts: {} }),
+    // Keep the seeded error even after disable/clear to exercise the renderer's
+    // guard against stale query data, before its next polling refetch.
+    'get-obsidian-failures': async () => ({
+      success: true,
+      failures: process.env.STENOAI_E2E_OBSIDIAN_VAULT
+        ? [{ code: 'EACCES', at: '2026-11-15T10:00:00.000Z' }] : [],
+    }),
 
     // Seed meetings for the specs that need them, gated per env so the
     // org/shared-notes specs keep an empty Home. STENOAI_E2E_SEED_MEETING (one

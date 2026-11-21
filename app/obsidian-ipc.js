@@ -91,6 +91,12 @@ function registerObsidianIpc({
       return { success: true, conflicts: idx.conflicts || {} };
     } catch (e) { return { success: false, error: e.message }; }
   });
+
+  ipcMain.handle('get-obsidian-failures', async () => {
+    try {
+      return { success: true, failures: obsidianSync.listFailures() };
+    } catch (e) { return { success: false, error: e.message }; }
+  });
 }
 
 module.exports = { registerObsidianIpc };
