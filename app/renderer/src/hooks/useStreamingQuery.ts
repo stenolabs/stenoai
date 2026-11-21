@@ -239,9 +239,13 @@ export function useStreamingQuery() {
     const complete = completionsRef.current.get(id);
     if (complete) { complete(); ipc().query.cancel(id); return; }
     const off = unsubsRef.current.get(id);
-    off?.();
     unsubsRef.current.delete(id);
-    ipc().query.cancel(id);
+    if (off) {
+      // preload's subscribeQueryStream unsubscribe sends query-cancel once.
+      off();
+    } else {
+      ipc().query.cancel(id);
+    }
     setStreams((prev) => {
       const current = prev[id];
       if (!current) return prev;
@@ -273,15 +277,18 @@ export function useStreamingQuery() {
     };
   }, []);
 
-  return {
-    streams,
-    startStream,
-    startContextStream,
-    startGlobalStream,
-    startOrgNoteStream,
-    cancelStream,
-    clearStream,
-  };
+  return React.useMemo(
+    () => ({
+      streams,
+      startStream,
+      startContextStream,
+      startGlobalStream,
+      startOrgNoteStream,
+      cancelStream,
+      clearStream,
+    }),
+    [streams, startStream, startContextStream, startGlobalStream, startOrgNoteStream, cancelStream, clearStream],
+  );
 }
 
 export type StreamingQueryApi = ReturnType<typeof useStreamingQuery>;

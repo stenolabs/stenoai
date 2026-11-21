@@ -327,14 +327,14 @@ export function Sidebar({
               data-testid="sidebar-search-trigger"
               onClick={() => palette.open()}
               className="flex h-[30px] w-full items-center rounded-md border-0 px-[10px] pl-[30px] text-left text-[13px] outline-none transition-colors hover:shadow-[inset_0_0_0_1px_hsl(var(--border))] focus-visible:shadow-[inset_0_0_0_1px_hsl(var(--border))]"
-              style={{ background: 'rgba(27,27,25,0.04)', color: 'var(--fg-muted)', fontFamily: 'var(--font-sans)' }}
+              style={{ background: 'var(--surface-sunken)', color: 'var(--fg-2)', fontFamily: 'var(--font-sans)' }}
               aria-label={t('sidebar.searchNotes')}
             >
               {t('sidebar.search')}
             </button>
             <span
               className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 rounded px-1.5 py-px text-[11px] tabular-nums tracking-[0.02em]"
-              style={{ color: 'var(--fg-muted)', background: 'rgba(27,27,25,0.04)', fontFamily: 'var(--font-sans)' }}
+              style={{ color: 'var(--fg-2)', background: 'var(--surface-hover)', fontFamily: 'var(--font-sans)' }}
             >
               {searchShortcutHint}
             </span>
@@ -348,6 +348,7 @@ export function Sidebar({
           <button
             type="button"
             className={cn('sb-row', isHomeActive && 'active')}
+            aria-current={isHomeActive ? 'page' : undefined}
             onClick={() => navigate('/')}
           >
             <HomeIcon className="size-[14px]" />
@@ -372,12 +373,13 @@ export function Sidebar({
             <button
               type="button"
               className={cn('sb-row', isAllMeetingsActive && 'active')}
+              aria-current={isAllMeetingsActive ? 'page' : undefined}
               onClick={() => navigate('/meetings')}
             >
               <Inbox className="size-[14px]" />
               <span className="flex-1 truncate">{t('sidebar.allNotes')}</span>
               {totalMeetings > 0 && (
-                <span className="text-xs tabular-nums" style={{ color: 'var(--fg-muted)' }}>
+                <span className="text-xs tabular-nums" style={{ color: 'var(--fg-2)' }}>
                   {totalMeetings}
                 </span>
               )}
@@ -387,6 +389,7 @@ export function Sidebar({
           <button
             type="button"
             className={cn('sb-row', isChatActive && 'active')}
+            aria-current={isChatActive ? 'page' : undefined}
             onClick={() => navigate('/chat')}
           >
             <MessageSquare className="size-[14px]" />
@@ -407,6 +410,7 @@ export function Sidebar({
             <button
               type="button"
               className={cn('sb-row', isOrgSharedActive && 'active')}
+              aria-current={isOrgSharedActive ? 'page' : undefined}
               onClick={() => navigate('/org/shared')}
               title={t('sidebar.sharedAcross', { org: orgSession.data?.orgId ?? t('sidebar.yourOrg') })}
             >
@@ -418,20 +422,25 @@ export function Sidebar({
           {/* Folders group */}
           <div className="mt-3.5">
             <div
-              className="sb-group-head flex cursor-pointer select-none items-center justify-between px-2.5 py-1.5 text-[11.5px] font-medium tracking-[0.02em] transition-colors hover:text-[color:var(--fg-1)]"
+              className="sb-group-head flex select-none items-center justify-between px-2.5 py-1.5 text-[11.5px] font-medium tracking-[0.02em]"
               style={{ color: 'var(--fg-2)' }}
-              onClick={() => setFoldersOpen((o) => !o)}
             >
-              <span className="flex items-center gap-1.5">
+              <button
+                type="button"
+                aria-expanded={foldersOpen}
+                className="flex flex-1 cursor-pointer items-center gap-1.5 border-0 bg-transparent p-0 text-left transition-colors hover:text-[color:var(--fg-1)] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[color:var(--focus-ring)] rounded"
+                style={{ color: 'inherit' }}
+                onClick={() => setFoldersOpen((o) => !o)}
+              >
                 <ChevronDown className={cn('size-3 transition-transform', !foldersOpen && '-rotate-90')} />
                 <span>{t('sidebar.folders')}</span>
-              </span>
+              </button>
               <Tooltip>
                 <TooltipTrigger asChild>
                   <button
                     type="button"
-                    className="inline-flex size-5 items-center justify-center rounded opacity-0 transition-opacity hover:bg-[color:var(--surface-active)] [.sb-group-head:hover_&]:opacity-100"
-                    onClick={(e) => { e.stopPropagation(); onNewFolder(); }}
+                    className="inline-flex size-5 items-center justify-center rounded opacity-0 transition-opacity hover:bg-[color:var(--surface-active)] [.sb-group-head:hover_&]:opacity-100 focus-visible:opacity-100"
+                    onClick={() => onNewFolder()}
                     aria-label={t('sidebar.newFolder')}
                     style={{ color: 'var(--fg-2)' }}
                   >
@@ -449,7 +458,12 @@ export function Sidebar({
                 return (
                   <div
                     key={folder.id}
-                    className={cn('rounded', isOver && 'bg-[color:var(--surface-hover)] ring-1 ring-[color:var(--focus-ring)]')}
+                    className={cn(
+                      'sb-row flex items-center gap-1',
+                      isActive && 'active',
+                      isOver && 'bg-[color:var(--surface-hover)] ring-1 ring-[color:var(--focus-ring)]'
+                    )}
+                    style={{ paddingLeft: 12 }}
                     onDragOver={(e) => {
                       if (e.dataTransfer.types.includes('application/x-steno-meeting')) {
                         e.preventDefault();
@@ -463,36 +477,36 @@ export function Sidebar({
                     }}
                     onDrop={(e) => handleFolderDrop(e, folder.id)}
                     onContextMenu={(e) => handleFolderContext(e, folder.id)}
+                    // The row's padding sits outside both buttons; a click
+                    // there still opens the folder, as it did when the whole
+                    // row was one button. Keyboard users reach the inner one.
+                    onClick={(e) => {
+                      if (e.target === e.currentTarget) {
+                        navigate(`/folders/${encodeURIComponent(folder.id)}`);
+                      }
+                    }}
                   >
                     <button
                       type="button"
+                      aria-label={t('sidebar.changeFolderIcon')}
+                      className="flex-shrink-0 rounded border-0 bg-transparent p-0.5 hover:bg-[color:var(--surface-active)] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[color:var(--focus-ring)]"
+                      style={{ color: 'var(--fg-2)' }}
+                      onClick={(e) => {
+                        setIconPicker({ id: folder.id, anchorRect: e.currentTarget.getBoundingClientRect() });
+                      }}
+                    >
+                      <LucideIcon name={folder.icon ?? 'folder'} size={14} />
+                    </button>
+                    <button
+                      type="button"
                       data-testid="sidebar-folder"
-                      className={cn('sb-row', isActive && 'active')}
-                      style={{ paddingLeft: 12 }}
+                      aria-current={isActive ? 'page' : undefined}
+                      className="flex min-w-0 flex-1 items-center gap-2 border-0 bg-transparent p-0 text-left focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[color:var(--focus-ring)] rounded"
+                      style={{ color: 'inherit', font: 'inherit' }}
                       onClick={() => navigate(`/folders/${encodeURIComponent(folder.id)}`)}
                     >
-                      <span
-                        role="button"
-                        tabIndex={0}
-                        aria-label={t('sidebar.changeFolderIcon')}
-                        className="flex-shrink-0 rounded p-0.5 hover:bg-[color:var(--surface-active)]"
-                        style={{ color: 'var(--fg-2)' }}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setIconPicker({ id: folder.id, anchorRect: e.currentTarget.getBoundingClientRect() });
-                        }}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter' || e.key === ' ') {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            setIconPicker({ id: folder.id, anchorRect: e.currentTarget.getBoundingClientRect() });
-                          }
-                        }}
-                      >
-                        <LucideIcon name={folder.icon ?? 'folder'} size={14} />
-                      </span>
                       <span className="flex-1 truncate">{folder.name}</span>
-                      <span className="text-xs tabular-nums" style={{ color: 'var(--fg-muted)' }}>
+                      <span className="text-xs tabular-nums" style={{ color: 'var(--fg-2)' }}>
                         {folder.meetings.length}
                       </span>
                     </button>

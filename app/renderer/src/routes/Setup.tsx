@@ -851,6 +851,7 @@ export function Setup() {
         <div className="mt-10 border-t border-border pt-4">
           <button
             type="button"
+            aria-expanded={debugOpen}
             onClick={() => setDebugOpen((o) => !o)}
             className="flex w-full items-center justify-between text-xs font-medium text-muted-foreground hover:text-foreground"
           >

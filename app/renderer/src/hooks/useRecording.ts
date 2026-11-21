@@ -76,6 +76,46 @@ function useIsWindowVisible(): boolean {
  *  whole meetings list every queue poll. */
 const EMPTY_REPROCESS_SET: ReadonlySet<string> = new Set<string>();
 
+/**
+ * Lightweight recording-state selector for top-level shells (like App.tsx)
+ * that only need `status`, `sessionName`, and `isLoading`. Selecting only
+ * those fields lets TanStack Query's structural sharing skip the 1 Hz
+ * re-renders caused by `elapsedSeconds` ticking during a recording.
+ */
+export function useRecordingShellState() {
+  const isVisible = useIsWindowVisible();
+  const queue = useQuery({
+    queryKey: queueKey,
+    queryFn: async () => {
+      const res = await ipc().recording.getQueue();
+      if (!res.success) throw new Error(res.error);
+      return res;
+    },
+    refetchInterval: (query) => {
+      if (!isVisible) return 10_000;
+      return query.state.data?.hasRecording ? 1000 : 2000;
+    },
+    select: (q) => ({
+      status: (q.hasRecording
+        ? q.isPaused
+          ? 'paused'
+          : 'recording'
+        : q.isProcessing
+          ? 'processing'
+          : 'idle') as RecordingStatus,
+      // Same derivation as useRecording().sessionName (see the comment
+      // there): the live capture owns the label, else the in-flight job.
+      sessionName: q.hasRecording ? (q.sessionName ?? null) : (q.currentJob ?? null),
+    }),
+  });
+
+  return {
+    status: queue.data?.status ?? ('idle' as RecordingStatus),
+    sessionName: queue.data?.sessionName ?? null,
+    isLoading: queue.isLoading,
+  };
+}
+
 export function useRecording() {
   const qc = useQueryClient();
 
@@ -364,6 +404,13 @@ export function useRecording() {
  */
 export function useRecordingEvents() {
   const { status, startRecording, stopRecording, pauseRecording, resumeRecording } = useRecording();
+  const statusRef = React.useRef(status);
+  const actionsRef = React.useRef({ startRecording, stopRecording, pauseRecording, resumeRecording });
+
+  React.useLayoutEffect(() => {
+    statusRef.current = status;
+    actionsRef.current = { startRecording, stopRecording, pauseRecording, resumeRecording };
+  });
 
   React.useEffect(() => {
     const bridge = ipc();
@@ -373,22 +420,25 @@ export function useRecordingEvents() {
       // the background queue while a new recording starts. Matches the
       // Home empty-state CTA + UpcomingCard click behaviour so the hotkey
       // doesn't silently no-op when a user is doing back-to-back notes.
-      if (status === 'recording' || status === 'paused') void stopRecording();
-      else void startRecording(undefined, 'hotkey');
+      if (statusRef.current === 'recording' || statusRef.current === 'paused') {
+        void actionsRef.current.stopRecording();
+      } else {
+        void actionsRef.current.startRecording(undefined, 'hotkey');
+      }
     };
     const offs = [
       bridge.on.toggleRecordingHotkey(toggle),
       bridge.on.trayStartRecording(() => {
-        void startRecording(undefined, 'tray');
+        void actionsRef.current.startRecording(undefined, 'tray');
       }),
       bridge.on.trayStopRecording(() => {
-        void stopRecording();
+        void actionsRef.current.stopRecording();
       }),
       bridge.on.shortcutStartRecording(({ sessionName }) => {
-        void startRecording(sessionName ?? undefined, 'url_scheme');
+        void actionsRef.current.startRecording(sessionName ?? undefined, 'url_scheme');
       }),
       bridge.on.shortcutStopRecording(() => {
-        void stopRecording();
+        void actionsRef.current.stopRecording();
       }),
       bridge.on.autoRecordRequested(({ sessionName, unattended }) => {
         // Suggested by the mic-monitor auto-detect notification ("Take Notes"),
@@ -400,8 +450,11 @@ export function useRecordingEvents() {
         // background queue handles the previous summary fine. Only skip if
         // an active recording (recording/paused) is already in progress —
         // user already manually started or is mid-meeting.
-        if (status === 'recording' || status === 'paused') return;
-        void startRecording(sessionName ?? undefined, unattended ? 'auto_record' : 'notification_click');
+        if (statusRef.current === 'recording' || statusRef.current === 'paused') return;
+        void actionsRef.current.startRecording(
+          sessionName ?? undefined,
+          unattended ? 'auto_record' : 'notification_click'
+        );
         // "Take Notes" is an explicit intent to write notes, so open the
         // live-note editor (main already brought the window forward). Mirrors
         // the toolbar New-note button. An unattended start does not: it would
@@ -422,14 +475,14 @@ export function useRecordingEvents() {
         // back, a stale 'recording' read here would skip the resume on the
         // companion handler below. Trust main (it already gates on its own
         // autoStartedSession state) and let pauseRecording's IPC validate.
-        void pauseRecording();
+        void actionsRef.current.pauseRecording();
       }),
       bridge.on.autoResumeRequested(() => {
         // Meeting came back before user clicked Summarise — keep capturing.
         // Same stale-status reason as autoPauseRequested above: don't gate
         // on the polled status, just trust that main only fires this when
         // its own state says we're paused.
-        void resumeRecording();
+        void actionsRef.current.resumeRecording();
       }),
       bridge.on.autoSummariseRequested(() => {
         // Auto-stop of an ended auto-detected meeting — stop the (auto-paused)
@@ -440,13 +493,13 @@ export function useRecordingEvents() {
         // as the meeting closes. The summarise decision then happens after
         // transcription via the transcript-ready → "Summarise?" → note-ready
         // notifications — no separate meeting-end prompt.
-        if (status === 'recording' || status === 'paused') {
+        if (statusRef.current === 'recording' || statusRef.current === 'paused') {
           // Surface a failed auto-stop: unlike startRecording, stopRecording
           // re-throws without notifying, and this path deliberately doesn't
           // navigate — so without this the meeting would silently fail to
           // finalize with no user-visible signal. Route it through the same
           // capture-error notification the start path uses.
-          void stopRecording({ navigateToNote: false }).catch((err) => {
+          void actionsRef.current.stopRecording({ navigateToNote: false }).catch((err) => {
             ipc().recording.reportCaptureError(
               err instanceof Error ? err.message : 'Recording could not stop',
               undefined,
@@ -474,7 +527,7 @@ export function useRecordingEvents() {
     ];
     bridge.shortcuts.rendererReady();
     return () => offs.forEach((off) => off());
-  }, [status, startRecording, stopRecording, pauseRecording, resumeRecording]);
+  }, []);
 }
 
 /**
@@ -575,12 +628,9 @@ export function useRecordingProcessingEffects() {
       if (summaryFileFromEvent) {
         streamCache.delete(summaryFileFromEvent);
       }
-      // Clear the live-draft entry for this finished session so the next
-      // "New note" with the same default sessionName ('Note') doesn't
-      // inherit the previous title or notes.
-      if (data.sessionName) {
-        useLiveDraftStore.getState().clear(data.sessionName);
-      }
+      // Note: live-draft clearing is deferred via queueMicrotask below so
+      // Processing.tsx's own processingComplete listener can still read
+      // draft.title to apply any custom live rename first.
       // The summary file lands here for both flows: recording-complete
       // carries it via meetingData; reprocess carries it as a top-level
       // summaryFile field (no meetingData). Treat both the same below.

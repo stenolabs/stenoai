@@ -342,7 +342,7 @@ Status colors are never used for navigation, emphasis, or decoration.
 - Serif is reserved for h1/h2 only — never bold it (stays 400) and keep the
   negative tracking.
 - Body weight 400; labels/emphasis 500; 600 is the heaviest — there is no 700.
-- Transcript text is mono; never set transcripts in the sans body face.
+- Code blocks and raw logs use mono; conversational transcript bubbles (`TranscriptPanel` / `LiveTranscriptBar`) are an explicit exception and use `--font-sans` for long-form dialogue readability.
 
 ## Layout
 

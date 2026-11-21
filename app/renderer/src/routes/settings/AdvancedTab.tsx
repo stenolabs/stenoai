@@ -1,6 +1,7 @@
 import * as React from 'react';
 import { Check, Copy } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Switch } from '@/components/ui/switch';
 import { cn } from '@/lib/utils';
 import { useNavigate } from '@/lib/router';
@@ -63,6 +64,7 @@ export function AdvancedTab() {
   const setStorage = useSetStoragePath();
   const pickFolder = usePickStorageFolder();
   const clearState = useClearSystemState();
+  const [confirmClearState, setConfirmClearState] = React.useState(false);
   const telemetry = useTelemetrySetting();
   const setTelemetry = useSetTelemetry();
 
@@ -151,13 +153,35 @@ export function AdvancedTab() {
           variant="outline"
           size="sm"
           className={COMPACT_BTN}
-          onClick={() => clearState.mutate()}
+          onClick={() => setConfirmClearState(true)}
           disabled={clearState.isPending}
           style={{ color: 'var(--danger)' }}
         >
           {clearState.isPending ? t('settings.advanced.clearState.clearing') : t('settings.advanced.clearState.action')}
         </Button>
       </SettingRow>
+
+      <ConfirmDialog
+        open={confirmClearState}
+        onOpenChange={setConfirmClearState}
+        title={t('settings.advanced.clearState.label')}
+        description={t('settings.advanced.clearState.description')}
+        confirmLabel={t('settings.advanced.clearState.action')}
+        cancelLabel={t('quitDialog.cancel')}
+        destructive
+        isPending={clearState.isPending}
+        onConfirm={async () => {
+          // mutate() used to swallow a failure into the query's error state;
+          // keep that instead of leaking an unhandled rejection.
+          try {
+            await clearState.mutateAsync();
+          } catch {
+            // no-op: same outcome as the previous fire-and-forget mutate()
+          } finally {
+            setConfirmClearState(false);
+          }
+        }}
+      />
 
       <SettingRow
         label={t('settings.advanced.analytics.label')}

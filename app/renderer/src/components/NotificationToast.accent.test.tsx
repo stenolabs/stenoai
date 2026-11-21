@@ -43,13 +43,11 @@ describe('NotificationToast accent bar', () => {
 
   it('is neutral for a generic toast, whatever its title', () => {
     const bar = show({ title: 'Recording paused', iconType: 'alert' });
-    expect(bar.style.backgroundColor).toBe('');
-    expect(bar.className).toContain('bg-gray-300');
+    expect(bar.style.backgroundColor).toBe('var(--border-strong)');
   });
 
   it("keeps a calendar event's own colour", () => {
     const bar = show({ title: 'Team sync', premeeting: true, color: '#33b679' });
     expect(bar.style.backgroundColor).toBe('rgb(51, 182, 121)');
-    expect(bar.className).not.toContain('bg-gray-300');
   });
 });

@@ -77,23 +77,15 @@ function TypewriterPlaceholder({ index, setIndex }: { index: number, setIndex: R
       <span style={{ color: 'var(--fg-muted)', fontSize: 16 }}>
         {prefersReducedMotion ? PRESETS[index].label : text}
         {!prefersReducedMotion && (
-          <>
-            <style>{`
-              @keyframes cursor-blink {
-                0%, 100% { opacity: 1; }
-                50% { opacity: 0; }
-              }
-            `}</style>
-            <span
-              className="font-medium ml-[1px]"
-              style={{
-                color: 'var(--fg-1)',
-                animation: 'cursor-blink 1s step-end infinite'
-              }}
-            >
-              |
-            </span>
-          </>
+          <span
+            className="font-medium ml-[1px]"
+            style={{
+              color: 'var(--fg-1)',
+              animation: 'cursor-blink 1s step-end infinite'
+            }}
+          >
+            |
+          </span>
         )}
       </span>
     </div>

@@ -699,6 +699,7 @@
   "settings.general.callerId.consent.body": "iMCP will read the Mac's local call and Contacts databases. Caller names will be visible to the LLM, including cloud models, when they summarize the transcript. Numbers are saved, but not added to the transcript.",
   "settings.general.callerId.consent.disable": "Disable",
   "settings.general.callerId.consent.confirm": "I understand",
+  "notificationToast.close": "Close",
   "notificationToast.open": "Open",
   "settings.general.openMeetings": "Open meetings",
   "settings.general.openMeetings.description": "Open the meeting link from your calendar when a meeting is about to start.",

@@ -80,6 +80,9 @@ export function LiveDock() {
         boxShadow: 'var(--shadow-md)',
       }}
     >
+      <span className="sr-only" role="status" aria-live="polite">
+        {paused ? t('liveDock.paused') : t('liveDock.recording')}
+      </span>
       <span
         style={{ color: 'var(--recording)' }}
         title={paused ? t('liveDock.paused') : t('liveDock.recording')}
@@ -139,7 +142,13 @@ export function LiveDock() {
               className="inline-flex size-7 cursor-pointer items-center justify-center rounded-full border-0 transition-colors hover:bg-[color:var(--surface-hover)] disabled:cursor-not-allowed disabled:opacity-50"
               style={{ background: 'transparent', color: 'var(--fg-1)' }}
             >
-              <ChevronUp size={14} />
+              <ChevronUp
+                size={14}
+                style={{
+                  transform: transcriptOpen ? 'rotate(180deg)' : 'rotate(0deg)',
+                  transition: 'transform 160ms var(--ease)',
+                }}
+              />
             </button>
           </TooltipTrigger>
           <TooltipContent side="top">{transcriptOpen ? t('liveDock.hideTranscript') : t('liveDock.showTranscript')}</TooltipContent>

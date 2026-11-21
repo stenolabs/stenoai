@@ -3,7 +3,6 @@ import {
   Calendar as CalendarIcon,
   ChevronLeft,
   Clock,
-  FolderPlus,
   PencilLine,
 } from 'lucide-react';
 import { MeetingsShell } from '@/components/MeetingsShell';
@@ -87,9 +86,6 @@ export function Recording() {
                 <Chip icon={<Clock size={11} />}>
                   {t('recording.startedAt', { time: formatTime(startedAt) })}
                 </Chip>
-                <Chip icon={<FolderPlus size={11} />} dashed>
-                  {t('recording.addToFolder')}
-                </Chip>
               </div>
             </header>
 
@@ -105,8 +101,9 @@ export function Recording() {
                 value={live.notes}
                 onChange={(e) => live.setNotes(e.target.value)}
                 placeholder={t('recording.notesPlaceholder')}
+                aria-label={t('recording.myNotes')}
                 spellCheck
-                className="block w-full resize-none border-0 bg-transparent text-[15px] outline-none"
+                className="block w-full resize-none rounded-sm border-0 bg-transparent text-[15px] outline-none focus-visible:ring-1 focus-visible:ring-[color:var(--focus-ring)]"
                 style={{
                   color: 'var(--fg-1)',
                   fontFamily: 'var(--font-sans)',
@@ -134,8 +131,9 @@ function EditableTitle({ value, onChange, placeholder }: EditableTitleProps) {
       value={value}
       onChange={(e) => onChange(e.target.value)}
       placeholder={placeholder}
+      aria-label={placeholder}
       spellCheck={false}
-      className="w-full border-0 bg-transparent p-0 text-[34px] outline-none"
+      className="w-full rounded-sm border-0 bg-transparent p-0 text-[34px] outline-none focus-visible:ring-1 focus-visible:ring-[color:var(--focus-ring)]"
       style={{
         fontFamily: 'var(--font-serif)',
         letterSpacing: '-0.02em',
