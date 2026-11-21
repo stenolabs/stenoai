@@ -198,6 +198,8 @@ _OPENAI_ASR_CREDENTIAL_ENV_NAMES = {
     "STENOAI_OAI_API_KEY",
     "STENOAI_OAI_API_ORIGIN",
     "STENOAI_OAI_API_URL",
+    "STENOAI_CLOUD_API_KEY",
+    "STENOAI_ADAPTER_TOKEN",
 }
 
 _OPENAI_ASR_UPLOAD_FORMATS = {
@@ -3295,7 +3297,7 @@ class WhisperTranscriber:
                 except Exception as e:
                     logger.warning("Could not read duration from converted WAV: %s", e)
                 return converted_path, duration_seconds
-            logger.error("ffmpeg conversion failed: %s", result.stderr.decode())
+            logger.error("ffmpeg conversion failed: %s", result.stderr.decode(errors="replace"))
         except Exception as e:
             logger.error("Audio conversion error: %s", e)
         # Clean up the (empty or partial) temp output before falling back.
@@ -3649,7 +3651,7 @@ class WhisperTranscriber:
                         env=_non_asr_subprocess_env(),
                     )
                 if result.returncode != 0:
-                    logger.error(f"Channel {ch_idx} extraction failed: {result.stderr.decode()}")
+                    logger.error(f"Channel {ch_idx} extraction failed: {result.stderr.decode(errors='replace')}")
                     _discard_channel_temps()
                     return None, None, None
 

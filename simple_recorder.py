@@ -483,8 +483,7 @@ Summary output language: {config.get_language_name(output_language)}
 
 {transcript_body}
 """
-        with open(transcript_path, 'w', encoding='utf-8') as f:
-            f.write(transcript_content)
+        _atomic_write_text(transcript_path, transcript_content)
         return transcript_path
 
     @staticmethod
@@ -1737,6 +1736,7 @@ def pull_whisper_model_cmd(model_name):
     from src.whisper_models import (
         LANGUAGE_WHISPER_MODELS,
         SUPPORTED_WHISPER_MODELS,
+        _missing_ca_override_error,
         download_with_progress,
         is_installed,
         verify_language_model,
@@ -1750,6 +1750,11 @@ def pull_whisper_model_cmd(model_name):
         model_name not in LANGUAGE_WHISPER_MODELS or verify_language_model(model_name)
     ):
         print(json.dumps({"success": True, "model": model_name, "already_installed": True}))
+        return
+
+    ca_error = _missing_ca_override_error()
+    if ca_error:
+        print(json.dumps({"success": False, "error": ca_error}))
         return
 
     def emit(pct, done, total):
@@ -3493,7 +3498,7 @@ def reprocess(summary_file, regenerate_title, retranscribe):
         if summary_path.suffix == '.md':
             existing_data = _parse_meeting_markdown(summary_path)
         else:
-            with open(summary_path, 'r') as f:
+            with open(summary_path, 'r', encoding='utf-8') as f:
                 existing_data = json.load(f)
 
         # Re-transcribe (#266): re-run ASR on the ORIGINAL recording with the
@@ -3865,13 +3870,11 @@ def _patch_summary_date(summary_path: Path, date_value: str) -> bool:
         return False
     escaped = str(date_value).replace('\\', '\\\\').replace('"', '\\"')
     patched, count = re.subn(
-        r'^date:.*$', f'date: "{escaped}"', original, count=1, flags=re.MULTILINE,
+        r'^date:.*$', lambda _m: f'date: "{escaped}"', original, count=1, flags=re.MULTILINE,
     )
     if count == 0:
         return False
-    tmp_path = summary_path.with_name(summary_path.name + ".tmp")
-    tmp_path.write_text(patched, encoding="utf-8")
-    tmp_path.replace(summary_path)
+    _atomic_write_text(summary_path, patched)
     return True
 
 
@@ -3954,7 +3957,14 @@ def full_reprocess(meeting_stem, audio_file_override):
 
     from src.config import get_config, get_data_dirs
     from src.folders import get_folders_manager
+    from src.speaker_sidecar_store import validate_meeting_stem
     from src.speaker_suggestions import confirmed_participant_names
+
+    try:
+        validate_meeting_stem(meeting_stem)
+    except ValueError as e:
+        print(json.dumps({"success": False, "error": str(e)}))
+        sys.exit(1)
 
     dirs = get_data_dirs()
     output_dir = dirs["output"]
@@ -4238,7 +4248,7 @@ def regen_title(summary_file):
         if summary_path.suffix == '.md':
             existing_data = _parse_meeting_markdown(summary_path)
         else:
-            with open(summary_path, 'r') as f:
+            with open(summary_path, 'r', encoding='utf-8') as f:
                 existing_data = json.load(f)
 
         transcript = existing_data.get('transcript', '')
@@ -4276,11 +4286,13 @@ def regen_title(summary_file):
             text = summary_path.read_text(encoding='utf-8')
             import re
             escaped = generated_title.replace('\\', '\\\\').replace('"', '\\"')
-            text = re.sub(r'^title:.*$', f'title: "{escaped}"', text, flags=re.MULTILINE)
+            text = re.sub(
+                r'^title:.*$', lambda _m: f'title: "{escaped}"', text, count=1, flags=re.MULTILINE
+            )
             _atomic_write_text(summary_path, text)
         else:
-            with open(summary_path, 'w') as f:
-                json.dump(existing_data, f, indent=2)
+            from src.config import _atomic_write_json
+            _atomic_write_json(summary_path, existing_data)
 
         print(f"TITLE:{generated_title}", flush=True)
         print(f"Title updated: {generated_title}")
@@ -10183,8 +10195,15 @@ def check_adapter_cmd(url: str):
     Prints OK on a successful TLS handshake or the underlying SSL/HTTP
     error so support can paste it into a ticket.
     """
-    import urllib.request
     import urllib.error
+    import urllib.parse
+    import urllib.request
+
+    parsed = urllib.parse.urlparse(url)
+    if parsed.scheme not in ("http", "https") or not parsed.netloc:
+        print(f"FAIL {url}")
+        print("Invalid URL: only http and https URLs are supported")
+        sys.exit(1)
 
     url = url.rstrip('/') + '/health'
     try:

@@ -237,14 +237,23 @@ def _write_main_ref(model_id: str, revision: str) -> None:
     leaves no ref, so the model sits complete on disk and still can't load.
     """
     ref = _hf_cache_dir_for(model_id) / "refs" / "main"
+    tmp = ref.with_name(f".main.{os.getpid()}.tmp")
     try:
-        if ref.is_file() and ref.read_text().strip() == revision:
-            return
+        if ref.is_file():
+            try:
+                if ref.read_text(encoding="utf-8").strip() == revision:
+                    return
+            except (OSError, UnicodeError):
+                pass
         ref.parent.mkdir(parents=True, exist_ok=True)
-        tmp = ref.with_name(f".main.{os.getpid()}.tmp")
-        tmp.write_text(revision)
+        tmp.write_text(revision, encoding="utf-8")
         os.replace(tmp, ref)
     except OSError as e:
+        try:
+            if tmp.exists():
+                tmp.unlink()
+        except OSError:
+            pass
         logger.warning("Could not record refs/main for %s: %s", model_id, e)
 
 

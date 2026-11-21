@@ -222,11 +222,13 @@ class FoldersManager:
             content = summary_path.read_text(encoding='utf-8')
             frontmatter = ''
             body = content
+            had_frontmatter = False
             if content.startswith('---'):
                 parts = content.split('---', 2)
                 if len(parts) >= 3:
                     frontmatter = parts[1]
                     body = parts[2]
+                    had_frontmatter = True
 
             current: List[str] = []
             m = _re.search(r'^folders:\s*(.+)$', frontmatter, _re.MULTILINE)
@@ -240,9 +242,16 @@ class FoldersManager:
             folders_line = f'folders: {json.dumps(updated)}'
 
             if m:
-                frontmatter = _re.sub(r'^folders:.*$', folders_line, frontmatter, flags=_re.MULTILINE)
+                frontmatter = _re.sub(
+                    r'^folders:.*$', lambda _m: folders_line, frontmatter, count=1, flags=_re.MULTILINE
+                )
             else:
                 frontmatter = frontmatter.rstrip('\n') + f'\n{folders_line}\n'
+
+            # A note without frontmatter gets a fresh block; keep its first line
+            # off the closing fence. An existing split is written back verbatim.
+            if not had_frontmatter and body and not body.startswith('\n'):
+                body = '\n' + body
 
             # Same atomic writer the summary Markdown gets everywhere else:
             # this rewrites the user's whole note to change one frontmatter line.
@@ -259,14 +268,13 @@ class FoldersManager:
                 summary_path, lambda f: list({*f, folder_id})
             )
         try:
-            with open(summary_path, "r") as f:
+            with open(summary_path, "r", encoding="utf-8") as f:
                 data = json.load(f)
             folders = data.get("folders", [])
             if folder_id not in folders:
                 folders.append(folder_id)
                 data["folders"] = folders
-                with open(summary_path, "w") as f:
-                    json.dump(data, f, indent=2)
+                _atomic_write_json(summary_path, data)
             return True
         except Exception as e:
             logger.error(f"Error adding meeting to folder: {e}")
@@ -279,14 +287,13 @@ class FoldersManager:
                 summary_path, lambda f: [x for x in f if x != folder_id]
             )
         try:
-            with open(summary_path, "r") as f:
+            with open(summary_path, "r", encoding="utf-8") as f:
                 data = json.load(f)
             folders = data.get("folders", [])
             if folder_id in folders:
                 folders.remove(folder_id)
                 data["folders"] = folders
-                with open(summary_path, "w") as f:
-                    json.dump(data, f, indent=2)
+                _atomic_write_json(summary_path, data)
             return True
         except Exception as e:
             logger.error(f"Error removing meeting from folder: {e}")

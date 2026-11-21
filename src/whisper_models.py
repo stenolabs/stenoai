@@ -136,6 +136,23 @@ def _download_url(model_name: str) -> str | None:
     return None
 
 
+def _missing_ca_override_error() -> str | None:
+    """Return a fixed error message if a CA env var points at a missing/invalid path."""
+    from src import tls_bootstrap
+
+    tls_bootstrap.configure()
+    missing = tls_bootstrap.missing_ca_variables()
+    if not missing:
+        return None
+    names = " and ".join(missing)
+    verb = "points" if len(missing) == 1 else "point"
+    return (
+        f"Whisper model download failed because {names} {verb} at a path that "
+        "doesn't exist or is the wrong kind (SSL_CERT_FILE needs a file, "
+        "SSL_CERT_DIR a folder). Fix or remove it, then restart Steno."
+    )
+
+
 def download_with_progress(
     model_name: str,
     progress_callback: Callable[[int, int, int], None],
@@ -168,6 +185,14 @@ def download_with_progress(
         progress_callback(100, size, size)
         return True
 
+    # Only a real download needs the CA override checked (mirrors
+    # parakeet_models): an installed model must keep loading even when a CA
+    # variable is broken.
+    ca_error = _missing_ca_override_error()
+    if ca_error:
+        logger.error("%s", ca_error)
+        return False
+
     # Per-process unique temp file so two concurrent downloads of the same
     # model (rare — second app instance, or a double-click before the first
     # request has registered) can't clobber each other's bytes. The losing
@@ -190,7 +215,10 @@ def download_with_progress(
     try:
         with requests.get(url, stream=True, timeout=30) as resp:
             resp.raise_for_status()
-            total = int(resp.headers.get("content-length", 0))
+            try:
+                total = int(resp.headers.get("content-length", 0))
+            except (TypeError, ValueError):
+                total = 0
             downloaded = 0
             last_pct = -1
             with open(tmp, "wb") as f:

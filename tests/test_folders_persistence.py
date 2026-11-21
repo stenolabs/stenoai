@@ -167,3 +167,39 @@ class FoldersSaveTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class MarkdownFolderFrontmatterTests(unittest.TestCase):
+    """_update_md_folders rewrites a note's frontmatter; the body is the user's note."""
+
+    def _mgr(self, tmp_dir: str) -> FoldersManager:
+        return FoldersManager(Path(tmp_dir))
+
+    def test_note_without_frontmatter_keeps_body_off_the_closing_fence(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            note = Path(tmp_dir) / "note.md"
+            note.write_text("# Heading\nBody\n", encoding="utf-8")
+            self.assertTrue(self._mgr(tmp_dir).add_meeting_to_folder(note, "aaa"))
+            self.assertEqual(
+                note.read_text(encoding="utf-8"),
+                '---\nfolders: ["aaa"]\n---\n# Heading\nBody\n',
+            )
+
+    def test_existing_frontmatter_body_is_written_back_verbatim(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            note = Path(tmp_dir) / "note.md"
+            original = '---\ntitle: "A"\nfolders: []\n---\n# Heading\nBody\n'
+            note.write_text(original, encoding="utf-8")
+            mgr = self._mgr(tmp_dir)
+            self.assertTrue(mgr.add_meeting_to_folder(note, "aaa"))
+            self.assertTrue(mgr.remove_meeting_from_folder(note, "aaa"))
+            self.assertEqual(note.read_text(encoding="utf-8"), original)
+
+    def test_folder_value_with_regex_escapes_is_written_literally(self):
+        # The replacement is a lambda, so a backslash in the JSON is not
+        # interpreted as a regex group reference.
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            note = Path(tmp_dir) / "note.md"
+            note.write_text('---\nfolders: []\n---\nBody\n', encoding="utf-8")
+            self.assertTrue(self._mgr(tmp_dir).add_meeting_to_folder(note, "a\\1b"))
+            self.assertIn('folders: ["a\\\\1b"]', note.read_text(encoding="utf-8"))

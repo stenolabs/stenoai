@@ -20,6 +20,33 @@ class IsInstalledTests(unittest.TestCase):
 
 
 class DownloadWithProgressTests(unittest.TestCase):
+    def setUp(self):
+        # tls_bootstrap records broken CA variables in module state, which other
+        # suites (test_tls_bootstrap reloads it) can leave populated. Pin it to
+        # "nothing missing" so these tests do not depend on run order.
+        missing = patch("src.tls_bootstrap.missing_ca_variables", return_value=())
+        missing.start()
+        self.addCleanup(missing.stop)
+
+    def test_refuses_download_when_ca_override_is_broken(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            with patch("src.tls_bootstrap.missing_ca_variables", return_value=("SSL_CERT_FILE",)), \
+                 patch.object(whisper_models, "get_models_dir", return_value=Path(tmp_dir)), \
+                 patch("requests.get") as mock_get:
+                ok = whisper_models.download_with_progress("large-v3-turbo", lambda *a: None)
+            self.assertFalse(ok)
+            mock_get.assert_not_called()
+
+    def test_installed_model_ignores_broken_ca_override(self):
+        # The CA check guards the network fetch only; a model already on disk
+        # must keep loading.
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            (Path(tmp_dir) / "ggml-large-v3-turbo.bin").write_bytes(b"abc")
+            with patch("src.tls_bootstrap.missing_ca_variables", return_value=("SSL_CERT_FILE",)), \
+                 patch.object(whisper_models, "get_models_dir", return_value=Path(tmp_dir)):
+                ok = whisper_models.download_with_progress("large-v3-turbo", lambda *a: None)
+            self.assertTrue(ok)
+
     def test_rejects_unknown_model_name(self):
         # Guards the HF URL construction: anything not in the registry must
         # never reach `requests.get`.
