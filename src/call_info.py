@@ -135,7 +135,7 @@ def with_callers(calls: list, participant_names: list) -> list:
     """``participant_names`` with the named callers first, in the order of the
     calls, each once and as already spelled there if it is."""
     names = list(participant_names or [])
-    spelled = {}
+    spelled: dict[str, str] = {}
     for name in names:
         spelled.setdefault(str(name).casefold(), name)
     callers, seen = [], set()
