@@ -33,7 +33,7 @@ import {
   useSetKeepRecordings,
   useSetLanguage,
 } from '@/hooks/useSettings';
-import { COMPACT_TRIGGER, SettingRow } from '../primitives';
+import { COMPACT_TRIGGER, SettingRow, SubSettings } from '../primitives';
 import { formatModelSize, parsePullPercent } from '../model-card';
 import { LANGUAGES_PARAKEET, LANGUAGES_WHISPER } from '../languages';
 import { OpenAiAsrConfig } from './OpenAiAsrConfig';
@@ -97,7 +97,7 @@ export function TranscriptionSection() {
         </Select>
       </SettingRow>
 
-      {engine === 'whisper' && <HebrewModelSetting />}
+      {engine === 'whisper' && <HebrewModelSetting language={displayValue} />}
 
       <SettingRow
         label={t('settings.ai.saveRecordings.label')}
@@ -126,14 +126,19 @@ export function TranscriptionSection() {
  * installed, the backend uses it in place of the main model for any recording
  * pinned to or detected as Hebrew; the switch turns that off without deleting
  * the download. Other languages always stay on the main model.
+ *
+ * Shown nested under Language, and only where it can apply: while the
+ * language is Auto or Hebrew. Once installed it stays visible whatever the
+ * language (or while it downloads), so the switch is never out of reach.
  */
-function HebrewModelSetting() {
+function HebrewModelSetting({ language }: { language: string }) {
   const whisper = useWhisperModels();
   const pull = usePullLanguageModel();
   const setEnabled = useSetLanguageModelsEnabled();
 
   const model = whisper.data?.languageModels.find((m) => m.language === 'he');
   if (!model) return null;
+  if (!model.installed && !pull.isPending && language !== 'auto' && language !== 'he') return null;
 
   let control: React.ReactNode;
   if (pull.isPending) {
@@ -165,20 +170,22 @@ function HebrewModelSetting() {
   }
 
   return (
-    <SettingRow
-      label={t('settings.ai.hebrewModel.label')}
-      description={t('settings.ai.hebrewModel.description', {
-        size: formatModelSize(model.size_gb) ?? t('settings.ai.unknownSize'),
-      })}
-      descriptionId="hebrew-model-description"
-    >
-      {control}
-      {pull.isError && (
-        <p role="alert" className="mt-2 max-w-[240px] text-xs text-muted-foreground">
-          {t('settings.ai.hebrewModel.failed')}
-        </p>
-      )}
-    </SettingRow>
+    <SubSettings divider>
+      <SettingRow
+        label={t('settings.ai.hebrewModel.label')}
+        description={t('settings.ai.hebrewModel.description', {
+          size: formatModelSize(model.size_gb) ?? t('settings.ai.unknownSize'),
+        })}
+        descriptionId="hebrew-model-description"
+      >
+        {control}
+        {pull.isError && (
+          <p role="alert" className="mt-2 max-w-[240px] text-xs text-muted-foreground">
+            {t('settings.ai.hebrewModel.failed')}
+          </p>
+        )}
+      </SettingRow>
+    </SubSettings>
   );
 }
 

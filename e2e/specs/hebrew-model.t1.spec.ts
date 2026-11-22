@@ -4,7 +4,8 @@ import { test, expect } from '../fixtures/electron';
  * T1 — renderer-only, mock IPC, no backend. Settings → Transcribe offers the
  * ivrit.ai Hebrew model download on the Whisper engine only (Parakeet can't
  * transcribe Hebrew, and the cloud engine never runs a local model), and the
- * Whisper language picker can pin Hebrew. The stateful mock starts the model
+ * Whisper language picker can pin Hebrew. The row only shows while the language
+ * is Auto or Hebrew, or once the model is installed. The stateful mock starts the model
  * uninstalled and installs it on pull, so both the Download action and the
  * on/off switch are exercised. The list shape and the switch persisting to
  * config are covered against the real backend in model-management.t2.
@@ -66,4 +67,33 @@ test('Parakeet hides the Hebrew model row', async ({ launchApp }) => {
 
   await expect(page.getByTestId('transcription-model-select')).toBeVisible();
   await expect(page.getByText('Hebrew model', { exact: true })).toHaveCount(0);
+});
+
+test('the Hebrew model row follows the language until it is installed', async ({ launchApp }) => {
+  const { page } = await launchApp({
+    mockIpc: true,
+    env: { STENOAI_E2E_MOCK_ENGINE: 'whisper' },
+  });
+  await page.evaluate(() => {
+    window.location.hash = '#/settings?tab=transcription';
+  });
+  const row = page.locator('[data-settings-tab="transcription"]').getByText('Hebrew model', { exact: true });
+  const pick = async (name: string) => {
+    await page.getByTestId('transcription-language-select').click();
+    await page.getByRole('option', { name, exact: true }).click();
+  };
+
+  // Auto (the default) can detect Hebrew, so the download is offered.
+  await expect(row).toBeVisible();
+  // Pinned to another language, the Hebrew model can never run: hidden.
+  await pick('English');
+  await expect(row).toHaveCount(0);
+  await pick('Hebrew');
+  await expect(row).toBeVisible();
+
+  // Once installed, the switch stays reachable whatever the language.
+  await page.getByRole('button', { name: 'Download', exact: true }).click();
+  await expect(page.getByRole('switch', { name: 'Hebrew model' })).toBeVisible();
+  await pick('English');
+  await expect(page.getByRole('switch', { name: 'Hebrew model' })).toBeVisible();
 });
