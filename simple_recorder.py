@@ -4335,6 +4335,54 @@ def regen_title(summary_file):
         sys.exit(1)
 
 
+@cli.command('suggest-actions')
+@click.argument('summary_file', required=True)
+@click.option('--tools-file', required=True, help='JSON file with the enabled action tools (written by the app)')
+def suggest_actions(summary_file, tools_file):
+    """Propose MCP tool calls from a note's summary and action items.
+
+    Prints one JSON object: {"success": true, "proposals": [...]}. Only the
+    note's title, summary and action items reach the model; nothing runs here.
+    """
+    from pathlib import Path
+    from src import action_suggest
+
+    summary_path = Path(summary_file)
+    try:
+        if summary_path.suffix == '.md':
+            meeting = _parse_meeting_markdown(summary_path)
+        else:
+            with open(summary_path, 'r', encoding='utf-8') as f:
+                meeting = json.load(f)
+        with open(tools_file, 'r', encoding='utf-8') as f:
+            catalogue = json.load(f)
+    except Exception as e:
+        print(json.dumps({"success": False, "error_code": "read-failed", "error": f"Could not read input: {type(e).__name__}"}))
+        return
+
+    tools = catalogue.get('tools') if isinstance(catalogue, dict) else None
+    if not isinstance(tools, list):
+        print(json.dumps({"success": False, "error_code": "invalid-tools", "error": "Tool list is invalid"}))
+        return
+    max_proposals = catalogue.get('max_proposals', action_suggest.MAX_PROPOSALS)
+
+    try:
+        summarizer = None
+
+        def complete(prompt):
+            nonlocal summarizer
+            if summarizer is None:
+                summarizer = OllamaSummarizer()
+            return summarizer.complete_json(prompt, 120)
+
+        proposals = action_suggest.suggest(meeting, tools, complete, max_proposals)
+        print(json.dumps({"success": True, "proposals": proposals}, ensure_ascii=False))
+    except Exception as e:
+        logger.error(f"suggest-actions failed: {type(e).__name__}")
+        print(json.dumps({"success": False, "error_code": "provider-failed", "error": f"Suggestion failed: {type(e).__name__}"}))
+        return
+
+
 @cli.command()
 @click.argument('transcript_file')
 @click.option('--question', '-q', required=True, help='Question to ask about the transcript')

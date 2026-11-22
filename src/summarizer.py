@@ -1826,6 +1826,31 @@ TITLE:"""
             )
             return None
 
+    def complete_json(self, prompt: str, timeout_seconds: int = 120) -> str:
+        """One-shot completion through the configured provider, asking for JSON.
+
+        Used by suggested actions (src/action_suggest.py). Same provider
+        dispatch as generate_title: org adapter, cloud, or Ollama (local or
+        remote) with thinking off and Ollama's JSON mode. Returns the raw reply
+        text; parsing and validation are the caller's job.
+        """
+        if self.ai_provider == "adapter":
+            return self._adapter_chat(prompt, timeout_seconds)
+        if self.ai_provider == "cloud":
+            return self._cloud_chat(prompt, timeout_seconds)
+        client = ollama.Client(
+            host=self.remote_url if self.ai_provider == "remote" else None,
+            timeout=max(timeout_seconds, 90),
+        )
+        response = self._chat_no_think(
+            client,
+            model=self.model_name,
+            messages=[{'role': 'user', 'content': prompt}],
+            options=self._ollama_options(),
+            format='json',
+        )
+        return response['message']['content'].strip()
+
     def _build_query_prompt(self, transcript: str, question: str, language: str = "en") -> str:
         from .chat_charts import CHART_INSTRUCTIONS
         if language and language not in ("en", "auto"):
