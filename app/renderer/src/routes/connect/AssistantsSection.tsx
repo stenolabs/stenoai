@@ -11,7 +11,8 @@ import {
 import { useConnectInfo } from '@/hooks/useConnect';
 import { ipc, type ConnectClientId } from '@/lib/ipc';
 import { t } from '@/i18n';
-import { ConnectGlyph, type GlyphKind } from './ConnectGlyph';
+import { BrandGlyph, ConnectGlyph, type GlyphKind } from './ConnectGlyph';
+import type { BrandSlug } from './brandLogos';
 
 type AssistantId = ConnectClientId | 'chatgpt';
 
@@ -20,6 +21,7 @@ interface Assistant {
   name: string;
   description: string;
   glyph: GlyphKind;
+  brand?: BrandSlug;
   comingSoon?: boolean;
 }
 
@@ -30,12 +32,14 @@ function assistants(): Assistant[] {
       name: t('connect.assistants.claudeDesktop.name'),
       description: t('connect.assistants.claudeDesktop.description'),
       glyph: 'anthropic',
+      brand: 'claude',
     },
     {
       id: 'claudeCode',
       name: t('connect.assistants.claudeCode.name'),
       description: t('connect.assistants.claudeCode.description'),
       glyph: 'anthropic',
+      brand: 'claude',
     },
     {
       id: 'codex',
@@ -48,6 +52,7 @@ function assistants(): Assistant[] {
       name: t('connect.assistants.cursor.name'),
       description: t('connect.assistants.cursor.description'),
       glyph: 'cursor',
+      brand: 'cursor',
     },
     {
       id: 'chatgpt',
@@ -79,7 +84,7 @@ export function AssistantsSection() {
               className="flex min-w-0 items-start gap-3 rounded-xl border p-4"
               style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-raised)' }}
             >
-              <ConnectGlyph kind={a.glyph} />
+              {a.brand ? <BrandGlyph brand={a.brand} /> : <ConnectGlyph kind={a.glyph} />}
               <div className="min-w-0 flex-1">
                 <h3 className="text-[14px] font-medium">{a.name}</h3>
                 <p className="mt-0.5 text-[12.5px] leading-snug" style={{ color: 'var(--fg-2)' }}>

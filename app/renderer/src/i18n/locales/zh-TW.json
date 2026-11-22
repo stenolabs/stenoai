@@ -180,7 +180,7 @@
   "home.hero.nextMeetingHr.one": "下場會議將於 {{hrs}} 小時後開始",
   "home.hero.nextMeetingHr.other": "下場會議將於 {{hrs}} 小時後開始",
   "home.hero.clearDay": "今天接下來沒有會議",
-  "home.hero.readyToCapture": "隨時為您記錄精彩筆記",
+  "home.hero.readyToCapture": "您的主權 AI 工作空間",
   "home.hero.recordingHint": "從右上角開始錄音，或在任何畫面使用 {{shortcut}} 快捷鍵。",
   "home.hero.recordingHintNoHotkey": "從右上角開始錄音。",
   "home.hero.inProgress": "進行中",

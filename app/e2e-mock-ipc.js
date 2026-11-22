@@ -619,6 +619,7 @@ function install({ ipcMain }) {
     { id: 'atlassian', name: 'Jira and Confluence', url: 'https://mcp.atlassian.com/v2/mcp', auth: 'oauth', status: 'available' },
     { id: 'hubspot', name: 'HubSpot', url: 'https://mcp.hubspot.com', auth: 'oauth', status: 'needs-registration' },
     { id: 'asana', name: 'Asana', url: 'https://mcp.asana.com/v2/mcp', auth: 'oauth', status: 'needs-registration' },
+    { id: 'slack', name: 'Slack', url: 'https://mcp.slack.com/mcp', auth: 'oauth', status: 'needs-registration' },
   ];
   let actionSeq = 0;
   const mockConnection = (over) => ({

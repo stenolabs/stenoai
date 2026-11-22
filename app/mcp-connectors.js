@@ -54,6 +54,16 @@ const CONNECTORS = Object.freeze([
     status: 'needs-registration',
     staticClient: null,
   },
+  {
+    // Slack's MCP server only accepts apps published in its directory (or
+    // internal to one workspace), so this waits on a Marketplace review.
+    id: 'slack',
+    name: 'Slack',
+    url: 'https://mcp.slack.com/mcp',
+    auth: 'oauth',
+    status: 'needs-registration',
+    staticClient: null,
+  },
 ]);
 
 /**
@@ -63,6 +73,7 @@ const CONNECTORS = Object.freeze([
 const STATIC_CLIENTS = Object.freeze({
   hubspot: null,
   asana: null,
+  slack: null,
 });
 
 function connectorById(id) {

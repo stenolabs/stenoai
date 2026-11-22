@@ -9,7 +9,8 @@ import { SettingRow } from '@/routes/settings/primitives';
 import { t } from '@/i18n';
 import { ActionConnectionCard } from './ActionConnectionCard';
 import { AddEndpointDialog } from './AddEndpointDialog';
-import { ConnectGlyph } from './ConnectGlyph';
+import { BrandGlyph, ConnectGlyph } from './ConnectGlyph';
+import type { BrandSlug } from './brandLogos';
 import { RecentActions } from './RecentActions';
 
 function connectorCopy(id: ActionConnectorId): {
@@ -42,6 +43,12 @@ function connectorCopy(id: ActionConnectorId): {
         description: t('connect.actions.hubspot.description'),
         initials: t('connect.actions.hubspot.initials'),
       };
+    case 'slack':
+      return {
+        name: t('connect.actions.slack.name'),
+        description: t('connect.actions.slack.description'),
+        initials: t('connect.actions.slack.initials'),
+      };
     default:
       return {
         name: t('connect.actions.asana.name'),
@@ -50,6 +57,17 @@ function connectorCopy(id: ActionConnectorId): {
       };
   }
 }
+
+/** Brand mark per connector; Slack has no CC0 mark, so it keeps its initial. */
+const CONNECTOR_BRAND: Partial<Record<ActionConnectorId, BrandSlug>> = {
+  linear: 'linear',
+  notion: 'notion',
+  atlassian: 'jira',
+  hubspot: 'hubspot',
+  asana: 'asana',
+};
+
+const CUSTOM_BRANDS: BrandSlug[] = ['n8n', 'zapier', 'make'];
 
 /**
  * Turn meetings into actions: connect MCP endpoints (vendor servers over
@@ -128,7 +146,11 @@ export function ActionsSection() {
                 className="flex min-w-0 items-start gap-3 rounded-xl border p-4"
                 style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-raised)' }}
               >
-                <ConnectGlyph kind="initials" initials={copy.initials} />
+                {CONNECTOR_BRAND[c.id] ? (
+                  <BrandGlyph brand={CONNECTOR_BRAND[c.id] as BrandSlug} />
+                ) : (
+                  <ConnectGlyph kind="initials" initials={copy.initials} />
+                )}
                 <div className="min-w-0 flex-1">
                   <h3 className="text-[14px] font-medium">{copy.name}</h3>
                   <p className="mt-0.5 text-[12.5px] leading-snug" style={{ color: 'var(--fg-2)' }}>
@@ -182,7 +204,12 @@ export function ActionsSection() {
             <ConnectGlyph kind="initials" initials={t('connect.actions.custom.initials')} />
             <div className="min-w-0 flex-1">
               <h3 className="text-[14px] font-medium">{t('connect.actions.custom.name')}</h3>
-              <p className="mt-0.5 text-[12.5px] leading-snug" style={{ color: 'var(--fg-2)' }}>
+              <div className="mt-1.5 flex items-center gap-1.5" aria-hidden>
+                {CUSTOM_BRANDS.map((b) => (
+                  <BrandGlyph key={b} brand={b} size={26} />
+                ))}
+              </div>
+              <p className="mt-1.5 text-[12.5px] leading-snug" style={{ color: 'var(--fg-2)' }}>
                 {t('connect.actions.custom.description')}
               </p>
             </div>

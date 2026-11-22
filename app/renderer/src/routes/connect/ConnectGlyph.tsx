@@ -1,8 +1,36 @@
 import type * as React from 'react';
 import { AnthropicIcon } from '@/components/ui/anthropic-icon';
 import { OpenAiIcon } from '@/components/ui/openai-icon';
+import { BRAND_LOGOS, type BrandSlug } from './brandLogos';
 
 export type GlyphKind = 'anthropic' | 'openai' | 'cursor' | 'initials';
+
+/** Marks drawn in pure black (Notion, Cursor) follow the ink colour so they stay visible in dark mode. */
+function brandFill(hex: string): string {
+  return hex.toLowerCase() === '#000000' ? 'var(--fg-1)' : hex;
+}
+
+/** A vendor's own mark in its brand colour, on a raised tile. */
+export function BrandGlyph({ brand, size = 36 }: { brand: BrandSlug; size?: number }) {
+  const logo = BRAND_LOGOS[brand];
+  const mark = Math.round(size * 0.5);
+  return (
+    <span
+      aria-hidden
+      className="flex shrink-0 items-center justify-center rounded-lg border"
+      style={{
+        width: size,
+        height: size,
+        background: 'var(--surface-raised)',
+        borderColor: 'var(--border-subtle)',
+      }}
+    >
+      <svg viewBox="0 0 24 24" width={mark} height={mark} aria-hidden>
+        <path d={logo.path} fill={brandFill(logo.hex)} />
+      </svg>
+    </span>
+  );
+}
 
 /**
  * Monochrome tile for an integration: the brand marks already in the repo

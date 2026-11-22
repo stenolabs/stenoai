@@ -890,7 +890,7 @@ export type ConnectSettingsResponse = Result<ConnectSettings>;
 /** Suggested actions: remote MCP endpoints and the action cards under a note. */
 export type ActionAuth = 'none' | 'bearer' | 'header' | 'oauth';
 export type ActionLocality = 'device' | 'network' | 'internet';
-export type ActionConnectorId = 'linear' | 'notion' | 'atlassian' | 'hubspot' | 'asana';
+export type ActionConnectorId = 'linear' | 'notion' | 'atlassian' | 'hubspot' | 'asana' | 'slack';
 export interface ActionTool {
   name: string;
   title: string | null;
