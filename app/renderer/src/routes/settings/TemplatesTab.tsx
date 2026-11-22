@@ -287,8 +287,10 @@ export function TemplatesTab({
 }
 
 /** Full-page editor for creating or editing a template. Surfaces backend
- *  validation/save errors inline rather than throwing. */
-function TemplateEditor({
+ *  validation/save errors inline rather than throwing. Exported so the
+ *  Cookbooks gallery opens the same editor. A locked built-in (Standard)
+ *  opens read-only there: it can be made default but not changed. */
+export function TemplateEditor({
   editing,
   onClose,
 }: {
@@ -306,6 +308,7 @@ function TemplateEditor({
   // exclusion: each of Save/Reset/Make Default is disabled while any of the
   // three is in flight.
   const busy = save.isPending || reset.isPending || setDefault.isPending;
+  const readOnly = !!editing?.locked;
   const [name, setName] = React.useState(editing?.name ?? '');
   const [prompt, setPrompt] = React.useState(editing?.prompt ?? '');
   const [language, setLanguage] = React.useState(editing?.language ?? 'auto');
@@ -342,10 +345,14 @@ function TemplateEditor({
           </button>
           <div>
             <h2 className="text-[20px] font-medium" style={{ color: 'var(--fg-1)' }}>
-              {editing?.id ? t('settings.templates.editTitle') : t('settings.templates.newTitle')}
+              {readOnly
+                ? t('settings.templates.viewTitle')
+                : editing?.id
+                  ? t('settings.templates.editTitle')
+                  : t('settings.templates.newTitle')}
             </h2>
             <p className="text-[13px] mt-1" style={{ color: 'var(--fg-muted)' }}>
-              {t('settings.templates.editorIntro')}
+              {readOnly ? t('settings.templates.lockedHint') : t('settings.templates.editorIntro')}
             </p>
           </div>
         </div>
@@ -378,6 +385,7 @@ function TemplateEditor({
               {t('settings.templates.reset')}
             </Button>
           )}
+          {!readOnly && (
           <Button
             size="sm"
             className={COMPACT_BTN}
@@ -393,6 +401,7 @@ function TemplateEditor({
               t('settings.templates.save')
             )}
           </Button>
+          )}
         </div>
       </div>
 
@@ -405,6 +414,7 @@ function TemplateEditor({
           <Input
             value={name}
             onChange={(e) => setName(e.target.value)}
+            disabled={readOnly}
             placeholder={t('settings.templates.namePlaceholder')}
             className="text-[14px] bg-[color:var(--surface-raised)]"
           />
@@ -413,7 +423,7 @@ function TemplateEditor({
           <label className="text-[13px] font-medium" style={{ color: 'var(--fg-1)' }}>
             {t('settings.templates.languageLabel')}
           </label>
-          <Select value={language} onValueChange={setLanguage}>
+          <Select value={language} onValueChange={setLanguage} disabled={readOnly}>
             <SelectTrigger className="text-[14px] bg-[color:var(--surface-raised)]">
               <SelectValue />
             </SelectTrigger>
@@ -447,13 +457,16 @@ function TemplateEditor({
             {t('settings.templates.promptLabel')}
           </span>
           <span className="text-[12px]" style={{ color: 'var(--fg-muted)' }}>
-            {t('settings.templates.markdownSupported')}
+            {readOnly ? t('settings.templates.structuredFormat') : t('settings.templates.markdownSupported')}
           </span>
         </div>
         <Textarea
           value={prompt}
           onChange={(e) => setPrompt(e.target.value)}
-          placeholder={t('settings.templates.promptPlaceholder')}
+          placeholder={
+            readOnly ? t('settings.templates.lockedPrompt') : t('settings.templates.promptPlaceholder')
+          }
+          readOnly={readOnly}
           className="flex-1 w-full p-5 text-[14px] leading-relaxed border-0 focus-visible:ring-0 resize-none bg-[color:var(--surface-raised)] shadow-none"
           style={{ color: 'var(--fg-1)' }}
         />

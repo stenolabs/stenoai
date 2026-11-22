@@ -152,7 +152,9 @@ overrides an agent's own test-level defaults.
     `cd app && npm run test:e2e -- --project=t1 --grep @perf`. Pace matters - fired
     back-to-back the ticks get batched into one React render and the measurement silently
     collapses; the harness paces one per animation frame and counts DOM writes to prove it.
-  - **Current specs:** `org-lock.t1`, `shared-notes-policy.t1`, `live-transcript-lanes.t1`
+  - **Current specs:** `org-lock.t1`, `shared-notes-policy.t1`, `cookbooks.t1`
+    (the Cookbooks gallery over note templates: sidebar Cook entry, Featured row + category
+    sections, search/filter, cards opening the existing template editor), `live-transcript-lanes.t1`
     (the live panel's rendering contract: a partial is replaced in place per speaker, a
     final retires it, a late final sorts into place, and the Resumed divider - driven
     through the real `live-transcript-chunk` channel via `e2e/fixtures/live-transcript.ts`),
