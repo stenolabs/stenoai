@@ -95,6 +95,9 @@ const ARGS_ECHO_REDACTORS = {
   'get-person-sample-audio': redactRest,
   // A caller's Contacts name and phone number (caller recognition).
   'apply-call-info': redactRest,
+  // Suggested actions: the note path names the meeting. Tool schemas and the
+  // note go via a private temp file, never argv.
+  'suggest-actions': redactRest,
 };
 
 // Return the argv rewritten for the `$ stenoai <...>` debug echo. Non-
@@ -106,4 +109,27 @@ function sanitizeArgsForLog(args) {
   return out.join(' ');
 }
 
-module.exports = { isDiagnosticStdoutLine, sanitizeArgsForLog };
+// ---------------------------------------------------------------------------
+// Credential redaction (MCP action connections, OAuth)
+// ---------------------------------------------------------------------------
+
+// Defense in depth for the debug buffer: nothing is meant to log a token, but
+// an SDK error or a server's error body could quote one. Applied to every line
+// sendDebugLog forwards.
+const CREDENTIAL_PATTERNS = [
+  // Authorization header values.
+  [/\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]{8,}/gi, '$1 <redacted>'],
+  // OAuth parameters in URLs and form bodies.
+  [/\b(access_token|refresh_token|id_token|client_secret|code_verifier|code|token|api_key|apikey)=([^&\s"'<>]+)/gi, '$1=<redacted>'],
+  // The same in JSON.
+  [/"(access_token|refresh_token|id_token|client_secret|code_verifier|token|api_key|apiKey)"\s*:\s*"[^"]*"/g, '"$1":"<redacted>"'],
+];
+
+function redactCredentials(text) {
+  if (typeof text !== 'string' || !text) return text;
+  let out = text;
+  for (const [re, replacement] of CREDENTIAL_PATTERNS) out = out.replace(re, replacement);
+  return out;
+}
+
+module.exports = { isDiagnosticStdoutLine, sanitizeArgsForLog, redactCredentials };
