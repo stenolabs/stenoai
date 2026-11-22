@@ -157,13 +157,38 @@ export interface ChatRequest {
   folder?: string | null;
 }
 
+/** A read tool a chat-agent turn ran ("Searched Linear…"). */
+export interface ChatToolStep {
+  id: string;
+  source: 'steno' | 'connection';
+  connection: string;
+  tool: string;
+  title: string | null;
+}
+
+/** What a finished chat-agent turn keeps of an action card. */
+export interface ChatActionRecord {
+  id: string;
+  sentence: string;
+  status: ActionCardStatus;
+  link?: string | null;
+}
+
 export interface ChatSessionsBlob {
   sessions: Array<{
     id: string;
     name: string;
     summaryFile?: string;
     scopeFolderId?: string | null;
-    messages: Array<{ role: 'user' | 'assistant'; content: string; ts: number; context?: string }>;
+    messages: Array<{
+      role: 'user' | 'assistant';
+      content: string;
+      ts: number;
+      context?: string;
+      /** Chat-agent turns: the read steps it took and the actions it proposed. */
+      steps?: ChatToolStep[];
+      actions?: ChatActionRecord[];
+    }>;
     createdAt: number;
     updatedAt: number;
   }>;
@@ -1430,6 +1455,8 @@ export interface StenoaiBridge {
     askStream: SendFn<[id: string, file: string, q: string]>;
     chatGlobalStream: SendFn<[id: string, q: string, folderId?: string | null]>;
     cancel: SendFn<[id: string]>;
+    approveAction: RequestFn<[id: string, cardId: string, args: Record<string, unknown>], Result<{ card: ActionCard }> | ActionsFailure>;
+    dismissAction: RequestFn<[id: string, cardId: string], Result<{ card?: ActionCard }>>;
   };
 
   chat: {
@@ -1864,6 +1891,8 @@ export interface StenoaiBridge {
       onChunk?: (chunk: string) => void;
       onDone?: () => void;
       onError?: (err: Error) => void;
+      onToolStep?: (step: ChatToolStep) => void;
+      onActionCard?: (card: ActionCard) => void;
     }
   ) => () => void;
 }

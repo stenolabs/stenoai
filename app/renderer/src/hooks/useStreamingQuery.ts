@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { ipc, type ChatRequest } from '@/lib/ipc';
+import { ipc, type ActionCard, type ChatRequest, type ChatToolStep } from '@/lib/ipc';
 import { GENERAL_SCOPE, ORG_SHARED_SCOPE } from '@/components/FolderScopePicker';
 import { buildOrgChatPayload } from '@/lib/orgChat';
 import { CHART_INSTRUCTIONS } from '@/lib/chatChart';
@@ -10,6 +10,19 @@ export interface StreamState {
   text: string;
   status: StreamStatus;
   error: string | null;
+  /** Chat-agent turns: read tools it ran, and action cards it paused on. */
+  steps?: ChatToolStep[];
+  cards?: ActionCard[];
+}
+
+/** Add or replace an action card by id, keeping the order it first arrived in. */
+export function upsertCard(cards: ActionCard[] | undefined, card: ActionCard): ActionCard[] {
+  const list = cards ?? [];
+  const i = list.findIndex((c) => c.id === card.id);
+  if (i === -1) return [...list, card];
+  const next = list.slice();
+  next[i] = card;
+  return next;
 }
 
 function newId() {
@@ -99,6 +112,20 @@ export function useStreamingQuery() {
           const current = prev[id];
           if (!current) return prev;
           return { ...prev, [id]: { ...current, text: current.text + chunk } };
+        });
+      },
+      onToolStep: (step) => {
+        setStreams((prev) => {
+          const current = prev[id];
+          if (!current) return prev;
+          return { ...prev, [id]: { ...current, steps: [...(current.steps ?? []), step] } };
+        });
+      },
+      onActionCard: (card) => {
+        setStreams((prev) => {
+          const current = prev[id];
+          if (!current) return prev;
+          return { ...prev, [id]: { ...current, cards: upsertCard(current.cards, card) } };
         });
       },
       onDone: () => {
@@ -225,6 +252,18 @@ export function useStreamingQuery() {
         result = { ...result, text: result.text + chunk };
         const snapshot = result;
         setStreams((prev) => ({ ...prev, [id]: snapshot }));
+      },
+      onToolStep: (step) => {
+        if (finished) return;
+        result = { ...result, steps: [...(result.steps ?? []), step] };
+        const snapshot = result;
+        setStreams((prev) => ({ ...prev, [id]: snapshot }));
+      },
+      // Cards keep updating after the turn ends (an approve that finishes late).
+      onActionCard: (card) => {
+        result = { ...result, cards: upsertCard(result.cards, card) };
+        const snapshot = result;
+        setStreams((prev) => (prev[id] ? { ...prev, [id]: snapshot } : prev));
       },
       onDone: () => finish('done'),
       onError: (error) => finish('error', error.message),

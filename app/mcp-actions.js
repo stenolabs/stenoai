@@ -39,7 +39,7 @@ const { connectorById, publicCatalogue } = require('./mcp-connectors');
 const { validateArguments, compactSchema } = require('./mcp-schema');
 const { startLoopback: defaultStartLoopback } = require('./mcp-oauth-loopback');
 const { redactCredentials } = require('./diagnostics-filter');
-const { checkProposal } = require('./mcp-proposals');
+const { checkProposal, placeholderArguments } = require('./mcp-proposals');
 
 const MAX_PROPOSALS = 5;
 const MAX_PROMPT_TOOLS = 60;
@@ -649,9 +649,97 @@ function createActionsService({
     return audit.recent(limit);
   }
 
+  // ── chat agent (chat-agent.js) ──────────────────────────────────────────
+  // Chat offers the model the enabled connections' tools. Read-only tools run
+  // straight away through callReadTool; anything else becomes an action card
+  // (proposeChatAction) under a chat key instead of a note, and runs only
+  // through the same approve() as a note's cards: same validation, policy
+  // re-check and audit line. Destructive tools are never offered.
+
+  /** Tools the chat model may use, per enabled and allowed connection. */
+  async function chatToolset() {
+    const p = await policy();
+    if (!p.actionsEnabled) return [];
+    const out = [];
+    for (const c of usableConnections(p)) {
+      for (const t of c.tools) {
+        if (t.destructive) continue;
+        out.push({
+          connectionId: c.id,
+          connectionName: c.name,
+          tool: t.name,
+          title: t.title || null,
+          description: (t.description || t.title || '').slice(0, 400),
+          inputSchema: compactSchema(t.inputSchema),
+          readOnly: t.readOnly === true,
+        });
+        if (out.length >= MAX_PROMPT_TOOLS) return out;
+      }
+    }
+    return out;
+  }
+
+  function chatTool(connectionId, toolName) {
+    const connection = connections.get(connectionId);
+    if (!connection || !connection.enabled) throw new ActionError('connection-unavailable', 'The connection is off or removed');
+    const tool = (connection.tools || []).find((t) => t.name === toolName);
+    if (!tool || tool.destructive) throw new ActionError('tool-unavailable', 'The endpoint does not offer this tool');
+    return { connection, tool };
+  }
+
+  /** Run a tool the server marks read-only. Returns { text, isError }. */
+  async function callReadTool(connectionId, toolName, args) {
+    const { connection, tool } = chatTool(connectionId, toolName);
+    if (!tool.readOnly) throw new ActionError('not-read-only', 'This tool needs approval');
+    await assertAllowed(connection.url);
+    const errors = validateArguments(tool.inputSchema, args);
+    if (errors.length) return { isError: true, text: `Invalid arguments: ${errors.map((e) => `${e.path} ${e.message}`).join('; ')}` };
+    try {
+      const res = await remote.callTool(clientOptions(connection), tool.name, args);
+      log(`[actions] chat read ${originOf(connection.url)} ${tool.name} -> ${res.isError ? 'tool-error' : 'ok'}`);
+      return { isError: res.isError, text: res.text };
+    } catch (e) {
+      const status = classifyError(e);
+      if (status === 'needs-auth') connections.update(connection.id, { status: 'needs-auth' });
+      log(`[actions] chat read ${originOf(connection.url)} ${tool.name} -> ${status}`);
+      return { isError: true, text: status === 'needs-auth' ? 'The connection needs the user to sign in again.' : 'The tool could not be reached.' };
+    }
+  }
+
+  /**
+   * Turn a model's write call into an action card under `chatKey`. Required
+   * arguments that are missing or placeholders are refused (the model is told
+   * to ask the user) rather than shown as a card.
+   */
+  async function proposeChatAction(chatKey, { connectionId, tool: toolName, arguments: args, reason }) {
+    const p = await policy();
+    if (!p.actionsEnabled) throw new ActionError('disabled-by-org', 'Your organisation has turned off actions');
+    const { connection, tool } = chatTool(connectionId, toolName);
+    if (tool.readOnly) throw new ActionError('invalid-state', 'Read-only tools do not need approval');
+    if (!allowedByList(connection.url, p.endpointAllowlist)) throw new ActionError('endpoint-not-allowed', 'Your organisation does not allow this endpoint');
+    const safeArgs = args && typeof args === 'object' && !Array.isArray(args) ? args : {};
+    const missing = placeholderArguments(tool.inputSchema, safeArgs);
+    if (missing.length) return { rejected: 'placeholder', missing };
+    const card = {
+      id: crypto.randomUUID(),
+      connectionId: connection.id,
+      connectionName: connection.name,
+      tool: tool.name,
+      arguments: safeArgs,
+      reason: typeof reason === 'string' ? reason.slice(0, 300) : '',
+      validationErrors: validateArguments(tool.inputSchema, safeArgs),
+      status: 'proposed',
+      createdAt: now(),
+      updatedAt: now(),
+    };
+    writeCards(chatKey, [...readCards(chatKey), card]);
+    return { card: enrichCard(card, p) };
+  }
+
   return {
     list, addCustom, connectConnector, authorize, cancelAuthorize, refreshTools, setEnabled, remove, setAutoSuggest,
     getCards, suggest, approve, dismiss, recent, hasUsableConnections,
+    chatToolset, callReadTool, proposeChatAction,
     // exposed for tests
     _stores: { connections, secrets, audit, cardsFile },
   };

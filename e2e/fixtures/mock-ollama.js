@@ -28,14 +28,19 @@ const OLLAMA_PORT = 11434;
  *   default so existing specs are unaffected. chatCalls still increments so callers can assert it was hit.
  * @param {string[]} [opts.installedModels=['gemma4:e2b-it-qat','llama3.2:3b']] models /api/tags reports as installed.
  * @param {number} [opts.port=11434] listen port; use 0 for an isolated ephemeral port.
+ * @param {object[]} [opts.chatMessageQueue=[]] queue of full assistant messages (e.g. with
+ *   `tool_calls`) answered first, one per /api/chat call, before chatReplyQueue / chatReply --
+ *   for the chat-agent tool loop. chatRequests() returns every /api/chat body received.
  * @param {number} [opts.pullDelayMs=0] hold the /api/pull response open this long before completing it -- gives a
  *   cancel-mid-download test a real window to call cancel-pull before the mock would otherwise finish first.
- * @returns {Promise<{ url: string, close: () => Promise<void>, lastChatPrompt: () => string|null, chatCalls: () => number, pullCalls: () => number, remainingQueueLength: () => number, lastPulledModel: () => string|null, deleteCalls: () => number, lastDeletedModel: () => string|null }>}
+ * @returns {Promise<{ url: string, close: () => Promise<void>, lastChatPrompt: () => string|null, chatCalls: () => number, chatRequests: () => object[], pullCalls: () => number, remainingQueueLength: () => number, lastPulledModel: () => string|null, deleteCalls: () => number, lastDeletedModel: () => string|null }>}
  */
 function startMockOllama(opts = {}) {
   const chatReply = opts.chatReply ?? 'ok';
   const chatReplyQueue = Array.isArray(opts.chatReplyQueue) ? [...opts.chatReplyQueue] : [];
   const chatError = opts.chatError ?? null;
+  const chatMessageQueue = Array.isArray(opts.chatMessageQueue) ? [...opts.chatMessageQueue] : [];
+  const chatRequests = [];
   const installedModels = Array.isArray(opts.installedModels)
     ? opts.installedModels
     : ['gemma4:e2b-it-qat', 'llama3.2:3b'];
@@ -113,6 +118,7 @@ function startMockOllama(opts = {}) {
           try {
             body = JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}');
           } catch { /* ignore */ }
+          chatRequests.push(body);
           const msgs = Array.isArray(body.messages) ? body.messages : [];
           lastChatPrompt = msgs.length ? String(msgs[msgs.length - 1].content || '') : '';
 
@@ -122,6 +128,18 @@ function startMockOllama(opts = {}) {
           if (chatError) {
             res.writeHead(chatError.status, { 'content-type': 'application/json' });
             res.end(JSON.stringify({ error: chatError.message }));
+            return;
+          }
+
+          if (chatMessageQueue.length > 0) {
+            const message = { role: 'assistant', content: '', ...chatMessageQueue.shift() };
+            if (body.stream === false) {
+              res.writeHead(200, { 'content-type': 'application/json' });
+              res.end(JSON.stringify({ model: body.model, message, done: true }));
+            } else {
+              res.writeHead(200, { 'content-type': 'application/x-ndjson' });
+              res.end(JSON.stringify({ model: body.model, message, done: true }) + '\n');
+            }
             return;
           }
 
@@ -172,6 +190,7 @@ function startMockOllama(opts = {}) {
         close: () => new Promise((r) => server.close(() => r())),
         lastChatPrompt: () => lastChatPrompt,
         chatCalls: () => chatCalls,
+        chatRequests: () => chatRequests.slice(),
         pullCalls: () => pullCalls,
         remainingQueueLength: () => chatReplyQueue.length,
         lastPulledModel: () => lastPulledModel,

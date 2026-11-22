@@ -349,3 +349,40 @@ test('a failed action keeps the endpoint message, trimmed and redacted, for the 
   assert.doesNotMatch(failed.result.detail, /abc123secret/);
   assert.ok(failed.result.detail.length <= 300);
 });
+
+test('chat agent: read tools run, writes become cards approved through the same path, destructive tools never offered', async () => {
+  mock = await startMockMcpServer({
+    auth: 'none',
+    tools: [
+      { name: 'search_issues', title: 'Search issues', description: 'Find issues.', readOnly: true, inputSchema: { type: 'object', properties: { query: { type: 'string' } } } },
+      { name: 'create_issue', title: 'Create issue', description: 'Create.', inputSchema: { type: 'object', properties: { title: { type: 'string' } }, required: ['title'] } },
+      { name: 'delete_issue', title: 'Delete issue', description: 'Delete.', destructive: true, inputSchema: { type: 'object', properties: { id: { type: 'string' } } } },
+    ],
+  });
+  const svc = service();
+  const c = await svc.addCustom({ name: 'Tracker', url: mock.url, auth: 'none' });
+  const toolset = await svc.chatToolset();
+  assert.deepEqual(toolset.map((t) => [t.tool, t.readOnly]), [['search_issues', true], ['create_issue', false]]);
+
+  const read = await svc.callReadTool(c.id, 'search_issues', { query: 'x' });
+  assert.equal(read.isError, false);
+  await assert.rejects(svc.callReadTool(c.id, 'create_issue', { title: 'x' }), /needs approval/);
+  assert.deepEqual(mock.calls().map((x) => x.name), ['search_issues']);
+
+  const key = 'chat-abc';
+  assert.deepEqual(await svc.proposeChatAction(key, { connectionId: c.id, tool: 'create_issue', arguments: { title: 'TBD' } }), { rejected: 'placeholder', missing: ['title'] });
+  await assert.rejects(svc.proposeChatAction(key, { connectionId: c.id, tool: 'delete_issue', arguments: { id: '1' } }), /does not offer/);
+  const { card } = await svc.proposeChatAction(key, { connectionId: c.id, tool: 'create_issue', arguments: { title: 'Ship it' } });
+  assert.equal(card.status, 'proposed');
+  assert.deepEqual(mock.calls().map((x) => x.name), ['search_issues']); // proposing runs nothing
+
+  const done = await svc.approve(key, card.id, { title: 'Ship it today' });
+  assert.equal(done.status, 'done');
+  assert.deepEqual(mock.calls().at(-1), { name: 'create_issue', args: { title: 'Ship it today' } });
+  assert.equal(svc.recent().length, 1);
+
+  // Org policy off: no tools for chat, and no proposals.
+  const off = service({ getPolicy: async () => ({ actionsEnabled: false }) });
+  assert.deepEqual(await off.chatToolset(), []);
+  await assert.rejects(off.proposeChatAction(key, { connectionId: c.id, tool: 'create_issue', arguments: { title: 'x' } }), /turned off/);
+});

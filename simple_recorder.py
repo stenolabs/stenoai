@@ -4576,17 +4576,15 @@ def _chat_corpus_char_budget(ai_provider: str, model: str) -> int:
     return 400_000
 
 
-def _build_chat_corpus(folder=None, budget=None):
-    """Bounded saved-note context, shared by global and recording-time chat."""
-    from src.config import get_config, get_data_dirs
-    from src.reports import _item_text
+def _load_saved_notes(folder=None):
+    """Every saved note as (id, data), newest first, optionally in one folder.
 
-    config = get_config()
-    dirs = get_data_dirs()
-    output_dir = dirs["output"]
+    Reads .md (the current format) and legacy .json; the id is the file stem
+    without "_summary". Shared by cross-note chat and the chat agent's Steno
+    read tools (search_meetings / get_note)."""
+    from src.config import get_data_dirs
 
-    # Collect every summary file, preferring .md (the new format) but reading
-    # legacy .json too so users with old recordings aren't excluded.
+    output_dir = get_data_dirs()["output"]
     summaries: list[tuple[Path, dict]] = []
     seen = set()
     for f in sorted(output_dir.glob("*_summary.md")):
@@ -4606,28 +4604,30 @@ def _build_chat_corpus(folder=None, budget=None):
                 summaries.append((f, json.load(fh)))
         except (OSError, ValueError):
             continue
-
-    # Folder scoping. Each meeting record carries a 'folders' array of IDs;
-    # filter to only those that include the requested ID. Empty folder ID
-    # or 'all' explicitly means no filter.
+    # Folder scoping: each note carries a 'folders' array of ids. Empty or
+    # 'all' means no filter.
     if folder and folder != 'all':
         summaries = [
             (path, data) for (path, data) in summaries
             if isinstance(data.get('folders'), list) and folder in data['folders']
         ]
+    summaries.sort(key=lambda item: item[1].get("session_info", {}).get("processed_at") or "", reverse=True)
+    return [(path.stem.replace('_summary', ''), data) for path, data in summaries]
 
-    if not summaries:
-        return ""
 
+def _build_chat_corpus(folder=None, budget=None):
+    """Bounded saved-note context, shared by global and recording-time chat."""
+    from src.config import get_config
+    from src.reports import _item_text
+
+    config = get_config()
     # Most-recent first so the model weights newer context higher when token
     # budget is tight. Each block is kept compact (title + summary +
     # participants + key points + action items) - full transcripts would blow
     # even a 200k window.
-    def sort_key(item):
-        _, data = item
-        return data.get("session_info", {}).get("processed_at") or ""
-
-    summaries.sort(key=sort_key, reverse=True)
+    summaries = [(None, data) for _, data in _load_saved_notes(folder)]
+    if not summaries:
+        return ""
 
     # Cap the assembled corpus so a user with hundreds of meetings can't blow
     # past the active model's context window (see _chat_corpus_char_budget).
@@ -4746,6 +4746,20 @@ def chat_context_streaming():
     """Chat over explicit context. Content travels over bounded stdin, never argv."""
     from src.chat_query import run_chat_query
     run_chat_query(_parse_meeting_markdown, _build_chat_corpus, resolve_persisted_output_language)
+
+
+@cli.command(name='chat-agent-step')
+def chat_agent_step():
+    """One model call of chat-as-an-agent, with tools. Driven by app/chat-agent.js."""
+    from src.chat_agent import run_chat_agent_step
+    run_chat_agent_step(_parse_meeting_markdown, _build_chat_corpus, resolve_persisted_output_language)
+
+
+@cli.command(name='chat-tool')
+def chat_tool():
+    """Run one of Steno's read tools (search_meetings / get_note) for the chat agent."""
+    from src.chat_agent import run_chat_tool
+    run_chat_tool(_load_saved_notes)
 
 
 @cli.command()

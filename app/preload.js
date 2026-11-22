@@ -33,9 +33,17 @@ const subscribe = (channel, cb) => {
 // every in-flight query; the helper filters by queryId so the caller only
 // gets events for the stream they asked for. Returns an unsubscribe fn
 // that also sends query-cancel to the main process.
-const subscribeQueryStream = (queryId, { onChunk, onDone, onError } = {}) => {
+const subscribeQueryStream = (queryId, { onChunk, onDone, onError, onToolStep, onActionCard } = {}) => {
   const chunkHandler = (_event, payload) => {
     if (payload && payload.queryId === queryId && onChunk) onChunk(payload.chunk);
+  };
+  // Chat-agent turns (chat-agent.js): a read tool ran ("Searched Linear…"),
+  // or an action card waits for Approve / changed state.
+  const stepHandler = (_event, payload) => {
+    if (payload && payload.queryId === queryId && onToolStep) onToolStep(payload.step);
+  };
+  const cardHandler = (_event, payload) => {
+    if (payload && payload.queryId === queryId && onActionCard) onActionCard(payload.card);
   };
   const doneHandler = (_event, payload) => {
     if (!payload || payload.queryId !== queryId) return;
@@ -48,9 +56,13 @@ const subscribeQueryStream = (queryId, { onChunk, onDone, onError } = {}) => {
   };
   const cleanup = () => {
     ipcRenderer.removeListener('query-chunk', chunkHandler);
+    ipcRenderer.removeListener('query-tool-step', stepHandler);
+    ipcRenderer.removeListener('query-action-card', cardHandler);
     ipcRenderer.removeListener('query-done', doneHandler);
   };
   ipcRenderer.on('query-chunk', chunkHandler);
+  ipcRenderer.on('query-tool-step', stepHandler);
+  ipcRenderer.on('query-action-card', cardHandler);
   ipcRenderer.on('query-done', doneHandler);
   return () => {
     cleanup();
@@ -194,6 +206,9 @@ const stenoai = {
     askStream: (id, file, q) => send('query-transcript-stream', id, file, q),
     chatGlobalStream: (id, q, folderId) => send('chat-global-stream', id, q, folderId ?? null),
     cancel: (id) => send('query-cancel', id),
+    /** Approve / dismiss an action card a chat-agent turn is paused on. */
+    approveAction: (id, cardId, args) => invoke('chat-action-approve', id, cardId, args),
+    dismissAction: (id, cardId) => invoke('chat-action-dismiss', id, cardId),
   },
 
   chat: {

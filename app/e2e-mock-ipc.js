@@ -2224,6 +2224,34 @@ function install({ ipcMain }) {
   // this is the observable seam for "which IPC did the renderer actually call".
   global.__mockIpcCalls = [];
 
+  // Chat-agent turns waiting on an action card (STENOAI_E2E_CHAT_AGENT=1).
+  const chatAgentTurns = new Map();
+  global.__chatActionApproved = [];
+  MOCKS['chat-action-approve'] = async (_event, queryId, cardId, args) => {
+    const turn = chatAgentTurns.get(queryId);
+    if (!turn || turn.card.id !== cardId) return { success: false, error_code: 'not-found', error: 'This action is no longer waiting for approval' };
+    global.__chatActionApproved.push({ cardId, args });
+    const card = { ...turn.card, arguments: args, status: 'done', result: { status: 'ok', link: 'https://linear.app/acme/issue/REL-2', text: 'Created REL-2' } };
+    chatAgentTurns.delete(queryId);
+    turn.send('query-action-card', { card });
+    setTimeout(() => {
+      turn.send('query-chunk', { chunk: `Done: I created REL-2, "${args.title}", in Linear.` });
+      turn.send('query-done', { success: true });
+    }, 20);
+    return { success: true, card };
+  };
+  MOCKS['chat-action-dismiss'] = async (_event, queryId, cardId) => {
+    const turn = chatAgentTurns.get(queryId);
+    if (!turn || turn.card.id !== cardId) return { success: false, error_code: 'not-found', error: 'This action is no longer waiting for approval' };
+    const card = { ...turn.card, status: 'dismissed' };
+    chatAgentTurns.delete(queryId);
+    turn.send('query-action-card', { card });
+    setTimeout(() => {
+      turn.send('query-chunk', { chunk: "OK, I won't create it." });
+      turn.send('query-done', { success: true });
+    }, 20);
+    return { success: true, card };
+  };
   let chatData = null;
   MOCKS['load-chat-sessions'] = async () => ({ success: true, data: chatData });
   MOCKS['save-chat-sessions'] = async (_event, data) => {
@@ -2262,6 +2290,22 @@ function install({ ipcMain }) {
           event.sender.send('query-chunk', { queryId, chunk: reply });
           event.sender.send('query-done', { queryId, success: true });
         };
+        if (process.env.STENOAI_E2E_CHAT_AGENT === '1') {
+          // A chat-agent turn (chat-agent.js): one read step, then an action
+          // card the turn waits on; chat-action-approve / -dismiss finish it.
+          const send = (channel, data) => { if (!event.sender.isDestroyed()) event.sender.send(channel, { queryId, ...data }); };
+          const conn = { id: 'conn-linear', name: 'Linear', origin: 'https://mcp.linear.app', locality: 'internet' };
+          const card = {
+            ...mockCard(conn, 'create_issue', { title: 'Prep the release notes', priority: 'high' }, '', undefined),
+            actionItem: undefined,
+          };
+          chatAgentTurns.set(queryId, { send, card });
+          setTimeout(() => {
+            send('query-tool-step', { step: { id: 's1', source: 'connection', connection: 'Linear', tool: 'search_issues', title: 'Search issues' } });
+            send('query-action-card', { card });
+          }, 20);
+          return;
+        }
         if (process.env.STENOAI_E2E_HOLD_CHAT === '1') global.__finishChat = finish;
         else setTimeout(finish, 20);
       });

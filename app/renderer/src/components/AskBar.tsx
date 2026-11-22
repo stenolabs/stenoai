@@ -24,6 +24,7 @@ import {
 import { useMeeting } from '@/hooks/useMeetings';
 import { useRecording } from '@/hooks/useRecording';
 import { t } from '@/i18n';
+import { AgentRecord, LiveAgentTrail, actionRecords } from '@/components/chat/ChatAgentTrail';
 import { FolderScopePicker, GENERAL_SCOPE, MEETING_SCOPE, ORG_SHARED_SCOPE } from '@/components/FolderScopePicker';
 import { boundedChatHistory } from '@/lib/chat';
 import type { ChatRequest } from '@/lib/ipc';
@@ -360,8 +361,10 @@ export function AskBar({ visible = true }: { visible?: boolean }) {
         const persistId = sessionId;
         streamId = streaming.startContextStream(request, (result) => {
           const content = result.text + (result.status === 'error' ? `\n\n${result.error ?? t('chat.error')}` : '');
-          if (content) {
-            void chat.appendMessage(persistId, { role: 'assistant', content, ts: Date.now(), context: scope ?? 'notes' })
+          const steps = result.steps?.length ? result.steps : undefined;
+          const actions = actionRecords(result.cards);
+          if (content || steps || actions) {
+            void chat.appendMessage(persistId, { role: 'assistant', content, ts: Date.now(), context: scope ?? 'notes', ...(steps ? { steps } : {}), ...(actions ? { actions } : {}) })
               .catch(() => setSubmitError(t('chat.saveError')));
           }
         });
@@ -446,6 +449,9 @@ export function AskBar({ visible = true }: { visible?: boolean }) {
               messages={session?.messages ?? []}
               liveText={showStream ? (activeStream?.text ?? '') : ''}
               streaming={showStream}
+              trail={showStream && activeStreamId ? (
+                <LiveAgentTrail queryId={activeStreamId} steps={activeStream?.steps} cards={activeStream?.cards} />
+              ) : null}
             />
           </div>
         </div>
@@ -681,14 +687,17 @@ interface MessageListProps {
   messages: ChatMessage[];
   liveText: string;
   streaming: boolean;
+  /** A chat-agent turn's steps and action cards, above its answer. */
+  trail?: React.ReactNode;
 }
 
-function MessageList({ messages, liveText, streaming }: MessageListProps) {
+function MessageList({ messages, liveText, streaming, trail }: MessageListProps) {
   return (
     <div className="flex flex-col gap-3">
       {messages.map((m, i) => (
         <MessageBubble key={i} message={m} />
       ))}
+      {streaming && trail}
       {streaming && (
         <div className="flex justify-start">
           {liveText ? (
@@ -727,6 +736,7 @@ function MessageBubble({ message }: { message: ChatMessage }) {
         </div>
       ) : (
         <div className="min-w-0 max-w-[90%] text-sm leading-[1.7] has-[[data-chat-chart]]:w-full" style={{ color: 'var(--fg-1)' }}>
+          <AgentRecord steps={message.steps} actions={message.actions} />
           {renderMarkdown(message.content)}
         </div>
       )}

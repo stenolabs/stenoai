@@ -27,6 +27,7 @@ import {
 // a fresh `[]` on every render, invalidating downstream deps.
 const EMPTY_MESSAGES: ChatMessage[] = [];
 import { useGlobalStreaming } from '@/hooks/useStreamingQuery';
+import { AgentRecord, LiveAgentTrail, actionRecords } from '@/components/chat/ChatAgentTrail';
 import { useAiProvider } from '@/hooks/useAi';
 import { navigate } from '@/lib/router';
 import {
@@ -152,11 +153,14 @@ export function ChatConversation({ sessionId }: ChatConversationProps) {
       (stream.status === 'error'
         ? `Error: ${stream.error ?? 'query failed'}`
         : '(empty response)');
+    const actions = actionRecords(stream.cards);
     const message: ChatMessage = {
       role: 'assistant',
       context: pending.context,
       content,
       ts: Date.now(),
+      ...(stream.steps?.length ? { steps: stream.steps } : {}),
+      ...(actions ? { actions } : {}),
     };
     void chat.appendMessage(pending.sessionId, message);
     pendingPersistRef.current = null;
@@ -416,11 +420,18 @@ export function ChatConversation({ sessionId }: ChatConversationProps) {
                     // room above the composer.
                     className="pb-5"
                   >
-                    <Bubble
-                      role={role}
-                      content={content}
-                      live={isStreamingBubble}
-                    />
+                    {isStreamingBubble && activeStreamId ? (
+                      <LiveAgentTrail queryId={activeStreamId} steps={activeStream?.steps} cards={activeStream?.cards} />
+                    ) : msg?.role === 'assistant' ? (
+                      <AgentRecord steps={msg.steps} actions={msg.actions} />
+                    ) : null}
+                    {!(isStreamingBubble && !activeStream?.text && activeStream?.cards?.some((c) => c.status !== 'done' && c.status !== 'dismissed')) && (
+                      <Bubble
+                        role={role}
+                        content={content}
+                        live={isStreamingBubble}
+                      />
+                    )}
                   </div>
                 );
               })}

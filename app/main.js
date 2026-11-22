@@ -3892,15 +3892,182 @@ ipcMain.on('chat-context-stream', async (event, queryId, request) => {
       payload.file = validated.realPath;
     }
     if (cancelled || sender.isDestroyed()) { cleanup(); return; }
-    const query = runChatQuery({
-      spawn: require('child_process').spawn,
-      backend: getBackendPath(), env: getBackendEnv(getAiEnv()), cwd: getBackendCwd(),
-      payload, send, onFinish: cleanup,
-    });
-    entry.cancel = query.cancel;
+    const runPlain = () => {
+      const query = runChatQuery({
+        spawn: require('child_process').spawn,
+        backend: getBackendPath(), env: getBackendEnv(getAiEnv()), cwd: getBackendCwd(),
+        payload, send, onFinish: cleanup,
+      });
+      entry.cancel = query.cancel;
+    };
+    // With an enabled actions connection and a tool-capable model, chat runs
+    // as an agent (chat-agent.js); otherwise exactly as before.
+    const agentTools = await prepareChatAgentTools(payload);
+    if (cancelled || sender.isDestroyed()) { cleanup(); return; }
+    if (agentTools) runChatAgent({ queryId, payload, tools: agentTools, entry, send, cleanup, runPlain });
+    else runPlain();
   } catch (error) {
     if (!cancelled) send('query-done', { success: false, error: error.message });
     cleanup();
+  }
+});
+
+// ── Chat as an agent (chat-agent.js) ────────────────────────────────────
+const chatAgent = require('./chat-agent');
+const CHAT_AGENT_ERROR = 'Unable to answer. Check your AI provider and try again.';
+
+/** The tools for this chat turn, or null to keep plain chat. */
+async function prepareChatAgentTools(payload) {
+  try {
+    if (!chatAgent.toolCallingSupport(readConfigFile(configJsonPath()))) return null;
+    const connectionTools = await getMcpActionsService().chatToolset();
+    if (!connectionTools.length) return null;
+    return chatAgent.buildAgentTools({ connectionTools, steno: payload.scope !== 'general' });
+  } catch (e) {
+    sendDebugLog(`[chat-agent] tools unavailable: ${e?.code || e?.name || 'error'}`);
+    return null;
+  }
+}
+
+function runChatAgent({ queryId, payload, tools, entry, send, cleanup, runPlain }) {
+  const spawn = require('child_process').spawn;
+  const env = getBackendEnv(getAiEnv());
+  const service = getMcpActionsService();
+  const chatKey = `chat-${crypto.createHash('sha256').update(String(queryId)).digest('hex').slice(0, 24)}`;
+  const procs = new Set();
+  const pending = new Map(); // cardId -> resolve(outcome)
+  let cancelled = false;
+  let finished = false;
+  let answered = false;
+  const finish = (success, error) => {
+    if (finished) return;
+    finished = true;
+    for (const resolve of pending.values()) resolve({ status: 'declined' });
+    pending.clear();
+    send('query-done', { success, ...(error ? { error } : {}) });
+    cleanup();
+  };
+  entry.agent = { chatKey, pending, service };
+  entry.cancel = () => {
+    cancelled = true;
+    for (const p of procs) { try { p.kill(); } catch (_) {} }
+    finish(false, 'Answer stopped.');
+  };
+  const backend = (command, body, prefix, errorPrefix) => chatAgent.runBackendJson({
+    spawn, backend: getBackendPath(), command, env, cwd: getBackendCwd(), payload: body, prefix, errorPrefix,
+    onProc: (p) => { procs.add(p); p.on('close', () => procs.delete(p)); },
+  });
+  let firstStep = true;
+  const step = async (body) => {
+    try {
+      return await backend('chat-agent-step', body, 'CHAT_AGENT:', 'CHAT_AGENT_ERROR:');
+    } catch (e) {
+      // The first call failing (a custom endpoint or model that rejects tools,
+      // a provider hiccup) falls back to plain chat: behave exactly as today.
+      if (firstStep) e.fallback = true;
+      throw e;
+    } finally {
+      firstStep = false;
+    }
+  };
+  const runRead = async (tool, args) => {
+    if (tool.kind === 'steno') {
+      const folder = payload.scope === 'notes' && typeof payload.folder === 'string' ? payload.folder : null;
+      const result = await backend('chat-tool', { name: tool.tool, arguments: args, folder }, 'CHAT_TOOL:', 'CHAT_TOOL_ERROR:');
+      return { text: JSON.stringify(result) };
+    }
+    return service.callReadTool(tool.connectionId, tool.tool, args);
+  };
+  const proposeWrite = async (tool, args) => {
+    const proposed = await service.proposeChatAction(chatKey, { connectionId: tool.connectionId, tool: tool.tool, arguments: args });
+    if (proposed.rejected) return { status: 'rejected', missing: proposed.missing };
+    if (cancelled) return { status: 'declined' };
+    send('query-action-card', { card: proposed.card });
+    return new Promise((resolve) => pending.set(proposed.card.id, resolve));
+  };
+  const emit = (kind, data) => {
+    if (kind === 'text') {
+      answered = true;
+      send('query-chunk', { chunk: data });
+    } else if (kind === 'step') {
+      send('query-tool-step', { step: data });
+    }
+  };
+  chatAgent.runAgentTurn({
+    request: payload, tools, step, runRead, proposeWrite, emit, isCancelled: () => cancelled,
+  }).then(() => {
+    finish(answered, answered ? undefined : CHAT_AGENT_ERROR);
+  }).catch((e) => {
+    if (cancelled || finished) return;
+    if (e?.fallback) {
+      sendDebugLog(`[chat-agent] falling back to plain chat (${e.code || 'error'})`);
+      entry.agent = null;
+      runPlain();
+      return;
+    }
+    sendDebugLog(`[chat-agent] turn failed (${e?.code || e?.name || 'error'})`);
+    finish(false, CHAT_AGENT_ERROR);
+  });
+}
+
+/** The pending in-chat action card `cardId` of a live agent turn, for its own window. */
+function chatAgentFor(event, queryId, cardId) {
+  const entry = contextQueries.get(queryId);
+  if (!entry || !entry.agent || entry.sender !== event.sender) return null;
+  if (typeof cardId !== 'string' || !entry.agent.pending.has(cardId)) return null;
+  return { entry, agent: entry.agent };
+}
+
+function chatActionFailure(e) {
+  if (e && e.name === 'ActionError') {
+    return { success: false, error_code: e.code, error: e.message, ...(e.validationErrors ? { validationErrors: e.validationErrors } : {}) };
+  }
+  return { success: false, error_code: 'error', error: 'Something went wrong' };
+}
+
+// Approve an action card the chat agent paused on: the same approve() as a
+// note's cards (schema validation, org policy, audit). A failure keeps the
+// card open so the user can retry or dismiss; success feeds the result back.
+ipcMain.handle('chat-action-approve', async (event, queryId, cardId, args) => {
+  const found = chatAgentFor(event, queryId, cardId);
+  if (!found) return { success: false, error_code: 'not-found', error: 'This action is no longer waiting for approval' };
+  if (!args || typeof args !== 'object' || Array.isArray(args) || Buffer.byteLength(JSON.stringify(args)) > 256 * 1024) {
+    return { success: false, error_code: 'invalid-arguments', error: 'Arguments must be an object' };
+  }
+  const { entry, agent } = found;
+  try {
+    const card = await agent.service.approve(agent.chatKey, cardId, args);
+    if (!entry.sender.isDestroyed()) entry.sender.send('query-action-card', { queryId, card });
+    if (card.status === 'done') {
+      const resolve = agent.pending.get(cardId);
+      agent.pending.delete(cardId);
+      resolve?.({ status: 'done', text: [card.result?.text, card.result?.link].filter(Boolean).join('\n') });
+    }
+    return { success: true, card };
+  } catch (e) {
+    return chatActionFailure(e);
+  }
+});
+
+ipcMain.handle('chat-action-dismiss', async (event, queryId, cardId) => {
+  const found = chatAgentFor(event, queryId, cardId);
+  if (!found) return { success: false, error_code: 'not-found', error: 'This action is no longer waiting for approval' };
+  const { entry, agent } = found;
+  try {
+    const cards = await agent.service.getCards(agent.chatKey);
+    const before = cards.find((c) => c.id === cardId);
+    const after = (await agent.service.dismiss(agent.chatKey, cardId)).find((c) => c.id === cardId);
+    if (after && !entry.sender.isDestroyed()) entry.sender.send('query-action-card', { queryId, card: after });
+    const resolve = agent.pending.get(cardId);
+    agent.pending.delete(cardId);
+    // Dismissing after a failed attempt tells the model it failed, not that
+    // the user said no.
+    resolve?.(before?.status === 'failed'
+      ? { status: 'failed', text: before.result?.detail || before.result?.text || '' }
+      : { status: 'declined' });
+    return { success: true, card: after };
+  } catch (e) {
+    return chatActionFailure(e);
   }
 });
 
