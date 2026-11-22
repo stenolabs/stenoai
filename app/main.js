@@ -80,6 +80,7 @@ const { describeUpdateError, updateErrorPhase, isMissingUpdateFeedError } = requ
 const { isOSUpdateEligible, MIN_MACOS_FOR_AUTOUPDATE } = require('./update-os-gate');
 const processingLog = require('./processing-log');
 const { isMeetingApp, allowsDeviceLevelFallback, isMacos14Plus } = require('./meeting-detect');
+const { readConfigFile, readConfigFlag, flagFromConfig } = require('./config-flags');
 const {
   loadAutoRecordMeetingsEnabled,
   buildAutoRecordStartedOptions,
@@ -226,16 +227,7 @@ function handleRecordHotkey() {
 // untestable in T2. Absence of the key = ON (back-compat: the shortcut was
 // unconditionally registered before this setting existed).
 function recordHotkeyEnabledFromDisk() {
-  try {
-    const cfgPath = path.join(getUserDataDir(), 'config.json');
-    if (fs.existsSync(cfgPath)) {
-      const cfg = JSON.parse(fs.readFileSync(cfgPath, 'utf-8'));
-      return cfg.record_hotkey_enabled !== false;
-    }
-  } catch (e) {
-    console.warn('Failed to read record_hotkey_enabled from config:', e?.message);
-  }
-  return true;
+  return readConfigFlag(configJsonPath(), 'record_hotkey_enabled');
 }
 
 // Idempotently drive the global record hotkey to `enabled` and report the
@@ -378,6 +370,12 @@ function getUserDataDir() {
   }
   const base = process.env.XDG_DATA_HOME || path.join(os.homedir(), '.local', 'share');
   return path.join(base, 'stenoai');
+}
+
+// The Python-owned config.json. Sync reads of it go through config-flags.js,
+// which holds the flag defaults (mirrored from src/config.py) in one place.
+function configJsonPath() {
+  return path.join(getUserDataDir(), 'config.json');
 }
 
 // Output dir the Python pipeline reads/writes (custom storage, else user-data).
@@ -943,20 +941,16 @@ function applyLoginItemSetting(enabled) {
 // (feature ships enabled-for-everyone; users opt out in Settings), so a legacy
 // config missing the key reports true.
 function loadIdentitySuperProperties() {
-  let cfg = {};
-  try {
-    const cfgPath = path.join(getUserDataDir(), 'config.json');
-    if (fs.existsSync(cfgPath)) cfg = JSON.parse(fs.readFileSync(cfgPath, 'utf-8'));
-  } catch (_) {}
+  const cfg = readConfigFile(configJsonPath()) || {};
   let calendarConnected = false;
   try {
     calendarConnected = Boolean(loadGoogleTokens()) || Boolean(loadOutlookTokens());
   } catch (_) {}
   return {
     ai_provider: cfg.ai_provider || 'local',
-    notifications_enabled: cfg.notifications_enabled !== false,
+    notifications_enabled: flagFromConfig(cfg, 'notifications_enabled'),
     calendar_connected: calendarConnected,
-    launch_on_login: cfg.launch_on_login !== false,
+    launch_on_login: flagFromConfig(cfg, 'launch_on_login'),
   };
 }
 
@@ -2231,14 +2225,7 @@ if (!gotSingleInstanceLock) {
     // Only treat it as hidden if the setting isn't explicitly off, so a stale
     // OS login item (setting since disabled) doesn't wrongly hide the window.
     try {
-      let launchOnLoginEnabled = true;
-      try {
-        const cfgPath = path.join(getUserDataDir(), 'config.json');
-        if (fs.existsSync(cfgPath)) {
-          const cfg = JSON.parse(fs.readFileSync(cfgPath, 'utf-8'));
-          launchOnLoginEnabled = cfg.launch_on_login !== false;
-        }
-      } catch (_) {}
+      const launchOnLoginEnabled = readConfigFlag(configJsonPath(), 'launch_on_login');
       const openedAtLogin =
         process.platform === 'darwin'
           ? Boolean(app.getLoginItemSettings().wasOpenedAtLogin)
@@ -2481,13 +2468,7 @@ if (!gotSingleInstanceLock) {
     // login item on this launch), while a user who turned it off persists false
     // and stays unregistered. Idempotent; no-op under E2E / dev (see helper).
     try {
-      let launchOnLoginEnabled = true;
-      const cfgPath = path.join(getUserDataDir(), 'config.json');
-      if (fs.existsSync(cfgPath)) {
-        const cfg = JSON.parse(fs.readFileSync(cfgPath, 'utf-8'));
-        launchOnLoginEnabled = cfg.launch_on_login !== false;
-      }
-      applyLoginItemSetting(launchOnLoginEnabled);
+      applyLoginItemSetting(readConfigFlag(configJsonPath(), 'launch_on_login'));
     } catch (e) {
       console.warn('Failed to apply launch-on-login setting at startup:', e?.message);
     }
@@ -5861,16 +5842,9 @@ function stopLiveTranscribe() {
 // will have had transcription_engine written on their first launch by
 // Config._migrate_transcription_engine.
 function loadTranscriptionEngine() {
-  try {
-    const cfgPath = path.join(getUserDataDir(), 'config.json');
-    if (!fs.existsSync(cfgPath)) return 'parakeet';
-    const cfg = JSON.parse(fs.readFileSync(cfgPath, 'utf-8'));
-    const engine = cfg.transcription_engine;
-    if (engine === 'whisper' || engine === 'openai-asr') return engine;
-    return 'parakeet';
-  } catch (_) {
-    return 'parakeet';
-  }
+  const engine = readConfigFile(configJsonPath())?.transcription_engine;
+  if (engine === 'whisper' || engine === 'openai-asr') return engine;
+  return 'parakeet';
 }
 
 // Sync read of the transcription engine + model + language for
@@ -5879,11 +5853,10 @@ function loadTranscriptionEngine() {
 // three separate ones on this hot path.
 function loadTranscriptionContext() {
   try {
-    const cfgPath = path.join(getUserDataDir(), 'config.json');
-    if (!fs.existsSync(cfgPath)) {
+    const cfg = readConfigFile(configJsonPath());
+    if (!cfg) {
       return { engine: 'parakeet', model: 'parakeet', language: 'auto' };
     }
-    const cfg = JSON.parse(fs.readFileSync(cfgPath, 'utf-8'));
     const rawEngine = cfg.transcription_engine;
     const engine = (rawEngine === 'whisper' || rawEngine === 'openai-asr') ? rawEngine : 'parakeet';
     let model;
@@ -5910,11 +5883,10 @@ function loadTranscriptionContext() {
 // summarization_completed's analytics properties.
 function loadSummarizationContext() {
   try {
-    const cfgPath = path.join(getUserDataDir(), 'config.json');
-    if (!fs.existsSync(cfgPath)) {
+    const cfg = readConfigFile(configJsonPath());
+    if (!cfg) {
       return { provider: 'local', model: 'unknown' };
     }
-    const cfg = JSON.parse(fs.readFileSync(cfgPath, 'utf-8'));
     const provider = cfg.ai_provider || 'local';
     return {
       provider,
@@ -5927,67 +5899,31 @@ function loadSummarizationContext() {
   }
 }
 
-// Sync read of the auto-detect-meetings setting; default ON. Reads the JSON
-// directly to avoid spawning Python during startup just to read a boolean. Wire any new defaults through the Python config so
-// the truth lives in one place.
+// Sync config.json flag reads (no Python subprocess just to read a boolean).
+// Defaults live in config-flags.js, mirrored from src/config.py.
 function loadAutoDetectMeetingsEnabled() {
-  try {
-    const cfgPath = path.join(getUserDataDir(), 'config.json');
-    if (!fs.existsSync(cfgPath)) return true;
-    const cfg = JSON.parse(fs.readFileSync(cfgPath, 'utf-8'));
-    return cfg.auto_detect_meetings_enabled !== false;
-  } catch (_) {
-    return true;
-  }
+  return readConfigFlag(configJsonPath(), 'auto_detect_meetings_enabled');
 }
 
 function loadAutoOpenSettings() {
-  try {
-    const cfgPath = path.join(getUserDataDir(), 'config.json');
-    return normalizeAutoOpenSettings(JSON.parse(fs.readFileSync(cfgPath, 'utf-8')));
-  } catch (_) {
-    return normalizeAutoOpenSettings(null);
-  }
+  return normalizeAutoOpenSettings(readConfigFile(configJsonPath()));
 }
 
 // Caller recognition (iMCP) is opt-in: only a literal true turns it on,
 // matching Config.get_caller_id_enabled.
 function loadCallerIdEnabled() {
-  try {
-    const cfgPath = path.join(getUserDataDir(), 'config.json');
-    if (!fs.existsSync(cfgPath)) return false;
-    return JSON.parse(fs.readFileSync(cfgPath, 'utf-8')).caller_id_enabled === true;
-  } catch (_) {
-    return false;
-  }
+  return readConfigFlag(configJsonPath(), 'caller_id_enabled');
 }
 
-// Same sync-read-at-startup pattern as loadAutoDetectMeetingsEnabled(), used
-// to decide whether createTray() should run at all without spawning Python.
+// Decides whether createTray() should run at all without spawning Python.
 function loadShowMenuBarIconEnabled() {
-  try {
-    const cfgPath = path.join(getUserDataDir(), 'config.json');
-    if (!fs.existsSync(cfgPath)) return true;
-    const cfg = JSON.parse(fs.readFileSync(cfgPath, 'utf-8'));
-    return cfg.show_menu_bar_icon !== false;
-  } catch (_) {
-    return true;
-  }
+  return readConfigFlag(configJsonPath(), 'show_menu_bar_icon');
 }
 
-// Sync read of the idle auto-install setting; default ON (matches the Python
-// config default). Read fresh on every gate tick so flipping the toggle in
-// Settings takes effect without a relaunch. Same no-subprocess JSON read as the
-// helpers above — the source of truth is the Python config.
+// Read fresh on every update-gate tick so flipping the toggle in Settings takes
+// effect without a relaunch.
 function loadAutoInstallWhenIdleEnabled() {
-  try {
-    const cfgPath = path.join(getUserDataDir(), 'config.json');
-    if (!fs.existsSync(cfgPath)) return true;
-    const cfg = JSON.parse(fs.readFileSync(cfgPath, 'utf-8'));
-    return cfg.auto_install_when_idle !== false;
-  } catch (_) {
-    return true;
-  }
+  return readConfigFlag(configJsonPath(), 'auto_install_when_idle');
 }
 
 // Global recording state management
@@ -8072,7 +8008,7 @@ async function handleMicEvent(line) {
   // Auto-record (#463, opt-in): start at once instead of asking. Focus stays
   // where it is, so an unattended start doesn't pull the user out of the call
   // they are joining; the toast after capture starts says what happened.
-  if (loadAutoRecordMeetingsEnabled(path.join(getUserDataDir(), 'config.json'))) {
+  if (loadAutoRecordMeetingsEnabled(configJsonPath())) {
     // One unattended start at a time: a second detection before the first
     // recording has started would otherwise re-point auto-stop and the toast.
     if (autoStarts.begin({ appName, calendarTitle: calEvent?.title }) === null) {
