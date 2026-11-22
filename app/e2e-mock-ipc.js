@@ -569,25 +569,29 @@ function install({ ipcMain }) {
   // connect.t1 spec can assert what the renderer asked the bridge to save;
   // global.__connectSettings exposes them to app.evaluate().
   global.__connectSettings = { folderAllowlist: null, excludeTranscripts: false };
-  const CONNECT_SPEC = {
-    command: '/Applications/Steno.app/Contents/MacOS/Steno',
-    script: '/Applications/Steno.app/Contents/Resources/steno-mcp/server/index.mjs',
-  };
-  const CONNECT_INFO = {
+  // Built with the real snippet builders, from the stable launcher path, so the
+  // T1 spec asserts the exact text a user copies.
+  const connectInstall = require('./steno-mcp-install');
+  const CONNECT_LAUNCHER = { command: '/Users/sam/Library/Application Support/stenoai/bin/steno-mcp', args: [], env: {} };
+  const connectInfo = () => ({
     success: true,
     serverAvailable: true,
     claudeBundleAvailable: true,
-    snippets: {
-      claudeCode: `claude mcp add --scope user --env ELECTRON_RUN_AS_NODE=1 steno -- ${CONNECT_SPEC.command} ${CONNECT_SPEC.script}`,
-      codexToml: `[mcp_servers.steno]\ncommand = "${CONNECT_SPEC.command}"\nargs = ["${CONNECT_SPEC.script}"]\nenv = { ELECTRON_RUN_AS_NODE = "1" }`,
-      cursorJson: JSON.stringify({ mcpServers: { steno: { command: CONNECT_SPEC.command, args: [CONNECT_SPEC.script], env: { ELECTRON_RUN_AS_NODE: '1' } } } }, null, 2),
+    snippets: connectInstall.snippets(CONNECT_LAUNCHER, 'darwin'),
+    launch: CONNECT_LAUNCHER,
+    // Claude Code: MCP + the skill; Codex: the skill only; Claude: MCP. So the
+    // spec covers Connected (+ Skill installed hint), Skill installed alone,
+    // the not-connected state, and Last used on both kinds of card.
+    clients: { claudeDesktop: true, claudeCode: true, codex: false, cursor: false },
+    skills: { claudeCode: true, codex: true },
+    lastUsed: {
+      any: new Date(Date.now() - 5 * 60_000).toISOString(),
+      claudeCode: new Date(Date.now() - 5 * 60_000).toISOString(),
+      claudeDesktop: new Date(Date.now() - 2 * 86_400_000).toISOString(),
+      codex: new Date(Date.now() - 60_000).toISOString(),
+      cursor: null,
     },
-    launch: { command: CONNECT_SPEC.command, args: [CONNECT_SPEC.script], env: { ELECTRON_RUN_AS_NODE: '1' } },
-    // Claude Code reads as connected over MCP and Codex through the skill, so
-    // the spec covers both "Connected" hints and the not-connected state.
-    clients: { claudeDesktop: false, claudeCode: true, codex: false, cursor: false },
-    skills: { claudeCode: false, codex: true },
-  };
+  });
 
   // Suggested actions (Connect page + action cards). Stateful so the
   // mcp-actions.t1 spec can assert what the renderer asked to send:
@@ -759,7 +763,7 @@ function install({ ipcMain }) {
 
   const MOCKS = {
     ...ACTIONS_MOCKS,
-    'connect-get-info': async () => CONNECT_INFO,
+    'connect-get-info': async () => connectInfo(),
     'connect-get-settings': async () => ({ success: true, ...global.__connectSettings }),
     'connect-set-settings': async (_event, patch) => {
       global.__connectSettings = { ...global.__connectSettings, ...patch };

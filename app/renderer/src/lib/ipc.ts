@@ -879,12 +879,14 @@ export type ConnectInfoResponse = Result<{
   serverAvailable: boolean;
   claudeBundleAvailable: boolean;
   snippets: { claudeCode: string; codexToml: string; cursorJson: string };
-  /** How an assistant launches the server (the snippets are built from it). */
+  /** What an assistant runs: the stable launcher in the user-data dir (the snippets are built from it). */
   launch: { command: string; args: string[]; env: Record<string, string> };
   /** Which assistants have Steno configured as an MCP server. */
   clients: Record<ConnectClientId, boolean>;
   /** Which coding agents have the Steno skill folder installed. */
   skills: Record<ConnectSkillAgentId, boolean>;
+  /** When the MCP server last ran a tool, per assistant (ISO time) and overall. */
+  lastUsed?: Record<ConnectClientId | 'any', string | null> | null;
 }>;
 /** folderAllowlist: null = every meeting; an array = only these folder ids. */
 export type ConnectSettings = { folderAllowlist: string[] | null; excludeTranscripts: boolean };

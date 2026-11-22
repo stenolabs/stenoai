@@ -3,11 +3,13 @@ import { useConnectSettings, useSetConnectSettings } from '@/hooks/useConnect';
 import { useFolders } from '@/hooks/useFolders';
 import { SettingRow } from '@/routes/settings/primitives';
 import { t } from '@/i18n';
+import { SectionHeading } from './ConnectionStatus';
 
 /**
- * What the Steno MCP server lets assistants read. Both controls are stored in
- * config.json and enforced by the server itself on every tool call, so they
- * apply to assistants that are already connected over MCP. The Steno skill
+ * What the Steno MCP server lets assistants read, for every MCP connection
+ * (coding agents and AI apps alike). Both controls are stored in config.json
+ * and enforced by the server itself on every tool call, so they apply to
+ * assistants that are already connected. The Steno skill
  * reads the notes folder directly and is not bound by them; the intro says so.
  */
 export function ScopeSection() {
@@ -25,13 +27,12 @@ export function ScopeSection() {
   };
 
   return (
-    <section aria-labelledby="connect-scope-heading" className="mt-7">
-      <h3 id="connect-scope-heading" className="text-sm font-medium">
-        {t('connect.scope.heading')}
-      </h3>
-      <p className="mt-0.5 text-[12.5px]" style={{ color: 'var(--fg-2)' }}>
-        {t('connect.scope.appliesTo')}
-      </p>
+    <section aria-labelledby="connect-scope-heading" className="mt-10">
+      <SectionHeading
+        id="connect-scope-heading"
+        title={t('connect.scope.heading')}
+        intro={t('connect.scope.appliesTo')}
+      />
       <div className="mt-1">
         <SettingRow
           label={t('connect.scope.allMeetings.label')}

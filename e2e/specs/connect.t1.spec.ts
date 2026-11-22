@@ -2,10 +2,11 @@ import { test, expect } from '../fixtures/electron';
 
 /**
  * T1 — the Connect page, renderer-only with mock IPC: the sidebar entry, the
- * three sections (Coding agents, AI apps, Actions), the Steno skill install
- * sheet (formerly the Agents page), the MCP install sheets, the Connected
- * state from skill/MCP detection, the old /agents redirect, and the scope
- * controls writing through the `connect` bridge. Mocks: app/e2e-mock-ipc.js (connect-*). The server itself
+ * sections (Coding agents, AI apps, What assistants can see, Actions), MCP as
+ * the primary coding-agent connection with the Steno skill install sheet
+ * (formerly the Agents page) second, the launcher-based MCP install sheets,
+ * the Connected / Skill installed / Last used states, the old /agents
+ * redirect, and the scope controls writing through the `connect` bridge. Mocks: app/e2e-mock-ipc.js (connect-*). The server itself
  * and the real handlers are covered by steno-mcp.t2 and the node unit tests.
  */
 
@@ -13,7 +14,7 @@ type ConnectState = { folderAllowlist: string[] | null; excludeTranscripts: bool
 const settingsOf = (app: import('@playwright/test').ElectronApplication) =>
   app.evaluate(() => (globalThis as unknown as { __connectSettings: ConnectState }).__connectSettings);
 
-test('Connect: coding agents install the skill by default, with MCP as the alternative', async ({
+test('Connect: coding agents connect over MCP first, with the skill as the secondary install', async ({
   launchApp,
 }, testInfo) => {
   const { page, app } = await launchApp({
@@ -54,13 +55,22 @@ test('Connect: coding agents install the skill by default, with MCP as the alter
     await expect(apps.getByRole('region', { name, exact: true })).toBeVisible();
   }
 
-  // Connected state: the mock has Claude Code over MCP and Codex via the skill.
+  // Status: the mock has Claude Code over MCP + the skill, Codex with the skill only.
   const claudeCode = coding.getByRole('region', { name: 'Claude Code', exact: true });
   const codex = coding.getByRole('region', { name: 'Codex', exact: true });
-  await expect(claudeCode.getByText('Connected')).toBeVisible();
-  await expect(claudeCode.getByText('via MCP')).toBeVisible();
-  await expect(codex.getByText('via skill')).toBeVisible();
+  await expect(claudeCode.getByText('Connected', { exact: true })).toBeVisible();
+  await expect(claudeCode.getByText('Skill installed', { exact: true })).toBeVisible();
+  await expect(claudeCode.getByText('Last used 5 min ago')).toBeVisible();
+  await expect(codex.getByText('Skill installed', { exact: true })).toBeVisible();
+  await expect(codex.getByText('Connected', { exact: true })).toHaveCount(0);
+  // A last-used stamp without an MCP config (removed since) is not shown.
+  await expect(codex.getByText(/Last used/)).toHaveCount(0);
+  // Primary: Connect (MCP) when not connected, a quieter View setup once it is.
+  await expect(codex.getByRole('button', { name: 'Connect Codex over MCP' })).toHaveText('Connect');
+  await expect(claudeCode.getByRole('button', { name: 'View the MCP setup for Claude Code' })).toHaveText('View setup');
+  await expect(claudeCode.getByRole('button', { name: 'Install the Steno skill in Claude Code' })).toHaveText('Install skill');
   await expect(apps.getByRole('region', { name: 'Cursor', exact: true }).getByText('Connected')).toHaveCount(0);
+  await expect(apps.getByRole('region', { name: 'Claude', exact: true }).getByText('Last used 2 days ago')).toBeVisible();
 
   // ChatGPT: a short description and a Coming soon badge, no action.
   const chatgpt = apps.getByRole('region', { name: 'ChatGPT', exact: true });
@@ -110,13 +120,14 @@ test('Connect: coding agents install the skill by default, with MCP as the alter
   await expect(skillSheet.getByRole('status')).toHaveText('Could not open the instructions. Try again.');
   await page.keyboard.press('Escape');
 
-  // Use MCP instead: the existing MCP command sheet.
-  await page.getByRole('button', { name: 'Connect Claude Code over MCP' }).click();
+  // Connect / View setup: the MCP sheet with the launcher-based command.
+  await page.getByRole('button', { name: 'View the MCP setup for Claude Code' }).click();
   const sheet = page.getByRole('dialog');
   await expect(sheet.getByRole('heading', { name: 'Connect Claude Code' })).toBeVisible();
   await page.keyboard.press('Escape');
   await page.getByRole('button', { name: 'Connect Codex over MCP' }).click();
   await expect(page.getByRole('dialog').getByText('[mcp_servers.steno]')).toBeVisible();
+  await expect(page.getByRole('dialog').getByText('command = "/Users/sam/Library/Application Support/stenoai/bin/steno-mcp"')).toBeVisible();
   await page.keyboard.press('Escape');
   await page.screenshot({ path: testInfo.outputPath('connect-coding-agents.png'), fullPage: true });
 });
@@ -137,19 +148,21 @@ test('Connect: AI apps install over MCP and scope controls save', async ({ launc
   await expect(page.getByRole('dialog').getByRole('button', { name: 'Add to Cursor' })).toBeVisible();
   await page.keyboard.press('Escape');
 
-  // Claude Code's MCP command copies exactly.
-  await page.getByRole('button', { name: 'Connect Claude Code over MCP' }).click();
+  // Claude Code's MCP command copies exactly, and runs the stable launcher.
+  await page.getByRole('button', { name: 'View the MCP setup for Claude Code' }).click();
   const sheet = page.getByRole('dialog');
   await sheet.getByRole('button', { name: 'Copy', exact: true }).click();
   await expect(sheet.getByRole('button', { name: 'Copied', exact: true })).toBeVisible();
   expect(await app.evaluate(({ clipboard }) => clipboard.readText())).toBe(
-    'claude mcp add --scope user --env ELECTRON_RUN_AS_NODE=1 steno -- /Applications/Steno.app/Contents/MacOS/Steno /Applications/Steno.app/Contents/Resources/steno-mcp/server/index.mjs',
+    "claude mcp add --scope user steno -- '/Users/sam/Library/Application Support/stenoai/bin/steno-mcp'",
   );
   await page.keyboard.press('Escape');
 
-  // Scope sits with AI apps and says it governs MCP connections.
-  await expect(apps.getByRole('heading', { name: 'What assistants can see' })).toBeVisible();
-  await expect(apps.getByText('These apply to MCP connections.', { exact: false })).toBeVisible();
+  // Scope is its own section after both kinds of connection and governs every MCP one.
+  const scope = page.getByRole('region', { name: 'What assistants can see' });
+  await expect(scope.getByRole('heading', { name: 'What assistants can see' })).toBeVisible();
+  await expect(scope.getByText('These apply to every MCP connection, for coding agents and AI apps.', { exact: false })).toBeVisible();
+  await expect(apps.getByRole('heading', { name: 'What assistants can see' })).toHaveCount(0);
   const allMeetings = page.getByRole('switch', { name: 'All meetings' });
   await expect(allMeetings).toBeChecked();
   await allMeetings.click();

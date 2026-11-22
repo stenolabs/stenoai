@@ -6,9 +6,8 @@ import { useConnectInfo } from '@/hooks/useConnect';
 import type { ConnectClientId } from '@/lib/ipc';
 import { t } from '@/i18n';
 import { BrandGlyph, ConnectGlyph } from './ConnectGlyph';
-import { ComingSoonBadge, SectionHeading } from './ConnectionStatus';
+import { ComingSoonBadge, SectionHeading, lastUsedLabel } from './ConnectionStatus';
 import { McpInstallSheet, type McpTarget } from './McpInstallSheet';
-import { ScopeSection } from './ScopeSection';
 
 interface AiApp {
   id: ConnectClientId | 'chatgpt';
@@ -44,8 +43,9 @@ function AppGlyph({ id }: { id: AiApp['id'] }) {
 
 /**
  * AI apps that read meetings over the bundled Steno MCP server (Claude
- * desktop via its .mcpb extension, Cursor via deep link), plus the scope
- * controls, which the server enforces for every MCP connection.
+ * desktop via its .mcpb extension, Cursor via deep link). The scope controls
+ * (ScopeSection) sit below both sections, since they govern every MCP
+ * connection.
  */
 export function AiAppsSection() {
   const info = useConnectInfo();
@@ -62,6 +62,7 @@ export function AiAppsSection() {
         {aiApps().map((a) => {
           const id = a.id;
           const connected = id !== 'chatgpt' && info.data?.clients[id] === true;
+          const used = connected ? lastUsedLabel(info.data?.lastUsed?.[id]) : null;
           return (
             <section
               key={id}
@@ -75,6 +76,11 @@ export function AiAppsSection() {
                 <p className="mt-0.5 text-[12.5px] leading-snug" style={{ color: 'var(--fg-2)' }}>
                   {a.description}
                 </p>
+                {used && (
+                  <p className="mt-1 text-[11.5px]" style={{ color: 'var(--fg-muted)' }}>
+                    {used}
+                  </p>
+                )}
               </div>
               {id === 'chatgpt' ? (
                 <ComingSoonBadge />
@@ -94,7 +100,6 @@ export function AiAppsSection() {
           );
         })}
       </div>
-      <ScopeSection />
       <Dialog open={open !== null} onOpenChange={(v) => !v && setOpen(null)}>
         <DialogContent className="max-w-[520px]">
           {open && <McpInstallSheet assistant={open} />}
