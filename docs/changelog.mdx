@@ -3,7 +3,7 @@ title: "Changelog"
 description: "What's new in Steno -- recent releases and notable changes."
 ---
 
-<Update label="v0.8.1" description="October 29, 2026">
+<Update label="v0.8.1" description="November 25, 2026">
 **New**
 - **Edit generated notes**: change a saved note's generated sections while keeping the original model output available for recovery.
 - **Share menu**: copy or export notes and transcripts from one menu, or send a note through the macOS share sheet.
@@ -11,6 +11,8 @@ description: "What's new in Steno -- recent releases and notable changes."
 - **Open meetings**: Steno can open a calendar meeting's link shortly before it starts. Choose Off, Ask or Automatically in Settings → Preferences.
 - **Auto-record detected meetings**: turn this on in Settings → Preferences to start recording when Steno detects a meeting, without the Take Notes tap. A Recording started notification offers Stop. Off by default.
 - **Identify call participants**: on macOS, put the other party of a phone or FaceTime call into a note's Participants by their Contacts name. Turn it on in Settings → Preferences; it needs the free iMCP app. Caller names reach the AI model, including cloud models. Off by default.
+- **Hebrew transcription model**: with the Whisper engine, download the optional on-device ivrit.ai model in Settings → AI and turn it on. Hebrew recordings then use it automatically.
+- **Recording timer in the menu bar**: on macOS, a red dot and the elapsed time appear next to the Steno icon while recording. A pause mark shows while paused.
 - **Report properties**: custom reports show flat YAML frontmatter in a collapsible Properties panel and in PDF exports.
 
 **Improved**
@@ -18,12 +20,15 @@ description: "What's new in Steno -- recent releases and notable changes."
 - The Note ready notification shows how many action items the note has.
 - Notifications wait their turn instead of replacing each other; Recording paused stays visible until you respond to it.
 - Notifications appear on the display under the pointer. Other notifications do not appear over fullscreen presentations.
-- The desktop app is named Steno again.
+- The desktop app is named Steno again. If you saved a cloud API key, organisation sign-in or calendar access in v0.8.0, you may need to enter it again.
+- Parakeet models download on managed networks that inspect secure connections. Set `SSL_CERT_FILE`, `REQUESTS_CA_BUNDLE` or `SSL_CERT_DIR` before starting Steno. Certificate errors now say whether the certificate expired, does not match the server or is not trusted.
 - The website now has expanded government, defence, and law-enforcement pages, clearer navigation, and an app film.
 - macOS release packaging includes MLX dependencies built for macOS 14 and checks the bundle's minimum OS version.
 - A Traditional Chinese translation catalogue is prepared, but the interface still uses English until locale selection is available.
 
 **Fixed**
+- Fixed an issue that could leave a downloaded Parakeet model unable to load after a fresh install. Affected installs repair themselves without downloading again.
+- Fixed an issue that could make first-run setup on Linux show no checks when no audio server is running.
 - Calendar events keep their Google Meet or Outlook video link, which was previously dropped.
 - Recording can use system audio alone when no microphone is present; a busy or denied microphone still stops the start.
 - Live transcription stops when its capture view unmounts.

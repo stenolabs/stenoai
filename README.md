@@ -43,10 +43,10 @@ If you're looking for a hosted desktop recording API, consider checking out [Rec
 
 ## 📢 What's New
 
+- **2026-11-25** 🔴 Recording timer in the menu bar: On macOS, see the elapsed time next to the Steno icon while you record.
+- **2026-11-25** 🇮🇱 Hebrew transcription: With the Whisper engine, download the optional on-device Hebrew model in Settings → AI.
 - **2026-10-29** ⏺️ Auto-record detected meetings: Turn it on under Settings → Preferences, and Steno starts recording a detected meeting without waiting for a tap.
 - **2026-10-28** 📅 Open meetings on time: Steno can open a calendar meeting's link shortly before it starts, or ask first. Choose under Settings → Preferences.
-- **2026-10-28** ✏️ Edit generated notes: Change a saved note's generated sections while keeping earlier generated text available.
-- **2026-10-28** 📤 Share from one menu: Copy or export a note and its transcript. On macOS, send a note through the system share sheet.
 
 ## Features
 
