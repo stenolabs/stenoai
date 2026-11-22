@@ -56,11 +56,9 @@ test('Connect lists assistants, copies the Claude Code command and saves scope',
   await expect(page.getByRole('dialog').getByText('[mcp_servers.steno]')).toBeVisible();
   await page.keyboard.press('Escape');
 
-  // Actions placeholder.
+  // Actions section (covered in depth by mcp-actions.t1).
   await expect(page.getByRole('heading', { name: 'Turn meetings into actions' })).toBeVisible();
-  for (const name of ['n8n', 'Zapier', 'Make']) {
-    await expect(page.getByRole('region', { name, exact: true }).getByText('Coming soon')).toBeVisible();
-  }
+  await expect(page.getByRole('region', { name: 'Custom endpoint', exact: true })).toBeVisible();
 
   // Scope: narrow to one folder, then notes only, then back to all meetings.
   const allMeetings = page.getByRole('switch', { name: 'All meetings' });

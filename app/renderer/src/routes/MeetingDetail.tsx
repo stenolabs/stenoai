@@ -31,6 +31,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import * as SelectPrimitive from '@radix-ui/react-select';
 import { MeetingsShell } from '@/components/MeetingsShell';
 import { SpeakerReviewPanel } from '@/components/SpeakerReviewPanel';
+import { SuggestedActions } from '@/components/actions/SuggestedActions';
 import {
   Select,
   SelectContent,
@@ -1836,6 +1837,13 @@ function DetailContent({
                     ))}
                   </ul>
                 </section>
+              )}
+
+              {!transcriptionFailed && !isProcessing && (
+                <SuggestedActions
+                  summaryFile={routeSummaryFile}
+                  hasNote={Boolean(summary) || actionItems.length > 0}
+                />
               )}
 
               {participants.length > 0 && (

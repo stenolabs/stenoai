@@ -886,6 +886,109 @@ export type ConnectInfoResponse = Result<{
 export type ConnectSettings = { folderAllowlist: string[] | null; excludeTranscripts: boolean };
 export type ConnectSettingsPatch = Partial<ConnectSettings>;
 export type ConnectSettingsResponse = Result<ConnectSettings>;
+
+/** Suggested actions: remote MCP endpoints and the action cards under a note. */
+export type ActionAuth = 'none' | 'bearer' | 'header' | 'oauth';
+export type ActionLocality = 'device' | 'network' | 'internet';
+export type ActionConnectorId = 'linear' | 'notion' | 'atlassian' | 'hubspot' | 'asana';
+export interface ActionTool {
+  name: string;
+  title: string | null;
+  description: string;
+  readOnly: boolean;
+}
+export interface ActionConnection {
+  id: string;
+  name: string;
+  url: string;
+  origin: string | null;
+  locality: ActionLocality;
+  kind: ActionConnectorId | 'custom';
+  auth: ActionAuth;
+  headerName: string | null;
+  enabled: boolean;
+  account: string | null;
+  status: 'ok' | 'needs-auth' | 'error';
+  tools: ActionTool[];
+  toolsFetchedAt: number | null;
+  blockedByPolicy: boolean;
+}
+export interface ActionConnector {
+  id: ActionConnectorId;
+  name: string;
+  url: string;
+  auth: ActionAuth;
+  status: 'available' | 'needs-registration';
+}
+export interface ActionsPolicy {
+  actionsEnabled: boolean;
+  managed: boolean;
+  endpointAllowlist: string[] | null;
+  reason: string | null;
+}
+export interface ActionsOverview {
+  connections: ActionConnection[];
+  connectors: ActionConnector[];
+  autoSuggest: boolean;
+  policy: ActionsPolicy;
+  secureStorage: boolean;
+}
+export interface AddCustomEndpointInput {
+  name: string;
+  url: string;
+  auth: ActionAuth;
+  headerName?: string;
+  token?: string;
+}
+export interface ActionValidationError {
+  path: string;
+  message: string;
+}
+export type ActionCardStatus = 'proposed' | 'running' | 'done' | 'failed' | 'dismissed';
+export interface ActionCard {
+  id: string;
+  connectionId: string;
+  connectionName: string;
+  connectionAvailable: boolean;
+  origin: string | null;
+  locality: ActionLocality | null;
+  tool: string;
+  toolTitle: string | null;
+  toolDescription: string | null;
+  inputSchema: JsonSchema | null;
+  arguments: Record<string, unknown>;
+  reason: string;
+  validationErrors: ActionValidationError[];
+  status: ActionCardStatus;
+  result?: { status: string; link: string | null; text: string };
+  createdAt: number;
+  updatedAt: number;
+  approvedAt?: number;
+}
+/** The subset of JSON Schema the action-card form understands. */
+export interface JsonSchema {
+  type?: string | string[];
+  title?: string;
+  description?: string;
+  enum?: unknown[];
+  default?: unknown;
+  properties?: Record<string, JsonSchema>;
+  required?: string[];
+  items?: JsonSchema;
+  [key: string]: unknown;
+}
+export interface ActionAuditEntry {
+  time: string;
+  connectionId: string;
+  connectionName: string;
+  origin: string;
+  tool: string;
+  argumentsSha256: string;
+  status: string;
+  link?: string;
+  error?: string;
+}
+export type ActionsFailure = { success: false; error: string; error_code?: string; validationErrors?: ActionValidationError[] };
 export type GetObsidianSyncResponse = Result<{ obsidian_sync_enabled: boolean }>;
 export type GetObsidianVaultPathResponse = Result<{ obsidian_vault_path: string }>;
 export type ObsidianConflict = { vaultRelPath: string; detectedAt: string; reason: string };
@@ -1545,6 +1648,29 @@ export interface StenoaiBridge {
     setSettings: RequestFn<[patch: ConnectSettingsPatch], ConnectSettingsResponse>;
     openClaudeDesktop: RequestFn<[], Result<Record<string, never>>>;
     openCursor: RequestFn<[], Result<Record<string, never>>>;
+  };
+
+  actions: {
+    list: RequestFn<[], Result<ActionsOverview>>;
+    addCustom: RequestFn<[input: AddCustomEndpointInput], Result<{ connection: ActionConnection }>>;
+    connectConnector: RequestFn<[connectorId: ActionConnectorId], Result<{ connection: ActionConnection }>>;
+    authorize: RequestFn<[id: string], Result<{ connection: ActionConnection }>>;
+    cancelAuthorize: RequestFn<[], Result<{ cancelled: boolean }>>;
+    refreshTools: RequestFn<[id: string], Result<{ connection: ActionConnection }>>;
+    setEnabled: RequestFn<[id: string, enabled: boolean], Result<{ connection: ActionConnection }>>;
+    remove: RequestFn<[id: string], Result<{ removed: boolean }>>;
+    setAutoSuggest: RequestFn<[value: boolean], Result<{ autoSuggest: boolean }>>;
+    getCards: RequestFn<[summaryFile: string], Result<{ cards: ActionCard[]; available: boolean }>>;
+    suggest: RequestFn<
+      [summaryFile: string, options?: { auto?: boolean }],
+      Result<{ skipped: boolean; cards: ActionCard[] }>
+    >;
+    approve: RequestFn<
+      [summaryFile: string, cardId: string, args: Record<string, unknown>],
+      Result<{ card: ActionCard }> | ActionsFailure
+    >;
+    dismiss: RequestFn<[summaryFile: string, cardId: string], Result<{ cards: ActionCard[] }>>;
+    recent: RequestFn<[limit?: number], Result<{ entries: ActionAuditEntry[] }>>;
   };
 
   ai: {

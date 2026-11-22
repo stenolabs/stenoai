@@ -587,7 +587,164 @@ function install({ ipcMain }) {
     clients: { claudeDesktop: false, claudeCode: true, codex: false, cursor: false },
   };
 
+  // Suggested actions (Connect page + action cards). Stateful so the
+  // mcp-actions.t1 spec can assert what the renderer asked to send:
+  // global.__actionsApproved records every approve (card id + exact args),
+  // global.__actionsDismissed every dismiss. STENOAI_E2E_SEED_ACTIONS=1 starts
+  // with one connected endpoint and two proposals for the seed meeting.
+  const ACTION_TOOLS = [
+    { name: 'create_issue', title: 'Create issue', description: 'Create an issue in the tracker.', readOnly: false },
+    { name: 'send_message', title: 'Send message', description: 'Post a message to a channel.', readOnly: false },
+    { name: 'search_issues', title: 'Search issues', description: 'Find issues.', readOnly: true },
+  ];
+  const ACTION_SCHEMAS = {
+    create_issue: {
+      type: 'object',
+      properties: {
+        title: { type: 'string', title: 'Title' },
+        description: { type: 'string' },
+        priority: { type: 'string', enum: ['low', 'medium', 'high'] },
+      },
+      required: ['title'],
+    },
+    send_message: {
+      type: 'object',
+      properties: { channel: { type: 'string' }, text: { type: 'string' } },
+      required: ['channel', 'text'],
+    },
+  };
+  const ACTION_CONNECTORS = [
+    { id: 'linear', name: 'Linear', url: 'https://mcp.linear.app/mcp', auth: 'oauth', status: 'available' },
+    { id: 'notion', name: 'Notion', url: 'https://mcp.notion.com/mcp', auth: 'oauth', status: 'available' },
+    { id: 'atlassian', name: 'Jira and Confluence', url: 'https://mcp.atlassian.com/v2/mcp', auth: 'oauth', status: 'available' },
+    { id: 'hubspot', name: 'HubSpot', url: 'https://mcp.hubspot.com', auth: 'oauth', status: 'needs-registration' },
+    { id: 'asana', name: 'Asana', url: 'https://mcp.asana.com/v2/mcp', auth: 'oauth', status: 'needs-registration' },
+  ];
+  let actionSeq = 0;
+  const mockConnection = (over) => ({
+    id: `conn-${++actionSeq}`,
+    name: 'Team n8n',
+    url: 'http://127.0.0.1:5678/mcp/steno',
+    origin: 'http://127.0.0.1:5678',
+    locality: 'device',
+    kind: 'custom',
+    auth: 'bearer',
+    headerName: null,
+    enabled: true,
+    account: null,
+    status: 'ok',
+    tools: ACTION_TOOLS,
+    toolsFetchedAt: 1,
+    blockedByPolicy: false,
+    ...over,
+  });
+  const mockCard = (connection, tool, args, reason) => ({
+    id: `card-${++actionSeq}`,
+    connectionId: connection.id,
+    connectionName: connection.name,
+    connectionAvailable: true,
+    origin: connection.origin,
+    locality: connection.locality,
+    tool,
+    toolTitle: ACTION_TOOLS.find((t) => t.name === tool).title,
+    toolDescription: null,
+    inputSchema: ACTION_SCHEMAS[tool],
+    arguments: args,
+    reason,
+    validationErrors: [],
+    status: 'proposed',
+    createdAt: 1,
+    updatedAt: 1,
+  });
+  global.__actionsApproved = [];
+  global.__actionsDismissed = [];
+  global.__actionsAdded = [];
+  const actionsState = { connections: [], cards: [], autoSuggest: true, recent: [] };
+  const seedActionCards = () => {
+    const c = actionsState.connections.find((x) => x.enabled) || actionsState.connections[0];
+    if (!c) return;
+    actionsState.cards = [
+      mockCard(c, 'create_issue', { title: 'Prep the release notes', priority: 'high' }, 'Bob owns the release notes'),
+      mockCard(c, 'send_message', { channel: '#release', text: 'We ship on Friday.' }, 'Tell the team the date'),
+    ];
+  };
+  if (process.env.STENOAI_E2E_SEED_ACTIONS === '1') {
+    actionsState.connections.push(mockConnection({}));
+    seedActionCards();
+  }
+  const actionsOverview = () => ({
+    success: true,
+    connections: actionsState.connections,
+    connectors: ACTION_CONNECTORS,
+    autoSuggest: actionsState.autoSuggest,
+    policy: { actionsEnabled: process.env.STENOAI_E2E_ACTIONS_DISABLED !== '1', managed: process.env.STENOAI_E2E_ACTIONS_DISABLED === '1', endpointAllowlist: null, reason: null },
+    secureStorage: true,
+  });
+  const ACTIONS_MOCKS = {
+    'actions-list': async () => actionsOverview(),
+    'actions-add-custom': async (_event, input) => {
+      global.__actionsAdded.push({ ...input, token: input.token ? '<set>' : undefined });
+      const connection = mockConnection({ name: input.name || 'Endpoint', url: input.url, auth: input.auth, headerName: input.headerName || null });
+      actionsState.connections.push(connection);
+      return { success: true, connection };
+    },
+    'actions-connect-connector': async (_event, id) => {
+      const c = ACTION_CONNECTORS.find((x) => x.id === id);
+      const connection = mockConnection({ name: c.name, url: c.url, origin: new URL(c.url).origin, locality: 'internet', kind: id, auth: 'oauth', account: 'sam@example.com' });
+      actionsState.connections.push(connection);
+      return { success: true, connection };
+    },
+    'actions-authorize': async (_event, id) => ({ success: true, connection: actionsState.connections.find((c) => c.id === id) }),
+    'actions-cancel-authorize': async () => ({ success: true, cancelled: false }),
+    'actions-refresh-tools': async (_event, id) => ({ success: true, connection: actionsState.connections.find((c) => c.id === id) }),
+    'actions-set-enabled': async (_event, id, enabled) => {
+      const c = actionsState.connections.find((x) => x.id === id);
+      c.enabled = enabled;
+      return { success: true, connection: c };
+    },
+    'actions-remove': async (_event, id) => {
+      actionsState.connections = actionsState.connections.filter((c) => c.id !== id);
+      return { success: true, removed: true };
+    },
+    'actions-set-auto-suggest': async (_event, value) => {
+      actionsState.autoSuggest = value;
+      return { success: true, autoSuggest: value };
+    },
+    'actions-get-cards': async () => ({
+      success: true,
+      cards: actionsState.cards,
+      available: actionsState.connections.some((c) => c.enabled),
+    }),
+    'actions-suggest': async () => {
+      if (!actionsState.cards.some((c) => c.status === 'proposed')) seedActionCards();
+      return { success: true, skipped: false, cards: actionsState.cards };
+    },
+    'actions-approve': async (_event, _summaryFile, cardId, args) => {
+      global.__actionsApproved.push({ cardId, args });
+      const card = actionsState.cards.find((c) => c.id === cardId);
+      Object.assign(card, { status: 'done', arguments: args, result: { status: 'ok', link: 'https://mock.example/items/1', text: '' } });
+      actionsState.recent.unshift({
+        time: new Date(Date.UTC(2026, 11, 7, 10, 30)).toISOString(),
+        connectionId: card.connectionId,
+        connectionName: card.connectionName,
+        origin: card.origin,
+        tool: card.tool,
+        argumentsSha256: 'f'.repeat(64),
+        status: 'ok',
+        link: 'https://mock.example/items/1',
+      });
+      return { success: true, card };
+    },
+    'actions-dismiss': async (_event, _summaryFile, cardId) => {
+      global.__actionsDismissed.push(cardId);
+      actionsState.cards.find((c) => c.id === cardId).status = 'dismissed';
+      return { success: true, cards: actionsState.cards };
+    },
+    'actions-recent': async () => ({ success: true, entries: actionsState.recent }),
+  };
+
   const MOCKS = {
+    ...ACTIONS_MOCKS,
     'connect-get-info': async () => CONNECT_INFO,
     'connect-get-settings': async () => ({ success: true, ...global.__connectSettings }),
     'connect-set-settings': async (_event, patch) => {
