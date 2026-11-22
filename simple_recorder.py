@@ -2224,6 +2224,51 @@ def set_obsidian_vault_path_cmd(vault_path):
         print(json.dumps({"success": False, "error": "Failed to set vault path"}))
 
 
+def _mcp_settings_payload(config) -> dict:
+    return {
+        "mcp_folder_allowlist": config.get_mcp_folder_allowlist(),
+        "mcp_exclude_transcripts": config.get_mcp_exclude_transcripts(),
+    }
+
+
+@cli.command(name='get-mcp-settings')
+def get_mcp_settings_cmd():
+    """Get what the Steno MCP server lets AI assistants read."""
+    from src.config import get_config
+    print(json.dumps(_mcp_settings_payload(get_config())))
+
+
+@cli.command(name='set-mcp-settings')
+@click.option('--exclude-transcripts', type=bool, default=None,
+              help='Serve notes only (no transcripts) to AI assistants.')
+@click.option('--folders', 'folders_json', default=None,
+              help='JSON array of folder ids assistants may read, or "all".')
+def set_mcp_settings_cmd(exclude_transcripts, folders_json):
+    """Set the Steno MCP server's scope (folder allowlist, transcripts)."""
+    from src.config import get_config
+    config = get_config()
+    if folders_json is not None:
+        if folders_json == 'all':
+            folder_ids = None
+        else:
+            try:
+                folder_ids = json.loads(folders_json)
+            except ValueError:
+                print(json.dumps({"success": False, "error": "Invalid folder list"}))
+                return
+            if not isinstance(folder_ids, list):
+                print(json.dumps({"success": False, "error": "Invalid folder list"}))
+                return
+        if not config.set_mcp_folder_allowlist(folder_ids):
+            print(json.dumps({"success": False, "error": "Invalid folder list"}))
+            return
+    if exclude_transcripts is not None:
+        if not config.set_mcp_exclude_transcripts(exclude_transcripts):
+            print(json.dumps({"success": False, "error": "Failed to persist setting"}))
+            return
+    print(json.dumps({"success": True, **_mcp_settings_payload(config)}))
+
+
 @cli.command(name='get-silence-auto-stop')
 def get_silence_auto_stop_cmd():
     """Get whether recordings auto-stop on a stretch of silence + the duration."""
