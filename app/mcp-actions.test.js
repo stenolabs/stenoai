@@ -386,3 +386,72 @@ test('chat agent: read tools run, writes become cards approved through the same 
   assert.deepEqual(await off.chatToolset(), []);
   await assert.rejects(off.proposeChatAction(key, { connectionId: c.id, tool: 'create_issue', arguments: { title: 'x' } }), /turned off/);
 });
+
+test('simple actions: a Notion connection is offered create_page, and Approve sends the translated vendor call', async () => {
+  const { NOTION_LIKE_TOOLS } = require('../e2e/fixtures/mock-mcp-server');
+  mock = await startMockMcpServer({ auth: 'none', tools: NOTION_LIKE_TOOLS });
+  let catalogue = null;
+  const svc = service({
+    runSuggest: async (_summary, toolsFile) => {
+      catalogue = JSON.parse(fs.readFileSync(toolsFile, 'utf8')).tools;
+      return {
+        success: true,
+        note: { title: 'Website review', summary: '', action_items: ["Create a Notion page called 'Website content cleanup'"] },
+        proposals: [{ connection_id: catalogue[0].connection_id, tool: 'create_page', action_item: 1,
+          arguments: { title: 'Website content cleanup', content: ['Defence', 'Law enforcement'] } }],
+      };
+    },
+  });
+  // A connection of the Notion kind pointed at the mock (connectConnector would use Notion's own URL).
+  const c = svc._stores.connections.add({ name: 'Notion', url: mock.url, kind: 'notion', auth: 'none' });
+  await svc.refreshTools(c.id);
+
+  const { cards } = await svc.suggest(summary);
+  assert.deepEqual(catalogue.map((t) => [t.tool, t.simple]), [['create_page', true]], 'only the simple action, never the raw tools');
+  assert.equal(JSON.stringify(catalogue).includes('notion-delete-pages'), false);
+  const [card] = cards;
+  assert.equal(card.tool, 'notion-create-pages');
+  assert.equal(card.toolTitle, 'Create page');
+  assert.deepEqual(card.inputSchema.required, ['title']);
+  assert.deepEqual(card.arguments, { title: 'Website content cleanup', content: '- Defence\n- Law enforcement' });
+  assert.deepEqual(card.validationErrors, []);
+  assert.ok(card.sendTemplate, 'the renderer previews the vendor payload from this');
+  assert.deepEqual(mock.calls(), [], 'suggesting runs nothing');
+
+  const done = await svc.approve(summary, card.id, { title: 'Website cleanup', content: '' });
+  assert.equal(done.status, 'done');
+  assert.deepEqual(mock.calls(), [{ name: 'notion-create-pages', args: { pages: [{ properties: { title: 'Website cleanup' } }] } }]);
+  assert.equal(svc.recent()[0].tool, 'notion-create-pages');
+
+  // Chat: a small local model gets create_page only; a cloud model also the raw tools.
+  const small = await svc.chatToolset({ simpleOnly: true });
+  assert.deepEqual(small.map((t) => t.tool), ['create_page']);
+  const big = await svc.chatToolset();
+  assert.deepEqual(big.map((t) => t.tool), ['create_page', 'notion-create-pages', 'notion-search']);
+  const { card: chatCard } = await svc.proposeChatAction('chat-x', { connectionId: c.id, tool: 'create_page', simple: 'create_page', arguments: { title: 'From chat' } });
+  assert.equal(chatCard.tool, 'notion-create-pages');
+  const ran = await svc.approve('chat-x', chatCard.id, { title: 'From chat' });
+  assert.equal(ran.status, 'done');
+  assert.deepEqual(mock.calls().at(-1).args, { pages: [{ properties: { title: 'From chat' } }] });
+  assert.deepEqual(await svc.proposeChatAction('chat-x', { connectionId: c.id, tool: 'create_page', simple: 'create_page', arguments: { title: 'TBD' } }),
+    { rejected: 'placeholder', missing: ['title'] });
+  await assert.rejects(svc.proposeChatAction('chat-x', { connectionId: c.id, tool: 'x', simple: 'drop_all', arguments: {} }), /does not offer/);
+});
+
+test('simple actions: invalid simple fields are refused before anything is sent', async () => {
+  const { NOTION_LIKE_TOOLS } = require('../e2e/fixtures/mock-mcp-server');
+  mock = await startMockMcpServer({ auth: 'none', tools: NOTION_LIKE_TOOLS });
+  const svc = service({
+    runSuggest: async (_s, toolsFile) => ({
+      success: true,
+      note: { title: 'n', summary: '', action_items: ['Make a page'] },
+      proposals: [{ connection_id: JSON.parse(fs.readFileSync(toolsFile, 'utf8')).tools[0].connection_id, tool: 'Create-Page', arguments: { title: 'A page' }, action_item: 1 }],
+    }),
+  });
+  const c = svc._stores.connections.add({ name: 'Notion', url: mock.url, kind: 'notion', auth: 'none' });
+  await svc.refreshTools(c.id);
+  const { cards } = await svc.suggest(summary);
+  assert.equal(cards.length, 1, 'tool name repaired');
+  await assert.rejects(svc.approve(summary, cards[0].id, { title: '', extra: 1 }), (e) => e.code === 'invalid-arguments' && e.validationErrors.length >= 1);
+  assert.deepEqual(mock.calls(), []);
+});

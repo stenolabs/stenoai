@@ -194,7 +194,16 @@ test('Note: a Notion page card reads as a sentence, payload behind the disclosur
   await card.scrollIntoViewIfNeeded();
   await card.screenshot({ path: testInfo.outputPath('action-card-collapsed.png') });
   await card.getByText('Show what will be sent').click();
-  await expect(card.getByTestId('action-payload')).toContainText('"tool": "create_page"');
+  // The flat fields translate to Notion's own nested call, edits included.
+  const payload = card.getByTestId('action-payload');
+  await expect(payload).toContainText('"tool": "notion-create-pages"');
+  await expect(payload).toContainText('"title": "Website content cleanup"');
+  await card.getByLabel('Title (required)').fill('Website cleanup');
+  await expect(payload).toContainText('"title": "Website cleanup"');
+  expect(JSON.parse((await payload.textContent()) ?? '{}')).toEqual({
+    tool: 'notion-create-pages',
+    arguments: { pages: [{ properties: { title: 'Website cleanup' }, content: 'Pages to trim:\n- Defence\n- Law enforcement' }] },
+  });
   await card.getByRole('button', { name: 'Edit as JSON' }).click();
   await expect(card.getByLabel('Arguments (JSON)')).toBeVisible();
   await card.screenshot({ path: testInfo.outputPath('action-card-expanded.png') });

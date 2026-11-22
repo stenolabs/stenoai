@@ -1,8 +1,8 @@
 import { test, expect } from '../fixtures/electron';
 import { writeUserConfig, writeMeetingSummary } from '../fixtures/user-config';
 import { startMockOllama } from '../fixtures/mock-ollama';
-import { startMockMcpServer } from '../fixtures/mock-mcp-server';
-import { existsSync, readFileSync, readdirSync, statSync } from 'fs';
+import { startMockMcpServer, NOTION_LIKE_TOOLS } from '../fixtures/mock-mcp-server';
+import { existsSync, readFileSync, readdirSync, statSync, writeFileSync } from 'fs';
 import path from 'path';
 
 /**
@@ -25,6 +25,8 @@ import path from 'path';
 type Card = {
   id: string;
   tool: string;
+  toolTitle?: string | null;
+  sendTemplate?: unknown;
   arguments: Record<string, unknown>;
   status: string;
   validationErrors: unknown[];
@@ -35,6 +37,7 @@ type Res<T> = { success: true } & T;
 type Bridge = {
   actions: {
     addCustom: (i: Record<string, unknown>) => Promise<Res<{ connection: { id: string; status: string; tools: { name: string }[] } }>>;
+    refreshTools: (id: string) => Promise<Res<{ connection: { id: string; status: string; tools: { name: string }[] } }>>;
     suggest: (f: string) => Promise<Res<{ cards: Card[] }>>;
     approve: (f: string, id: string, args: Record<string, unknown>) => Promise<Res<{ card: Card }>>;
     dismiss: (f: string, id: string) => Promise<Res<{ cards: Card[] }>>;
@@ -222,6 +225,71 @@ test('OAuth endpoint: discovery, DCR, PKCE and loopback sign-in, tokens stay enc
       expect(/\b(at|rt)-[A-Za-z0-9_-]{10,}/.test(readFileSync(f, 'utf8')), f).toBe(false);
     }
   } finally {
+    await mcp.close();
+  }
+});
+
+test('simple action: a Notion connection is offered create_page, a small-model reply is repaired, Approve sends notion-create-pages', async ({
+  launchApp,
+  userDataDir,
+}) => {
+  writeUserConfig(userDataDir, { ai_provider: 'local', model: 'gemma4:e2b-it-qat' });
+  const summaryFile = writeMeetingSummary(userDataDir, 'website', {
+    name: 'Website review',
+    summary: 'The Defence and Law enforcement pages are too long.',
+    action_items: [
+      "Create a Notion page called 'Website content cleanup' listing the pages to trim: Defence, Law enforcement",
+      'Ask the design team for a shorter hero section',
+    ],
+  });
+  const mcp = await startMockMcpServer({ auth: 'none', tools: NOTION_LIKE_TOOLS });
+  // A connection of the Notion kind pointed at the mock: connectConnector
+  // would sign in to Notion itself.
+  const connectionId = 'e2e-notion-connection';
+  writeFileSync(path.join(userDataDir, 'mcp-connections.json'), JSON.stringify({
+    version: 1,
+    autoSuggest: true,
+    connections: [{ id: connectionId, name: 'Notion', url: mcp.url, kind: 'notion', auth: 'none', enabled: true, tools: [], toolsFetchedAt: null, status: 'ok' }],
+  }));
+  let ollama: Awaited<ReturnType<typeof startMockOllama>> | null = null;
+  try {
+    const { page } = await launchApp();
+    const refreshed = await page.evaluate((id) => (window as unknown as { stenoai: Bridge }).stenoai.actions.refreshTools(id), connectionId);
+    expect(refreshed.connection.tools.map((t) => t.name)).toContain('notion-create-pages');
+
+    // What gemma4:e2b answers: the tool's title for "tool", the prompt's
+    // connection alias, a list for content and no team of its own to invent.
+    ollama = await startMockOllama({
+      chatReply: JSON.stringify({ actions: [
+        { action_item: 1, connection_id: 'c1', tool: 'Create page', arguments: { title: 'Website content cleanup', content: ['Defence', 'Law enforcement'] } },
+      ] }),
+    });
+    const suggested = await page.evaluate((f) => (window as unknown as { stenoai: Bridge }).stenoai.actions.suggest(f), summaryFile);
+    expect(suggested.success).toBe(true);
+    const prompt = ollama.lastChatPrompt();
+    expect(prompt).toContain('tool "create_page"');
+    expect(prompt).not.toContain('notion-create-pages'); // the raw vendor tools are not offered
+    expect(prompt).not.toContain('notion-delete-pages');
+    expect(prompt).not.toContain(connectionId); // connections are aliased
+    expect(prompt.length).toBeLessThan(6000);
+
+    expect(suggested.cards).toHaveLength(1);
+    const [card] = suggested.cards as [Card];
+    expect(card).toMatchObject({ tool: 'notion-create-pages', toolTitle: 'Create page', validationErrors: [] });
+    expect(card.arguments).toEqual({ title: 'Website content cleanup', content: '- Defence\n- Law enforcement' });
+    expect(card.sendTemplate).toBeTruthy();
+    expect(mcp.calls()).toEqual([]);
+
+    const approved = await page.evaluate(
+      ([f, id]) => (window as unknown as { stenoai: Bridge }).stenoai.actions.approve(f, id, { title: 'Website cleanup', content: '- Defence' }),
+      [summaryFile, card.id] as const,
+    );
+    expect(approved.card.status).toBe('done');
+    expect(mcp.calls()).toEqual([
+      { name: 'notion-create-pages', args: { pages: [{ properties: { title: 'Website cleanup' }, content: '- Defence' }] } },
+    ]);
+  } finally {
+    await ollama?.close();
     await mcp.close();
   }
 });

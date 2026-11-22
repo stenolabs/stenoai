@@ -3919,8 +3919,9 @@ const CHAT_AGENT_ERROR = 'Unable to answer. Check your AI provider and try again
 /** The tools for this chat turn, or null to keep plain chat. */
 async function prepareChatAgentTools(payload) {
   try {
-    if (!chatAgent.toolCallingSupport(readConfigFile(configJsonPath()))) return null;
-    const connectionTools = await getMcpActionsService().chatToolset();
+    const cfg = readConfigFile(configJsonPath());
+    if (!chatAgent.toolCallingSupport(cfg)) return null;
+    const connectionTools = await getMcpActionsService().chatToolset({ simpleOnly: chatAgent.prefersSimpleActions(cfg) });
     if (!connectionTools.length) return null;
     return chatAgent.buildAgentTools({ connectionTools, steno: payload.scope !== 'general' });
   } catch (e) {
@@ -3979,7 +3980,7 @@ function runChatAgent({ queryId, payload, tools, entry, send, cleanup, runPlain 
     return service.callReadTool(tool.connectionId, tool.tool, args);
   };
   const proposeWrite = async (tool, args) => {
-    const proposed = await service.proposeChatAction(chatKey, { connectionId: tool.connectionId, tool: tool.tool, arguments: args });
+    const proposed = await service.proposeChatAction(chatKey, { connectionId: tool.connectionId, tool: tool.tool, arguments: args, simple: tool.simple });
     if (proposed.rejected) return { status: 'rejected', missing: proposed.missing };
     if (cancelled) return { status: 'declined' };
     send('query-action-card', { card: proposed.card });

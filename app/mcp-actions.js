@@ -40,11 +40,13 @@ const { validateArguments, compactSchema } = require('./mcp-schema');
 const { startLoopback: defaultStartLoopback } = require('./mcp-oauth-loopback');
 const { redactCredentials } = require('./diagnostics-filter');
 const { checkProposal, placeholderArguments } = require('./mcp-proposals');
+const simpleActions = require('./mcp-simple-actions');
 
 const MAX_PROPOSALS = 5;
 const MAX_PROMPT_TOOLS = 60;
 const MAX_TOKEN_LENGTH = 8192;
 const MCP_PROTOCOL_PROBE_VERSION = '2025-06-18';
+const SIMPLE_ACTIONS_TTL_MS = 10 * 60 * 1000;
 
 class ActionError extends Error {
   constructor(code, message) {
@@ -128,6 +130,7 @@ function createActionsService({
   const cardsDir = path.join(userDataDir, 'mcp-actions');
   const tokenManagers = new Map();
   const running = new Set();
+  const simpleCache = new Map(); // connection id -> { key, at, actions }
   let activeAuth = null;
 
   const secretKey = (id) => `conn:${id}`;
@@ -456,15 +459,19 @@ function createActionsService({
   function enrichCard(card, p) {
     const connection = connections.get(card.connectionId);
     const tool = connection?.tools?.find((t) => t.name === card.tool) || null;
+    // A simple action's card edits the flat fields; card.tool is the vendor
+    // tool it translates to, and sendTemplate is how (see mcp-simple-actions.js).
+    const simple = card.simple && typeof card.simple === 'object' ? card.simple : null;
     return {
       ...card,
       connectionName: connection?.name || card.connectionName,
       connectionAvailable: Boolean(connection && connection.enabled && tool && allowedByList(connection.url, p.endpointAllowlist)),
       origin: connection ? originOf(connection.url) : null,
       locality: connection ? normalizeEndpointUrl(connection.url)?.locality || 'internet' : null,
-      inputSchema: tool?.inputSchema || null,
-      toolTitle: tool?.title || null,
-      toolDescription: tool?.description || null,
+      inputSchema: simple ? simple.schema : tool?.inputSchema || null,
+      toolTitle: simple ? simple.title : tool?.title || null,
+      toolDescription: simple ? simple.description || null : tool?.description || null,
+      sendTemplate: simple ? simple.template : null,
     };
   }
 
@@ -501,6 +508,72 @@ function createActionsService({
     return out;
   }
 
+  /** Run a vendor read tool for a simple action's prefetch; resolves the result text. */
+  async function prefetchRead(connection, name, args) {
+    await assertAllowed(connection.url);
+    const res = await remote.callTool(clientOptions(connection), name, args);
+    if (res.isError) {
+      const err = new Error('prefetch failed');
+      err.code = 'tool-error';
+      throw err;
+    }
+    return res.text;
+  }
+
+  /**
+   * The simple actions of one connection (mcp-simple-actions.js), prefetched
+   * values included, cached for a few minutes per tools list. [] for an
+   * unknown kind or when the vendor tool is missing: the generic path then.
+   */
+  async function simpleActionsOf(connection) {
+    if (!simpleActions.hasSimpleActions(connection.kind)) return [];
+    const key = `${connection.toolsFetchedAt || 0}:${(connection.tools || []).length}`;
+    const hit = simpleCache.get(connection.id);
+    if (hit && hit.key === key && now() - hit.at < SIMPLE_ACTIONS_TTL_MS) return hit.actions;
+    const actions = await simpleActions.buildSimpleActions({
+      kind: connection.kind,
+      tools: connection.tools,
+      read: (name, args) => prefetchRead(connection, name, args),
+      log,
+    });
+    simpleCache.set(connection.id, { key, at: now(), actions });
+    return actions;
+  }
+
+  /**
+   * What the summariser is offered: a known connector's simple actions when
+   * it has them, otherwise the connection's write tools (src/action_suggest.py
+   * shortlists and compacts those against the note).
+   */
+  async function suggestCatalogue(p) {
+    const out = [];
+    for (const c of usableConnections(p)) {
+      const simple = await simpleActionsOf(c);
+      if (simple.length) {
+        for (const a of simple) {
+          out.push({
+            connection_id: c.id, connection_name: c.name, tool: a.id, title: a.title, description: a.description,
+            input_schema: a.schema, simple: true, simpleAction: a,
+          });
+        }
+        continue;
+      }
+      for (const t of c.tools) {
+        if (t.readOnly || t.destructive) continue;
+        out.push({
+          connection_id: c.id,
+          connection_name: c.name,
+          tool: t.name,
+          title: t.title || null,
+          description: (t.description || t.title || '').slice(0, 400),
+          input_schema: compactSchema(t.inputSchema),
+        });
+        if (out.length >= MAX_PROMPT_TOOLS) return out;
+      }
+    }
+    return out;
+  }
+
   async function hasUsableConnections() {
     const p = await policy();
     return p.actionsEnabled && toolCatalogue(p).length > 0;
@@ -516,16 +589,17 @@ function createActionsService({
     if (!p.actionsEnabled) throw new ActionError('disabled-by-org', 'Your organisation has turned off actions');
     const existing = readCards(summaryPath);
     if (auto && (!connections.getAutoSuggest() || existing.length > 0)) return { skipped: true, cards: existing.map((c) => enrichCard(c, p)) };
-    const catalogue = toolCatalogue(p);
-    if (!catalogue.length) {
+    if (!toolCatalogue(p).length) {
       if (auto) return { skipped: true, cards: [] };
       throw new ActionError('no-connections', 'Connect a tool first');
     }
+    const catalogue = await suggestCatalogue(p);
 
     const tmpDir = path.join(userDataDir, 'tmp');
     fs.mkdirSync(tmpDir, { recursive: true });
     const toolsFile = path.join(tmpDir, `mcp-tools-${crypto.randomUUID()}.json`);
-    fs.writeFileSync(toolsFile, JSON.stringify({ tools: catalogue, max_proposals: MAX_PROPOSALS }), { mode: 0o600, flag: 'wx' });
+    const forModel = catalogue.map(({ simpleAction, ...entry }) => entry);
+    fs.writeFileSync(toolsFile, JSON.stringify({ tools: forModel, max_proposals: MAX_PROPOSALS }), { mode: 0o600, flag: 'wx' });
     let result;
     try {
       result = await runSuggest(summaryPath, toolsFile);
@@ -544,11 +618,18 @@ function createActionsService({
     const fresh = [];
     const dropped = { uncited: 0, placeholder: 0, 'ungrounded-id': 0 };
     for (const proposal of proposals) {
-      const entry = byKey.get(`${proposal.connection_id}\u0000${proposal.tool}`);
+      // src/action_suggest.py already repaired names; this is the backstop.
+      const sameConnection = catalogue.filter((t) => t.connection_id === proposal.connection_id).map((t) => t.tool);
+      const toolName = simpleActions.resolveToolName(proposal.tool, sameConnection);
+      const entry = toolName ? byKey.get(`${proposal.connection_id}\u0000${toolName}`) : null;
       if (!entry || !proposal.arguments || typeof proposal.arguments !== 'object' || Array.isArray(proposal.arguments)) continue;
       const connection = connections.get(entry.connection_id);
-      const tool = connection.tools.find((t) => t.name === entry.tool);
-      const check = checkProposal(proposal, tool.inputSchema, note);
+      const simple = entry.simpleAction || null;
+      const tool = connection.tools.find((t) => t.name === (simple ? simple.vendorTool : entry.tool));
+      if (!tool) continue;
+      const schema = simple ? simple.schema : tool.inputSchema;
+      const args = simple ? simpleActions.coerceArguments(schema, proposal.arguments) : proposal.arguments;
+      const check = checkProposal({ ...proposal, arguments: args }, schema, note);
       if (!check.ok) {
         dropped[check.reason] += 1;
         continue;
@@ -559,9 +640,10 @@ function createActionsService({
         connectionId: connection.id,
         connectionName: connection.name,
         tool: tool.name,
-        arguments: proposal.arguments,
+        ...(simple ? { simple: simpleCardPart(simple) } : {}),
+        arguments: args,
         reason: typeof proposal.reason === 'string' ? proposal.reason.slice(0, 300) : '',
-        validationErrors: validateArguments(tool.inputSchema, proposal.arguments),
+        validationErrors: validateArguments(schema, args),
         status: 'proposed',
         createdAt: now(),
         updatedAt: now(),
@@ -607,7 +689,12 @@ function createActionsService({
     await assertAllowed(connection.url);
     const tool = (connection.tools || []).find((t) => t.name === card.tool);
     if (!tool) throw new ActionError('tool-unavailable', 'The endpoint no longer offers this tool');
-    const errors = validateArguments(tool.inputSchema, args);
+    const simple = card.simple && typeof card.simple === 'object' ? card.simple : null;
+    // A simple action is checked on its own flat fields (what the user
+    // edited), then translated; the vendor payload is checked again.
+    let errors = validateArguments(simple ? simple.schema : tool.inputSchema, args);
+    const callArgs = simple && !errors.length ? simpleActions.fillTemplate(simple.template, args) : args;
+    if (simple && !errors.length) errors = validateArguments(tool.inputSchema, callArgs);
     if (errors.length) {
       updateCard(summaryPath, cardId, { arguments: args, validationErrors: errors });
       const err = new ActionError('invalid-arguments', 'Some fields need fixing');
@@ -619,7 +706,7 @@ function createActionsService({
     updateCard(summaryPath, cardId, { status: 'running', arguments: args, validationErrors: [] });
     let outcome;
     try {
-      const res = await remote.callTool(clientOptions(connection), tool.name, args);
+      const res = await remote.callTool(clientOptions(connection), tool.name, callArgs);
       outcome = res.isError
         ? { status: 'failed', result: { status: 'tool-error', link: res.link, text: res.text, detail: failureDetail(res.text) } }
         : { status: 'done', result: { status: 'ok', link: res.link, text: res.text } };
@@ -635,7 +722,7 @@ function createActionsService({
       connectionName: connection.name,
       origin: originOf(connection.url),
       tool: tool.name,
-      arguments: args,
+      arguments: callArgs,
       status: outcome.result.status,
       link: outcome.result.link,
       noteId: path.basename(cardsFile(summaryPath), '.json'),
@@ -656,12 +743,30 @@ function createActionsService({
   // through the same approve() as a note's cards: same validation, policy
   // re-check and audit line. Destructive tools are never offered.
 
-  /** Tools the chat model may use, per enabled and allowed connection. */
-  async function chatToolset() {
+  /**
+   * Tools the chat model may use, per enabled and allowed connection. A known
+   * connector's simple actions come first; `simpleOnly` (a small local model)
+   * offers only those for that connector instead of its raw vendor tools.
+   */
+  async function chatToolset({ simpleOnly = false } = {}) {
     const p = await policy();
     if (!p.actionsEnabled) return [];
     const out = [];
     for (const c of usableConnections(p)) {
+      const simple = await simpleActionsOf(c);
+      for (const a of simple) {
+        out.push({
+          connectionId: c.id,
+          connectionName: c.name,
+          tool: a.id,
+          title: a.title,
+          description: a.description,
+          inputSchema: a.schema,
+          readOnly: false,
+          simple: a,
+        });
+      }
+      if (simpleOnly && simple.length) continue;
       for (const t of c.tools) {
         if (t.destructive) continue;
         out.push({
@@ -711,23 +816,38 @@ function createActionsService({
    * arguments that are missing or placeholders are refused (the model is told
    * to ask the user) rather than shown as a card.
    */
-  async function proposeChatAction(chatKey, { connectionId, tool: toolName, arguments: args, reason }) {
+  async function proposeChatAction(chatKey, { connectionId, tool: toolName, arguments: args, reason, simple: simpleId }) {
     const p = await policy();
     if (!p.actionsEnabled) throw new ActionError('disabled-by-org', 'Your organisation has turned off actions');
-    const { connection, tool } = chatTool(connectionId, toolName);
-    if (tool.readOnly) throw new ActionError('invalid-state', 'Read-only tools do not need approval');
+    let connection;
+    let tool;
+    let simple = null;
+    if (typeof simpleId === 'string' && simpleId) {
+      // Looked up again here rather than trusted from the caller.
+      connection = connections.get(connectionId);
+      if (!connection || !connection.enabled) throw new ActionError('connection-unavailable', 'The connection is off or removed');
+      simple = (await simpleActionsOf(connection)).find((a) => a.id === simpleId) || null;
+      tool = simple ? (connection.tools || []).find((t) => t.name === simple.vendorTool) : null;
+      if (!simple || !tool) throw new ActionError('tool-unavailable', 'The endpoint does not offer this tool');
+    } else {
+      ({ connection, tool } = chatTool(connectionId, toolName));
+      if (tool.readOnly) throw new ActionError('invalid-state', 'Read-only tools do not need approval');
+    }
     if (!allowedByList(connection.url, p.endpointAllowlist)) throw new ActionError('endpoint-not-allowed', 'Your organisation does not allow this endpoint');
-    const safeArgs = args && typeof args === 'object' && !Array.isArray(args) ? args : {};
-    const missing = placeholderArguments(tool.inputSchema, safeArgs);
+    const schema = simple ? simple.schema : tool.inputSchema;
+    const raw = args && typeof args === 'object' && !Array.isArray(args) ? args : {};
+    const safeArgs = simple ? simpleActions.coerceArguments(schema, raw) : raw;
+    const missing = placeholderArguments(schema, safeArgs);
     if (missing.length) return { rejected: 'placeholder', missing };
     const card = {
       id: crypto.randomUUID(),
       connectionId: connection.id,
       connectionName: connection.name,
       tool: tool.name,
+      ...(simple ? { simple: simpleCardPart(simple) } : {}),
       arguments: safeArgs,
       reason: typeof reason === 'string' ? reason.slice(0, 300) : '',
-      validationErrors: validateArguments(tool.inputSchema, safeArgs),
+      validationErrors: validateArguments(schema, safeArgs),
       status: 'proposed',
       createdAt: now(),
       updatedAt: now(),
@@ -743,6 +863,11 @@ function createActionsService({
     // exposed for tests
     _stores: { connections, secrets, audit, cardsFile },
   };
+}
+
+/** What a card keeps of a simple action: enough to edit, preview and translate it. */
+function simpleCardPart(action) {
+  return { action: action.id, title: action.title, description: action.description, schema: action.schema, template: action.template };
 }
 
 /**

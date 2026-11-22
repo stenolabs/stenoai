@@ -641,7 +641,7 @@ function install({ ipcMain }) {
     },
   };
   const NOTION_TOOLS = [
-    { name: 'create_page', title: 'Create page', description: 'Create a Notion page.', readOnly: false },
+    { name: 'notion-create-pages', title: 'Create Notion pages', description: 'Create Notion pages.', readOnly: false },
     { name: 'search', title: 'Search', description: 'Search the workspace.', readOnly: true },
   ];
   const ACTION_CONNECTORS = [
@@ -712,14 +712,26 @@ function install({ ipcMain }) {
       kind: 'notion', auth: 'oauth', account: 'Acme workspace', tools: NOTION_TOOLS,
     });
     actionsState.connections.push(notion);
+    // A simple action (app/mcp-simple-actions.js): flat fields on the card,
+    // translated to Notion's nested notion-create-pages call by sendTemplate.
     actionsState.cards = [
-      mockCard(
-        notion,
-        'create_page',
-        { title: 'Website content cleanup', content: 'Pages to trim:\n- Defence\n- Law enforcement' },
-        '',
-        "Create a Notion page called 'Website content cleanup' listing the pages to trim: Defence, Law enforcement",
-      ),
+      {
+        ...mockCard(
+          notion,
+          'notion-create-pages',
+          { title: 'Website content cleanup', content: 'Pages to trim:\n- Defence\n- Law enforcement' },
+          '',
+          "Create a Notion page called 'Website content cleanup' listing the pages to trim: Defence, Law enforcement",
+        ),
+        toolTitle: 'Create page',
+        inputSchema: {
+          type: 'object',
+          properties: { title: { type: 'string', minLength: 1 }, content: { type: 'string' } },
+          required: ['title'],
+          additionalProperties: false,
+        },
+        sendTemplate: { pages: [{ properties: { title: '{{title}}' }, content: '{{content}}' }] },
+      },
     ];
   }
   const actionsOverview = () => ({

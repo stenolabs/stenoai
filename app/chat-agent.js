@@ -54,6 +54,17 @@ function toolCallingSupport(cfg) {
   return false;
 }
 
+/**
+ * Whether chat should offer a known connector's simple actions instead of
+ * its raw vendor tools: yes for local or remote Ollama models, which pick
+ * the wrong tool or invent nested arguments from a large vendor catalogue.
+ * Cloud models keep the raw tools as well.
+ */
+function prefersSimpleActions(cfg) {
+  const provider = (cfg && typeof cfg === 'object' && cfg.ai_provider) || 'local';
+  return provider === 'local' || provider === 'remote';
+}
+
 function slug(text) {
   const s = String(text || '').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
   return s || 'tool';
@@ -110,6 +121,8 @@ function buildAgentTools({ connectionTools = [], steno = true } = {}) {
       connectionName: t.connectionName,
       tool: t.tool,
       title: t.title || null,
+      // A simple action (mcp-simple-actions.js): the service translates it on Approve.
+      simple: t.simple && typeof t.simple.id === 'string' ? t.simple.id : null,
     });
   }
   return { defs, byName };
@@ -242,6 +255,7 @@ module.exports = {
   MAX_STEPS,
   AgentCancelled,
   toolCallingSupport,
+  prefersSimpleActions,
   buildAgentTools,
   runAgentTurn,
   runBackendJson,

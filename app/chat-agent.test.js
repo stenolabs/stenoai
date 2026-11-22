@@ -8,6 +8,7 @@ const {
   runAgentTurn,
   runBackendJson,
   toolCallingSupport,
+  prefersSimpleActions,
 } = require('./chat-agent');
 
 const CONNECTION_TOOLS = [
@@ -55,6 +56,18 @@ test('tools are namespaced by connection; Steno tools only when asked', () => {
   // Two connections with the same name do not collide.
   const dup = buildAgentTools({ steno: false, connectionTools: [CONNECTION_TOOLS[0], { ...CONNECTION_TOOLS[0], connectionId: 'c2' }] });
   assert.deepEqual(dup.defs.map((d) => d.name), ['linear__search_issues', 'linear__search_issues_2']);
+});
+
+test('local models get simple actions; a simple action entry carries its id for the service', () => {
+  assert.equal(prefersSimpleActions({ ai_provider: 'local', model: 'qwen3.5:9b' }), true);
+  assert.equal(prefersSimpleActions({ ai_provider: 'remote' }), true);
+  assert.equal(prefersSimpleActions({}), true);
+  assert.equal(prefersSimpleActions({ ai_provider: 'cloud', cloud_provider: 'anthropic' }), false);
+  const simple = { connectionId: 'n1', connectionName: 'Notion', tool: 'create_page', title: 'Create page', description: 'Create a page.', inputSchema: { type: 'object' }, readOnly: false, simple: { id: 'create_page' } };
+  const tools = buildAgentTools({ connectionTools: [simple], steno: false });
+  assert.deepEqual(tools.defs.map((d) => d.name), ['notion__create_page']);
+  assert.equal(tools.byName.get('notion__create_page').simple, 'create_page');
+  assert.equal(buildAgentTools({ connectionTools: CONNECTION_TOOLS, steno: false }).byName.get('linear__create_issue').simple, null);
 });
 
 test('a read tool runs automatically, shows a step, and its result goes back as untrusted data', async () => {

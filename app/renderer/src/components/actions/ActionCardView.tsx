@@ -13,6 +13,7 @@ import {
 } from '@/lib/actionForm';
 import { actionErrorMessage } from '@/lib/actionErrors';
 import { actionPhrase, headlineValue, inlineFieldKeys } from '@/lib/actionCopy';
+import { fillTemplate } from '@/lib/actionTemplate';
 import { ActionValidationFailure } from '@/hooks/useActions';
 import { ipc, type ActionCard, type ActionLocality, type ActionValidationError } from '@/lib/ipc';
 import { t } from '@/i18n';
@@ -120,13 +121,22 @@ export function ActionCardView({
     : fields
       ? fromFormState(fields, formState, card.arguments)
       : null;
-  const payload = args ? JSON.stringify({ tool: card.tool, arguments: args }, null, 2) : '';
+  // A simple action shows the vendor call its fields translate to: what Approve sends.
+  const simple = card.sendTemplate !== undefined && card.sendTemplate !== null;
+  const payload = args
+    ? JSON.stringify(
+        { tool: card.tool, arguments: simple ? fillTemplate(card.sendTemplate, args) : args },
+        null,
+        2
+      )
+    : '';
   const finished = card.status === 'done';
   const running = card.status === 'running' || approving;
 
   const inlineKeys = React.useMemo(
-    () => (fields ? inlineFieldKeys(fields, card.arguments) : []),
-    [fields, card.arguments]
+    // A simple action has only a few flat fields: show them all.
+    () => (fields ? inlineFieldKeys(fields, card.arguments, simple ? 4 : 3) : []),
+    [fields, card.arguments, simple]
   );
   const inlineFields = fields ? fields.filter((f) => inlineKeys.includes(f.key)) : [];
   // Errors on fields that are not shown inline are listed in the disclosure.

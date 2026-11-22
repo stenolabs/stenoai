@@ -63,6 +63,50 @@ const DEFAULT_TOOLS = [
   },
 ];
 
+// A Notion-like endpoint for simple actions (app/mcp-simple-actions.js): the
+// vendor's nested create-pages tool plus tools a small model should never be
+// offered. A connection of kind 'notion' pointed here gets create_page.
+const NOTION_LIKE_TOOLS = [
+  {
+    name: 'notion-create-pages',
+    title: 'Create Notion pages',
+    description: 'Creates one or more Notion pages with the specified properties and content.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        pages: {
+          type: 'array',
+          minItems: 1,
+          items: {
+            type: 'object',
+            properties: {
+              properties: { type: 'object', additionalProperties: { type: 'string' } },
+              content: { type: 'string' },
+            },
+            required: ['properties'],
+          },
+        },
+        parent: { type: 'object', properties: { page_id: { type: 'string' } } },
+      },
+      required: ['pages'],
+    },
+  },
+  {
+    name: 'notion-search',
+    title: 'Search Notion',
+    description: 'Search pages.',
+    readOnly: true,
+    inputSchema: { type: 'object', properties: { query: { type: 'string' } } },
+  },
+  {
+    name: 'notion-delete-pages',
+    title: 'Delete pages',
+    description: 'Move pages to Trash.',
+    destructive: true,
+    inputSchema: { type: 'object', properties: { page_ids: { type: 'array', items: { type: 'string' } } } },
+  },
+];
+
 const sha256url = (s) => crypto.createHash('sha256').update(s).digest('base64url');
 const rand = () => crypto.randomBytes(12).toString('base64url');
 
@@ -97,6 +141,8 @@ function startMockMcpServer(opts = {}) {
           calls.push({ name: tool.name, args });
           // A tool with `failText` answers as the endpoint rejecting the call.
           if (tool.failText) return { isError: true, content: [{ type: 'text', text: tool.failText }] };
+          // A tool with `resultText` answers with it (a read tool's JSON, say).
+          if (tool.resultText) return { content: [{ type: 'text', text: tool.resultText }] };
           issueSeq += 1;
           return { content: [{ type: 'text', text: `Created MOCK-${issueSeq} https://mock.example/items/${issueSeq}` }] };
         },
@@ -255,4 +301,4 @@ async function followAuthorizeRedirect(authorizeUrl) {
   await fetch(location);
 }
 
-module.exports = { startMockMcpServer, followAuthorizeRedirect, DEFAULT_TOOLS };
+module.exports = { startMockMcpServer, followAuthorizeRedirect, DEFAULT_TOOLS, NOTION_LIKE_TOOLS };

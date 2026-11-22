@@ -998,6 +998,11 @@ export interface ActionCard {
   toolDescription: string | null;
   inputSchema: JsonSchema | null;
   arguments: Record<string, unknown>;
+  /**
+   * A simple action (app/mcp-simple-actions.js): `arguments` are its flat
+   * fields and this template turns them into the vendor call to `tool`.
+   */
+  sendTemplate?: unknown;
   reason: string;
   /** The note action item this proposal carries out. */
   actionItem?: string;
