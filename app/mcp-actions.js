@@ -38,6 +38,7 @@ const { createAuditLog } = require('./mcp-audit-log');
 const { connectorById, publicCatalogue } = require('./mcp-connectors');
 const { validateArguments, compactSchema } = require('./mcp-schema');
 const { startLoopback: defaultStartLoopback } = require('./mcp-oauth-loopback');
+const { redactCredentials } = require('./diagnostics-filter');
 
 const MAX_PROPOSALS = 5;
 const MAX_PROMPT_TOOLS = 60;
@@ -391,9 +392,14 @@ function createActionsService({
       log(`[actions] ${originOf(connection.url)} signed in (${client.method})`);
     } catch (e) {
       const code = e?.code || 'error';
-      log(`[actions] ${originOf(connection.url)} sign-in failed (${code})`);
+      const provider = e?.providerError
+        ? ` provider=${e.providerError}${e.providerDescription ? ` "${redactProviderText(e.providerDescription)}"` : ''}`
+        : '';
+      log(`[actions] ${originOf(connection.url)} sign-in failed (${code})${provider}`);
       connections.update(id, { status: 'needs-auth' });
       if (e instanceof ActionError) throw e;
+      const mapped = authorizeFailureCode(connection.kind, e);
+      if (mapped) throw new ActionError(mapped, 'Sign-in did not complete');
       throw new ActionError(code === 'cancelled' || code === 'timeout' || code === 'denied' ? code : (e instanceof oauth.OAuthFlowError ? code : 'auth-failed'),
         code === 'needs-registration' ? 'This service needs Steno to be registered with it first' : 'Sign-in did not complete');
     } finally {
@@ -634,4 +640,30 @@ function createActionsService({
   };
 }
 
-module.exports = { createActionsService, ActionError, allowedByList, publicConnection };
+/** Provider text for the log only: one line, no credentials, no email addresses. */
+function redactProviderText(text) {
+  return redactCredentials(String(text))
+    .replace(/[\u0000-\u001f\u007f]+/g, ' ')
+    .replace(/[^\s@"]+@[^\s@"]+/g, '[email]')
+    .slice(0, 200);
+}
+
+/**
+ * Provider-specific meaning of a failed authorize callback, or null for the
+ * generic handling. Atlassian's Rovo MCP refuses accounts with no Jira or
+ * Confluence site ("Your account isn't associated with a supported site"),
+ * either as an error callback whose description mentions the site, or by
+ * ending the flow without a code. A plain access_denied (the user clicked
+ * Cancel) keeps the generic "denied".
+ */
+function authorizeFailureCode(kind, err) {
+  if (kind !== 'atlassian' || !err) return null;
+  if (err.code === 'no-code') return 'atlassian-no-site';
+  if ((err.code === 'denied' || err.code === 'authorize-failed')
+    && /\b(site|supported)\b/i.test(String(err.providerDescription || ''))) {
+    return 'atlassian-no-site';
+  }
+  return null;
+}
+
+module.exports = { createActionsService, ActionError, allowedByList, publicConnection, authorizeFailureCode, redactProviderText };

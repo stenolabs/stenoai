@@ -82,7 +82,8 @@ export function ActionsSection() {
   const [addOpen, setAddOpen] = React.useState(false);
   const [addKey, setAddKey] = React.useState(0);
   const [pendingConnector, setPendingConnector] = React.useState<ActionConnectorId | null>(null);
-  const [connectError, setConnectError] = React.useState('');
+  // A failed sign-in shows on the card that started it.
+  const [connectError, setConnectError] = React.useState<{ id: ActionConnectorId; message: string } | null>(null);
 
   const data = overview.data;
   const policy = data?.policy;
@@ -91,10 +92,10 @@ export function ActionsSection() {
   const connectors = data?.connectors ?? [];
 
   const startConnector = (c: ActionConnector) => {
-    setConnectError('');
+    setConnectError(null);
     setPendingConnector(c.id);
     connect.mutate([c.id], {
-      onError: (e) => setConnectError(actionErrorMessage(e)),
+      onError: (e) => setConnectError({ id: c.id, message: actionErrorMessage(e) }),
       onSettled: () => setPendingConnector(null),
     });
   };
@@ -157,6 +158,15 @@ export function ActionsSection() {
                   <p className="mt-0.5 text-[12.5px] leading-snug" style={{ color: 'var(--fg-2)' }}>
                     {copy.description}
                   </p>
+                  {connectError?.id === c.id && (
+                    <p
+                      role="alert"
+                      className="mt-1.5 text-[12.5px] leading-snug"
+                      style={{ color: 'var(--danger)' }}
+                    >
+                      {connectError.message}
+                    </p>
+                  )}
                 </div>
                 {comingSoon ? (
                   <span
@@ -232,11 +242,6 @@ export function ActionsSection() {
       {pendingConnector && (
         <p role="status" className="mt-3 text-[12.5px]" style={{ color: 'var(--fg-2)' }}>
           {t('connect.actions.waitingForSignIn')}
-        </p>
-      )}
-      {connectError && (
-        <p role="alert" className="mt-3 text-[12.5px]" style={{ color: 'var(--fg-2)' }}>
-          {connectError}
         </p>
       )}
 

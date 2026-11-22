@@ -68,6 +68,18 @@ test('Connect: connector cards, add a custom endpoint, toggle and disconnect', a
   await page.getByRole('button', { name: 'Connect Linear' }).click();
   await expect(page.getByRole('region', { name: 'Linear', exact: true }).getByText('Connected')).toBeVisible();
 
+  // An Atlassian account with no Jira/Confluence site gets a specific message
+  // on that card, not the generic failure.
+  await app.evaluate(() => {
+    (globalThis as unknown as { __connectConnectorError: Record<string, string> }).__connectConnectorError = {
+      atlassian: 'atlassian-no-site',
+    };
+  });
+  await page.getByRole('button', { name: 'Connect Jira and Confluence' }).click();
+  await expect(page.getByRole('region', { name: 'Jira and Confluence', exact: true }).getByRole('alert')).toHaveText(
+    'This Atlassian account has no Jira or Confluence site. Sign in with your work account, or ask your admin to allow Rovo MCP.',
+  );
+
   await card.getByRole('button', { name: 'Disconnect' }).click();
   await page.getByRole('dialog').getByRole('button', { name: 'Disconnect' }).click();
   await expect(page.getByRole('region', { name: 'Team n8n', exact: true })).toHaveCount(0);

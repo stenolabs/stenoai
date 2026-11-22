@@ -692,6 +692,10 @@ function install({ ipcMain }) {
       return { success: true, connection };
     },
     'actions-connect-connector': async (_event, id) => {
+      // A spec sets global.__connectConnectorError = { [id]: code } to make a
+      // vendor sign-in fail with that ActionError code.
+      const failure = global.__connectConnectorError?.[id];
+      if (failure) return { success: false, error_code: failure, error: 'Sign-in did not complete' };
       const c = ACTION_CONNECTORS.find((x) => x.id === id);
       const connection = mockConnection({ name: c.name, url: c.url, origin: new URL(c.url).origin, locality: 'internet', kind: id, auth: 'oauth', account: 'sam@example.com' });
       actionsState.connections.push(connection);

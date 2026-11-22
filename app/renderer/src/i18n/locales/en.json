@@ -836,6 +836,7 @@
   "actions.error.cancelled": "Sign-in was cancelled.",
   "actions.error.timeout": "Sign-in timed out. Try again.",
   "actions.error.denied": "Access was not granted.",
+  "actions.error.atlassianNoSite": "This Atlassian account has no Jira or Confluence site. Sign in with your work account, or ask your admin to allow Rovo MCP.",
   "actions.error.noConnections": "Connect a tool on the Connect page first.",
   "actions.error.connectionUnavailable": "The connection for this action is off, removed, or no longer offers this tool.",
   "actions.error.invalidArguments": "Some fields need fixing before this can be sent.",

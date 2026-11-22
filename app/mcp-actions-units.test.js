@@ -143,3 +143,24 @@ test('IPC: note paths are validated, ids type-checked, errors carry a code and n
   assert.deepEqual(await handlers['actions-list']({}), { success: false, error_code: 'error', error: 'Something went wrong' });
   assert.deepEqual(await handlers['actions-remove']({}, 'x'), { success: false, error_code: 'not-found', error: 'Connection not found' });
 });
+
+const { authorizeFailureCode, redactProviderText } = require('./mcp-actions');
+
+test('authorize failures: an Atlassian account with no site gets its own code', () => {
+  const noSite = { code: 'authorize-failed', providerError: 'invalid_request', providerDescription: "Your account isn't associated with a supported site." };
+  assert.equal(authorizeFailureCode('atlassian', noSite), 'atlassian-no-site');
+  assert.equal(authorizeFailureCode('atlassian', { ...noSite, code: 'denied', providerError: 'access_denied' }), 'atlassian-no-site');
+  assert.equal(authorizeFailureCode('atlassian', { code: 'no-code' }), 'atlassian-no-site');
+  // Clicking Cancel stays a plain denial; other vendors and errors are untouched.
+  assert.equal(authorizeFailureCode('atlassian', { code: 'denied', providerError: 'access_denied', providerDescription: 'User denied access' }), null);
+  assert.equal(authorizeFailureCode('atlassian', { code: 'timeout' }), null);
+  assert.equal(authorizeFailureCode('linear', noSite), null);
+  assert.equal(authorizeFailureCode('atlassian', null), null);
+});
+
+test('provider error text is redacted before it is logged', () => {
+  const out = redactProviderText('No site for ada@example.com\nBearer abc.def.ghi');
+  assert.doesNotMatch(out, /ada@example\.com/);
+  assert.doesNotMatch(out, /\n/);
+  assert.ok(out.length <= 200);
+});

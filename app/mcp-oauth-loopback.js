@@ -88,6 +88,11 @@ async function startLoopback({ state, preferredPort = 0, timeoutMs = DEFAULT_TIM
       res.end(page('Not connected', 'You can close this tab and return to Steno.'));
       const err = new Error('Authorization was denied');
       err.code = error === 'access_denied' ? 'denied' : 'authorize-failed';
+      // The provider's own error and description stay in the main process
+      // (mcp-actions maps them to a code and logs them redacted); the
+      // renderer never sees raw provider text.
+      err.providerError = error.slice(0, 64);
+      err.providerDescription = (url.searchParams.get('error_description') || '').slice(0, 500);
       finish(settle.reject, err);
       return;
     }
@@ -95,6 +100,11 @@ async function startLoopback({ state, preferredPort = 0, timeoutMs = DEFAULT_TIM
     if (!code) {
       res.writeHead(400, { 'content-type': 'text/html; charset=utf-8' });
       res.end(page('Missing authorization code', 'Return to Steno and try again.'));
+      // A callback with the right state but neither a code nor an error is
+      // a finished flow that produced nothing; fail now, not at the timeout.
+      const err = new Error('Sign-in ended without an authorization code');
+      err.code = 'no-code';
+      finish(settle.reject, err);
       return;
     }
     res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });

@@ -28,6 +28,8 @@ export function actionErrorMessage(error: unknown): string {
       return t('actions.error.timeout');
     case 'denied':
       return t('actions.error.denied');
+    case 'atlassian-no-site':
+      return t('actions.error.atlassianNoSite');
     case 'no-connections':
       return t('actions.error.noConnections');
     case 'connection-unavailable':
