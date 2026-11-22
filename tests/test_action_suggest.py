@@ -64,7 +64,8 @@ class ParseResponseTests(unittest.TestCase):
         reply = json.dumps({"actions": [
             {"connection_id": "c1", "tool": "create_issue", "arguments": {"title": "Prep notes"}, "action_item": 1, "reason": "Bob"},
             {"connection_id": "c1", "tool": "delete_everything", "arguments": {}, "action_item": 1},
-            {"connection_id": "c2", "tool": "create_issue", "arguments": {"title": "x"}, "action_item": 1},
+            # An unknown connection with a catalogue-unique tool name resolves to it (a dup here).
+            {"connection_id": "c2", "tool": "create_issue", "arguments": {"title": "Prep notes"}, "action_item": 1},
             {"connection_id": "c1", "tool": "send_message", "arguments": "not an object", "action_item": 1},
             {"connection_id": "c1", "tool": "create_issue", "arguments": {"title": "Prep notes"}, "action_item": 1},
         ]})
@@ -117,6 +118,8 @@ class ParseResponseTests(unittest.TestCase):
         self.assertEqual(len(s.parse_response(json.dumps([ok, invented]), tools, meeting=meeting)), 1)
         self.assertEqual(s.ungrounded_identifiers({"required": ["parent", "title"]}, {"parent": "abc", "title": "t"}, "no ids"), ["parent"])
         self.assertEqual(s.ungrounded_identifiers({"required": ["title"]}, {"page_id": "abc", "title": "t"}, ""), [], "optional ids are not checked")
+        self.assertEqual(s.ungrounded_identifiers({"required": ["page_id"]}, {"page_id": "Website content cleanup"},
+                                                  "Create a page called Website content cleanup"), ["page_id"], "a title is not an id")
 
     def test_each_proposal_must_cite_an_action_item(self):
         base = {"connection_id": "c1", "tool": "create_issue", "arguments": {"title": "Prep notes"}}
@@ -133,6 +136,130 @@ class ParseResponseTests(unittest.TestCase):
         self.assertNotIn("delete_issue", s.build_prompt(MEETING, tools))
         p = {"connection_id": "c1", "tool": "delete_issue", "arguments": {}, "action_item": 1}
         self.assertEqual(s.parse_response(json.dumps([p]), tools, meeting=MEETING), [])
+
+
+NOTION_TOOLS = [
+    {"connection_id": "0b5c7a1e-uuid-notion", "connection_name": "Notion", "tool": "create_page", "title": "Create page",
+     "description": "Create a new private page in Notion.", "simple": True,
+     "input_schema": {"type": "object", "additionalProperties": False, "required": ["title"],
+                      "properties": {"title": {"type": "string", "description": "Page title"},
+                                     "content": {"type": "string", "description": "Page body in Markdown"}}}},
+    {"connection_id": "9f-uuid-linear", "connection_name": "Linear", "tool": "create_issue", "title": "Create issue",
+     "description": "Create a Linear issue.", "simple": True,
+     "input_schema": {"type": "object", "additionalProperties": False, "required": ["title", "team"],
+                      "properties": {"title": {"type": "string"}, "description": {"type": "string"},
+                                     "team": {"type": "string", "enum": ["Engineering", "Design"], "default": "Engineering"}}}},
+]
+
+SAMPLE = {
+    "session_info": {"name": "Website review (sample)"},
+    "summary": "We reviewed the public website.",
+    "action_items": [
+        "Create a Notion page called 'Website content cleanup' listing the pages to trim: Defence, Law enforcement",
+        "Ask the design team for a shorter hero section on the Defence page",
+    ],
+}
+
+
+def _generic(name, title="", description="", **extra):
+    return {"connection_id": "g1", "connection_name": "n8n", "tool": name, "title": title, "description": description,
+            "input_schema": {"type": "object", "properties": {"text": {"type": "string"}}}, **extra}
+
+
+class ShortlistTests(unittest.TestCase):
+    def test_keeps_simple_actions_and_ranks_generic_tools_by_overlap(self):
+        tools = NOTION_TOOLS + [
+            _generic("notion-upload-skill", "Upload a Notion Skill"),
+            _generic("update-sidebar-tabs", "Update sidebar tabs"),
+            _generic("create-file-upload", "Create a file upload URL"),
+            _generic("search", "Search", read_only=True),
+            _generic("send_message", "Send message", "Post a message to Slack"),
+            _generic("create_cleanup_task", "Create task", "Create a task for website cleanup"),
+        ] + [_generic(f"misc_{i}", f"Misc {i}") for i in range(10)]
+        out = [t["tool"] for t in s.shortlist_tools(tools, s.note_context(SAMPLE))]
+        self.assertEqual(out[:2], ["create_page", "create_issue"])
+        self.assertEqual(out[2], "create_cleanup_task", "most overlap with the action items first")
+        for gone in ["notion-upload-skill", "update-sidebar-tabs", "create-file-upload", "search"]:
+            self.assertNotIn(gone, out)
+        self.assertEqual(len(out), 2 + s.MAX_GENERIC_TOOLS)
+
+    def test_meta_tools(self):
+        for name in ["notion-get-setup-guide", "update-skill-settings", "createAttachment", "create-view", "updateDatabaseSchema"]:
+            self.assertTrue(s.is_meta_tool({"tool": name}), name)
+        for name in ["create_issue", "notion-create-pages", "createJiraIssue", "send_message"]:
+            self.assertFalse(s.is_meta_tool({"tool": name}), name)
+
+    def test_compact_arguments_are_flat_and_bounded(self):
+        schema = {"type": "object", "required": ["pages"], "properties": {
+            "pages": {"type": "array", "items": {"type": "object", "properties": {"properties": {"type": "object"}}},
+                      "description": "The pages to create. " + "x" * 500},
+            "parent": {"type": "object", "properties": {"page_id": {}, "database_id": {}}},
+            "kind": {"type": "string", "enum": ["a", "b"]},
+            **{f"opt{i}": {"type": "string"} for i in range(8)},
+        }}
+        line = s.render_arguments(schema)
+        self.assertTrue(line.startswith('"pages" (list of objects (see description), required)'))
+        self.assertIn('"parent" (object with page_id, database_id)', line)
+        self.assertIn('"kind" (one of "a", "b")', line)
+        self.assertIn("optional arguments not shown", line)
+        self.assertLess(len(line), 700)
+
+    def test_prompt_for_a_77_tool_catalogue_stays_small(self):
+        big = [_generic(f"tool_{i}", f"Tool {i}", "d" * 400) for i in range(77)]
+        prompt = s.build_prompt(SAMPLE, NOTION_TOOLS + big)
+        self.assertLessEqual(len(prompt), s.MAX_PROMPT_CHARS)
+        self.assertIn('connection_id "c1" (Notion), tool "create_page"', prompt)
+        self.assertNotIn("0b5c7a1e-uuid-notion", prompt, "connections are aliased")
+        self.assertIn("EXAMPLE", prompt)
+
+
+class ResolveToolTests(unittest.TestCase):
+    def setUp(self):
+        self.tools = NOTION_TOOLS + [
+            {"connection_id": "n2", "connection_name": "Notion raw", "tool": "notion-create-pages", "title": "Create Notion pages",
+             "description": "Creates one or more Notion pages with the specified properties and content.", "input_schema": {}},
+            {"connection_id": "n2", "connection_name": "Notion raw", "tool": "notion-delete-pages", "destructive": True, "input_schema": {}},
+        ]
+
+    def test_repairs_names(self):
+        def r(tool, conn=""):
+            return (s.resolve_tool(tool, conn, self.tools) or {}).get("tool")
+
+        self.assertEqual(r("create_page", "c1"), "create_page")
+        self.assertEqual(r("Create-Page", "c1"), "create_page")
+        self.assertEqual(r("create_pages", "n2"), "notion-create-pages", "suffix, vendor prefix dropped")
+        self.assertEqual(r("Creates one or more Notion pages with the specified properties and content.", "n2"), "notion-create-pages")
+        self.assertEqual(r("Create Notion pages"), "notion-create-pages", "title, no connection")
+        self.assertEqual(r("create_issue", "9f-uuid-linear"), "create_issue", "real id accepted")
+        self.assertEqual(r("create_issue", "Linear"), "create_issue", "connection name accepted")
+        self.assertIsNone(r("delete_pages", "n2"), "destructive never resolves")
+        self.assertIsNone(r("make_coffee", "c1"))
+        self.assertIsNone(r("", "c1"))
+
+    def test_ambiguous_is_rejected(self):
+        tools = [dict(_generic("create_task"), connection_id="a"), dict(_generic("create_task"), connection_id="b")]
+        self.assertIsNone(s.resolve_tool("create_task", "zzz", tools))
+        self.assertEqual(s.resolve_tool("create_task", "b", tools)["connection_id"], "b")
+
+
+class CoerceTests(unittest.TestCase):
+    def test_defaults_enum_case_lists_and_unknown_keys(self):
+        schema = NOTION_TOOLS[1]["input_schema"]
+        self.assertEqual(s.coerce_arguments(schema, {"title": "T", "team": "design", "extra": 1}),
+                         {"title": "T", "team": "Design"})
+        self.assertEqual(s.coerce_arguments(schema, {"title": "T"})["team"], "Engineering")
+        page = s.coerce_arguments(NOTION_TOOLS[0]["input_schema"], {"title": "W", "content": ["Defence", "Law enforcement"]})
+        self.assertEqual(page["content"], "- Defence\n- Law enforcement")
+
+    def test_small_model_reply_for_the_sample_note(self):
+        reply = json.dumps({"actions": [{"connection_id": "c1", "tool": "Create page", "action_item": "1",
+                                         "arguments": {"title": "Website content cleanup", "content": ["Defence", "Law enforcement"]}}]})
+        out = s.parse_response(reply, NOTION_TOOLS, meeting=SAMPLE)
+        self.assertEqual(out[0]["connection_id"], "0b5c7a1e-uuid-notion")
+        self.assertEqual(out[0]["tool"], "create_page")
+        self.assertEqual(out[0]["arguments"]["title"], "Website content cleanup")
+        single = json.dumps({"tool": "create_page", "connection_id": "c1", "arguments": {"title": "W"}, "action_item": 1})
+        self.assertEqual(len(s.parse_response(single, NOTION_TOOLS, meeting=SAMPLE)), 1, "a bare proposal object")
 
 
 class SuggestTests(unittest.TestCase):

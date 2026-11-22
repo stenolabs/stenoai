@@ -189,6 +189,7 @@ test('identifiers: only ids written in the note are allowed', () => {
   assert.deepEqual(proposals.ungroundedIdentifiers(schema, { page_id: 'PAGE-7', content: 'x' }, note), ['page_id']);
   // An optional id the model leaves to the user is not checked.
   assert.deepEqual(proposals.ungroundedIdentifiers({ required: ['content'] }, { page_id: 'PAGE-7', content: 'x' }, note), []);
+  assert.deepEqual(proposals.ungroundedIdentifiers(schema, { page_id: 'Website content cleanup', content: 'x' }, 'Create Website content cleanup'), ['page_id'], 'a title is not an id');
 });
 
 test('citations: a proposal must name one of the note action items', () => {

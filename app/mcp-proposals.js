@@ -74,7 +74,11 @@ function ungroundedIdentifiers(schema, args, noteText) {
   return requiredKeys(schema).filter((k) => {
     if (!isIdentifierParam(k) || !Object.hasOwn(args || {}, k)) return false;
     const v = args[k];
-    if (typeof v === 'string' || typeof v === 'number') return !String(v).trim() || !text.includes(String(v).trim());
+    // An id has no spaces: "Website content cleanup" is a title the note mentions, not a page id.
+    if (typeof v === 'string' || typeof v === 'number') {
+      const id = String(v).trim();
+      return !id || !text.includes(id) || /\s/.test(id);
+    }
     return true; // an object/array id is never something the note wrote down
   });
 }

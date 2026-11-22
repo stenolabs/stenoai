@@ -1846,7 +1846,8 @@ TITLE:"""
             client,
             model=self.model_name,
             messages=[{'role': 'user', 'content': prompt}],
-            options=self._ollama_options(),
+            # Low temperature: tool names and arguments must be copied, not paraphrased.
+            options={**self._ollama_options(), 'temperature': 0.1},
             format='json',
         )
         return response['message']['content'].strip()
