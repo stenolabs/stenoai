@@ -4748,6 +4748,56 @@ def chat_context_streaming():
     run_chat_query(_parse_meeting_markdown, _build_chat_corpus, resolve_persisted_output_language)
 
 
+# A concrete, Notion-ready sample note for manually testing Suggested actions
+# and chat-as-an-agent against a real Notion connection. Development only:
+# hidden from --help and never written unless run by hand.
+DEV_NOTION_SAMPLE = {
+    "name": "Website review (sample)",
+    "summary": (
+        "We reviewed the public website. The Defence and Law enforcement pages "
+        "are too long and repeat the product overview, so we will trim them and "
+        "track the work on one Notion page."
+    ),
+    "key_points": [
+        "The Defence page repeats the product overview and needs trimming.",
+        "The Law enforcement page has three paragraphs that say the same thing.",
+    ],
+    "action_items": [
+        "Create a Notion page called 'Website content cleanup' listing the pages to trim: Defence, Law enforcement",
+        "Ask the design team for a shorter hero section on the Defence page",
+    ],
+    "participants": ["You", "Sam"],
+}
+
+
+@cli.command(name='dev-seed-notion-note', hidden=True)
+def dev_seed_notion_note():
+    """[dev] Write a sample note whose action items are concrete and Notion-ready."""
+    import datetime
+    from src.config import get_data_dirs
+
+    output_dir = get_data_dirs()["output"]
+    output_dir.mkdir(parents=True, exist_ok=True)
+    now = datetime.datetime.now()
+    stem = now.strftime("%Y%m%d_%H%M%S") + "_website-review-sample"
+    path = output_dir / f"{stem}_summary.json"
+    data = {
+        "session_info": {
+            "name": DEV_NOTION_SAMPLE["name"],
+            "summary_file": str(path),
+            "processed_at": now.isoformat(timespec="seconds"),
+            "duration_seconds": 900,
+        },
+        "summary": DEV_NOTION_SAMPLE["summary"],
+        "participants": DEV_NOTION_SAMPLE["participants"],
+        "key_points": DEV_NOTION_SAMPLE["key_points"],
+        "action_items": DEV_NOTION_SAMPLE["action_items"],
+        "transcript": "",
+    }
+    path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    print(json.dumps({"success": True, "summary_file": str(path)}))
+
+
 @cli.command(name='chat-agent-step')
 def chat_agent_step():
     """One model call of chat-as-an-agent, with tools. Driven by app/chat-agent.js."""
