@@ -2,6 +2,7 @@ import * as React from 'react';
 import {
   ChevronDown,
   Blocks,
+  Cable,
   Globe,
   HelpCircle,
   Home as HomeIcon,
@@ -391,6 +392,22 @@ export function Sidebar({
           >
             <MessageSquare className="size-[14px]" />
             <span className="flex-1 truncate">{t('sidebar.chat')}</span>
+          </button>
+
+          <button
+            type="button"
+            className={cn('sb-row', currentRoute === '/connect' && 'active')}
+            aria-current={currentRoute === '/connect' ? 'page' : undefined}
+            onClick={() => navigate('/connect')}
+          >
+            <Cable className="size-[14px]" />
+            <span className="flex-1 truncate">{t('sidebar.connect')}</span>
+            <span
+              className="rounded-full px-1.5 py-px text-[10.5px] font-medium leading-[1.4]"
+              style={{ background: 'var(--surface-sunken)', color: 'var(--fg-2)' }}
+            >
+              {t('sidebar.new')}
+            </span>
           </button>
 
           <button

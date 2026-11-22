@@ -6,6 +6,8 @@ import { AnthropicIcon } from '@/components/ui/anthropic-icon';
 import { OpenAiIcon } from '@/components/ui/openai-icon';
 import { AGENTS_COPY as copy, AGENT_SKILLS } from '@/lib/agentSkills';
 import { ipc } from '@/lib/ipc';
+import { navigate } from '@/lib/router';
+import { t } from '@/i18n';
 
 export function Agents() {
   return (
@@ -42,6 +44,16 @@ export function Agents() {
         </div>
         <p className="mt-6 text-xs leading-relaxed" style={{ color: 'var(--fg-muted)' }}>
           {copy.privacy}
+        </p>
+        <p className="mt-3 text-xs" style={{ color: 'var(--fg-muted)' }}>
+          {t('agents.connectHint')}{' '}
+          <button
+            type="button"
+            className="underline underline-offset-2 hover:text-[color:var(--fg-1)]"
+            onClick={() => navigate('/connect')}
+          >
+            {t('agents.connectLink')}
+          </button>
         </p>
       </div>
     </MeetingsShell>
