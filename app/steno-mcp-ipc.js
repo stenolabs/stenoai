@@ -15,21 +15,46 @@
 const fs = require('node:fs');
 const install = require('./steno-mcp-install');
 
-function registerStenoMcpIpc({ ipcMain, runPythonScript, shell, launchSpec, platform = process.platform }) {
+function registerStenoMcpIpc({
+  ipcMain,
+  runPythonScript,
+  shell,
+  launchSpec,
+  ensureLauncher = () => {},
+  getUserDataDir,
+  platform = process.platform,
+}) {
   const spec = () => launchSpec();
+  // The launcher is written at startup; re-checking here (idempotent, no write
+  // when unchanged) keeps the advertised command runnable if it was deleted.
+  const launcher = () => {
+    try {
+      ensureLauncher();
+    } catch {
+      // Reported through launcherAvailable below.
+    }
+  };
 
   ipcMain.handle('connect-get-info', async () => {
     try {
       const s = spec();
-      const [clients, skills] = await Promise.all([install.detectClients(), install.detectSkills()]);
+      launcher();
+      const client = install.clientSpec(s);
+      const [clients, skills, lastUsed] = await Promise.all([
+        install.detectClients(),
+        install.detectSkills(),
+        getUserDataDir ? install.readLastUsed(getUserDataDir()) : Promise.resolve(null),
+      ]);
       return {
         success: true,
-        serverAvailable: fs.existsSync(s.args[0]),
+        serverAvailable: fs.existsSync(s.args[0]) && !!s.launcherPath && fs.existsSync(s.launcherPath),
         claudeBundleAvailable: fs.existsSync(s.mcpbPath),
-        snippets: install.snippets(s, platform),
-        launch: { command: s.command, args: s.args, env: s.env },
+        snippets: install.snippets(client, platform),
+        // What clients run: the stable launcher (it sets ELECTRON_RUN_AS_NODE).
+        launch: client,
         clients,
         skills,
+        lastUsed,
       };
     } catch (e) {
       return { success: false, error: e.message };
@@ -96,7 +121,8 @@ function registerStenoMcpIpc({ ipcMain, runPythonScript, shell, launchSpec, plat
 
   ipcMain.handle('connect-open-cursor', async () => {
     try {
-      await shell.openExternal(install.cursorDeepLink(spec()));
+      launcher();
+      await shell.openExternal(install.cursorDeepLink(install.clientSpec(spec())));
       return { success: true };
     } catch (e) {
       return { success: false, error: e.message };

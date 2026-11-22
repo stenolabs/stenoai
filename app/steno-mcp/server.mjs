@@ -2,8 +2,10 @@
 //
 // Launched on demand by an AI assistant (Claude Desktop via the .mcpb, Claude
 // Code, Codex, Cursor), never by Steno itself. It opens no network listener and
-// writes nothing: every tool reads the files Steno already wrote, through
-// store.mjs, which owns path safety and the user's scope settings.
+// never modifies notes: every tool reads the files Steno already wrote, through
+// store.mjs, which owns path safety and the user's scope settings. Its only
+// writes are diagnostics (diagnostics.mjs): an error log without meeting content
+// and a "last used" stamp the Connect page shows.
 //
 // Runs under any Node >= 20: Claude Desktop's built-in Node for the .mcpb, or
 // Steno's own Electron binary with ELECTRON_RUN_AS_NODE=1 for the other clients.
@@ -19,8 +21,10 @@ import {
   listActionItems,
   listFolders,
   loadStore,
+  getUserDataDir,
   searchMeetings,
 } from './store.mjs';
+import { createDiagnostics } from './diagnostics.mjs';
 
 export const SERVER_NAME = 'steno';
 // Replaced with the app version by scripts/build-steno-mcp.mjs.
@@ -140,16 +144,25 @@ function errorResult(message) {
 /**
  * Run one tool against a freshly loaded store, so changes to the user's notes
  * or scope settings apply without restarting the server. Exported for tests.
+ * `diagnostics` (optional) gets the error trail; `clientName` stamps last-used.
  */
-export function callTool(name, args = {}, storeOptions = {}) {
+export function callTool(name, args = {}, storeOptions = {}, { diagnostics, clientName } = {}) {
   const tool = TOOLS.find((t) => t.name === name);
-  if (!tool) return errorResult(`Unknown tool ${name}`);
+  if (!tool) {
+    diagnostics?.log('error', 'unknown tool', { tool: String(name).slice(0, 100) });
+    return errorResult(`Unknown tool ${name}`);
+  }
+  diagnostics?.markUsed(clientName);
   try {
     return tool.run(loadStore(storeOptions), args ?? {});
   } catch (err) {
-    if (err instanceof ToolError || err instanceof ConfigUnreadableError) {
+    if (err instanceof ToolError) {
+      // Expected (bad id, transcripts off): class only, its message can name meetings.
+      diagnostics?.logError('tool', err, { tool: name, withMessage: false });
       return errorResult(err.message);
     }
+    diagnostics?.logError('tool', err, { tool: name });
+    if (err instanceof ConfigUnreadableError) return errorResult(err.message);
     // Never echo internals (paths, stack) to the assistant.
     return errorResult('Steno could not read your meetings.');
   }
@@ -157,7 +170,7 @@ export function callTool(name, args = {}, storeOptions = {}) {
 
 export const TOOL_NAMES = TOOLS.map((t) => t.name);
 
-export function createServer(storeOptions = {}) {
+export function createServer(storeOptions = {}, diagnostics = null) {
   const server = new McpServer(
     { name: SERVER_NAME, version: SERVER_VERSION },
     {
@@ -175,14 +188,34 @@ export function createServer(storeOptions = {}) {
         inputSchema: fromJsonSchema(tool.inputSchema),
         annotations: { title: tool.title, ...READ_ONLY },
       },
-      async (args) => callTool(tool.name, args, storeOptions),
+      async (args) =>
+        callTool(tool.name, args, storeOptions, {
+          diagnostics,
+          clientName: server.server.getClientVersion()?.name,
+        }),
     );
   }
   return server;
 }
 
 export function main() {
-  serveStdio(() => createServer(), {
-    onerror: (err) => process.stderr.write(`steno-mcp: ${err?.message ?? err}\n`),
-  });
+  let diagnostics = null;
+  try {
+    diagnostics = createDiagnostics({ dataDir: getUserDataDir() });
+  } catch {
+    diagnostics = createDiagnostics({ dataDir: null });
+  }
+  const fatal = (where) => (err) => {
+    diagnostics.logError(where, err);
+    process.exit(1);
+  };
+  process.on('uncaughtException', fatal('uncaught'));
+  process.on('unhandledRejection', fatal('unhandled-rejection'));
+  try {
+    serveStdio(() => createServer({}, diagnostics), {
+      onerror: (err) => diagnostics.logError('transport', err),
+    });
+  } catch (err) {
+    fatal('startup')(err);
+  }
 }

@@ -9,8 +9,11 @@ import { writeMeetingMarkdown, writeTranscriptFile, readUserConfig } from '../fi
  * T2 — the Steno MCP server, end to end. Seeds meetings in the per-test
  * STENOAI_USER_DATA_DIR, asks the real app (connect bridge) how assistants
  * launch the server, then spawns exactly that command over stdio with the MCP
- * client SDK — Steno's own Electron in Node mode, as Claude Code / Codex /
- * Cursor would — and calls search_meetings / get_note against the seeded data.
+ * client SDK — the stable launcher the app writes to <userData>/bin, which
+ * execs Steno's own Electron in Node mode, as Claude Code / Codex / Cursor
+ * would — and calls search_meetings / get_note against the seeded data. It
+ * also checks the server's diagnostics: the last-used stamp and an error log
+ * that holds no meeting content.
  *
  * The second test drives the scope settings through the bridge (real handler ->
  * bundled backend -> config.json) and proves the running server enforces them.
@@ -23,6 +26,7 @@ type ConnectInfo = {
   serverAvailable: boolean;
   launch: { command: string; args: string[]; env: Record<string, string> };
   snippets: { claudeCode: string; codexToml: string; cursorJson: string };
+  lastUsed?: Record<string, string | null> | null;
 };
 type StenoWin = Window & {
   stenoai: {
@@ -60,11 +64,17 @@ function seed(userDataDir: string) {
   });
 }
 
-async function connectServer(info: ConnectInfo, userDataDir: string) {
+async function connectServer(info: ConnectInfo, userDataDir: string | null) {
+  // Without an explicit dir the launcher's own default applies (the app ran
+  // with STENOAI_USER_DATA_DIR, so it baked that dir in).
+  const env = { ...(process.env as Record<string, string>), ...info.launch.env };
+  delete env.STENOAI_USER_DATA_DIR;
+  delete env.ELECTRON_RUN_AS_NODE;
+  if (userDataDir) env.STENOAI_USER_DATA_DIR = userDataDir;
   const transport = new StdioClientTransport({
     command: info.launch.command,
     args: info.launch.args,
-    env: { ...(process.env as Record<string, string>), ...info.launch.env, STENOAI_USER_DATA_DIR: userDataDir },
+    env,
     stderr: 'pipe',
   });
   const client = new Client({ name: 'steno-mcp-t2', version: '1.0.0' }, { capabilities: {} });
@@ -81,10 +91,14 @@ test('the server the app advertises serves seeded meetings over stdio', async ({
   const info = await page.evaluate(() => (window as unknown as StenoWin).stenoai.connect.getInfo());
   expect(info.success).toBe(true);
   expect(info.serverAvailable).toBe(true);
-  expect(info.launch.env).toEqual({ ELECTRON_RUN_AS_NODE: '1' });
-  expect(info.snippets.claudeCode).toContain('claude mcp add --scope user --env ELECTRON_RUN_AS_NODE=1 steno --');
+  const launcher = path.join(userDataDir, 'bin', process.platform === 'win32' ? 'steno-mcp.cmd' : 'steno-mcp');
+  expect(info.launch).toEqual({ command: launcher, args: [], env: {} });
+  expect(existsSync(launcher)).toBe(true);
+  expect(info.snippets.claudeCode).toContain('claude mcp add --scope user steno -- ');
+  expect(info.snippets.claudeCode).not.toContain('ELECTRON_RUN_AS_NODE');
+  expect(info.snippets.codexToml).toContain(`command = ${JSON.stringify(launcher)}`);
 
-  const client = await connectServer(info, userDataDir);
+  const client = await connectServer(info, null);
   try {
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual(
@@ -107,6 +121,16 @@ test('the server the app advertises serves seeded meetings over stdio', async ({
 
     const escape = await client.callTool({ name: 'get_note', arguments: { id: '../config' } });
     expect(escape.isError).toBe(true);
+
+    // Diagnostics: a last-used stamp under the client's name, which the app
+    // reports back to the Connect page, and an error log without content.
+    const stamp = JSON.parse(readFileSync(path.join(userDataDir, 'steno-mcp-last-used.json'), 'utf8'));
+    expect(Date.parse(stamp.clients['steno-mcp-t2'])).toBeGreaterThan(0);
+    const log = readFileSync(path.join(userDataDir, 'logs', 'steno-mcp.log'), 'utf8');
+    expect(log).toContain('ERROR tool=get_note tool: ToolError');
+    expect(log).not.toMatch(/config|Acme|pricing|budget/);
+    const after = await page.evaluate(() => (window as unknown as StenoWin).stenoai.connect.getInfo());
+    expect(after.lastUsed?.any).toBe(stamp.last_used_at);
   } finally {
     await client.close();
   }

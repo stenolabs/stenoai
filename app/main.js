@@ -79,6 +79,7 @@ const { registerStenoMcpIpc } = require('./steno-mcp-ipc');
 const { registerMcpActionsIpc } = require('./mcp-actions-ipc');
 const { createActionsService } = require('./mcp-actions');
 const { getLaunchSpec: getStenoMcpLaunchSpec } = require('./steno-mcp-install');
+const { ensureLauncher: ensureStenoMcpLauncherFile } = require('./steno-mcp-launcher');
 const { isSafeToAutoInstall } = require('./update-idle-gate');
 const { describeUpdateError, updateErrorPhase, isMissingUpdateFeedError } = require('./update-error-copy');
 const { isOSUpdateEligible, MIN_MACOS_FOR_AUTOUPDATE } = require('./update-os-gate');
@@ -2263,6 +2264,15 @@ if (!gotSingleInstanceLock) {
       processingLog.logLine('app', `startup v${app.getVersion()} platform=${process.platform}`);
     } catch (e) {
       console.warn('processing-log init failed (non-fatal):', e?.message);
+    }
+
+    // Stable MCP launcher (<userData>/bin/steno-mcp): rewritten only when this
+    // app's executable or server path changed, e.g. after a move or update.
+    try {
+      const launcher = ensureStenoMcpLauncher();
+      if (launcher.written) processingLog.logLine('app', 'steno-mcp launcher updated');
+    } catch (e) {
+      console.warn('steno-mcp launcher write failed (non-fatal):', e?.message);
     }
 
     // Migrate the pre-safeStorage plaintext ASR credential on every launch,
@@ -8875,16 +8885,32 @@ registerObsidianIpc({
 });
 
 // Connect page: install surfaces + scope settings for the Steno MCP server.
+const stenoMcpLaunchSpec = () => getStenoMcpLaunchSpec({
+  isPackaged: app.isPackaged,
+  execPath: process.execPath,
+  resourcesPath: process.resourcesPath,
+  appDir: __dirname,
+  userDataDir: getUserDataDir(),
+});
+// The stable launcher MCP clients run (<userData>/bin/steno-mcp[.cmd]); it
+// records this app's executable + server script, so it is (re)written whenever
+// those change. Content-compared, so an unchanged launcher is not rewritten.
+function ensureStenoMcpLauncher() {
+  const spec = stenoMcpLaunchSpec();
+  return ensureStenoMcpLauncherFile({
+    userDataDir: getUserDataDir(),
+    command: spec.command,
+    script: spec.args[0],
+    defaultUserDataDir: process.env.STENOAI_USER_DATA_DIR || null,
+  });
+}
 registerStenoMcpIpc({
   ipcMain,
   runPythonScript,
   shell,
-  launchSpec: () => getStenoMcpLaunchSpec({
-    isPackaged: app.isPackaged,
-    execPath: process.execPath,
-    resourcesPath: process.resourcesPath,
-    appDir: __dirname,
-  }),
+  launchSpec: stenoMcpLaunchSpec,
+  ensureLauncher: ensureStenoMcpLauncher,
+  getUserDataDir,
 });
 
 // Suggested actions (Connect page -> Turn meetings into actions, and the

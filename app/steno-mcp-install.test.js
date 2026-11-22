@@ -8,54 +8,94 @@ const path = require('node:path');
 const install = require('./steno-mcp-install');
 
 const MAC = {
-  command: '/Applications/Steno.app/Contents/MacOS/Steno',
-  args: ['/Applications/Steno.app/Contents/Resources/steno-mcp/server/index.mjs'],
-  env: { ELECTRON_RUN_AS_NODE: '1' },
+  command: '/Users/ada/Library/Application Support/stenoai/bin/steno-mcp',
+  args: [],
+  env: {},
 };
 const WIN = {
-  command: 'C:\\Users\\Ada Lovelace\\AppData\\Local\\Programs\\Steno\\Steno.exe',
-  args: ['C:\\Users\\Ada Lovelace\\AppData\\Local\\Programs\\Steno\\resources\\steno-mcp\\server\\index.mjs'],
-  env: { ELECTRON_RUN_AS_NODE: '1' },
+  command: 'C:\\Users\\Ada Lovelace\\AppData\\Roaming\\stenoai\\bin\\steno-mcp.cmd',
+  args: [],
+  env: {},
 };
 
-test('packaged launch spec points into resources, dev at the source', () => {
+test('packaged launch spec points into resources, dev at the source, clients at the launcher', () => {
   const packaged = install.getLaunchSpec({
-    isPackaged: true, execPath: '/x/Steno', resourcesPath: '/x/Resources', appDir: '/src/app',
+    isPackaged: true, execPath: '/x/Steno', resourcesPath: '/x/Resources', appDir: '/src/app', userDataDir: '/data',
+    platform: 'darwin',
   });
   assert.equal(packaged.command, '/x/Steno');
   assert.deepEqual(packaged.args, [path.join('/x/Resources', 'steno-mcp', 'server', 'index.mjs')]);
   assert.equal(packaged.mcpbPath, path.join('/x/Resources', 'steno-mcp', 'Steno.mcpb'));
   assert.deepEqual(packaged.env, { ELECTRON_RUN_AS_NODE: '1' });
-  const dev = install.getLaunchSpec({ isPackaged: false, execPath: '/e', resourcesPath: '/r', appDir: '/src/app' });
+  assert.equal(packaged.launcherPath, path.join('/data', 'bin', 'steno-mcp'));
+  assert.deepEqual(install.clientSpec(packaged), { command: path.join('/data', 'bin', 'steno-mcp'), args: [], env: {} });
+  const dev = install.getLaunchSpec({ isPackaged: false, execPath: '/e', resourcesPath: '/r', appDir: '/src/app', userDataDir: '/data', platform: 'win32' });
   assert.deepEqual(dev.args, [path.join('/src/app', 'steno-mcp', 'index.mjs')]);
+  assert.equal(dev.launcherPath, path.join('/data', 'bin', 'steno-mcp.cmd'));
 });
 
-test('Claude Code command quotes per platform', () => {
+test('Claude Code command runs the launcher, quoted per platform', () => {
   assert.equal(
     install.claudeCodeCommand(MAC, 'darwin'),
-    'claude mcp add --scope user --env ELECTRON_RUN_AS_NODE=1 steno -- /Applications/Steno.app/Contents/MacOS/Steno /Applications/Steno.app/Contents/Resources/steno-mcp/server/index.mjs',
+    "claude mcp add --scope user steno -- '/Users/ada/Library/Application Support/stenoai/bin/steno-mcp'",
   );
-  const spaced = { ...MAC, command: "/Users/o'neil/Apps/Steno.app/Contents/MacOS/Steno" };
-  assert.match(install.claudeCodeCommand(spaced, 'darwin'), / -- '\/Users\/o'\\''neil\/Apps\/Steno.app\/Contents\/MacOS\/Steno' /);
-  assert.match(install.claudeCodeCommand(WIN, 'win32'), / -- "C:\\Users\\Ada Lovelace\\.*Steno\.exe" "C:\\Users\\Ada Lovelace\\.*index\.mjs"$/);
+  const plain = { ...MAC, command: '/home/ada/.local/share/stenoai/bin/steno-mcp' };
+  assert.equal(install.claudeCodeCommand(plain, 'linux'), `claude mcp add --scope user steno -- ${plain.command}`);
+  const quoted = { ...MAC, command: "/Users/o'neil/Library/Application Support/stenoai/bin/steno-mcp" };
+  assert.match(install.claudeCodeCommand(quoted, 'darwin'), / -- '\/Users\/o'\\''neil\/Library\/Application Support\/stenoai\/bin\/steno-mcp'$/);
+  assert.equal(
+    install.claudeCodeCommand(WIN, 'win32'),
+    'claude mcp add --scope user steno -- "C:\\Users\\Ada Lovelace\\AppData\\Roaming\\stenoai\\bin\\steno-mcp.cmd"',
+  );
+  // The direct (pre-launcher) spec still renders, env first.
+  const direct = { command: '/A/Steno', args: ['/A/index.mjs'], env: { ELECTRON_RUN_AS_NODE: '1' } };
+  assert.equal(install.claudeCodeCommand(direct, 'darwin'), 'claude mcp add --scope user --env ELECTRON_RUN_AS_NODE=1 steno -- /A/Steno /A/index.mjs');
 });
 
-test('Codex TOML escapes Windows paths', () => {
+test('Codex TOML is just the launcher command, escaped for Windows', () => {
+  assert.equal(install.codexToml(MAC), '[mcp_servers.steno]\ncommand = "/Users/ada/Library/Application Support/stenoai/bin/steno-mcp"');
   const toml = install.codexToml(WIN);
   assert.match(toml, /^\[mcp_servers\.steno\]$/m);
-  assert.match(toml, /^command = "C:\\\\Users\\\\Ada Lovelace\\\\AppData/m);
-  assert.match(toml, /^env = \{ ELECTRON_RUN_AS_NODE = "1" \}$/m);
+  assert.match(toml, /^command = "C:\\\\Users\\\\Ada Lovelace\\\\AppData\\\\Roaming\\\\stenoai\\\\bin\\\\steno-mcp\.cmd"$/m);
+  assert.doesNotMatch(toml, /^(args|env) =/m);
 });
 
-test('Cursor link carries the bare server entry, base64 encoded', () => {
+test('Cursor link carries the bare launcher entry, base64 encoded', () => {
   const link = new URL(install.cursorDeepLink(MAC));
   assert.equal(link.protocol, 'cursor:');
   assert.equal(link.host, 'anysphere.cursor-deeplink');
   assert.equal(link.pathname, '/mcp/install');
   assert.equal(link.searchParams.get('name'), 'steno');
   const config = JSON.parse(Buffer.from(link.searchParams.get('config'), 'base64').toString('utf8'));
-  assert.deepEqual(config, { command: MAC.command, args: MAC.args, env: MAC.env });
+  assert.deepEqual(config, { command: MAC.command, args: [] });
   assert.deepEqual(JSON.parse(install.cursorMcpJson(MAC)).mcpServers.steno, config);
+});
+
+test('last-used stamps map client names to assistants, newest wins', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'steno-last-used-'));
+  assert.deepEqual(await install.readLastUsed(dir), { any: null, claudeDesktop: null, claudeCode: null, codex: null, cursor: null });
+  fs.writeFileSync(path.join(dir, install.LAST_USED_FILE), JSON.stringify({
+    last_used_at: '2026-11-22T10:00:00.000Z',
+    clients: {
+      'claude-code': '2026-11-22T09:00:00.000Z',
+      'codex-mcp-client': '2026-11-22T10:00:00.000Z',
+      'cursor-vscode': 'not a date',
+      'claude-ai': '2026-11-21T08:00:00.000Z',
+      'some-other-client': '2026-11-22T10:00:00.000Z',
+    },
+  }));
+  assert.deepEqual(await install.readLastUsed(dir), {
+    any: '2026-11-22T10:00:00.000Z',
+    claudeDesktop: '2026-11-21T08:00:00.000Z',
+    claudeCode: '2026-11-22T09:00:00.000Z',
+    codex: '2026-11-22T10:00:00.000Z',
+    cursor: null,
+  });
+  fs.writeFileSync(path.join(dir, install.LAST_USED_FILE), '{ broken');
+  assert.equal((await install.readLastUsed(dir)).any, null);
+  assert.equal(install.clientIdForName('Claude Code'), 'claudeCode');
+  assert.equal(install.clientIdForName('claude'), 'claudeDesktop');
+  assert.equal(install.clientIdForName(''), null);
 });
 
 test('detects installs from each client config, and tolerates junk', async () => {
@@ -67,14 +107,19 @@ test('detects installs from each client config, and tolerates junk', async () =>
   const p = install.clientPaths(opts);
   fs.mkdirSync(path.dirname(p.claudeDesktopConfig), { recursive: true });
   fs.writeFileSync(p.claudeDesktopConfig, '{ broken');
-  fs.writeFileSync(p.claudeCodeConfig, JSON.stringify({ mcpServers: { steno: {} } }));
+  // An old install-path entry and a new launcher entry both count: the name is what matters.
+  fs.writeFileSync(p.claudeCodeConfig, JSON.stringify({
+    mcpServers: { steno: { command: '/Applications/Steno.app/Contents/MacOS/Steno', args: ['/x/index.mjs'] } },
+  }));
   fs.mkdirSync(path.dirname(p.codexConfig), { recursive: true });
-  fs.writeFileSync(p.codexConfig, 'model = "x"\n\n[mcp_servers.steno]\ncommand = "a"\n');
+  fs.writeFileSync(p.codexConfig, `model = "x"\n\n[mcp_servers.steno]\ncommand = ${JSON.stringify(MAC.command)}\n`);
   fs.mkdirSync(path.dirname(p.cursorConfig), { recursive: true });
   fs.writeFileSync(p.cursorConfig, JSON.stringify({ mcpServers: { stenography: {} } }));
   assert.deepEqual(await install.detectClients(opts), {
     claudeDesktop: false, claudeCode: true, codex: true, cursor: false,
   });
+  fs.writeFileSync(p.cursorConfig, install.cursorMcpJson(MAC));
+  assert.equal((await install.detectClients(opts)).cursor, true);
   fs.mkdirSync(path.join(p.claudeDesktopExtensions, 'local.mcpb.steno.steno'), { recursive: true });
   assert.equal((await install.detectClients(opts)).claudeDesktop, true);
 });
