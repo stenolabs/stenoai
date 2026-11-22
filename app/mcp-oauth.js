@@ -275,7 +275,10 @@ function clientMetadata(redirectUri, scope) {
 
 /**
  * Pick the client to authorize as:
- *   CIMD (only if advertised) → DCR (cached per issuer unless noCache) → static.
+ *   DCR when offered (cached per issuer unless noCache) → CIMD (only if
+ *   advertised and our metadata document is actually reachable) → static.
+ *   DCR comes first: it works with ephemeral loopback ports, and a CIMD the
+ *   server can't fetch fails only after the user is already in the browser.
  * `registrations` is { get(issuer), save(issuer, record), remove(issuer) }.
  * Returns { client_id, client_secret?, token_endpoint_auth_method, method, redirect_uri? }.
  */
@@ -283,9 +286,6 @@ async function chooseClient({
   asMeta, issuer, redirectUri, scope, fetch: fetchImpl, registrations, vendor = null,
   clientMetadataUrl = CLIENT_METADATA_URL,
 }) {
-  if (asMeta.client_id_metadata_document_supported === true && clientMetadataUrl) {
-    return { client_id: clientMetadataUrl, token_endpoint_auth_method: 'none', method: 'cimd' };
-  }
   if (asMeta.registration_endpoint) {
     const cacheable = !(vendor && vendor.noDcrCache);
     if (cacheable && registrations) {
@@ -313,6 +313,10 @@ async function chooseClient({
     if (cacheable && registrations) await registrations.save(issuer, record);
     return { ...record, method: 'dcr' };
   }
+  if (asMeta.client_id_metadata_document_supported === true && clientMetadataUrl
+      && await cimdReachable(fetchImpl, clientMetadataUrl)) {
+    return { client_id: clientMetadataUrl, token_endpoint_auth_method: 'none', method: 'cimd' };
+  }
   const entry = vendor?.staticClient;
   if (entry && entry.clientId) {
     return {
@@ -323,6 +327,16 @@ async function chooseClient({
     };
   }
   throw new OAuthFlowError('needs-registration', 'This service needs Steno to be registered with it first');
+}
+
+/** True when our hosted client metadata document is served and self-consistent. */
+async function cimdReachable(fetchImpl, url) {
+  try {
+    const res = await fetchJson(fetchImpl, url, { method: 'GET' });
+    return res.ok && res.body && res.body.client_id === url;
+  } catch {
+    return false;
+  }
 }
 
 function buildAuthorizeUrl({ asMeta, client, redirectUri, state, challenge, scope, resource }) {

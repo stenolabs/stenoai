@@ -116,12 +116,26 @@ function memoryRegistrations() {
   return { map, get: async (k) => map.get(k) || null, save: async (k, v) => { map.set(k, v); } };
 }
 
-test('registration: CIMD only when advertised', async () => {
-  const fetch = scriptedFetch({});
+test('registration: DCR is preferred over CIMD when both are offered', async () => {
+  const fetch = scriptedFetch({ [`POST ${AS}/register`]: () => ({ status: 201, body: { client_id: 'dcr-1' } }) });
   const c = await oauth.chooseClient({ asMeta: asMeta({ client_id_metadata_document_supported: true }), issuer: AS, redirectUri: 'http://127.0.0.1:5555/callback', fetch, registrations: memoryRegistrations() });
+  assert.equal(c.method, 'dcr');
+  assert.equal(c.client_id, 'dcr-1');
+});
+
+test('registration: CIMD only when advertised, without DCR, and our document is reachable', async () => {
+  const CIMD = 'https://stenoai.co/oauth/client.json';
+  const noDcr = asMeta({ client_id_metadata_document_supported: true, registration_endpoint: undefined });
+  const live = scriptedFetch({ [`GET ${CIMD}`]: () => ({ status: 200, body: { client_id: CIMD } }) });
+  const c = await oauth.chooseClient({ asMeta: noDcr, issuer: AS, redirectUri: 'http://127.0.0.1:5555/callback', fetch: live, registrations: memoryRegistrations() });
   assert.equal(c.method, 'cimd');
-  assert.equal(c.client_id, 'https://stenoai.co/oauth/client.json');
-  assert.equal(fetch.seen.length, 0, 'no DCR call');
+  assert.equal(c.client_id, CIMD);
+  const missing = scriptedFetch({ [`GET ${CIMD}`]: () => ({ status: 404, body: null }) });
+  await assert.rejects(
+    oauth.chooseClient({ asMeta: noDcr, issuer: AS, redirectUri: 'http://127.0.0.1:5555/callback', fetch: missing, registrations: memoryRegistrations() }),
+    (e) => e.code === 'needs-registration',
+    'a 404 CIMD is never sent to the server',
+  );
 });
 
 test('registration: DCR is cached per issuer and reused for the same redirect', async () => {

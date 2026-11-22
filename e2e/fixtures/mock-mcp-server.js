@@ -161,7 +161,7 @@ function startMockMcpServer(opts = {}) {
             issuer: base,
             authorization_endpoint: `${base}/authorize`,
             token_endpoint: `${base}/token`,
-            registration_endpoint: `${base}/register`,
+            ...(opts.noDcr ? {} : { registration_endpoint: `${base}/register` }),
             response_types_supported: ['code'],
             grant_types_supported: ['authorization_code', 'refresh_token'],
             token_endpoint_auth_methods_supported: ['none'],
@@ -169,7 +169,11 @@ function startMockMcpServer(opts = {}) {
             ...(opts.cimd ? { client_id_metadata_document_supported: true } : {}),
           });
         }
+        if (req.method === 'GET' && url.pathname === '/client.json' && opts.cimd) {
+          return json(res, 200, { client_id: `${base}/client.json`, redirect_uris: ['http://127.0.0.1/callback'] });
+        }
         if (req.method === 'POST' && url.pathname === '/register') {
+          if (opts.noDcr) return json(res, 404, { error: 'not found' });
           const meta = JSON.parse(body.toString('utf8') || '{}');
           const client = { client_id: `client-${registrations.length + 1}`, redirect_uris: meta.redirect_uris || [], token_endpoint_auth_method: 'none' };
           registrations.push({ ...client, metadata: meta });
@@ -179,7 +183,7 @@ function startMockMcpServer(opts = {}) {
           const q = Object.fromEntries(url.searchParams);
           authorizeRequests.push(q);
           const client = registrations.find((r) => r.client_id === q.client_id);
-          const cimdOk = opts.cimd && q.client_id === opts.cimd;
+          const cimdOk = opts.cimd && q.client_id === `${base}/client.json`;
           if ((!client && !cimdOk) || (client && !client.redirect_uris.includes(q.redirect_uri))) {
             return json(res, 400, { error: 'invalid_client' });
           }

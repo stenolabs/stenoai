@@ -228,13 +228,20 @@ test('OAuth: discovery, DCR, PKCE + resource, loopback, tools; refresh rotates; 
   }
 });
 
-test('OAuth: CIMD is used when the server advertises it (no DCR)', async () => {
-  const cimd = 'https://stenoai.co/oauth/client.json';
-  mock = await startMockMcpServer({ auth: 'oauth', cimd });
-  const c = await service().addCustom({ name: 'cimd', url: mock.url, auth: 'oauth' });
+test('OAuth: CIMD is used when the server advertises it and offers no DCR', async () => {
+  mock = await startMockMcpServer({ auth: 'oauth', cimd: true, noDcr: true });
+  const cimd = `${mock.base}/client.json`;
+  const c = await service({ clientMetadataUrl: cimd }).addCustom({ name: 'cimd', url: mock.url, auth: 'oauth' });
   assert.equal(c.status, 'ok');
   assert.equal(mock.registrations().length, 0);
   assert.equal(mock.authorizeRequests()[0].client_id, cimd);
+});
+
+test('OAuth: DCR wins when the server offers both, so an unpublished CIMD never breaks sign-in', async () => {
+  mock = await startMockMcpServer({ auth: 'oauth', cimd: true });
+  const c = await service({ clientMetadataUrl: 'https://stenoai.invalid/oauth/client.json' }).addCustom({ name: 'both', url: mock.url, auth: 'oauth' });
+  assert.equal(c.status, 'ok');
+  assert.equal(mock.registrations().length, 1);
 });
 
 test('OAuth: cancelled sign-in leaves the connection asking to sign in', async () => {
