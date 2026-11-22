@@ -1,13 +1,14 @@
 import { describe, test, expect, beforeEach, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { TemplatesTab } from './TemplatesTab';
+import { CookbookEditor } from './CookbookEditor';
 
-// A failed template delete must not become an unhandled promise rejection with
+// A failed cookbook delete must not become an unhandled promise rejection with
 // no user feedback: the dialog stays open and surfaces a visible error so the
 // user can retry (#308).
 
 const remove = vi.fn(async () => ({ success: true }));
+const onClose = vi.fn();
 
 vi.mock('@/lib/ipc', () => ({
   ipc: () => ({
@@ -42,14 +43,18 @@ function renderTab() {
   });
   return render(
     <QueryClientProvider client={qc}>
-      <TemplatesTab />
+      <CookbookEditor
+        editing={{ id: 'custom-1', name: 'My Custom', prompt: 'Do the thing', builtin: false, locked: false }}
+        onClose={onClose}
+      />
     </QueryClientProvider>,
   );
 }
 
-describe('TemplatesTab delete failure', () => {
+describe('CookbookEditor delete failure', () => {
   beforeEach(() => {
     remove.mockReset();
+    onClose.mockReset();
   });
 
   test('a rejected delete keeps the dialog open and shows an error', async () => {
@@ -60,8 +65,8 @@ describe('TemplatesTab delete failure', () => {
     remove.mockRejectedValue(new Error('backend exploded'));
     renderTab();
 
-    // Open the confirm dialog for the custom template.
-    const del = await screen.findByRole('button', { name: 'Delete My Custom' });
+    // Open the confirm dialog for the custom cookbook.
+    const del = await screen.findByRole('button', { name: 'Delete cookbook My Custom' });
     fireEvent.click(del);
     const confirm = await screen.findByRole('button', { name: 'Delete' });
 
@@ -72,7 +77,8 @@ describe('TemplatesTab delete failure', () => {
     await screen.findByText(/backend exploded/i);
     // ...and the dialog stays open (its title is still present; getByText
     // throws if absent).
-    expect(screen.getByText('Delete template "My Custom"?')).toBeTruthy();
+    expect(screen.getByText('Delete cookbook "My Custom"?')).toBeTruthy();
+    expect(onClose).not.toHaveBeenCalled();
 
     // Let any microtasks settle, then assert nothing escaped unhandled.
     await new Promise((r) => setTimeout(r, 0));

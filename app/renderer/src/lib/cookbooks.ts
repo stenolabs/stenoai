@@ -100,8 +100,8 @@ export function toCookbook(template: Template): Cookbook {
     ? known.description()
     : describePrompt(template.prompt) ||
       (template.format === 'structured'
-        ? t('settings.templates.structuredFormat')
-        : t('settings.templates.noPrompt'));
+        ? t('cookbooks.editor.structuredFormat')
+        : t('cookbooks.editor.noPrompt'));
   return {
     id: template.id,
     template,

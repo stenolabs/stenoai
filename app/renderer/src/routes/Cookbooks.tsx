@@ -23,7 +23,7 @@ import {
 } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { CookbookCover, CATEGORY_GLYPHS, type CoverTone } from '@/components/cookbooks/CookbookCover';
-import { TemplateEditor } from '@/routes/settings/TemplatesTab';
+import { CookbookEditor } from '@/routes/cookbooks/CookbookEditor';
 import { useTemplates } from '@/hooks/useTemplates';
 import {
   COOKBOOK_CATEGORIES,
@@ -41,9 +41,9 @@ import { cn } from '@/lib/utils';
 import { t } from '@/i18n';
 
 // ---------------------------------------------------------------------------
-// Cookbooks — a gallery over the same templates Settings › Templates manages.
+// Cookbooks — the gallery over note templates, and their only home in the app.
 // Nothing here changes how notes are generated: cards open the existing
-// TemplateEditor, "Create" opens it blank, and every write goes through the
+// CookbookEditor, "Create" opens it blank, and every write goes through the
 // existing useTemplates mutations. The Organisation tab is deliberately
 // absent: the org adapter does not share templates today, and a tab that can
 // only ever be empty is worse than no tab.
@@ -140,7 +140,7 @@ export function Cookbooks() {
             className="mx-auto flex w-full max-w-[960px] flex-col px-10 pb-10 pt-6"
             style={{ height: '100%', minHeight: 560 }}
           >
-            <TemplateEditor
+            <CookbookEditor
               key={editing.id ?? 'new'}
               editing={editing.id ? (editing as Template) : null}
               onClose={() => setEditing(null)}

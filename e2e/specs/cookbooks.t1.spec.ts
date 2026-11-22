@@ -83,19 +83,22 @@ test("Cookbooks search and category filter narrow the gallery", async ({ launchA
   await expect(page.getByRole("tab", { name: "Organisation" })).toHaveCount(0);
 });
 
-test("Cookbook cards open the existing template editor; Create opens it blank", async ({
+test("Cookbook cards open the cookbook editor; Create opens it blank", async ({
   launchApp,
 }) => {
-  const { page } = await launchApp({ mockIpc: true, releaseHighlightsSeen: true });
+  const { page, app } = await launchApp({ mockIpc: true, releaseHighlightsSeen: true });
   await openCookbooks(page);
 
   await page
     .getByRole("region", { name: "Calls & interviews", exact: true })
     .getByRole("button", { name: "Sales Call", exact: true })
     .click();
-  await expect(page.getByRole("heading", { name: "Edit template" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Edit cookbook" })).toBeVisible();
   await expect(page.getByPlaceholder(/Weekly Sync/)).toHaveValue("Sales Call");
-  await page.getByRole("button", { name: "Back to templates" }).click();
+  // A built-in can be set as default but not deleted.
+  await expect(page.getByRole("button", { name: "Set as default", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: /^Delete cookbook/ })).toHaveCount(0);
+  await page.getByRole("button", { name: "Back to cookbooks" }).click();
   await expect(page.getByRole("heading", { level: 1, name: "Cookbooks" })).toBeVisible();
 
   // The locked built-in opens read-only: viewable and defaultable, not editable.
@@ -103,13 +106,39 @@ test("Cookbook cards open the existing template editor; Create opens it blank", 
     .getByRole("region", { name: "Featured" })
     .getByRole("button", { name: "Standard Summary", exact: true })
     .click();
-  await expect(page.getByRole("heading", { name: "Built-in template" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Save Template", exact: true })).toHaveCount(0);
-  await page.getByRole("button", { name: "Back to templates" }).click();
+  await expect(page.getByRole("heading", { name: "Built-in cookbook" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Save cookbook", exact: true })).toHaveCount(0);
+  // Standard is the mock's default: shown as such, with no Set as default.
+  await expect(page.getByText("Default", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Set as default", exact: true })).toHaveCount(0);
+  await page.getByRole("button", { name: "Back to cookbooks" }).click();
+
+  // A user cookbook: set as default and delete both go through the bridge.
+  await page.getByRole("tab", { name: /My cookbooks/ }).click();
+  await page.getByRole("button", { name: "1:1 Notes", exact: true }).click();
+  await page.getByRole("button", { name: "Set as default", exact: true }).click();
+  await page.getByRole("button", { name: "Delete cookbook 1:1 Notes" }).click();
+  const confirm = page.getByRole("dialog");
+  await expect(confirm.getByText('Delete cookbook "1:1 Notes"?')).toBeVisible();
+  await confirm.getByRole("button", { name: "Delete", exact: true }).click();
+  await expect(page.getByRole("heading", { level: 1, name: "Cookbooks" })).toBeVisible();
+  const calls = await app.evaluate(
+    () => (global as unknown as { __mockIpcCalls: string[] }).__mockIpcCalls,
+  );
+  expect(calls).toEqual(expect.arrayContaining(["set-default-template", "delete-template"]));
 
   await page.getByRole("button", { name: "Create", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "New template" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "New cookbook" })).toBeVisible();
   await expect(page.getByPlaceholder(/Weekly Sync/)).toHaveValue("");
+});
+
+test("The old Settings → Templates deep link lands on Cookbooks", async ({ launchApp }) => {
+  const { page } = await launchApp({ mockIpc: true, releaseHighlightsSeen: true });
+  await page.evaluate(() => {
+    window.location.hash = "#/settings?tab=templates";
+  });
+  await expect(page.getByRole("heading", { level: 1, name: "Cookbooks" })).toBeVisible();
+  await expect(page.getByTestId("settings-page")).toHaveCount(0);
 });
 
 test("The cookbooks intro card dismisses and stays dismissed", async ({ launchApp }) => {
