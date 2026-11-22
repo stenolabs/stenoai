@@ -1,7 +1,8 @@
 // Brand marks for the Connect page, from Simple Icons v16.38.1 (CC0-1.0,
 // https://simpleicons.org). Each is the vendor's own mark, used only to
 // identify the service it connects to. Slack and OpenAI are not in Simple
-// Icons, so they fall back to the neutral glyphs.
+// Icons; Slack's multicolour mark is MULTICOLOR_LOGOS.slack below, and OpenAI
+// uses the repo's existing OpenAiIcon.
 export type BrandSlug =
   | 'linear'
   | 'notion'
@@ -63,5 +64,40 @@ export const BRAND_LOGOS: Record<BrandSlug, { title: string; hex: string; path: 
     title: 'Cursor',
     hex: '#000000',
     path: 'M11.503.131 1.891 5.678a.84.84 0 0 0-.42.726v11.188c0 .3.162.575.42.724l9.609 5.55a1 1 0 0 0 .998 0l9.61-5.55a.84.84 0 0 0 .42-.724V6.404a.84.84 0 0 0-.42-.726L12.497.131a1.01 1.01 0 0 0-.996 0M2.657 6.338h18.55c.263 0 .43.287.297.515L12.23 22.918c-.062.107-.229.064-.229-.06V12.335a.59.59 0 0 0-.295-.51l-9.11-5.257c-.109-.063-.064-.23.061-.23',
+  },
+};
+
+/**
+ * Marks that need more than one colour, drawn on their own viewBox.
+ * Slack: the official four-colour hash mark (Slack's 2019 brand mark, as
+ * published on Wikimedia Commons "Slack icon 2019.svg"), used only to
+ * identify the Slack connector.
+ */
+export type MulticolorBrandSlug = 'slack';
+export const MULTICOLOR_LOGOS: Record<
+  MulticolorBrandSlug,
+  { title: string; viewBox: string; paths: { d: string; fill: string }[] }
+> = {
+  slack: {
+    title: 'Slack',
+    viewBox: '0 0 127 127',
+    paths: [
+      {
+        fill: '#E01E5A',
+        d: 'M27.2 80c0 7.3-5.9 13.2-13.2 13.2C6.7 93.2.8 87.3.8 80c0-7.3 5.9-13.2 13.2-13.2h13.2V80zm6.6 0c0-7.3 5.9-13.2 13.2-13.2 7.3 0 13.2 5.9 13.2 13.2v33c0 7.3-5.9 13.2-13.2 13.2-7.3 0-13.2-5.9-13.2-13.2V80z',
+      },
+      {
+        fill: '#36C5F0',
+        d: 'M47 27c-7.3 0-13.2-5.9-13.2-13.2C33.8 6.5 39.7.6 47 .6c7.3 0 13.2 5.9 13.2 13.2V27H47zm0 6.7c7.3 0 13.2 5.9 13.2 13.2 0 7.3-5.9 13.2-13.2 13.2H13.9C6.6 60.1.7 54.2.7 46.9c0-7.3 5.9-13.2 13.2-13.2H47z',
+      },
+      {
+        fill: '#2EB67D',
+        d: 'M99.9 46.9c0-7.3 5.9-13.2 13.2-13.2 7.3 0 13.2 5.9 13.2 13.2 0 7.3-5.9 13.2-13.2 13.2H99.9V46.9zm-6.6 0c0 7.3-5.9 13.2-13.2 13.2-7.3 0-13.2-5.9-13.2-13.2V13.8C66.9 6.5 72.8.6 80.1.6c7.3 0 13.2 5.9 13.2 13.2v33.1z',
+      },
+      {
+        fill: '#ECB22E',
+        d: 'M80.1 99.8c7.3 0 13.2 5.9 13.2 13.2 0 7.3-5.9 13.2-13.2 13.2-7.3 0-13.2-5.9-13.2-13.2V99.8h13.2zm0-6.6c-7.3 0-13.2-5.9-13.2-13.2 0-7.3 5.9-13.2 13.2-13.2h33.1c7.3 0 13.2 5.9 13.2 13.2 0 7.3-5.9 13.2-13.2 13.2H80.1z',
+      },
+    ],
   },
 };

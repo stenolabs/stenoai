@@ -78,3 +78,30 @@ test('detects installs from each client config, and tolerates junk', async () =>
   fs.mkdirSync(path.join(p.claudeDesktopExtensions, 'local.mcpb.steno.steno'), { recursive: true });
   assert.equal((await install.detectClients(opts)).claudeDesktop, true);
 });
+
+test('detects the Steno skill at each documented install path', async () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'steno-skill-home-'));
+  const opts = { home, env: {} };
+  assert.deepEqual(await install.detectSkills(opts), { claudeCode: false, codex: false });
+  const p = install.skillPaths(opts);
+  // A folder without SKILL.md (a half-finished copy) is not an install.
+  fs.mkdirSync(path.dirname(p.claudeCode[0]), { recursive: true });
+  assert.equal((await install.detectSkills(opts)).claudeCode, false);
+  fs.writeFileSync(p.claudeCode[0], '---\nname: steno\n---\n');
+  assert.deepEqual(await install.detectSkills(opts), { claudeCode: true, codex: false });
+  // Codex: either ~/.agents/skills or $CODEX_HOME/skills counts.
+  const codexHome = path.join(home, 'codex-home');
+  const withCodexHome = { home, env: { CODEX_HOME: codexHome } };
+  const codexSkill = install.skillPaths(withCodexHome).codex[1];
+  assert.equal(codexSkill, path.join(codexHome, 'skills', 'steno', 'SKILL.md'));
+  fs.mkdirSync(path.dirname(codexSkill), { recursive: true });
+  fs.writeFileSync(codexSkill, 'x');
+  assert.equal((await install.detectSkills(withCodexHome)).codex, true);
+  assert.equal((await install.detectSkills(opts)).codex, false);
+  fs.mkdirSync(path.dirname(p.codex[0]), { recursive: true });
+  fs.writeFileSync(p.codex[0], 'x');
+  assert.equal((await install.detectSkills(opts)).codex, true);
+  // CLAUDE_CONFIG_DIR moves the Claude Code skills root.
+  const moved = { home, env: { CLAUDE_CONFIG_DIR: path.join(home, 'cfg') } };
+  assert.equal((await install.detectSkills(moved)).claudeCode, false);
+});

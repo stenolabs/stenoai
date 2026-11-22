@@ -1,7 +1,12 @@
 import type * as React from 'react';
 import { AnthropicIcon } from '@/components/ui/anthropic-icon';
 import { OpenAiIcon } from '@/components/ui/openai-icon';
-import { BRAND_LOGOS, type BrandSlug } from './brandLogos';
+import {
+  BRAND_LOGOS,
+  MULTICOLOR_LOGOS,
+  type BrandSlug,
+  type MulticolorBrandSlug,
+} from './brandLogos';
 
 export type GlyphKind = 'anthropic' | 'openai' | 'cursor' | 'initials';
 
@@ -10,10 +15,33 @@ function brandFill(hex: string): string {
   return hex.toLowerCase() === '#000000' ? 'var(--fg-1)' : hex;
 }
 
-/** A vendor's own mark in its brand colour, on a raised tile. */
-export function BrandGlyph({ brand, size = 36 }: { brand: BrandSlug; size?: number }) {
-  const logo = BRAND_LOGOS[brand];
+/** A vendor's own mark in its brand colour(s), on a raised tile. */
+export function BrandGlyph({
+  brand,
+  size = 36,
+}: {
+  brand: BrandSlug | MulticolorBrandSlug;
+  size?: number;
+}) {
   const mark = Math.round(size * 0.5);
+  let svg: React.ReactNode;
+  if (brand in MULTICOLOR_LOGOS) {
+    const logo = MULTICOLOR_LOGOS[brand as MulticolorBrandSlug];
+    svg = (
+      <svg viewBox={logo.viewBox} width={mark} height={mark} aria-hidden>
+        {logo.paths.map((p) => (
+          <path key={p.fill} d={p.d} fill={p.fill} />
+        ))}
+      </svg>
+    );
+  } else {
+    const logo = BRAND_LOGOS[brand as BrandSlug];
+    svg = (
+      <svg viewBox="0 0 24 24" width={mark} height={mark} aria-hidden>
+        <path d={logo.path} fill={brandFill(logo.hex)} />
+      </svg>
+    );
+  }
   return (
     <span
       aria-hidden
@@ -25,9 +53,7 @@ export function BrandGlyph({ brand, size = 36 }: { brand: BrandSlug; size?: numb
         borderColor: 'var(--border-subtle)',
       }}
     >
-      <svg viewBox="0 0 24 24" width={mark} height={mark} aria-hidden>
-        <path d={logo.path} fill={brandFill(logo.hex)} />
-      </svg>
+      {svg}
     </span>
   );
 }

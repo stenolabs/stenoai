@@ -1,14 +1,13 @@
 import { MeetingsShell } from '@/components/MeetingsShell';
-import { navigate } from '@/lib/router';
 import { t } from '@/i18n';
 import { ActionsSection } from './connect/ActionsSection';
-import { AssistantsSection } from './connect/AssistantsSection';
-import { ScopeSection } from './connect/ScopeSection';
+import { AiAppsSection } from './connect/AiAppsSection';
+import { CodingAgentsSection } from './connect/CodingAgentsSection';
 
 /**
- * Connect: bring meetings to AI assistants through the bundled, read-only
- * Steno MCP server (app/steno-mcp), choose what they can see, and (later)
- * turn meetings into actions.
+ * Connect: bring meetings to coding agents (the Steno skill, or MCP), to AI
+ * apps through the bundled read-only Steno MCP server (app/steno-mcp) with
+ * scope controls, and turn meetings into actions in other tools.
  */
 export function Connect() {
   return (
@@ -26,19 +25,9 @@ export function Connect() {
             {t('connect.intro.body')}
           </p>
         </div>
-        <AssistantsSection />
-        <ScopeSection />
+        <CodingAgentsSection />
+        <AiAppsSection />
         <ActionsSection />
-        <p className="mt-10 text-[12px]" style={{ color: 'var(--fg-muted)' }}>
-          {t('connect.skillHint')}{' '}
-          <button
-            type="button"
-            className="underline underline-offset-2 hover:text-[color:var(--fg-1)]"
-            onClick={() => navigate('/agents')}
-          >
-            {t('connect.skillLink')}
-          </button>
-        </p>
       </div>
     </MeetingsShell>
   );

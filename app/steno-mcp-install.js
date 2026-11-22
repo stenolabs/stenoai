@@ -142,6 +142,48 @@ async function codexHasServer(file) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Steno skill detection (Connect → Coding agents). The install prompts in
+// renderer/src/lib/agentSkills.ts (and docs/features/agents.mdx) put the
+// skill folder at these paths; a SKILL.md file there counts as installed.
+//   Claude Code: ~/.claude/skills/steno (or $CLAUDE_CONFIG_DIR/skills/steno)
+//   Codex: ~/.agents/skills/steno (the documented personal location) or
+//          $CODEX_HOME/skills/steno (~/.codex/skills, where $skill-installer
+//          writes)
+// One stat per path, no reads.
+// ---------------------------------------------------------------------------
+
+const SKILL_DIR = 'steno';
+
+function skillPaths({ home = os.homedir(), env = process.env } = {}) {
+  return {
+    claudeCode: [path.join(env.CLAUDE_CONFIG_DIR || path.join(home, '.claude'), 'skills', SKILL_DIR, 'SKILL.md')],
+    codex: [
+      path.join(home, '.agents', 'skills', SKILL_DIR, 'SKILL.md'),
+      path.join(env.CODEX_HOME || path.join(home, '.codex'), 'skills', SKILL_DIR, 'SKILL.md'),
+    ],
+  };
+}
+
+async function isFile(file) {
+  try {
+    return (await fs.promises.stat(file)).isFile();
+  } catch {
+    return false;
+  }
+}
+
+async function anyFile(files) {
+  const found = await Promise.all(files.map(isFile));
+  return found.includes(true);
+}
+
+async function detectSkills(opts = {}) {
+  const p = skillPaths(opts);
+  const [claudeCode, codex] = await Promise.all([anyFile(p.claudeCode), anyFile(p.codex)]);
+  return { claudeCode, codex };
+}
+
 async function detectClients(opts = {}) {
   const p = clientPaths(opts);
   const [desktopConfig, desktopExtension, claudeCode, codex, cursor] = await Promise.all([
@@ -164,4 +206,6 @@ module.exports = {
   snippets,
   clientPaths,
   detectClients,
+  skillPaths,
+  detectSkills,
 };

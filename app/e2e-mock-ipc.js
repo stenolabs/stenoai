@@ -583,8 +583,10 @@ function install({ ipcMain }) {
       cursorJson: JSON.stringify({ mcpServers: { steno: { command: CONNECT_SPEC.command, args: [CONNECT_SPEC.script], env: { ELECTRON_RUN_AS_NODE: '1' } } } }, null, 2),
     },
     launch: { command: CONNECT_SPEC.command, args: [CONNECT_SPEC.script], env: { ELECTRON_RUN_AS_NODE: '1' } },
-    // Claude Code reads as already connected so the spec covers both states.
+    // Claude Code reads as connected over MCP and Codex through the skill, so
+    // the spec covers both "Connected" hints and the not-connected state.
     clients: { claudeDesktop: false, claudeCode: true, codex: false, cursor: false },
+    skills: { claudeCode: false, codex: true },
   };
 
   // Suggested actions (Connect page + action cards). Stateful so the
@@ -2077,9 +2079,9 @@ function install({ ipcMain }) {
     'get-current-model': { success: true, model: 'gemma4:e2b-it-qat' },
     // get-queue-status lives in MOCKS (stateful recording machine) — its idle
     // shape is identical to the static default that used to sit here.
-    // Settings > Templates renders a row per template with badge/prompt/action
-    // variety (default, locked built-in, unlocked built-in, custom) — an empty
-    // list would only ever show the "New Template" row.
+    // Cookbooks renders a card per template with badge/prompt/action variety
+    // (default, locked built-in, unlocked built-in, custom) — an empty list
+    // would only ever show the "New cookbook" tile.
     'list-templates': {
       success: true,
       templates: [

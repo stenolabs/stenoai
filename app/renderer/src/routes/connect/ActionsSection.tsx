@@ -10,7 +10,7 @@ import { t } from '@/i18n';
 import { ActionConnectionCard } from './ActionConnectionCard';
 import { AddEndpointDialog } from './AddEndpointDialog';
 import { BrandGlyph, ConnectGlyph } from './ConnectGlyph';
-import type { BrandSlug } from './brandLogos';
+import type { BrandSlug, MulticolorBrandSlug } from './brandLogos';
 import { RecentActions } from './RecentActions';
 
 function connectorCopy(id: ActionConnectorId): {
@@ -58,9 +58,10 @@ function connectorCopy(id: ActionConnectorId): {
   }
 }
 
-/** Brand mark per connector; Slack has no CC0 mark, so it keeps its initial. */
-const CONNECTOR_BRAND: Partial<Record<ActionConnectorId, BrandSlug>> = {
+/** Brand mark per connector. */
+const CONNECTOR_BRAND: Partial<Record<ActionConnectorId, BrandSlug | MulticolorBrandSlug>> = {
   linear: 'linear',
+  slack: 'slack',
   notion: 'notion',
   atlassian: 'jira',
   hubspot: 'hubspot',
@@ -100,7 +101,7 @@ export function ActionsSection() {
 
   return (
     <section aria-labelledby="connect-actions-heading" className="mt-10">
-      <h2 id="connect-actions-heading" className="text-sm font-medium">
+      <h2 id="connect-actions-heading" className="text-[15px] font-medium">
         {t('connect.actions.heading')}
       </h2>
       <p
@@ -147,7 +148,7 @@ export function ActionsSection() {
                 style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-raised)' }}
               >
                 {CONNECTOR_BRAND[c.id] ? (
-                  <BrandGlyph brand={CONNECTOR_BRAND[c.id] as BrandSlug} />
+                  <BrandGlyph brand={CONNECTOR_BRAND[c.id] as BrandSlug | MulticolorBrandSlug} />
                 ) : (
                   <ConnectGlyph kind="initials" initials={copy.initials} />
                 )}

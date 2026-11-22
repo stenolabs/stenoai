@@ -5,7 +5,6 @@ import { Sandbox } from '@/routes/Sandbox';
 import { Settings } from '@/routes/Settings';
 import { Setup } from '@/routes/Setup';
 import { Chat } from '@/routes/Chat';
-import { Agents } from '@/routes/Agents';
 import { Connect } from '@/routes/Connect';
 import { Cookbooks } from '@/routes/Cookbooks';
 import { ChatConversation } from '@/routes/ChatConversation';
@@ -227,7 +226,6 @@ export function App() {
   // would float over Settings/Setup and block clicks in that band; the
   // pill docks alone there instead.
   const isChromeRoute =
-    route === '/agents' ||
     route === '/connect' ||
     route === '/cookbooks' ||
     route === '/settings' ||
@@ -333,6 +331,11 @@ function RouteView({ route }: { route: string }) {
     }
   }, [onOrgSharedRoute, sharedNotes.resolved, sharedNotes.enabled]);
 
+  // The Agents page merged into Connect (Coding agents); keep old links working.
+  React.useEffect(() => {
+    if (route === '/agents') navigate('/connect');
+  }, [route]);
+
   if (route === '/dev' || route.startsWith('/dev/')) return <Sandbox />;
   // Match deep-links like /settings?tab=organisation too — the Settings
   // component reads the tab param off the route on mount.
@@ -340,8 +343,7 @@ function RouteView({ route }: { route: string }) {
   if (route === '/setup') return <Setup />;
   if (route === '/recording') return <Recording />;
   if (route === '/chat') return <Chat />;
-  if (route === '/agents') return <Agents />;
-  if (route === '/connect') return <Connect />;
+  if (route === '/connect' || route === '/agents') return <Connect />;
   if (route === '/cookbooks') return <Cookbooks />;
   if (route.startsWith('/chat/')) {
     const sessionId = safeDecode(route.slice('/chat/'.length));

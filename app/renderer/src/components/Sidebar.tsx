@@ -2,7 +2,6 @@ import * as React from 'react';
 import {
   ChefHat,
   ChevronDown,
-  Blocks,
   Cable,
   Globe,
   HelpCircle,
@@ -23,7 +22,6 @@ import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip
 import { useUpdateFolderIcon } from '@/hooks/useFolders';
 import { useOrgLogout, useOrgSession, useSharedNotesGate } from '@/hooks/useOrg';
 import { useCommandPalette } from '@/components/CommandPalette';
-import { AGENTS_COPY } from '@/lib/agentSkills';
 import { t } from '@/i18n';
 
 export interface SidebarMeeting {
@@ -409,16 +407,6 @@ export function Sidebar({
             >
               {t('sidebar.new')}
             </span>
-          </button>
-
-          <button
-            type="button"
-            className={cn('sb-row', currentRoute === '/agents' && 'active')}
-            aria-current={currentRoute === '/agents' ? 'page' : undefined}
-            onClick={() => navigate('/agents')}
-          >
-            <Blocks className="size-[14px]" />
-            <span className="flex-1 truncate">{AGENTS_COPY.nav}</span>
           </button>
 
           {sharedNotes.enabled && (

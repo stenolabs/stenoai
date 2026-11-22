@@ -21,7 +21,7 @@ function registerStenoMcpIpc({ ipcMain, runPythonScript, shell, launchSpec, plat
   ipcMain.handle('connect-get-info', async () => {
     try {
       const s = spec();
-      const clients = await install.detectClients();
+      const [clients, skills] = await Promise.all([install.detectClients(), install.detectSkills()]);
       return {
         success: true,
         serverAvailable: fs.existsSync(s.args[0]),
@@ -29,6 +29,7 @@ function registerStenoMcpIpc({ ipcMain, runPythonScript, shell, launchSpec, plat
         snippets: install.snippets(s, platform),
         launch: { command: s.command, args: s.args, env: s.env },
         clients,
+        skills,
       };
     } catch (e) {
       return { success: false, error: e.message };

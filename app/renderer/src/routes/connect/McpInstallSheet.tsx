@@ -1,129 +1,18 @@
 import * as React from 'react';
 import { Check, Copy } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
+import { DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useConnectInfo } from '@/hooks/useConnect';
 import { ipc, type ConnectClientId } from '@/lib/ipc';
 import { t } from '@/i18n';
-import { BrandGlyph, ConnectGlyph, type GlyphKind } from './ConnectGlyph';
-import type { BrandSlug } from './brandLogos';
 
-type AssistantId = ConnectClientId | 'chatgpt';
-
-interface Assistant {
-  id: AssistantId;
+export interface McpTarget {
+  id: ConnectClientId;
   name: string;
-  description: string;
-  glyph: GlyphKind;
-  brand?: BrandSlug;
-  comingSoon?: boolean;
 }
 
-function assistants(): Assistant[] {
-  return [
-    {
-      id: 'claudeDesktop',
-      name: t('connect.assistants.claudeDesktop.name'),
-      description: t('connect.assistants.claudeDesktop.description'),
-      glyph: 'anthropic',
-      brand: 'claude',
-    },
-    {
-      id: 'claudeCode',
-      name: t('connect.assistants.claudeCode.name'),
-      description: t('connect.assistants.claudeCode.description'),
-      glyph: 'anthropic',
-      brand: 'claude',
-    },
-    {
-      id: 'codex',
-      name: t('connect.assistants.codex.name'),
-      description: t('connect.assistants.codex.description'),
-      glyph: 'openai',
-    },
-    {
-      id: 'cursor',
-      name: t('connect.assistants.cursor.name'),
-      description: t('connect.assistants.cursor.description'),
-      glyph: 'cursor',
-      brand: 'cursor',
-    },
-    {
-      id: 'chatgpt',
-      name: t('connect.assistants.chatgpt.name'),
-      description: t('connect.assistants.chatgpt.description'),
-      glyph: 'openai',
-      comingSoon: true,
-    },
-  ];
-}
-
-export function AssistantsSection() {
-  const info = useConnectInfo();
-  const [open, setOpen] = React.useState<Assistant | null>(null);
-  const list = assistants();
-
-  return (
-    <section aria-labelledby="connect-assistants-heading" className="mt-10">
-      <h2 id="connect-assistants-heading" className="text-sm font-medium">
-        {t('connect.assistants.heading')}
-      </h2>
-      <div className="mt-4 grid gap-3 sm:grid-cols-2">
-        {list.map((a) => {
-          const connected = a.id !== 'chatgpt' && info.data?.clients[a.id] === true;
-          return (
-            <section
-              key={a.id}
-              aria-label={a.name}
-              className="flex min-w-0 items-start gap-3 rounded-xl border p-4"
-              style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-raised)' }}
-            >
-              {a.brand ? <BrandGlyph brand={a.brand} /> : <ConnectGlyph kind={a.glyph} />}
-              <div className="min-w-0 flex-1">
-                <h3 className="text-[14px] font-medium">{a.name}</h3>
-                <p className="mt-0.5 text-[12.5px] leading-snug" style={{ color: 'var(--fg-2)' }}>
-                  {a.description}
-                </p>
-              </div>
-              {a.comingSoon ? (
-                <span
-                  className="shrink-0 rounded-full px-2 py-0.5 text-[11.5px]"
-                  style={{ background: 'var(--surface-sunken)', color: 'var(--fg-2)' }}
-                >
-                  {t('connect.comingSoon')}
-                </span>
-              ) : (
-                <Button
-                  variant={connected ? 'ghost' : 'outline'}
-                  size="sm"
-                  className="h-[30px] shrink-0 px-3 text-[13px]"
-                  aria-label={t('connect.assistants.connectAria', { name: a.name })}
-                  onClick={() => setOpen(a)}
-                >
-                  {connected && <Check aria-hidden />}
-                  {connected ? t('connect.connected') : t('connect.connect')}
-                </Button>
-              )}
-            </section>
-          );
-        })}
-      </div>
-      <Dialog open={open !== null} onOpenChange={(v) => !v && setOpen(null)}>
-        <DialogContent className="max-w-[520px]">
-          {open && <InstallSheet assistant={open} />}
-        </DialogContent>
-      </Dialog>
-    </section>
-  );
-}
-
-function InstallSheet({ assistant }: { assistant: Assistant }) {
+/** The MCP install steps for one assistant (Claude, Claude Code, Codex, Cursor). */
+export function McpInstallSheet({ assistant }: { assistant: McpTarget }) {
   const info = useConnectInfo();
   const snippets = info.data?.snippets;
   return (
@@ -163,7 +52,7 @@ function InstallSheet({ assistant }: { assistant: Assistant }) {
   );
 }
 
-function sheetIntro(id: AssistantId): string {
+function sheetIntro(id: ConnectClientId): string {
   switch (id) {
     case 'claudeDesktop':
       return t('connect.sheet.claudeDesktop.intro');
@@ -173,8 +62,6 @@ function sheetIntro(id: AssistantId): string {
       return t('connect.sheet.codex.intro');
     case 'cursor':
       return t('connect.sheet.cursor.intro');
-    default:
-      return t('connect.assistants.chatgpt.description');
   }
 }
 
@@ -225,7 +112,7 @@ function OpenButton({
   );
 }
 
-function CopyBlock({ label, text }: { label: string; text: string }) {
+export function CopyBlock({ label, text }: { label: string; text: string }) {
   const [copied, setCopied] = React.useState(false);
   const [error, setError] = React.useState('');
   React.useEffect(() => {

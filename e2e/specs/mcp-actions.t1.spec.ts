@@ -2,7 +2,7 @@ import { test, expect } from '../fixtures/electron';
 
 /**
  * T1 — Suggested actions in the renderer, with mock IPC (app/e2e-mock-ipc.js
- * actions-*): the Connect page's "Turn meetings into actions" section
+ * actions-*): the Connect page's "Actions" section
  * (connector cards, Coming soon, adding a custom endpoint, the enable toggle,
  * the tool preview, disconnect) and the action cards under a note (editable
  * arguments, the exact-payload preview, Approve sends the edited arguments,
@@ -23,7 +23,7 @@ test('Connect: connector cards, add a custom endpoint, toggle and disconnect', a
   await page.evaluate(() => {
     window.location.hash = '#/connect';
   });
-  await expect(page.getByRole('heading', { name: 'Turn meetings into actions' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Actions', exact: true })).toBeVisible();
 
   for (const name of ['Linear', 'Notion', 'Jira and Confluence']) {
     await expect(
