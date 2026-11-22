@@ -22,6 +22,8 @@ interface FolderScopePickerProps {
   value: string | null;
   includeMeeting?: boolean;
   disabled?: boolean;
+  /** Icon-only trigger (the note's ask bar); the label stays in the tooltip and accessible name. */
+  iconOnly?: boolean;
   onChange: (folderId: string | null) => void;
 }
 
@@ -31,7 +33,7 @@ interface FolderScopePickerProps {
  * short picker: This meeting, All notes, Shared notes, Spaces, No context.
  * Backend filtering happens server-side; this only persists the choice.
  */
-export function FolderScopePicker({ value, onChange, includeMeeting = false, disabled = false }: FolderScopePickerProps) {
+export function FolderScopePicker({ value, onChange, includeMeeting = false, disabled = false, iconOnly = false }: FolderScopePickerProps) {
   const folders = useFolders();
   const orgSession = useOrgSession();
   const orgSignedIn = orgSession.data?.signedIn ?? false;
@@ -89,12 +91,16 @@ export function FolderScopePicker({ value, onChange, includeMeeting = false, dis
           aria-label={t('chat.context.label', { context: label })}
           title={t('chat.context.label', { context: label })}
           data-testid="chat-context-chip"
-          className="inline-flex h-[24px] items-center gap-1.5 rounded-full border px-2.5 text-[12px] transition-colors hover:bg-[color:var(--surface-hover)] disabled:opacity-60"
+          className={
+            iconOnly
+              ? 'inline-flex size-[28px] shrink-0 items-center justify-center rounded-full transition-colors hover:bg-[color:var(--surface-hover)] disabled:opacity-60'
+              : 'inline-flex h-[24px] items-center gap-1.5 rounded-full border px-2.5 text-[12px] transition-colors hover:bg-[color:var(--surface-hover)] disabled:opacity-60'
+          }
           style={{ color: 'var(--fg-2)', borderColor: 'var(--border-subtle)' }}
         >
-          <Icon aria-hidden className="size-[12px]" />
-          <span className="max-w-[200px] truncate">{label}</span>
-          <ChevronDown aria-hidden className="size-[11px] opacity-60" />
+          <Icon aria-hidden className={iconOnly ? 'size-[15px]' : 'size-[12px]'} />
+          {!iconOnly && <span className="max-w-[200px] truncate">{label}</span>}
+          {!iconOnly && <ChevronDown aria-hidden className="size-[11px] opacity-60" />}
         </button>
       </PopoverTrigger>
       <PopoverContent align="start" className="w-[220px] p-1">

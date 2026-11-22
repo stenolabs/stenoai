@@ -488,7 +488,7 @@ export function AskBar({ visible = true }: { visible?: boolean }) {
             style, separate from the composer. */}
 
         {/* Context sits inside the bar, as on the Chat page. */}
-        <FolderScopePicker value={scope} onChange={changeScope} includeMeeting disabled={!visible || hidden || isStreaming || submitting} />
+        <FolderScopePicker value={scope} onChange={changeScope} includeMeeting iconOnly disabled={!visible || hidden || isStreaming || submitting} />
 
         {/* Text input */}
         <input
