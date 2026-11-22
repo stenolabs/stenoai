@@ -500,7 +500,7 @@
   "settings.ai.transcription.heading": "語音轉錄",
   "settings.ai.summarisation.heading": "摘要與對話",
   "settings.ai.summarisation.description": "將逐字稿轉換為筆記並回答您的問題。這是唯一可在本機或雲端執行的步驟；若選擇雲端供應商，只會傳送文字逐字稿，絕不傳送音訊。",
-  "settings.ai.transcription.onDeviceNote": "語音轉文字一律在本機執行，您的音訊絕不離開這台電腦。",
+  "settings.ai.transcription.onDeviceNote": "語音轉文字預設在本機執行。只有在您開啟雲端轉錄時，音訊才會離開這台電腦。",
   "settings.ai.engineTagline.parakeet": "速度最快，支援英文與歐洲語言",
   "settings.ai.engineTagline.whisper": "最準確，支援 99 種語言",
   "settings.ai.language.label": "語言",

@@ -518,7 +518,7 @@
   "settings.ai.transcription.heading": "Transcription",
   "settings.ai.summarisation.heading": "Summarisation & Chat",
   "settings.ai.summarisation.description": "Turns your transcript into notes and answers your questions. This is the one step that can run locally or in the cloud — if you choose a cloud provider, only the text transcript is sent, never audio.",
-  "settings.ai.transcription.onDeviceNote": "Speech-to-text always runs on your device — your audio never leaves your computer.",
+  "settings.ai.transcription.onDeviceNote": "Speech-to-text runs on your device by default. Audio leaves your computer only if you turn on cloud transcription.",
   "settings.ai.engineTagline.parakeet": "Fastest — English + European languages",
   "settings.ai.engineTagline.whisper": "Most accurate — 99 languages",
   "settings.ai.language.label": "Language",
