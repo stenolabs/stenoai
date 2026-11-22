@@ -57,8 +57,10 @@ function quoteWindows(s) {
 
 function claudeCodeCommand(spec, platform = process.platform) {
   const q = platform === 'win32' ? quoteWindows : quotePosix;
+  // The name goes before --env: -e/--env is variadic and would otherwise
+  // swallow the server name ("Invalid environment variable format: steno").
   const env = Object.entries(spec.env).map(([k, v]) => `--env ${k}=${v}`);
-  return ['claude mcp add --scope user', ...env, SERVER_KEY, '--', q(spec.command), ...spec.args.map(q)].join(' ');
+  return ['claude mcp add --scope user', SERVER_KEY, ...env, '--', q(spec.command), ...spec.args.map(q)].join(' ');
 }
 
 // JSON string escaping is valid TOML basic-string escaping for paths.

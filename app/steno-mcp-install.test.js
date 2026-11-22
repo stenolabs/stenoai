@@ -49,7 +49,7 @@ test('Claude Code command runs the launcher, quoted per platform', () => {
   );
   // The direct (pre-launcher) spec still renders, env first.
   const direct = { command: '/A/Steno', args: ['/A/index.mjs'], env: { ELECTRON_RUN_AS_NODE: '1' } };
-  assert.equal(install.claudeCodeCommand(direct, 'darwin'), 'claude mcp add --scope user --env ELECTRON_RUN_AS_NODE=1 steno -- /A/Steno /A/index.mjs');
+  assert.equal(install.claudeCodeCommand(direct, 'darwin'), 'claude mcp add --scope user steno --env ELECTRON_RUN_AS_NODE=1 -- /A/Steno /A/index.mjs');
 });
 
 test('Codex TOML is just the launcher command, escaped for Windows', () => {
