@@ -60,9 +60,6 @@ export function RecentActions() {
           </li>
         ))}
       </ul>
-      <p className="mt-2 text-[12px]" style={{ color: 'var(--fg-muted)' }}>
-        {t('connect.actions.recent.footer')}
-      </p>
     </section>
   );
 }

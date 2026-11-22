@@ -274,9 +274,6 @@ export function ActionsSection() {
 
       <RecentActions />
 
-      <p className="mt-3 text-[12px] leading-relaxed" style={{ color: 'var(--fg-muted)' }}>
-        {t('connect.actions.privacy')}
-      </p>
       <AddEndpointDialog key={addKey} open={addOpen} onOpenChange={setAddOpen} />
     </section>
   );

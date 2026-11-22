@@ -951,8 +951,6 @@
   "connect.actions.recent.status.needsAuth": "Needed sign-in",
   "connect.actions.recent.status.toolError": "Endpoint reported an error",
   "connect.actions.recent.status.failed": "Failed",
-  "connect.actions.recent.footer": "Steno keeps this log on this computer. It records when, where and which tool, and a fingerprint of what was sent, not the content.",
-  "connect.actions.privacy": "Suggestions use your configured AI model and only the note's summary and action items. Steno sends nothing to a tool until you approve the exact payload.",
   "cookbooks.title": "Cookbooks",
   "cookbooks.subtitle": "Let's cook!",
   "cookbooks.create": "Create",

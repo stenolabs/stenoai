@@ -27,10 +27,10 @@ export function Connect() {
             {t('connect.intro.body')}
           </p>
         </div>
-        <ActionsSection />
-        <AiAppsSection />
         <CodingAgentsSection />
+        <AiAppsSection />
         <ScopeSection />
+        <ActionsSection />
       </div>
     </MeetingsShell>
   );

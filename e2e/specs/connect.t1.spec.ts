@@ -45,12 +45,12 @@ test('Connect: coding agents install the skill first, with MCP as the secondary 
   await expect(page.getByText('Make your meetings actionable.')).toBeVisible();
   await expect(page.getByText('Connect your AI tools and the apps you work in. Steno suggests the follow-ups; you approve them.')).toBeVisible();
   await expect(page.getByText('Prefer a skill instead of a connection?')).toHaveCount(0);
-  // Sections: Actions first, then AI apps, then Coding agents.
+  // Sections: Coding agents, then AI apps, then Actions.
   const order = await page.locator('h2').allTextContents();
   const idx = (h: string) => order.indexOf(h);
-  expect(idx('Actions')).toBeGreaterThanOrEqual(0);
-  expect(idx('Actions')).toBeLessThan(idx('AI apps'));
-  expect(idx('AI apps')).toBeLessThan(idx('Coding agents'));
+  expect(idx('Coding agents')).toBeGreaterThanOrEqual(0);
+  expect(idx('Coding agents')).toBeLessThan(idx('AI apps'));
+  expect(idx('AI apps')).toBeLessThan(idx('Actions'));
 
   const coding = page.getByRole('region', { name: 'Coding agents' });
   const apps = page.getByRole('region', { name: 'AI apps' });
