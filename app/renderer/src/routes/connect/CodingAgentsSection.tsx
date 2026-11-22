@@ -75,10 +75,14 @@ export function CodingAgentsSection() {
                   <p className="mt-0.5 text-[12.5px] leading-snug" style={{ color: 'var(--fg-2)' }}>
                     {a.description}
                   </p>
+                  {via && (
+                    <div className="mt-1.5">
+                      <ConnectionStatus via={via} />
+                    </div>
+                  )}
                 </div>
-                {via && <ConnectionStatus via={via} />}
               </div>
-              <div className="mt-4 flex flex-wrap items-center gap-1.5 pl-12">
+              <div className="mt-auto flex flex-wrap items-center gap-1.5 pl-12 pt-4">
                 <Button
                   variant={via ? 'outline' : 'default'}
                   size="sm"
