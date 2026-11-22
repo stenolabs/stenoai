@@ -21,6 +21,14 @@ export const RELEASE_HIGHLIGHTS: readonly ReleaseHighlight[] = [
     route: '/',
   },
   {
+    id: 'hebrew-model',
+    title: 'Transcribe Hebrew',
+    description:
+      'With the Whisper engine, download the optional on-device Hebrew model in AI settings.',
+    action: 'Get the Hebrew model',
+    route: '/settings?tab=ai',
+  },
+  {
     id: 'speaker-engine',
     title: 'Choose speaker detection',
     description:
