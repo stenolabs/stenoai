@@ -137,6 +137,16 @@
      * active tabs, toggles, and stream-markdown links all use the same
      * neutral ink tone so the interface reads as one paper+ink palette. */
     --accent-primary: 60 4% 10%;
+
+    /* Cookbook cover art (generative, ink/paper only). Three tones so a row
+     * of covers has rhythm without any chromatic accent. */
+    --cover-ink-bg: #1B1B19;
+    --cover-ink-fg: #FAF9F5;
+    --cover-stone-bg: #E5DFD1;
+    --cover-stone-fg: #1B1B19;
+    --cover-paper-bg: #F1EEE5;
+    --cover-paper-fg: #3D3D39;
+    --cover-grain: 0.22;
   }
 
   .dark,
@@ -194,6 +204,16 @@
     /* Accent = foreground ink (light variant for dark mode). Matches the
      * light-mode pattern of accent == foreground for an all-neutral UI. */
     --accent-primary: 48 20% 90%;
+
+    /* Covers in dark mode: ink deepens below the page, paper turns warm
+     * graphite, and line-work drops to a quieter cream. */
+    --cover-ink-bg: #0F0F0D;
+    --cover-ink-fg: #D9D5C8;
+    --cover-stone-bg: #2C2B25;
+    --cover-stone-fg: #CFCABC;
+    --cover-paper-bg: #22221E;
+    --cover-paper-fg: #A9A496;
+    --cover-grain: 0.3;
   }
 }
 
@@ -839,3 +859,25 @@
 .chat-markdown blockquote { border-left: 2px solid var(--border-subtle); padding-left: 0.75rem; color: var(--fg-2); }
 .chat-markdown > :first-child { margin-top: 0; }
 .chat-markdown > :last-child { margin-bottom: 0; }
+
+/* =============================================================================
+   Cookbook covers — see components/cookbooks/CookbookCover.tsx
+   =============================================================================*/
+.cookbook-cover[data-cover-tone='ink'] { --cover-bg: var(--cover-ink-bg); color: var(--cover-ink-fg); }
+.cookbook-cover[data-cover-tone='stone'] { --cover-bg: var(--cover-stone-bg); color: var(--cover-stone-fg); }
+.cookbook-cover[data-cover-tone='paper'] { --cover-bg: var(--cover-paper-bg); color: var(--cover-paper-fg); }
+.cookbook-cover { background: var(--cover-bg); }
+.cookbook-cover-glyph {
+  width: 54%;
+  height: 54%;
+  background: var(--cover-bg);
+  box-shadow: 0 0 0 1px color-mix(in srgb, currentColor 35%, transparent), 0 0 0 4px var(--cover-bg);
+}
+.cookbook-cover-glyph svg { width: 50%; height: 50%; }
+@media (prefers-reduced-motion: no-preference) {
+  .cookbook-cover-art { transition: transform var(--dur-slow) var(--ease); }
+  .group:hover .cookbook-cover-art,
+  .group:focus-visible .cookbook-cover-art { transform: scale(1.04); }
+}
+.cookbook-row { scrollbar-width: none; }
+.cookbook-row::-webkit-scrollbar { display: none; }

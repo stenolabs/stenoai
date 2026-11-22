@@ -7,6 +7,7 @@ import { Setup } from '@/routes/Setup';
 import { Chat } from '@/routes/Chat';
 import { Agents } from '@/routes/Agents';
 import { Connect } from '@/routes/Connect';
+import { Cookbooks } from '@/routes/Cookbooks';
 import { ChatConversation } from '@/routes/ChatConversation';
 import { StreamingProvider } from '@/hooks/useStreamingQuery';
 import { Home } from '@/routes/Home';
@@ -228,6 +229,7 @@ export function App() {
   const isChromeRoute =
     route === '/agents' ||
     route === '/connect' ||
+    route === '/cookbooks' ||
     route === '/settings' ||
     route.startsWith('/settings?') ||
     route === '/setup' ||
@@ -340,6 +342,7 @@ function RouteView({ route }: { route: string }) {
   if (route === '/chat') return <Chat />;
   if (route === '/agents') return <Agents />;
   if (route === '/connect') return <Connect />;
+  if (route === '/cookbooks') return <Cookbooks />;
   if (route.startsWith('/chat/')) {
     const sessionId = safeDecode(route.slice('/chat/'.length));
     return <ChatConversation sessionId={sessionId} />;

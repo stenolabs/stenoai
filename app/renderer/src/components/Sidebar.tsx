@@ -1,5 +1,6 @@
 import * as React from 'react';
 import {
+  ChefHat,
   ChevronDown,
   Blocks,
   Cable,
@@ -555,6 +556,25 @@ export function Sidebar({
               on the right) doesn't treat Help as a third independent side and
               spread it away from the Settings cog. */}
           <div className="flex items-center gap-1">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                onClick={() => navigate('/cookbooks')}
+                aria-label={t('sidebar.cook')}
+                aria-pressed={currentRoute === '/cookbooks'}
+                className={cn(
+                  'inline-flex h-[26px] w-7 items-center justify-center rounded-md transition-colors hover:bg-[color:var(--surface-active)] hover:text-[color:var(--fg-1)]',
+                  currentRoute === '/cookbooks'
+                    ? 'bg-[color:var(--surface-active)] text-[color:var(--fg-1)]'
+                    : 'text-[color:var(--fg-2)]',
+                )}
+              >
+                <ChefHat className="size-[15px]" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="top">{t('sidebar.cook')}</TooltipContent>
+          </Tooltip>
           <Tooltip>
             <TooltipTrigger asChild>
               <button
