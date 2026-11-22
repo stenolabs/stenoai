@@ -608,3 +608,40 @@ describe('GeneralTab open-meetings row', () => {
     expect(h.setAutoOpen.mutate).toHaveBeenCalledWith({ lead_minutes: 30 });
   });
 });
+
+describe('GeneralTab meeting sections', () => {
+  // Document order of the given texts, as indices into the rendered text.
+  const positions = (...texts: string[]) => {
+    const all = document.body.textContent ?? '';
+    return texts.map((text) => all.indexOf(text));
+  };
+
+  test('groups meeting-start settings under one heading, post-meeting under another', () => {
+    h.google.status.data = { connected: true };
+    h.autoOpen.data.mode = 'ask';
+    render(<GeneralTab />);
+    expect(screen.queryByText('Meeting notifications')).toBeNull();
+    const [calendar, starts, scheduled, open, detect, autoRecord, after, post, recording] = positions(
+      'Calendar',
+      'When a meeting starts',
+      'Scheduled meetings',
+      'Open meetings',
+      'Auto-detected meetings',
+      'Auto-record detected meetings',
+      'After a meeting',
+      'Post meeting notifications',
+      'Recording',
+    );
+    for (const p of [calendar, starts, scheduled, open, detect, autoRecord, after, post, recording]) {
+      expect(p).toBeGreaterThanOrEqual(0);
+    }
+    expect(calendar).toBeLessThan(starts);
+    expect(starts).toBeLessThan(scheduled);
+    expect(scheduled).toBeLessThan(open);
+    expect(open).toBeLessThan(detect);
+    expect(detect).toBeLessThan(autoRecord);
+    expect(autoRecord).toBeLessThan(after);
+    expect(after).toBeLessThan(post);
+    expect(post).toBeLessThan(recording);
+  });
+});

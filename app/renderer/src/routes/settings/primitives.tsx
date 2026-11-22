@@ -69,6 +69,31 @@ export function SettingRow({
   );
 }
 
+interface SubSettingsProps {
+  children: React.ReactNode;
+  // Draw the divider under the whole group, so the next top-level row is
+  // separated from it. Leave off for the last group of a section.
+  divider?: boolean;
+}
+
+/**
+ * Settings that only apply while the row above them is on (or refine it),
+ * indented under that row. The last nested row's own divider is dropped so
+ * the group's left rule ends cleanly; `divider` draws one across the group.
+ */
+export function SubSettings({ children, divider = false }: SubSettingsProps) {
+  return (
+    <div style={{ borderBottom: divider ? '1px solid var(--border-subtle)' : 'none' }}>
+      <div
+        className="border-l pl-4 [&>div:last-child]:!border-b-0"
+        style={{ borderColor: 'var(--border-subtle)' }}
+      >
+        {children}
+      </div>
+    </div>
+  );
+}
+
 interface SectionHeadingProps {
   children: React.ReactNode;
   // Pass true only for a SectionHeading that's the very first thing on a
