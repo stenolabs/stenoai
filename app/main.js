@@ -76,6 +76,8 @@ const { registerSpeakerIpc } = require('./speaker-ipc');
 const { registerObsidianSync } = require('./obsidian-sync');
 const { registerObsidianIpc } = require('./obsidian-ipc');
 const { registerStenoMcpIpc } = require('./steno-mcp-ipc');
+const { registerMcpActionsIpc } = require('./mcp-actions-ipc');
+const { createActionsService } = require('./mcp-actions');
 const { getLaunchSpec: getStenoMcpLaunchSpec } = require('./steno-mcp-install');
 const { isSafeToAutoInstall } = require('./update-idle-gate');
 const { describeUpdateError, updateErrorPhase, isMissingUpdateFeedError } = require('./update-error-copy');
@@ -8883,6 +8885,97 @@ registerStenoMcpIpc({
     resourcesPath: process.resourcesPath,
     appDir: __dirname,
   }),
+});
+
+// Suggested actions (Connect page -> Turn meetings into actions, and the
+// action cards under a note): remote MCP endpoints the user connects, called
+// only after an explicit Approve. See mcp-actions.js. Created lazily: it
+// needs the user-data dir and safeStorage, which are only safe after ready.
+//
+// Org control hook: a signed-in org's adapter /policy may carry
+//   mcp_actions_enabled: false          -> the feature is off for everyone
+//   mcp_endpoint_allowlist: [url, ...]  -> only these origins / URL prefixes
+// Both are re-checked before every network call. With a session but no
+// reachable policy, the last good policy (24 h) applies, else actions are
+// off: an org that may have disabled them is never assumed to allow them.
+const ACTIONS_POLICY_TTL_MS = 60 * 1000;
+const ACTIONS_POLICY_STALE_MS = 24 * 60 * 60 * 1000;
+let actionsPolicyCache = null; // { at, value }
+async function getActionsPolicy() {
+  if (!loadOrgSession()) {
+    actionsPolicyCache = null;
+    return { actionsEnabled: true, endpointAllowlist: null, managed: false };
+  }
+  const nowMs = Date.now();
+  if (actionsPolicyCache && nowMs - actionsPolicyCache.at < ACTIONS_POLICY_TTL_MS) return actionsPolicyCache.value;
+  try {
+    const p = await fetchOrgPolicy();
+    const value = {
+      actionsEnabled: p?.mcp_actions_enabled !== false,
+      endpointAllowlist: Array.isArray(p?.mcp_endpoint_allowlist) ? p.mcp_endpoint_allowlist.filter((e) => typeof e === 'string') : null,
+      managed: true,
+    };
+    actionsPolicyCache = { at: nowMs, value };
+    return value;
+  } catch (_) {
+    if (actionsPolicyCache && nowMs - actionsPolicyCache.at < ACTIONS_POLICY_STALE_MS) return actionsPolicyCache.value;
+    return { actionsEnabled: false, endpointAllowlist: [], managed: true, reason: 'policy-unavailable' };
+  }
+}
+
+// The browser half of an OAuth sign-in. Under e2e (STENOAI_E2E_MCP_OAUTH_AUTOFOLLOW)
+// the mock authorization server redirects straight back, so follow that
+// redirect here instead of opening a browser.
+async function openMcpAuthorizeUrl(authorizeUrl) {
+  if (process.env.STENOAI_E2E === '1' && process.env.STENOAI_E2E_MCP_OAUTH_AUTOFOLLOW === '1') {
+    // Node's fetch, not net.fetch: Chromium hides Location on a manual redirect.
+    const res = await fetch(authorizeUrl, { redirect: 'manual' });
+    const location = res.headers.get('location');
+    if (!location || !location.startsWith('http://127.0.0.1:')) throw new Error('authorize did not redirect to loopback');
+    await fetch(location);
+    return;
+  }
+  await shell.openExternal(authorizeUrl);
+}
+
+function parseLastJsonLine(text) {
+  const lines = String(text || '').split('\n').map((l) => l.trim()).filter((l) => l.startsWith('{'));
+  for (let i = lines.length - 1; i >= 0; i -= 1) {
+    try { return JSON.parse(lines[i]); } catch (_) { /* keep looking */ }
+  }
+  return null;
+}
+
+let mcpActionsService = null;
+function getMcpActionsService() {
+  if (mcpActionsService) return mcpActionsService;
+  mcpActionsService = createActionsService({
+    userDataDir: getUserDataDir(),
+    safeStorage: () => getSafeStorage(),
+    // net.fetch honours the system proxy and trust store, like the adapter calls.
+    fetch: (url, init = {}) => net.fetch(url, { ...init, credentials: 'omit' }),
+    openAuthorizeUrl: openMcpAuthorizeUrl,
+    runSuggest: async (summaryPath, toolsFile) => {
+      // getAiEnv: the configured provider's credentials (cloud key / org
+      // adapter), passed by env exactly like chat and title generation.
+      const out = await runPythonScript('simple_recorder.py', ['suggest-actions', summaryPath, '--tools-file', toolsFile], true, getAiEnv());
+      return parseLastJsonLine(out);
+    },
+    getPolicy: getActionsPolicy,
+    log: (message) => {
+      console.log(message);
+      sendDebugLog(message);
+    },
+    clientInfo: { name: 'Steno', version: app.getVersion() },
+  });
+  return mcpActionsService;
+}
+
+registerMcpActionsIpc({
+  ipcMain,
+  getService: getMcpActionsService,
+  validateMeetingFilePath,
+  log: sendDebugLog,
 });
 
 ipcMain.handle('get-ai-prompts', async () => {

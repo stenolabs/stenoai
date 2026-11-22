@@ -365,6 +365,25 @@ const stenoai = {
     openCursor: () => invoke('connect-open-cursor'),
   },
 
+  // Suggested actions: remote MCP endpoints + the action cards under a note.
+  // Nothing runs without approve(); see app/mcp-actions.js.
+  actions: {
+    list: () => invoke('actions-list'),
+    addCustom: (input) => invoke('actions-add-custom', input),
+    connectConnector: (connectorId) => invoke('actions-connect-connector', connectorId),
+    authorize: (id) => invoke('actions-authorize', id),
+    cancelAuthorize: () => invoke('actions-cancel-authorize'),
+    refreshTools: (id) => invoke('actions-refresh-tools', id),
+    setEnabled: (id, enabled) => invoke('actions-set-enabled', id, enabled),
+    remove: (id) => invoke('actions-remove', id),
+    setAutoSuggest: (value) => invoke('actions-set-auto-suggest', value),
+    getCards: (summaryFile) => invoke('actions-get-cards', summaryFile),
+    suggest: (summaryFile, options) => invoke('actions-suggest', summaryFile, options),
+    approve: (summaryFile, cardId, args) => invoke('actions-approve', summaryFile, cardId, args),
+    dismiss: (summaryFile, cardId) => invoke('actions-dismiss', summaryFile, cardId),
+    recent: (limit) => invoke('actions-recent', limit),
+  },
+
   ai: {
     getProvider: () => invoke('get-ai-provider'),
     setProvider: (p) => invoke('set-ai-provider', p),
