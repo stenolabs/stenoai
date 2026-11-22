@@ -106,6 +106,7 @@ vi.mock('@/hooks/useSettings', () => {
     useSetNotifications: m,
     useRecordHotkeySetting: () => q({ enabled: true, registered: true }),
     useSetRecordHotkey: m,
+    useSetRecordHotkeyAccelerator: () => ({ mutate: vi.fn(), isPending: false }),
     usePremeetingNotificationsSetting: () => q(true),
     useSetPremeetingNotifications: m,
     useAutoRecordMeetingsSetting: () => q(false),

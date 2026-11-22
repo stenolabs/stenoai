@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { Calendar, ChevronLeft, ChevronRight, Plus, RefreshCw, Search, Square, X } from 'lucide-react';
-import { cn, isMac } from '@/lib/utils';
+import { cn } from '@/lib/utils';
 import { MeetingsShell } from '@/components/MeetingsShell';
 import { UpcomingCard } from '@/components/home/UpcomingCard';
 import { PreviousRow } from '@/components/home/PreviousRow';
@@ -16,6 +16,7 @@ import {
 } from '@/hooks/useCalendarEvents';
 import { useFolders } from '@/hooks/useFolders';
 import { useRecordHotkeySetting } from '@/hooks/useSettings';
+import { DEFAULT_RECORD_ACCELERATOR, acceleratorKeys, formatAccelerator } from '@/lib/accelerator';
 import { ipc, type CalendarEvent, type Meeting } from '@/lib/ipc';
 import { pickInProgressEvent } from '@/lib/calendar';
 import { heroHeadline, heroSubtitle } from '@/lib/hero';
@@ -34,13 +35,15 @@ export function Home({ mode }: HomeProps) {
   const calendar = useCalendarEvents();
   const recording = useRecording();
   // Default ON while loading / on error so the hero copy doesn't flicker the
-  // ⌘⇧R hint off then on (back-compat: the shortcut ships enabled). Also
+  // shortcut hint off then on (back-compat: the shortcut ships enabled). Also
   // require registered !== false: when another app owns the accelerator the
   // shortcut doesn't actually work, so advertising it would strand the user
   // on dead instructions — fall back to the click-based copy instead.
   const recordHotkey = useRecordHotkeySetting();
   const hotkeyEnabled =
     (recordHotkey.data?.enabled ?? true) && recordHotkey.data?.registered !== false;
+  const hotkeyAccel = recordHotkey.data?.accelerator ?? DEFAULT_RECORD_ACCELERATOR;
+  const hotkeyLabel = formatAccelerator(hotkeyAccel);
 
   const emptyState = !meetings.data?.length;
   const isRecording = recording.status === 'recording' || recording.status === 'paused';
@@ -455,6 +458,7 @@ export function Home({ mode }: HomeProps) {
       calendarConnected,
       now: upcomingTickMs,
       hotkeyEnabled,
+      hotkeyLabel,
     }),
     [
       recording.status,
@@ -465,6 +469,7 @@ export function Home({ mode }: HomeProps) {
       calendarConnected,
       upcomingTickMs,
       hotkeyEnabled,
+      hotkeyLabel,
     ],
   );
   const greeting = heroHeadline(heroState);
@@ -474,10 +479,8 @@ export function Home({ mode }: HomeProps) {
     month: 'long',
     day: 'numeric',
   });
-  // Keyboard-hint glyphs, not translatable copy. Hoisted out of JSX so the
-  // i18n gate does not flag the shortcut strings.
-  const quickModKey = isMac ? '⌘' : 'Ctrl';
-  const quickShiftKey = isMac ? '⇧' : 'Shift';
+  // Keyboard-hint glyphs for the current record shortcut, not translatable copy.
+  const quickKeys = acceleratorKeys(hotkeyAccel);
 
   return (
     <MeetingsShell
@@ -528,9 +531,9 @@ export function Home({ mode }: HomeProps) {
                 style={{ color: 'var(--fg-muted)' }}
               >
                 <span>{t('home.quickStart.label')}</span>
-                <KbdKey>{quickModKey}</KbdKey>
-                <KbdKey>{quickShiftKey}</KbdKey>
-                <KbdKey>{RECORD_HOTKEY_LETTER}</KbdKey>
+                {quickKeys.map((k, i) => (
+                  <KbdKey key={`${k}-${i}`}>{k}</KbdKey>
+                ))}
                 <span>{t('home.quickStart.anywhere')}</span>
               </p>
             )}
@@ -889,7 +892,6 @@ function groupPrevious(meetings: Meeting[]): Group[] {
   return order.map((label) => ({ label, items: groups[label] }));
 }
 
-const RECORD_HOTKEY_LETTER = 'R';
 
 function previousGroupDayParts(dateKey: string): { day: number; month: string; weekday: string } {
   const [y, m, d] = dateKey.split('-').map(Number);

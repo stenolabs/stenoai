@@ -6,6 +6,7 @@ const path = require('path');
 
 const {
   CONFIG_FLAG_DEFAULTS,
+  CONFIG_VALUE_DEFAULTS,
   flagFromConfig,
   readConfigFile,
   readConfigFlag,
@@ -64,5 +65,15 @@ test('defaults match src/config.py', () => {
     // Not in the default dict: the accessor must be opt-in (`is True`).
     assert.equal(def, false, key);
     assert.match(py, new RegExp(`get\\("${key}"\\)\\s+is True`), key);
+  }
+});
+
+test('value defaults match src/config.py', () => {
+  const py = fs.readFileSync(path.join(__dirname, '..', 'src', 'config.py'), 'utf-8');
+  const pyLiteral = (v) => (v === null ? 'None' : JSON.stringify(v));
+  for (const [key, def] of Object.entries(CONFIG_VALUE_DEFAULTS)) {
+    const m = py.match(new RegExp(`"${key}":\\s*([^,\\n]+),`));
+    assert.ok(m, `${key} missing from _get_default_config`);
+    assert.equal(m[1].trim(), pyLiteral(def), key);
   }
 });

@@ -9236,7 +9236,8 @@ def get_record_hotkey():
     enabled = config.get_record_hotkey_enabled()
 
     result = {
-        "record_hotkey_enabled": enabled
+        "record_hotkey_enabled": enabled,
+        "record_hotkey_accelerator": config.get_record_hotkey_accelerator(),
     }
 
     print(json.dumps(result, indent=2))
@@ -9257,6 +9258,19 @@ def set_record_hotkey(enabled):
     else:
         print("ERROR: Failed to save record shortcut preference")
         print(json.dumps({"success": False, "error": "Failed to save config"}))
+
+
+@cli.command()
+@click.argument('accelerator')
+def set_record_hotkey_accelerator(accelerator):
+    """Set the record shortcut (an Electron accelerator); "default" restores the platform default"""
+    from src.config import get_config
+
+    value = None if accelerator in ("", "default") else accelerator
+    if get_config().set_record_hotkey_accelerator(value):
+        print(json.dumps({"success": True, "record_hotkey_accelerator": value}))
+    else:
+        print(json.dumps({"success": False, "error": "Failed to save record shortcut"}))
 
 
 @cli.command()

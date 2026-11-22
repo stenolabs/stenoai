@@ -786,8 +786,18 @@ export type GetNotificationsResponse = Result<{ notifications_enabled: boolean }
 // `enabled` is the persisted preference; `registered` is the live global-
 // shortcut registration state (false when enabled but another app owns the
 // accelerator). The setter returns the same two fields.
-export type GetRecordHotkeyResponse = Result<{ enabled: boolean; registered: boolean }>;
-export type SetRecordHotkeyResponse = Result<{ enabled: boolean; registered: boolean }>;
+export interface RecordHotkeyState {
+  enabled: boolean;
+  registered: boolean;
+  /** The accelerator in effect (the user's own, else the default). */
+  accelerator: string;
+  /** The user's own accelerator, or null when the default is in effect. */
+  customAccelerator: string | null;
+  defaultAccelerator: string;
+}
+export type GetRecordHotkeyResponse = Result<RecordHotkeyState>;
+export type SetRecordHotkeyResponse = Result<RecordHotkeyState>;
+export type SetRecordHotkeyAcceleratorResponse = Result<RecordHotkeyState>;
 export type GetTelemetryResponse = Result<{
   telemetry_enabled: boolean;
   anonymous_id?: string;
@@ -1531,6 +1541,9 @@ export interface StenoaiBridge {
     setNotifications: RequestFn<[v: boolean], Result<Record<string, never>>>;
     getRecordHotkey: RequestFn<[], GetRecordHotkeyResponse>;
     setRecordHotkey: RequestFn<[v: boolean], SetRecordHotkeyResponse>;
+    /** null restores the default. Fails with error_code 'in-use' when another
+     *  app owns the accelerator (the old one stays), or 'invalid'. */
+    setRecordHotkeyAccelerator: RequestFn<[accel: string | null], SetRecordHotkeyAcceleratorResponse>;
     getTelemetry: RequestFn<[], GetTelemetryResponse>;
     setTelemetry: RequestFn<
       [v: boolean, source: TelemetryToggleSource],

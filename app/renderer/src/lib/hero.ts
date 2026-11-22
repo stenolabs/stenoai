@@ -1,14 +1,13 @@
 import { type CalendarEvent } from '@/lib/ipc';
 import { t } from '@/i18n';
-import { shortcut } from '@/lib/utils';
+import { DEFAULT_RECORD_ACCELERATOR, formatAccelerator } from '@/lib/accelerator';
 
 // Pure copy logic for the Home hero. Extracted from Home.tsx so the
 // headline/subtitle string-building can be unit-tested without mounting the
 // React route. Recording state always wins over calendar state.
 
-// Default subtitle — also used as the empty/idle fallback. Cached so it
-// renders the same string each call without rebuilding the shortcut.
-const RECORD_SHORTCUT = shortcut('⌘⇧R', 'Ctrl+Shift+R');
+// The record shortcut as shown when the caller passes none (the default).
+const DEFAULT_SHORTCUT = formatAccelerator(DEFAULT_RECORD_ACCELERATOR);
 
 // Cached at module load to avoid rebuilding on every render. We don't
 // react to system-locale changes mid-session — that would require a full
@@ -32,9 +31,12 @@ export interface HeroState {
   calendarConnected: boolean;
   now: number;
   // Whether the global record shortcut is enabled (Settings). Gates every
-  // ⌘⇧R mention in the subtitle copy so the hero never advertises a shortcut
+  // record shortcut mention in the subtitle copy so the hero never advertises a shortcut
   // the user has turned off.
   hotkeyEnabled: boolean;
+  // The record shortcut as the user sees it ("⌃⌥R"), from the current
+  // setting. Defaults to the platform default.
+  hotkeyLabel?: string;
 }
 
 // True only when `now` is inside the event's real [start, end) — i.e. the
@@ -98,25 +100,26 @@ export function heroHeadline(s: HeroState): string {
 // Subtitle. Mirrors the headline cases. Keeps the recording shortcut hint
 // as the default fallback so the page always tells the user how to act.
 export function heroSubtitle(s: HeroState): string {
-  // Idle/upcoming fallback hint — drops the ⌘⇧R clause when the shortcut is off.
+  const recordShortcut = s.hotkeyLabel ?? DEFAULT_SHORTCUT;
+  // Idle/upcoming fallback hint — drops the shortcut clause when the shortcut is off.
   const idleHint = s.hotkeyEnabled
-    ? t('home.hero.recordingHint', { shortcut: RECORD_SHORTCUT })
+    ? t('home.hero.recordingHint', { shortcut: recordShortcut })
     : t('home.hero.recordingHintNoHotkey');
   if (s.status === 'recording') {
     // Source of truth for "what we're capturing" is the active session
     // name — the user may have started a recording titled after one
     // event while a different calendar event is also concurrently in
     // progress, and the subtitle should reflect what they actually hit
-    // record on. ⌘⇧R is a record-toggle per main.js's global shortcut
+    // record on. The shortcut is a record-toggle per main.js's global shortcut
     // so "to stop" is accurate when already recording.
     const title =
       s.sessionName?.trim() || s.inProgressEvent?.title?.trim() || t('home.hero.inProgress');
-    // Drop the "· ⌘⇧R to stop" tail when the global shortcut is off — stopping
+    // Drop the "· <shortcut> to stop" tail when the global shortcut is off — stopping
     // is then a click-only action on the bottom bar.
-    return s.hotkeyEnabled ? t('home.hero.titleToStop', { title, shortcut: RECORD_SHORTCUT }) : title;
+    return s.hotkeyEnabled ? t('home.hero.titleToStop', { title, shortcut: recordShortcut }) : title;
   }
   if (s.status === 'paused') {
-    // ⌘⇧R is a record-toggle: while paused it STOPS (finalizes) the recording
+    // The shortcut is a record-toggle: while paused it STOPS (finalizes) the recording
     // rather than resuming. Resume is a click-only action on the bottom bar,
     // so point there instead of advertising a shortcut that would end the note.
     return t('home.hero.pausedSubtitle');
@@ -128,7 +131,7 @@ export function heroSubtitle(s: HeroState): string {
   // pre-start grace falls through to the timed "starts at …" line below.
   if (s.inProgressEvent && eventIsNow(s.inProgressEvent, s.now)) {
     return s.hotkeyEnabled
-      ? t('home.hero.pressToRecord', { shortcut: RECORD_SHORTCUT })
+      ? t('home.hero.pressToRecord', { shortcut: recordShortcut })
       : t('home.hero.tapMeetingCard');
   }
   if (s.nextSoonEvent) {
@@ -141,7 +144,7 @@ export function heroSubtitle(s: HeroState): string {
       if (mins < 60) {
         const at = HERO_TIME_FMT.format(new Date(startMs));
         return s.hotkeyEnabled
-          ? t('home.hero.eventAtWithShortcut', { title: s.nextSoonEvent.title, time: at, shortcut: RECORD_SHORTCUT })
+          ? t('home.hero.eventAtWithShortcut', { title: s.nextSoonEvent.title, time: at, shortcut: recordShortcut })
           : t('home.hero.eventAt', { title: s.nextSoonEvent.title, time: at });
       }
     }

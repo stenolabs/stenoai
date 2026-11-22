@@ -340,6 +340,15 @@ function install({ ipcMain }) {
   // Renderer tests can save and reopen chat turns without a backend or disk.
   let chatSessions = { sessions: [] };
   let privacyNoticeSeen = true;
+  // Record shortcut state for GeneralTab / Home hints (T1). Mirrors main.js's
+  // recordHotkeyState() shape.
+  let mockRecordHotkey = {
+    enabled: true,
+    registered: true,
+    accelerator: 'Control+Alt+R',
+    customAccelerator: null,
+    defaultAccelerator: 'Control+Alt+R',
+  };
   let delayPrivacyNotice = process.env.STENOAI_E2E_DELAY_PRIVACY_NOTICE === '1';
   // In-memory stand-in for the org session + provider config that the real
   // handlers persist to disk. Mutated by the org-login / org-logout / set-ai
@@ -1156,11 +1165,23 @@ function install({ ipcMain }) {
     // Mirrors main.js's set-record-hotkey shape (enabled + live registered
     // flag). Stateless under mock IPC — the real registration is asserted by
     // the T2 spec; here it just keeps the toggle mutation from erroring.
-    'set-record-hotkey': async (_event, enabled) => ({
-      success: true,
-      enabled,
-      registered: !!enabled,
-    }),
+    'set-record-hotkey': async (_event, enabled) => {
+      mockRecordHotkey = { ...mockRecordHotkey, enabled: !!enabled, registered: !!enabled };
+      return { success: true, ...mockRecordHotkey };
+    },
+    // STENOAI_E2E_MOCK_HOTKEY_IN_USE names an accelerator another app "owns",
+    // so the Settings warning can be exercised without a real conflict.
+    'set-record-hotkey-accelerator': async (_event, accel) => {
+      if (accel && accel === process.env.STENOAI_E2E_MOCK_HOTKEY_IN_USE) {
+        return { success: false, error_code: 'in-use', error: 'That shortcut is already in use by another app.', ...mockRecordHotkey };
+      }
+      mockRecordHotkey = {
+        ...mockRecordHotkey,
+        customAccelerator: accel || null,
+        accelerator: accel || mockRecordHotkey.defaultAccelerator,
+      };
+      return { success: true, ...mockRecordHotkey };
+    },
 
     // The detail route loads via get-meeting (the lazy per-meeting fetch), not
     // by filtering list-meetings — answer it with the same seeded meeting so the
@@ -1963,7 +1984,7 @@ function install({ ipcMain }) {
     // Global record shortcut toggle (GeneralTab's "Global record shortcut"
     // row + the hero copy). Default enabled + registered so T1 renderer specs
     // render the ON state without a real globalShortcut registration.
-    'get-record-hotkey': { success: true, enabled: true, registered: true },
+    'get-record-hotkey': () => ({ success: true, ...mockRecordHotkey }),
     // Auto-record (#463) defaults off; answered so its row isn't stuck loading.
     'get-auto-record-meetings': { success: true, auto_record_meetings_enabled: false },
     // parakeet-status lives in MOCKS (env-gated installed flag).

@@ -20,7 +20,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { cn, isMac, shortcut } from '@/lib/utils';
+import { cn, isMac } from '@/lib/utils';
+import { DEFAULT_RECORD_ACCELERATOR, formatAccelerator } from '@/lib/accelerator';
+import { RecordShortcutRow } from './RecordShortcutRow';
 import { CallerIdRow } from './CallerIdRow';
 import { useTheme } from '@/hooks/useTheme';
 import {
@@ -108,7 +110,7 @@ export function GeneralTab() {
   const setAutoInstallWhenIdle = useSetAutoInstallWhenIdle();
   const recordHotkey = useRecordHotkeySetting();
   const setRecordHotkey = useSetRecordHotkey();
-  const recordAccel = shortcut('⌘⇧R', 'Ctrl+Shift+R');
+  const recordAccel = formatAccelerator(recordHotkey.data?.accelerator ?? DEFAULT_RECORD_ACCELERATOR);
   const silenceAutoStop = useSilenceAutoStopSetting();
   const setSilenceAutoStopEnabled = useSetSilenceAutoStopEnabled();
   const setSilenceAutoStopMinutes = useSetSilenceAutoStopMinutes();
@@ -799,7 +801,6 @@ export function GeneralTab() {
               )}
           </>
         }
-        noBorder
       >
         <Switch
           checked={recordHotkey.data?.enabled ?? true}
@@ -807,6 +808,7 @@ export function GeneralTab() {
           disabled={recordHotkey.data === undefined}
         />
       </SettingRow>
+      <RecordShortcutRow />
     </section>
   );
 }

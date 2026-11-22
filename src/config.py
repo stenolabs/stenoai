@@ -1071,11 +1071,15 @@ class Config:
             # item and suppresses the first window show on a login launch.
             # Users opt out in Settings.
             "launch_on_login": True,
-            # Default ON — the global (system-wide) record shortcut
-            # (CommandOrControl+Shift+R) is registered at startup so recording
-            # can be toggled from anywhere. Users turn it off in Settings when
-            # it conflicts with another app (e.g. a browser's hard-reload).
+            # Default ON — the global (system-wide) record shortcut is
+            # registered at startup so recording can be toggled from anywhere.
+            # Users turn it off in Settings when it conflicts with another app.
             "record_hotkey_enabled": True,
+            # The record shortcut's Electron accelerator. None = the platform
+            # default (Control+Alt+R: ⌃⌥R on macOS, Ctrl+Alt+R elsewhere),
+            # so a user who never customised it follows a changed default.
+            # Validated in app/record-hotkey.js before it is registered.
+            "record_hotkey_accelerator": None,
             # "auto" so _resolve_output_language() picks the transcript's
             # detected language instead of silently defaulting every
             # unconfigured install to English summaries (#281).
@@ -2039,6 +2043,31 @@ class Config:
             True if saved successfully, False otherwise
         """
         self._config["record_hotkey_enabled"] = enabled
+        return self._save()
+
+    MAX_ACCELERATOR_LENGTH = 64
+
+    def get_record_hotkey_accelerator(self) -> Optional[str]:
+        """The user's own record shortcut (an Electron accelerator), or None
+        for the platform default. Anything that is not a short string reads
+        as None, matching app/record-hotkey.js customAcceleratorFromConfig."""
+        value = self._config.get("record_hotkey_accelerator")
+        if isinstance(value, str) and 0 < len(value) <= self.MAX_ACCELERATOR_LENGTH:
+            return value
+        return None
+
+    def set_record_hotkey_accelerator(self, accelerator: Optional[str]) -> bool:
+        """Save the record shortcut; None (or "") restores the default.
+        Returns False for a value that is not a short string, or if the save
+        fails. The accelerator grammar is checked by Electron's main process,
+        the only caller, before it reaches here."""
+        if accelerator == "":
+            accelerator = None
+        if accelerator is not None and (
+            not isinstance(accelerator, str) or len(accelerator) > self.MAX_ACCELERATOR_LENGTH
+        ):
+            return False
+        self._config["record_hotkey_accelerator"] = accelerator
         return self._save()
 
     def get_premeeting_notifications_enabled(self) -> bool:

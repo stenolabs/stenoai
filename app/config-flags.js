@@ -25,6 +25,13 @@ const CONFIG_FLAG_DEFAULTS = Object.freeze({
   caller_id_enabled: false,
 });
 
+// Non-boolean values main reads straight from config.json, with the default
+// src/config.py writes. config-flags.test.js checks these against Python too.
+// record_hotkey_accelerator: null = the platform default (record-hotkey.js).
+const CONFIG_VALUE_DEFAULTS = Object.freeze({
+  record_hotkey_accelerator: null,
+});
+
 /**
  * The parsed config object, or null when the file is missing, unreadable, not
  * JSON, or not a JSON object. Callers apply their own defaults for null.
@@ -55,6 +62,7 @@ function flagFromConfig(cfg, key) {
 
 module.exports = {
   CONFIG_FLAG_DEFAULTS,
+  CONFIG_VALUE_DEFAULTS,
   flagFromConfig,
   readConfigFile,
   readConfigFlag,

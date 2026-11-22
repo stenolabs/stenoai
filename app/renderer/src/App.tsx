@@ -303,6 +303,8 @@ function CommandPaletteHotkey() {
   React.useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (!(e.metaKey || e.ctrlKey) || e.key.toLowerCase() !== 'k') return;
+      // The record-shortcut capture control is recording this combination.
+      if ((e.target as Element | null)?.closest?.('[data-shortcut-capture]')) return;
       e.preventDefault();
       open();
     };

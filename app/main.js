@@ -209,12 +209,20 @@ if (app.isPackaged && !process.env.STENOAI_USER_DATA_DIR) {
   });
 }
 
-// Global (system-wide) accelerator to toggle recording. CommandOrControl
-// resolves to Cmd on macOS and Ctrl on Windows/Linux, so no manual
-// process.platform split is needed. The env override lets the e2e T2 spec
+// Global (system-wide) accelerator to toggle recording. The default is
+// Control+Alt+R (⌃⌥R on macOS, Ctrl+Alt+R on Windows/Linux) and the user can
+// pick their own in Settings (config.json record_hotkey_accelerator, null =
+// default); see record-hotkey.js. The env override lets the e2e T2 spec
 // register a low-collision accelerator that can't clash with whatever the
 // real host already occupies (see e2e/specs/record-hotkey.t2.spec.ts).
-const RECORD_HOTKEY_ACCEL = process.env.STENOAI_E2E_RECORD_ACCEL || 'CommandOrControl+Shift+R';
+const recordHotkey = require('./record-hotkey');
+function recordHotkeyAccelFromDisk() {
+  const custom = recordHotkey.customAcceleratorFromConfig(readConfigFile(configJsonPath()));
+  return recordHotkey.effectiveAccelerator(custom, process.env.STENOAI_E2E_RECORD_ACCEL);
+}
+// The accelerator this process registered (null when none), so a change in
+// Settings unregisters exactly the old one and nothing else.
+let registeredRecordAccel = null;
 
 // Shared toggle-recording handler for the global shortcut — reused by the
 // startup registration and the live-apply set-record-hotkey IPC handler so
@@ -241,15 +249,23 @@ function recordHotkeyEnabledFromDisk() {
 // repeat-enable — or an enable that races the startup registration — would
 // report a spurious failure while isRegistered() is actually true. Guarding on
 // isRegistered() keeps both call sites idempotent and the return value honest.
-function applyRecordHotkey(enabled) {
-  if (enabled) {
-    if (!globalShortcut.isRegistered(RECORD_HOTKEY_ACCEL)) {
-      globalShortcut.register(RECORD_HOTKEY_ACCEL, handleRecordHotkey);
-    }
-  } else if (globalShortcut.isRegistered(RECORD_HOTKEY_ACCEL)) {
-    globalShortcut.unregister(RECORD_HOTKEY_ACCEL);
+function applyRecordHotkey(enabled, accel = recordHotkeyAccelFromDisk()) {
+  if (registeredRecordAccel && (!enabled || registeredRecordAccel !== accel)) {
+    if (globalShortcut.isRegistered(registeredRecordAccel)) globalShortcut.unregister(registeredRecordAccel);
+    registeredRecordAccel = null;
   }
-  return globalShortcut.isRegistered(RECORD_HOTKEY_ACCEL);
+  if (enabled) {
+    if (!globalShortcut.isRegistered(accel)) {
+      try {
+        globalShortcut.register(accel, handleRecordHotkey);
+      } catch (e) {
+        console.error(`Invalid global hotkey ${accel}: ${e.message}`);
+      }
+    }
+    if (globalShortcut.isRegistered(accel)) registeredRecordAccel = accel;
+    return registeredRecordAccel === accel;
+  }
+  return false;
 }
 if (IS_E2E_MOCK_IPC) {
   require('./e2e-mock-ipc').install({ ipcMain, BrowserWindow });
@@ -2401,10 +2417,11 @@ if (!gotSingleInstanceLock) {
     // slow awaits below would report a transient registered:false as a
     // registration failure ("couldn't register" hint, hidden shortcut copy).
     if (recordHotkeyEnabledFromDisk()) {
-      if (applyRecordHotkey(true)) {
-        console.log(`Global hotkey registered: ${RECORD_HOTKEY_ACCEL}`);
+      const accel = recordHotkeyAccelFromDisk();
+      if (applyRecordHotkey(true, accel)) {
+        console.log(`Global hotkey registered: ${accel}`);
       } else {
-        console.error(`Failed to register global hotkey: ${RECORD_HOTKEY_ACCEL}`);
+        console.error(`Failed to register global hotkey: ${accel}`);
       }
     } else {
       console.log('Global record hotkey disabled by preference — not registering');
@@ -9822,11 +9839,19 @@ ipcMain.handle('set-notifications', async (event, enabled) => {
 // Both the persisted preference AND the live registration state — the UI needs
 // to know if the shortcut is enabled but failed to register (another app owns
 // the accelerator) so it can surface a hint.
-ipcMain.handle('get-record-hotkey', () => ({
-  success: true,
-  enabled: recordHotkeyEnabledFromDisk(),
-  registered: globalShortcut.isRegistered(RECORD_HOTKEY_ACCEL),
-}));
+function recordHotkeyState() {
+  const custom = recordHotkey.customAcceleratorFromConfig(readConfigFile(configJsonPath()));
+  const accelerator = recordHotkey.effectiveAccelerator(custom, process.env.STENOAI_E2E_RECORD_ACCEL);
+  return {
+    enabled: recordHotkeyEnabledFromDisk(),
+    registered: registeredRecordAccel === accelerator && globalShortcut.isRegistered(accelerator),
+    accelerator,
+    customAccelerator: custom,
+    defaultAccelerator: recordHotkey.effectiveAccelerator(null, process.env.STENOAI_E2E_RECORD_ACCEL),
+  };
+}
+
+ipcMain.handle('get-record-hotkey', () => ({ success: true, ...recordHotkeyState() }));
 
 ipcMain.handle('set-record-hotkey', async (event, enabled) => {
   try {
@@ -9848,15 +9873,48 @@ ipcMain.handle('set-record-hotkey', async (event, enabled) => {
     // Live-apply so the change takes effect without a relaunch. Idempotent and
     // never unregisterAll() — see applyRecordHotkey (guards on isRegistered() so
     // a repeat-enable can't report a spurious failure, and only ever touches
-    // this specific accelerator).
+    // this app's own accelerator).
     const registered = applyRecordHotkey(enabled);
     if (enabled && !registered) {
-      console.error(`Failed to register global hotkey: ${RECORD_HOTKEY_ACCEL}`);
+      console.error(`Failed to register global hotkey: ${recordHotkeyAccelFromDisk()}`);
     }
-    return { success: true, enabled, registered };
+    return { success: true, ...recordHotkeyState(), enabled, registered };
   } catch (error) {
     sendDebugLog(`Error setting record hotkey: ${error.message}`);
     return { success: false, error: error.message };
+  }
+});
+
+// Change the record shortcut (null = the platform default). The new
+// accelerator is validated here, then registered BEFORE it is saved: when
+// another app already owns it, the old shortcut stays registered and saved and
+// the renderer shows "already in use". With the shortcut turned off it is only
+// saved, since nothing is registered to test it against.
+ipcMain.handle('set-record-hotkey-accelerator', async (event, value) => {
+  try {
+    let accel = null;
+    if (value !== null) {
+      accel = recordHotkey.normalizeAccelerator(value);
+      if (!accel) return { success: false, error_code: 'invalid', error: 'Use at least one modifier key, like Control or Alt, plus one other key.' };
+    }
+    const target = recordHotkey.effectiveAccelerator(accel, process.env.STENOAI_E2E_RECORD_ACCEL);
+    const enabled = recordHotkeyEnabledFromDisk();
+    const previous = recordHotkeyAccelFromDisk();
+    if (enabled && !applyRecordHotkey(true, target)) {
+      applyRecordHotkey(true, previous);
+      return { success: false, error_code: 'in-use', error: 'That shortcut is already in use by another app.', ...recordHotkeyState() };
+    }
+    const result = await runPythonScript('simple_recorder.py', ['set-record-hotkey-accelerator', accel || 'default']);
+    const jsonMatch = result.match(/\{.*\}/s);
+    const persisted = jsonMatch ? JSON.parse(jsonMatch[0]) : null;
+    if (!persisted || persisted.success !== true) {
+      if (enabled) applyRecordHotkey(true, previous);
+      return { success: false, error_code: 'save-failed', error: 'Could not save the record shortcut.' };
+    }
+    return { success: true, ...recordHotkeyState() };
+  } catch (error) {
+    sendDebugLog(`Error setting record shortcut: ${error.message}`);
+    return { success: false, error_code: 'save-failed', error: 'Could not save the record shortcut.' };
   }
 });
 

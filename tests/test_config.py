@@ -1018,6 +1018,33 @@ class ConfigRecordHotkeyTests(unittest.TestCase):
             self.assertTrue(reloaded.set_record_hotkey_enabled(True))
             self.assertTrue(reloaded.get_record_hotkey_enabled())
 
+    def test_accelerator_defaults_to_none_for_new_and_legacy_configs(self):
+        # None = follow the platform default, so a user who never customised
+        # the shortcut gets the new Control+Alt+R default.
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            self.assertIsNone(Config(config_path=Path(tmp_dir) / "a.json").get_record_hotkey_accelerator())
+            legacy = Path(tmp_dir) / "b.json"
+            legacy.write_text(json.dumps({"record_hotkey_enabled": True}))
+            self.assertIsNone(Config(config_path=legacy).get_record_hotkey_accelerator())
+
+    def test_accelerator_round_trip_and_reset(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            path = Path(tmp_dir) / "config.json"
+            config = Config(config_path=path)
+            self.assertTrue(config.set_record_hotkey_accelerator("Alt+Shift+K"))
+            self.assertEqual(Config(config_path=path).get_record_hotkey_accelerator(), "Alt+Shift+K")
+            self.assertTrue(config.set_record_hotkey_accelerator(""))
+            self.assertIsNone(Config(config_path=path).get_record_hotkey_accelerator())
+
+    def test_accelerator_rejects_non_strings_and_overlong_values(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            path = Path(tmp_dir) / "config.json"
+            config = Config(config_path=path)
+            self.assertFalse(config.set_record_hotkey_accelerator(42))
+            self.assertFalse(config.set_record_hotkey_accelerator("A" * 65))
+            path.write_text(json.dumps({"record_hotkey_accelerator": ["Alt+K"]}))
+            self.assertIsNone(Config(config_path=path).get_record_hotkey_accelerator())
+
 
 class ConfigPrivacyNoticeTests(unittest.TestCase):
     def test_fresh_install_seeds_notice_seen_true(self):
