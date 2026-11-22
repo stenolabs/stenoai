@@ -42,11 +42,19 @@ function primaryType(schema: JsonSchema): string | null {
   return null;
 }
 
+/** "parent_page_id" / "dueDate" → "Parent page id" / "Due date". */
+export function humanizeKey(key: string): string {
+  const words = key.replace(/([a-z0-9])([A-Z])/g, '$1 $2').split(/[\s_-]+/).filter(Boolean);
+  if (!words.length) return key;
+  const text = words.join(' ').toLowerCase();
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
 function fieldFor(key: string, schema: JsonSchema, required: boolean): FormField | null {
   const type = primaryType(schema);
   const base = {
     key,
-    label: typeof schema.title === 'string' && schema.title ? schema.title : key,
+    label: typeof schema.title === 'string' && schema.title ? schema.title : humanizeKey(key),
     description: typeof schema.description === 'string' ? schema.description : '',
     required,
     options: [] as string[],

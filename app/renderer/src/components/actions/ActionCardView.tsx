@@ -12,14 +12,16 @@ import {
   type FormState,
 } from '@/lib/actionForm';
 import { actionErrorMessage } from '@/lib/actionErrors';
+import { actionPhrase, headlineValue, inlineFieldKeys } from '@/lib/actionCopy';
 import { ActionValidationFailure } from '@/hooks/useActions';
 import { ipc, type ActionCard, type ActionLocality, type ActionValidationError } from '@/lib/ipc';
 import { t } from '@/i18n';
 
-function localityNote(locality: ActionLocality | null): string {
-  if (locality === 'device') return t('actions.locality.device');
-  if (locality === 'network') return t('actions.locality.network');
-  return t('actions.leavesDevice');
+/** One short line on where Approve sends this. */
+function localityNote(locality: ActionLocality | null, connection: string): string {
+  if (locality === 'device') return t('actions.card.sendsTo.device', { connection });
+  if (locality === 'network') return t('actions.card.sendsTo.network', { connection });
+  return t('actions.card.sendsTo.internet', { connection });
 }
 
 function FieldInput({
@@ -75,20 +77,25 @@ function FieldInput({
 }
 
 /**
- * One suggested action: the tool and where it goes, editable arguments, the
- * exact payload that Approve will send, and Approve / Dismiss. Nothing is
- * sent until Approve; the main process validates the arguments again.
+ * One suggested action, written as a sentence ("Create page in Notion ·
+ * Website content cleanup") with the two or three fields that matter
+ * editable inline. The exact payload, and a raw JSON editor for everything
+ * else, sit under "Show what will be sent". Nothing is sent until Approve;
+ * the main process validates the arguments again.
  */
 export function ActionCardView({
   card,
   onApprove,
   onDismiss,
   approving,
+  compact = false,
 }: {
   card: ActionCard;
   onApprove: (args: Record<string, unknown>) => Promise<unknown>;
   onDismiss: () => void;
   approving: boolean;
+  /** Tighter spacing for the chat thread. */
+  compact?: boolean;
 }) {
   const idBase = React.useId();
   const fields = React.useMemo(
@@ -106,6 +113,7 @@ export function ActionCardView({
   const [rawText, setRawText] = React.useState(() => JSON.stringify(card.arguments, null, 2));
   const [errors, setErrors] = React.useState<ActionValidationError[]>(card.validationErrors ?? []);
   const [message, setMessage] = React.useState('');
+  const [showPayload, setShowPayload] = React.useState(fields === null);
 
   const args: Record<string, unknown> | null = rawMode
     ? parseArgumentsJson(rawText)
@@ -115,6 +123,18 @@ export function ActionCardView({
   const payload = args ? JSON.stringify({ tool: card.tool, arguments: args }, null, 2) : '';
   const finished = card.status === 'done';
   const running = card.status === 'running' || approving;
+
+  const inlineKeys = React.useMemo(
+    () => (fields ? inlineFieldKeys(fields, card.arguments) : []),
+    [fields, card.arguments]
+  );
+  const inlineFields = fields ? fields.filter((f) => inlineKeys.includes(f.key)) : [];
+  // Errors on fields that are not shown inline are listed in the disclosure.
+  const hiddenErrors = errors.filter(
+    (e) => rawMode || !inlineFields.some((f) => e.path === `$.${f.key}` || e.path.startsWith(`$.${f.key}[`))
+  );
+  // A problem in a field that is not shown inline keeps the disclosure open.
+  const payloadOpen = showPayload || hiddenErrors.length > 0;
 
   const switchMode = () => {
     if (rawMode) {
@@ -149,22 +169,29 @@ export function ActionCardView({
   };
 
   const title = card.toolTitle || card.tool;
+  const phrase = actionPhrase(card.tool, card.toolTitle, card.connectionName);
+  const subject = headlineValue(args ?? card.arguments);
   return (
     <article
       aria-label={t('actions.card.aria', { tool: title, connection: card.connectionName })}
-      className="rounded-xl border p-4"
+      data-testid="action-card"
+      className={compact ? 'rounded-xl border p-3' : 'rounded-xl border p-4'}
       style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-raised)' }}
     >
       <header className="flex items-start gap-3">
-        <div className="min-w-0 flex-1">
-          <h4 className="text-[14px] font-medium">{title}</h4>
-          <p className="mt-0.5 text-[12px]" style={{ color: 'var(--fg-muted)' }}>
-            {t('actions.card.via', { connection: card.connectionName, tool: card.tool })}
-          </p>
-        </div>
+        <h4 className="min-w-0 flex-1 text-[14px] leading-snug">
+          <span className="font-medium">
+            {t('actions.card.sentence', { action: phrase, connection: card.connectionName })}
+          </span>
+          {subject && (
+            <span style={{ color: 'var(--fg-2)' }}>
+              {t('actions.card.subject', { subject })}
+            </span>
+          )}
+        </h4>
         {finished && (
           <span
-            className="inline-flex items-center gap-1 text-[12.5px]"
+            className="inline-flex shrink-0 items-center gap-1 text-[12.5px]"
             style={{ color: 'var(--fg-2)' }}
           >
             <Check aria-hidden className="size-3.5" />
@@ -173,7 +200,7 @@ export function ActionCardView({
         )}
       </header>
       {card.actionItem && (
-        <p className="mt-2 text-[12.5px] leading-relaxed" style={{ color: 'var(--fg-muted)' }}>
+        <p className="mt-1 text-[12.5px] leading-relaxed" style={{ color: 'var(--fg-muted)' }}>
           {t('actions.card.from', { item: card.actionItem })}
         </p>
       )}
@@ -204,9 +231,9 @@ export function ActionCardView({
         </div>
       ) : (
         <>
-          <div className="mt-3 flex flex-col gap-2.5">
-            {!rawMode && fields ? (
-              fields.map((f) => {
+          {!rawMode && inlineFields.length > 0 && (
+            <div className="mt-3 flex flex-col gap-2.5">
+              {inlineFields.map((f) => {
                 const id = `${idBase}-${f.key}`;
                 const fieldErrors = errors.filter(
                   (e) => e.path === `$.${f.key}` || e.path.startsWith(`$.${f.key}[`)
@@ -214,9 +241,7 @@ export function ActionCardView({
                 return (
                   <div
                     key={f.key}
-                    className={
-                      f.kind === 'boolean' ? 'flex items-center justify-between gap-3' : ''
-                    }
+                    className={f.kind === 'boolean' ? 'flex items-center justify-between gap-3' : ''}
                   >
                     <label
                       htmlFor={id}
@@ -232,19 +257,26 @@ export function ActionCardView({
                       onChange={(v) => setFormState((s) => ({ ...s, [f.key]: v }))}
                     />
                     {fieldErrors.map((e) => (
-                      <p
-                        key={e.message}
-                        className="mt-1 text-[12px]"
-                        style={{ color: 'var(--fg-1)' }}
-                      >
+                      <p key={e.message} className="mt-1 text-[12px]" style={{ color: 'var(--fg-1)' }}>
                         {t('actions.card.fieldError', { field: f.label, message: e.message })}
                       </p>
                     ))}
                   </div>
                 );
-              })
-            ) : (
-              <label className="block">
+              })}
+            </div>
+          )}
+
+          <details
+            className="mt-3"
+            open={payloadOpen}
+            onToggle={(e) => setShowPayload((e.currentTarget as HTMLDetailsElement).open)}
+          >
+            <summary className="cursor-pointer text-[12.5px]" style={{ color: 'var(--fg-2)' }}>
+              {t('actions.card.preview')}
+            </summary>
+            {rawMode ? (
+              <label className="mt-2 block">
                 <span className="mb-1 block text-[12.5px]" style={{ color: 'var(--fg-2)' }}>
                   {t('actions.card.argumentsJson')}
                 </span>
@@ -255,41 +287,37 @@ export function ActionCardView({
                   onChange={(e) => setRawText(e.currentTarget.value)}
                 />
               </label>
+            ) : (
+              <pre
+                data-testid="action-payload"
+                className="mt-2 max-h-[220px] overflow-auto whitespace-pre-wrap break-all rounded-lg p-3 font-mono text-[11.5px] leading-relaxed"
+                style={{ background: 'var(--surface-sunken)', color: 'var(--fg-1)' }}
+              >
+                {payload || t('actions.card.invalidJson')}
+              </pre>
             )}
-            {rawMode &&
-              errors.map((e) => (
-                <p
-                  key={`${e.path}-${e.message}`}
-                  className="text-[12px]"
-                  style={{ color: 'var(--fg-1)' }}
+            {hiddenErrors.map((e) => (
+              <p key={`${e.path}-${e.message}`} className="mt-1 text-[12px]" style={{ color: 'var(--fg-1)' }}>
+                {t('actions.card.fieldError', { field: e.path.replace(/^\$\.?/, ''), message: e.message })}
+              </p>
+            ))}
+            <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1">
+              <p className="text-[12px]" style={{ color: 'var(--fg-muted)' }}>
+                {t('actions.card.previewHint', { origin: card.origin ?? card.connectionName })}
+              </p>
+              {formPossible && (
+                <button
+                  type="button"
+                  className="ml-auto text-[12px] underline underline-offset-2"
+                  style={{ color: 'var(--fg-muted)' }}
+                  onClick={switchMode}
                 >
-                  {t('actions.card.fieldError', {
-                    field: e.path.replace(/^\$\.?/, ''),
-                    message: e.message,
-                  })}
-                </p>
-              ))}
-          </div>
-
-          <details className="mt-3">
-            <summary className="cursor-pointer text-[12.5px]" style={{ color: 'var(--fg-2)' }}>
-              {t('actions.card.preview')}
-            </summary>
-            <pre
-              data-testid="action-payload"
-              className="mt-2 max-h-[220px] overflow-auto whitespace-pre-wrap break-all rounded-lg p-3 font-mono text-[11.5px] leading-relaxed"
-              style={{ background: 'var(--surface-sunken)', color: 'var(--fg-1)' }}
-            >
-              {payload || t('actions.card.invalidJson')}
-            </pre>
-            <p className="mt-1 text-[12px]" style={{ color: 'var(--fg-muted)' }}>
-              {t('actions.card.previewHint', { origin: card.origin ?? card.connectionName })}
-            </p>
+                  {rawMode ? t('actions.card.editAsForm') : t('actions.card.editAsJson')}
+                </button>
+              )}
+            </div>
           </details>
 
-          <p className="mt-2 text-[12px] leading-relaxed" style={{ color: 'var(--fg-muted)' }}>
-            {localityNote(card.locality)}
-          </p>
           {card.status === 'failed' && (
             <div role="alert" className="mt-2 text-[12.5px]" style={{ color: 'var(--fg-1)' }}>
               <p>
@@ -340,16 +368,9 @@ export function ActionCardView({
             >
               {t('actions.card.dismiss')}
             </Button>
-            {formPossible && (
-              <button
-                type="button"
-                className="ml-auto text-[12px] underline underline-offset-2"
-                style={{ color: 'var(--fg-muted)' }}
-                onClick={switchMode}
-              >
-                {rawMode ? t('actions.card.editAsForm') : t('actions.card.editAsJson')}
-              </button>
-            )}
+            <span className="ml-auto text-[12px]" style={{ color: 'var(--fg-muted)' }}>
+              {localityNote(card.locality, card.connectionName)}
+            </span>
           </div>
           <div role="status" className="mt-1 text-[12.5px]" style={{ color: 'var(--fg-2)' }}>
             {message}

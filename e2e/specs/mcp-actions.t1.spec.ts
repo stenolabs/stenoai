@@ -102,16 +102,25 @@ test('Note: approve sends the edited arguments, dismiss sends nothing', async ({
   await expect(issue.getByText('Bob owns the release notes')).toBeVisible();
   await expect(issue.getByText('From: Bob to prep the release notes')).toBeVisible();
 
+  // The card reads as a sentence; only the important fields are inline.
+  await expect(issue.getByRole('heading', { name: 'Create issue in Team n8n · Prep the release notes' })).toBeVisible();
+  await expect(issue.getByLabel('Priority')).toHaveCount(0);
+  const payload = issue.getByTestId('action-payload');
+  await expect(payload).toBeHidden();
+
   // Edit the title, then check the exact payload preview before approving.
   const title = issue.getByLabel('Title (required)');
   await expect(title).toHaveValue('Prep the release notes');
   await title.fill('Prep release notes for v0.9.0');
-  await issue.getByText('Exactly what will be sent').click();
-  const payload = issue.getByTestId('action-payload');
+  await expect(issue.getByRole('heading', { name: 'Create issue in Team n8n · Prep release notes for v0.9.0' })).toBeVisible();
+  await issue.getByText('Show what will be sent').click();
   await expect(payload).toContainText('"tool": "create_issue"');
   await expect(payload).toContainText('"title": "Prep release notes for v0.9.0"');
   await expect(payload).toContainText('"priority": "high"');
   await page.screenshot({ path: testInfo.outputPath('action-cards.png'), fullPage: true });
+  // Send message: text and its required channel are inline.
+  await expect(message.getByLabel('Channel (required)')).toHaveValue('#release');
+  await expect(message.getByText('Sent to Team n8n on this computer.')).toBeVisible();
 
   expect(await approvedOf(app)).toEqual([]);
   await message.getByRole('button', { name: 'Dismiss' }).click();
@@ -165,4 +174,28 @@ test('Org policy off: no connect buttons, a notice instead', async ({ launchApp 
   });
   await expect(page.getByText('Your organisation has turned off actions.')).toBeVisible();
   await expect(page.getByRole('region', { name: 'Custom endpoint', exact: true })).toHaveCount(0);
+});
+
+test('Note: a Notion page card reads as a sentence, payload behind the disclosure', async ({ launchApp }, testInfo) => {
+  const { page } = await launchApp({
+    mockIpc: true,
+    env: { STENOAI_E2E_SEED_MEETING: '1', STENOAI_E2E_SEED_ACTIONS: 'notion' },
+  });
+  await page.evaluate(() => {
+    window.location.hash = `#/meetings/${encodeURIComponent('epsilon_summary.json')}`;
+  });
+  const card = page.getByTestId('suggested-actions').getByRole('article', { name: 'Create page via Notion' });
+  await expect(card.getByRole('heading', { name: 'Create page in Notion · Website content cleanup' })).toBeVisible();
+  await expect(card.getByText("From: Create a Notion page called 'Website content cleanup'", { exact: false })).toBeVisible();
+  await expect(card.getByLabel('Title (required)')).toHaveValue('Website content cleanup');
+  await expect(card.getByLabel('Content')).toBeVisible();
+  await expect(card.getByLabel('Parent page')).toHaveCount(0);
+  await expect(card.getByText('Leaves your device for Notion.')).toBeVisible();
+  await card.scrollIntoViewIfNeeded();
+  await card.screenshot({ path: testInfo.outputPath('action-card-collapsed.png') });
+  await card.getByText('Show what will be sent').click();
+  await expect(card.getByTestId('action-payload')).toContainText('"tool": "create_page"');
+  await card.getByRole('button', { name: 'Edit as JSON' }).click();
+  await expect(card.getByLabel('Arguments (JSON)')).toBeVisible();
+  await card.screenshot({ path: testInfo.outputPath('action-card-expanded.png') });
 });

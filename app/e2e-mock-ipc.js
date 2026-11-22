@@ -627,7 +627,23 @@ function install({ ipcMain }) {
       properties: { channel: { type: 'string' }, text: { type: 'string' } },
       required: ['channel', 'text'],
     },
+    // A Notion-shaped page tool for the readable-card screenshot and the
+    // STENOAI_E2E_SEED_ACTIONS=notion seed.
+    create_page: {
+      type: 'object',
+      properties: {
+        title: { type: 'string', title: 'Title' },
+        content: { type: 'string', title: 'Content' },
+        parent_page_id: { type: 'string', title: 'Parent page' },
+        icon: { type: 'string', title: 'Icon' },
+      },
+      required: ['title'],
+    },
   };
+  const NOTION_TOOLS = [
+    { name: 'create_page', title: 'Create page', description: 'Create a Notion page.', readOnly: false },
+    { name: 'search', title: 'Search', description: 'Search the workspace.', readOnly: true },
+  ];
   const ACTION_CONNECTORS = [
     { id: 'linear', name: 'Linear', url: 'https://mcp.linear.app/mcp', auth: 'oauth', status: 'available' },
     { id: 'notion', name: 'Notion', url: 'https://mcp.notion.com/mcp', auth: 'oauth', status: 'available' },
@@ -662,7 +678,7 @@ function install({ ipcMain }) {
     origin: connection.origin,
     locality: connection.locality,
     tool,
-    toolTitle: ACTION_TOOLS.find((t) => t.name === tool).title,
+    toolTitle: [...ACTION_TOOLS, ...NOTION_TOOLS].find((t) => t.name === tool)?.title ?? null,
     toolDescription: null,
     inputSchema: ACTION_SCHEMAS[tool],
     arguments: args,
@@ -688,6 +704,23 @@ function install({ ipcMain }) {
   if (process.env.STENOAI_E2E_SEED_ACTIONS === '1') {
     actionsState.connections.push(mockConnection({}));
     seedActionCards();
+  }
+  // A Notion connection and the note's concrete, Notion-ready action item.
+  if (process.env.STENOAI_E2E_SEED_ACTIONS === 'notion') {
+    const notion = mockConnection({
+      name: 'Notion', url: 'https://mcp.notion.com/mcp', origin: 'https://mcp.notion.com', locality: 'internet',
+      kind: 'notion', auth: 'oauth', account: 'Acme workspace', tools: NOTION_TOOLS,
+    });
+    actionsState.connections.push(notion);
+    actionsState.cards = [
+      mockCard(
+        notion,
+        'create_page',
+        { title: 'Website content cleanup', content: 'Pages to trim:\n- Defence\n- Law enforcement' },
+        '',
+        "Create a Notion page called 'Website content cleanup' listing the pages to trim: Defence, Law enforcement",
+      ),
+    ];
   }
   const actionsOverview = () => ({
     success: true,
