@@ -91,10 +91,12 @@ function startMockMcpServer(opts = {}) {
           title: tool.title,
           description: tool.description,
           inputSchema: fromJsonSchema(tool.inputSchema),
-          annotations: { title: tool.title, readOnlyHint: tool.readOnly === true },
+          annotations: { title: tool.title, readOnlyHint: tool.readOnly === true, destructiveHint: tool.destructive === true },
         },
         async (args) => {
           calls.push({ name: tool.name, args });
+          // A tool with `failText` answers as the endpoint rejecting the call.
+          if (tool.failText) return { isError: true, content: [{ type: 'text', text: tool.failText }] };
           issueSeq += 1;
           return { content: [{ type: 'text', text: `Created MOCK-${issueSeq} https://mock.example/items/${issueSeq}` }] };
         },

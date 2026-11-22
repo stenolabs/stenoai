@@ -164,3 +164,43 @@ test('provider error text is redacted before it is logged', () => {
   assert.doesNotMatch(out, /\n/);
   assert.ok(out.length <= 200);
 });
+
+const proposals = require('./mcp-proposals');
+
+test('placeholders: stand-in values are caught, real values are not', () => {
+  for (const v of ['not_specified', 'Unspecified', 'unknown', 'TBD', 'n/a', 'None', 'null', '', '  ', '<page id>', '{page_id}', 'your_page_id', 'example_id', 'xxx', '00000000-0000-0000-0000-000000000000', null]) {
+    assert.equal(proposals.isPlaceholder(v), true, String(v));
+  }
+  for (const v of ['Prep release notes', 'Your weekly recap', 'Test the release', '#eng', 'PAGE-42', 0, false]) {
+    assert.equal(proposals.isPlaceholder(v), false, String(v));
+  }
+  const schema = { type: 'object', properties: { page_id: { type: 'string' }, priority: { enum: ['none', 'high'] }, items: { type: 'array' } }, required: ['page_id', 'priority', 'items'] };
+  assert.deepEqual(proposals.placeholderArguments(schema, { page_id: 'not_specified', priority: 'none', items: [{ old_str: 'TBD' }] }), ['page_id', 'items']);
+  assert.deepEqual(proposals.placeholderArguments(schema, { page_id: 'abc', priority: 'high', items: ['a'] }), []);
+  assert.deepEqual(proposals.placeholderArguments(schema, { priority: 'high', items: ['a'] }), ['page_id'], 'missing counts');
+});
+
+test('identifiers: only ids written in the note are allowed', () => {
+  for (const name of ['id', 'page_id', 'issueId', 'parent', 'parentId', 'parent_page']) assert.equal(proposals.isIdentifierParam(name), true, name);
+  for (const name of ['title', 'content', 'idea', 'valid']) assert.equal(proposals.isIdentifierParam(name), false, name);
+  const schema = { type: 'object', properties: {}, required: ['page_id', 'content'] };
+  const note = 'The launch page is PAGE-42.';
+  assert.deepEqual(proposals.ungroundedIdentifiers(schema, { page_id: 'PAGE-42', content: 'x' }, note), []);
+  assert.deepEqual(proposals.ungroundedIdentifiers(schema, { page_id: 'PAGE-7', content: 'x' }, note), ['page_id']);
+  // An optional id the model leaves to the user is not checked.
+  assert.deepEqual(proposals.ungroundedIdentifiers({ required: ['content'] }, { page_id: 'PAGE-7', content: 'x' }, note), []);
+});
+
+test('citations: a proposal must name one of the note action items', () => {
+  const items = ['Bob to prep the release notes', 'Alice to tell support'];
+  assert.equal(proposals.citedActionItem({ action_item: 2 }, items), 'Alice to tell support');
+  assert.equal(proposals.citedActionItem({ action_item: '1' }, items), 'Bob to prep the release notes');
+  assert.equal(proposals.citedActionItem({ action_item: 'Alice to tell support' }, items), 'Alice to tell support');
+  for (const ref of [0, 3, 'Someone else', undefined, null, 1.5]) assert.equal(proposals.citedActionItem({ action_item: ref }, items), null, String(ref));
+  const note = { title: 'Sync', summary: 'Page PAGE-42', action_items: items };
+  const schema = { required: ['page_id', 'content'] };
+  assert.deepEqual(proposals.checkProposal({ action_item: 1, arguments: { page_id: 'PAGE-42', content: 'x' } }, schema, note), { ok: true, actionItem: items[0] });
+  assert.equal(proposals.checkProposal({ arguments: { page_id: 'PAGE-42', content: 'x' } }, schema, note).reason, 'uncited');
+  assert.equal(proposals.checkProposal({ action_item: 1, arguments: { page_id: 'not_specified', content: 'x' } }, schema, note).reason, 'placeholder');
+  assert.equal(proposals.checkProposal({ action_item: 1, arguments: { page_id: 'PAGE-1', content: 'x' } }, schema, note).reason, 'ungrounded-id');
+});

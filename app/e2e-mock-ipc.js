@@ -641,7 +641,7 @@ function install({ ipcMain }) {
     blockedByPolicy: false,
     ...over,
   });
-  const mockCard = (connection, tool, args, reason) => ({
+  const mockCard = (connection, tool, args, reason, actionItem) => ({
     id: `card-${++actionSeq}`,
     connectionId: connection.id,
     connectionName: connection.name,
@@ -654,6 +654,7 @@ function install({ ipcMain }) {
     inputSchema: ACTION_SCHEMAS[tool],
     arguments: args,
     reason,
+    actionItem,
     validationErrors: [],
     status: 'proposed',
     createdAt: 1,
@@ -667,8 +668,8 @@ function install({ ipcMain }) {
     const c = actionsState.connections.find((x) => x.enabled) || actionsState.connections[0];
     if (!c) return;
     actionsState.cards = [
-      mockCard(c, 'create_issue', { title: 'Prep the release notes', priority: 'high' }, 'Bob owns the release notes'),
-      mockCard(c, 'send_message', { channel: '#release', text: 'We ship on Friday.' }, 'Tell the team the date'),
+      mockCard(c, 'create_issue', { title: 'Prep the release notes', priority: 'high' }, 'Bob owns the release notes', 'Bob to prep the release notes'),
+      mockCard(c, 'send_message', { channel: '#release', text: 'We ship on Friday.' }, 'Tell the team the date', 'Alice to tell the team we ship Friday'),
     ];
   };
   if (process.env.STENOAI_E2E_SEED_ACTIONS === '1') {
@@ -729,6 +730,12 @@ function install({ ipcMain }) {
     'actions-approve': async (_event, _summaryFile, cardId, args) => {
       global.__actionsApproved.push({ cardId, args });
       const card = actionsState.cards.find((c) => c.id === cardId);
+      // A spec sets global.__actionsFailDetail to make the endpoint reject
+      // the call with that (already redacted) message.
+      if (typeof global.__actionsFailDetail === 'string') {
+        Object.assign(card, { status: 'failed', arguments: args, result: { status: 'tool-error', link: null, text: '', detail: global.__actionsFailDetail } });
+        return { success: true, card };
+      }
       Object.assign(card, { status: 'done', arguments: args, result: { status: 'ok', link: 'https://mock.example/items/1', text: '' } });
       actionsState.recent.unshift({
         time: new Date(Date.UTC(2026, 11, 7, 10, 30)).toISOString(),

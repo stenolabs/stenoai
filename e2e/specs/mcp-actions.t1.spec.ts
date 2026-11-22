@@ -100,6 +100,7 @@ test('Note: approve sends the edited arguments, dismiss sends nothing', async ({
   const message = section.getByRole('article', { name: 'Send message via Team n8n' });
   await expect(issue).toBeVisible();
   await expect(issue.getByText('Bob owns the release notes')).toBeVisible();
+  await expect(issue.getByText('From: Bob to prep the release notes')).toBeVisible();
 
   // Edit the title, then check the exact payload preview before approving.
   const title = issue.getByLabel('Title (required)');
@@ -132,6 +133,29 @@ test('Note: approve sends the edited arguments, dismiss sends nothing', async ({
   const recent = page.getByRole('list', { name: 'Recent actions' });
   await expect(recent.getByText('create_issue')).toBeVisible();
   await expect(recent.getByText('Sent')).toBeVisible();
+});
+
+test('Note: a failed action keeps the generic headline and shows the endpoint message under Details', async ({
+  launchApp,
+}) => {
+  const { page, app } = await launchApp({
+    mockIpc: true,
+    env: { STENOAI_E2E_SEED_MEETING: '1', STENOAI_E2E_SEED_ACTIONS: '1' },
+  });
+  await app.evaluate(() => {
+    (globalThis as unknown as { __actionsFailDetail: string }).__actionsFailDetail =
+      'Validation failed: channel #release not found';
+  });
+  await page.evaluate(() => {
+    window.location.hash = `#/meetings/${encodeURIComponent('epsilon_summary.json')}`;
+  });
+  const message = page.getByTestId('suggested-actions').getByRole('article', { name: 'Send message via Team n8n' });
+  await message.getByRole('button', { name: 'Approve' }).click();
+  const alert = message.getByRole('alert');
+  await expect(alert).toContainText('This action failed. Check the details and try again.');
+  await expect(alert.getByText('Validation failed: channel #release not found')).toBeHidden();
+  await alert.getByText('Details', { exact: true }).click();
+  await expect(alert.getByText('Validation failed: channel #release not found')).toBeVisible();
 });
 
 test('Org policy off: no connect buttons, a notice instead', async ({ launchApp }) => {

@@ -962,9 +962,12 @@ export interface ActionCard {
   inputSchema: JsonSchema | null;
   arguments: Record<string, unknown>;
   reason: string;
+  /** The note action item this proposal carries out. */
+  actionItem?: string;
   validationErrors: ActionValidationError[];
   status: ActionCardStatus;
-  result?: { status: string; link: string | null; text: string };
+  /** detail: the endpoint's own failure message, trimmed and redacted. */
+  result?: { status: string; link: string | null; text: string; detail?: string };
   createdAt: number;
   updatedAt: number;
   approvedAt?: number;

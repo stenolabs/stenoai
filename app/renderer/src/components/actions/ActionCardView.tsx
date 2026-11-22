@@ -172,8 +172,13 @@ export function ActionCardView({
           </span>
         )}
       </header>
+      {card.actionItem && (
+        <p className="mt-2 text-[12.5px] leading-relaxed" style={{ color: 'var(--fg-muted)' }}>
+          {t('actions.card.from', { item: card.actionItem })}
+        </p>
+      )}
       {card.reason && (
-        <p className="mt-2 text-[13px] leading-relaxed" style={{ color: 'var(--fg-2)' }}>
+        <p className="mt-1 text-[13px] leading-relaxed" style={{ color: 'var(--fg-2)' }}>
           {card.reason}
         </p>
       )}
@@ -286,11 +291,26 @@ export function ActionCardView({
             {localityNote(card.locality)}
           </p>
           {card.status === 'failed' && (
-            <p role="alert" className="mt-2 text-[12.5px]" style={{ color: 'var(--fg-1)' }}>
-              {card.result?.status === 'needs-auth'
-                ? t('actions.error.needsAuth')
-                : t('actions.card.failed')}
-            </p>
+            <div role="alert" className="mt-2 text-[12.5px]" style={{ color: 'var(--fg-1)' }}>
+              <p>
+                {card.result?.status === 'needs-auth'
+                  ? t('actions.error.needsAuth')
+                  : t('actions.card.failed')}
+              </p>
+              {card.result?.detail && (
+                <details className="mt-1">
+                  <summary className="cursor-pointer" style={{ color: 'var(--fg-2)' }}>
+                    {t('actions.card.details')}
+                  </summary>
+                  <p
+                    className="mt-1 break-words rounded-md p-2 font-mono text-[11.5px] leading-relaxed"
+                    style={{ background: 'var(--surface-sunken)', color: 'var(--fg-2)' }}
+                  >
+                    {card.result.detail}
+                  </p>
+                </details>
+              )}
+            </div>
           )}
           {!card.connectionAvailable && (
             <p className="mt-2 text-[12.5px]" style={{ color: 'var(--fg-2)' }}>

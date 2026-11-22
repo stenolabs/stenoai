@@ -39,6 +39,7 @@ const { connectorById, publicCatalogue } = require('./mcp-connectors');
 const { validateArguments, compactSchema } = require('./mcp-schema');
 const { startLoopback: defaultStartLoopback } = require('./mcp-oauth-loopback');
 const { redactCredentials } = require('./diagnostics-filter');
+const { checkProposal } = require('./mcp-proposals');
 
 const MAX_PROPOSALS = 5;
 const MAX_PROMPT_TOOLS = 60;
@@ -477,12 +478,16 @@ function createActionsService({
       && allowedByList(c.url, p.endpointAllowlist) && (c.tools || []).length > 0);
   }
 
-  /** Tool catalogue for the model: write-capable tools of enabled, allowed connections. */
+  /**
+   * Tool catalogue for the model: write-capable tools of enabled, allowed
+   * connections. Tools the server marks destructive (delete, overwrite) are
+   * never suggested.
+   */
   function toolCatalogue(p) {
     const out = [];
     for (const c of usableConnections(p)) {
       for (const t of c.tools) {
-        if (t.readOnly) continue;
+        if (t.readOnly || t.destructive) continue;
         out.push({
           connection_id: c.id,
           connection_name: c.name,
@@ -533,13 +538,23 @@ function createActionsService({
 
     const byKey = new Map(catalogue.map((t) => [`${t.connection_id}\u0000${t.tool}`, t]));
     const proposals = (Array.isArray(result.proposals) ? result.proposals : []).slice(0, MAX_PROPOSALS);
+    // The note context the Python side showed the model (title, summary,
+    // action items): what a proposal must cite and draw identifiers from.
+    const note = result.note && typeof result.note === 'object' ? result.note : null;
     const fresh = [];
+    const dropped = { uncited: 0, placeholder: 0, 'ungrounded-id': 0 };
     for (const proposal of proposals) {
       const entry = byKey.get(`${proposal.connection_id}\u0000${proposal.tool}`);
       if (!entry || !proposal.arguments || typeof proposal.arguments !== 'object' || Array.isArray(proposal.arguments)) continue;
       const connection = connections.get(entry.connection_id);
       const tool = connection.tools.find((t) => t.name === entry.tool);
+      const check = checkProposal(proposal, tool.inputSchema, note);
+      if (!check.ok) {
+        dropped[check.reason] += 1;
+        continue;
+      }
       fresh.push({
+        actionItem: check.actionItem.slice(0, 400),
         id: crypto.randomUUID(),
         connectionId: connection.id,
         connectionName: connection.name,
@@ -555,7 +570,9 @@ function createActionsService({
     // Keep the history (approved, failed, dismissed); replace open proposals.
     const cards = [...existing.filter((c) => c.status !== 'proposed'), ...fresh];
     writeCards(summaryPath, cards);
-    log(`[actions] suggested ${fresh.length} action(s) from ${proposals.length} proposal(s)`);
+    const droppedTotal = Object.values(dropped).reduce((a, b) => a + b, 0);
+    log(`[actions] suggested ${fresh.length} action(s) from ${proposals.length} proposal(s)`
+      + (droppedTotal ? `; dropped ${droppedTotal} (uncited ${dropped.uncited}, placeholder ${dropped.placeholder}, invented id ${dropped['ungrounded-id']})` : ''));
     return { skipped: false, cards: cards.map((c) => enrichCard(c, p)) };
   }
 
@@ -604,12 +621,12 @@ function createActionsService({
     try {
       const res = await remote.callTool(clientOptions(connection), tool.name, args);
       outcome = res.isError
-        ? { status: 'failed', result: { status: 'tool-error', link: res.link, text: res.text } }
+        ? { status: 'failed', result: { status: 'tool-error', link: res.link, text: res.text, detail: failureDetail(res.text) } }
         : { status: 'done', result: { status: 'ok', link: res.link, text: res.text } };
     } catch (e) {
       const status = classifyError(e);
       if (status === 'needs-auth') connections.update(connection.id, { status: 'needs-auth' });
-      outcome = { status: 'failed', result: { status, link: null, text: '' } };
+      outcome = { status: 'failed', result: { status, link: null, text: '', detail: status === 'needs-auth' ? '' : failureDetail(e?.message) } };
     } finally {
       running.delete(cardId);
     }
@@ -640,6 +657,21 @@ function createActionsService({
   };
 }
 
+/**
+ * The endpoint's own failure message for the card's Details disclosure: the
+ * tool result's error text or the JSON-RPC error message, one paragraph,
+ * about 300 characters, with tokens and credentialed URLs redacted.
+ */
+function failureDetail(text) {
+  if (typeof text !== 'string' || !text.trim()) return '';
+  const flat = redactCredentials(text)
+    .replace(/https?:\/\/[^\s/@]+:[^\s/@]+@\S+/gi, '[redacted-url]')
+    .replace(/[\u0000-\u001f\u007f]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return flat.length > 300 ? `${flat.slice(0, 299)}…` : flat;
+}
+
 /** Provider text for the log only: one line, no credentials, no email addresses. */
 function redactProviderText(text) {
   return redactCredentials(String(text))
@@ -666,4 +698,4 @@ function authorizeFailureCode(kind, err) {
   return null;
 }
 
-module.exports = { createActionsService, ActionError, allowedByList, publicConnection, authorizeFailureCode, redactProviderText };
+module.exports = { createActionsService, ActionError, allowedByList, publicConnection, authorizeFailureCode, redactProviderText, failureDetail };

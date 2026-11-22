@@ -4341,7 +4341,7 @@ def regen_title(summary_file):
 def suggest_actions(summary_file, tools_file):
     """Propose MCP tool calls from a note's summary and action items.
 
-    Prints one JSON object: {"success": true, "proposals": [...]}. Only the
+    Prints one JSON object: {"success": true, "proposals": [...], "note": {...}}. Only the
     note's title, summary and action items reach the model; nothing runs here.
     """
     from pathlib import Path
@@ -4376,7 +4376,10 @@ def suggest_actions(summary_file, tools_file):
             return summarizer.complete_json(prompt, 120)
 
         proposals = action_suggest.suggest(meeting, tools, complete, max_proposals)
-        print(json.dumps({"success": True, "proposals": proposals}, ensure_ascii=False))
+        # The note context the model saw, so the app can re-check citations
+        # and identifiers itself (app/mcp-proposals.js).
+        note = action_suggest.note_context(meeting)
+        print(json.dumps({"success": True, "proposals": proposals, "note": note}, ensure_ascii=False))
     except Exception as e:
         logger.error(f"suggest-actions failed: {type(e).__name__}")
         print(json.dumps({"success": False, "error_code": "provider-failed", "error": f"Suggestion failed: {type(e).__name__}"}))

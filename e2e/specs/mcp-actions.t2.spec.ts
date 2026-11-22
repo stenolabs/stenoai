@@ -28,7 +28,8 @@ type Card = {
   arguments: Record<string, unknown>;
   status: string;
   validationErrors: unknown[];
-  result?: { status: string; link: string | null };
+  actionItem?: string;
+  result?: { status: string; link: string | null; detail?: string };
 };
 type Res<T> = { success: true } & T;
 type Bridge = {
@@ -91,9 +92,12 @@ test('custom endpoint: suggest, approve the edited args, dismiss sends nothing, 
     ollama = await startMockOllama({
       chatReply: JSON.stringify({
         actions: [
-          { connection_id: connectionId, tool: 'create_issue', arguments: { title: 'Prep the release notes', priority: 'high' }, reason: 'Bob' },
-          { connection_id: connectionId, tool: 'send_message', arguments: { channel: '#support', text: 'We ship Friday' } },
-          { connection_id: connectionId, tool: 'drop_database', arguments: {} },
+          { connection_id: connectionId, tool: 'create_issue', arguments: { title: 'Prep the release notes', priority: 'high' }, reason: 'Bob', action_item: 1 },
+          { connection_id: connectionId, tool: 'send_message', arguments: { channel: '#support', text: 'We ship Friday' }, action_item: 2 },
+          { connection_id: connectionId, tool: 'drop_database', arguments: {}, action_item: 1 },
+          // Placeholder and uncited proposals never become cards.
+          { connection_id: connectionId, tool: 'send_message', arguments: { channel: 'not_specified', text: 'Hi' }, action_item: 2 },
+          { connection_id: connectionId, tool: 'create_issue', arguments: { title: 'Uncited' } },
         ],
       }),
     });
@@ -101,6 +105,8 @@ test('custom endpoint: suggest, approve the edited args, dismiss sends nothing, 
     expect(suggested.success).toBe(true);
     expect(suggested.cards.map((c) => c.tool)).toEqual(['create_issue', 'send_message']);
     expect(suggested.cards.every((c) => c.validationErrors.length === 0)).toBe(true);
+    expect(suggested.cards.map((c) => c.actionItem)).toEqual(['Bob to prep the release notes', 'Alice to tell the support team']);
+    expect(JSON.stringify(suggested.cards)).not.toContain('not_specified');
 
     const prompt = ollama.lastChatPrompt();
     expect(prompt).toContain('Bob to prep the release notes');
@@ -140,6 +146,51 @@ test('custom endpoint: suggest, approve the edited args, dismiss sends nothing, 
     expect(lines[0]).not.toContain('Prep release notes');
     const recent = await page.evaluate(() => (window as unknown as { stenoai: Bridge }).stenoai.actions.recent());
     expect(recent.entries[0]!.argumentsSha256).toBe(entry.argumentsSha256);
+  } finally {
+    await ollama?.close();
+    await mcp.close();
+  }
+});
+
+test('a failed action surfaces the endpoint error message, redacted', async ({ launchApp, userDataDir }) => {
+  writeUserConfig(userDataDir, { ai_provider: 'local' });
+  const summaryFile = writeMeetingSummary(userDataDir, 'pages', {
+    name: 'Site review',
+    summary: 'Trim the defence pages.',
+    action_items: ['Reduce text on law enforcement/defense pages'],
+  });
+  const mcp = await startMockMcpServer({
+    auth: 'none',
+    tools: [{
+      name: 'create_page',
+      title: 'Create page',
+      description: 'Create a page.',
+      failText: 'Could not find parent page. token=e2e-secret-value',
+      inputSchema: { type: 'object', properties: { title: { type: 'string' } }, required: ['title'] },
+    }],
+  });
+  let ollama: Awaited<ReturnType<typeof startMockOllama>> | null = null;
+  try {
+    const { page } = await launchApp();
+    const added = await page.evaluate(
+      (url) => (window as unknown as { stenoai: Bridge }).stenoai.actions.addCustom({ name: 'Docs', url, auth: 'none' }),
+      mcp.url,
+    );
+    ollama = await startMockOllama({
+      chatReply: JSON.stringify({ actions: [
+        { connection_id: added.connection.id, tool: 'create_page', arguments: { title: 'Shorter defence pages' }, action_item: 1 },
+      ] }),
+    });
+    const suggested = await page.evaluate((f) => (window as unknown as { stenoai: Bridge }).stenoai.actions.suggest(f), summaryFile);
+    const [card] = suggested.cards as [Card];
+    expect(card.actionItem).toBe('Reduce text on law enforcement/defense pages');
+    const approved = await page.evaluate(
+      ([f, id]) => (window as unknown as { stenoai: Bridge }).stenoai.actions.approve(f, id, { title: 'Shorter defence pages' }),
+      [summaryFile, card.id] as const,
+    );
+    expect(approved.card.status).toBe('failed');
+    expect(approved.card.result?.detail).toContain('Could not find parent page.');
+    expect(approved.card.result?.detail).not.toContain('e2e-secret-value');
   } finally {
     await ollama?.close();
     await mcp.close();
