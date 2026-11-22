@@ -478,9 +478,6 @@ export function AskBar({ visible = true }: { visible?: boolean }) {
       )}
 
       {submitError && <p role="alert" className="text-xs" style={{ color: 'var(--danger)' }}>{submitError}</p>}
-      <div className="flex items-center justify-between" style={{ background: 'var(--page)', borderRadius: 8 }}>
-        <FolderScopePicker value={scope} onChange={changeScope} includeMeeting disabled={!visible || hidden || isStreaming || submitting} />
-      </div>
       {/* Chat composer */}
       <form
         className="mv-chat"
@@ -489,6 +486,9 @@ export function AskBar({ visible = true }: { visible?: boolean }) {
         {/* Transcript toggle lives as a standalone circular button LEFT of the
             Ask bar (see TranscriptToggle, rendered by PrimaryDock) — Granola-
             style, separate from the composer. */}
+
+        {/* Context sits inside the bar, as on the Chat page. */}
+        <FolderScopePicker value={scope} onChange={changeScope} includeMeeting disabled={!visible || hidden || isStreaming || submitting} />
 
         {/* Text input */}
         <input
