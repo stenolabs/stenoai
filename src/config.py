@@ -1094,6 +1094,12 @@ class Config:
             # vault folder. One-way (Steno -> vault); see app/obsidian-sync.js.
             "obsidian_sync_enabled": False,
             "obsidian_vault_path": "",
+            # Steno MCP server (app/steno-mcp): what AI assistants can read.
+            # None = every meeting; a list = only meetings in those folder ids.
+            # The server reads these keys straight from config.json on every
+            # tool call and enforces them itself.
+            "mcp_folder_allowlist": None,
+            "mcp_exclude_transcripts": False,
             # Default ON — when the app is idle and nothing is in flight, a
             # downloaded update installs itself and relaunches so the user
             # never has to click "Restart". The "update available/downloaded"
@@ -2297,6 +2303,51 @@ class Config:
                 return False
 
         self._config["obsidian_vault_path"] = vault_path
+        return self._save()
+
+    MCP_FOLDER_ALLOWLIST_MAX = 500
+    MCP_FOLDER_ID_MAX_LEN = 128
+
+    def get_mcp_folder_allowlist(self) -> Optional[list]:
+        """Folder ids the Steno MCP server may read, or None for all meetings.
+
+        Mirrors app/steno-mcp/store.mjs readScope(): a value that is set but
+        not a list reads as an empty allowlist (nothing visible), so a
+        hand-edited config can only narrow access, never widen it."""
+        raw = self._config.get("mcp_folder_allowlist")
+        if raw is None:
+            return None
+        if not isinstance(raw, list):
+            return []
+        return [f for f in raw if isinstance(f, str) and f]
+
+    def set_mcp_folder_allowlist(self, folder_ids: Optional[list]) -> bool:
+        """Set the MCP folder allowlist. None = all meetings. Ids must be
+        non-empty strings; duplicates are dropped, order kept."""
+        if folder_ids is not None:
+            if not isinstance(folder_ids, list) or len(folder_ids) > self.MCP_FOLDER_ALLOWLIST_MAX:
+                return False
+            cleaned = []
+            for fid in folder_ids:
+                if (
+                    not isinstance(fid, str)
+                    or not fid
+                    or len(fid) > self.MCP_FOLDER_ID_MAX_LEN
+                ):
+                    return False
+                if fid not in cleaned:
+                    cleaned.append(fid)
+            folder_ids = cleaned
+        self._config["mcp_folder_allowlist"] = folder_ids
+        return self._save()
+
+    def get_mcp_exclude_transcripts(self) -> bool:
+        """When true the MCP server serves notes only: get_transcript is
+        refused and search skips transcript text. Only a literal true counts."""
+        return self._config.get("mcp_exclude_transcripts") is True
+
+    def set_mcp_exclude_transcripts(self, exclude: bool) -> bool:
+        self._config["mcp_exclude_transcripts"] = bool(exclude)
         return self._save()
 
     def get_silence_auto_stop_enabled(self) -> bool:

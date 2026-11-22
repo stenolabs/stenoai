@@ -872,6 +872,20 @@ export type StoragePathResponse = Result<{
   default_path: string;
 }>;
 export type PickStorageFolderResponse = Result<{ folderPath: string }>;
+/** Steno MCP server (Connect page). */
+export type ConnectClientId = 'claudeDesktop' | 'claudeCode' | 'codex' | 'cursor';
+export type ConnectInfoResponse = Result<{
+  serverAvailable: boolean;
+  claudeBundleAvailable: boolean;
+  snippets: { claudeCode: string; codexToml: string; cursorJson: string };
+  /** How an assistant launches the server (the snippets are built from it). */
+  launch: { command: string; args: string[]; env: Record<string, string> };
+  clients: Record<ConnectClientId, boolean>;
+}>;
+/** folderAllowlist: null = every meeting; an array = only these folder ids. */
+export type ConnectSettings = { folderAllowlist: string[] | null; excludeTranscripts: boolean };
+export type ConnectSettingsPatch = Partial<ConnectSettings>;
+export type ConnectSettingsResponse = Result<ConnectSettings>;
 export type GetObsidianSyncResponse = Result<{ obsidian_sync_enabled: boolean }>;
 export type GetObsidianVaultPathResponse = Result<{ obsidian_vault_path: string }>;
 export type ObsidianConflict = { vaultRelPath: string; detectedAt: string; reason: string };
@@ -1523,6 +1537,14 @@ export interface StenoaiBridge {
       [defaultFilename: string, content: string],
       Result<{ path: string }>
     >;
+  };
+
+  connect: {
+    getInfo: RequestFn<[], ConnectInfoResponse>;
+    getSettings: RequestFn<[], ConnectSettingsResponse>;
+    setSettings: RequestFn<[patch: ConnectSettingsPatch], ConnectSettingsResponse>;
+    openClaudeDesktop: RequestFn<[], Result<Record<string, never>>>;
+    openCursor: RequestFn<[], Result<Record<string, never>>>;
   };
 
   ai: {

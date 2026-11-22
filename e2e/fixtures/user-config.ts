@@ -116,6 +116,8 @@ export interface FixtureMeetingMarkdown {
    * parser must surface into `session_info` without a real record/append run.
    */
   frontmatter?: Record<string, string | number | boolean>;
+  /** Folder ids, written as `folders: [...]` like src/folders.py does. */
+  folders?: string[];
 }
 
 /**
@@ -166,6 +168,7 @@ export function writeMeetingMarkdown(
     ...Object.entries(meeting.frontmatter ?? {}).map(([k, v]) =>
       typeof v === 'string' ? `${k}: "${escapeYaml(v)}"` : `${k}: ${v}`,
     ),
+    ...(meeting.folders ? [`folders: ${JSON.stringify(meeting.folders)}`] : []),
     '---',
     '',
     meeting.summaryMarkdown,

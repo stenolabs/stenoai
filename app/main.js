@@ -75,6 +75,8 @@ const { registerPersonSampleIpc } = require('./person-sample-ipc');
 const { registerSpeakerIpc } = require('./speaker-ipc');
 const { registerObsidianSync } = require('./obsidian-sync');
 const { registerObsidianIpc } = require('./obsidian-ipc');
+const { registerStenoMcpIpc } = require('./steno-mcp-ipc');
+const { getLaunchSpec: getStenoMcpLaunchSpec } = require('./steno-mcp-install');
 const { isSafeToAutoInstall } = require('./update-idle-gate');
 const { describeUpdateError, updateErrorPhase, isMissingUpdateFeedError } = require('./update-error-copy');
 const { isOSUpdateEligible, MIN_MACOS_FOR_AUTOUPDATE } = require('./update-os-gate');
@@ -8868,6 +8870,19 @@ registerObsidianIpc({
   getMainWindow: () => mainWindow,
   obsidianSync,
   sendDebugLog,
+});
+
+// Connect page: install surfaces + scope settings for the Steno MCP server.
+registerStenoMcpIpc({
+  ipcMain,
+  runPythonScript,
+  shell,
+  launchSpec: () => getStenoMcpLaunchSpec({
+    isPackaged: app.isPackaged,
+    execPath: process.execPath,
+    resourcesPath: process.resourcesPath,
+    appDir: __dirname,
+  }),
 });
 
 ipcMain.handle('get-ai-prompts', async () => {

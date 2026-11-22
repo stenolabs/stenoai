@@ -356,6 +356,15 @@ const stenoai = {
       invoke('save-diagnostics', defaultFilename, content),
   },
 
+  // Connect page: the Steno MCP server's install surfaces + scope settings.
+  connect: {
+    getInfo: () => invoke('connect-get-info'),
+    getSettings: () => invoke('connect-get-settings'),
+    setSettings: (patch) => invoke('connect-set-settings', patch),
+    openClaudeDesktop: () => invoke('connect-open-claude-desktop'),
+    openCursor: () => invoke('connect-open-cursor'),
+  },
+
   ai: {
     getProvider: () => invoke('get-ai-provider'),
     setProvider: (p) => invoke('set-ai-provider', p),

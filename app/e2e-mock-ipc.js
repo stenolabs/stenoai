@@ -565,7 +565,35 @@ function install({ ipcMain }) {
   // Channels with behaviour a test depends on. Each is (event, ...args) like a
   // real ipcMain.handle callback. Mirror the real handlers' return shapes from
   // app/main.js (get-ai-provider ~5950, org-* ~7990).
+  // Connect page (Steno MCP server). The scope settings are stateful so the
+  // connect.t1 spec can assert what the renderer asked the bridge to save;
+  // global.__connectSettings exposes them to app.evaluate().
+  global.__connectSettings = { folderAllowlist: null, excludeTranscripts: false };
+  const CONNECT_SPEC = {
+    command: '/Applications/Steno.app/Contents/MacOS/Steno',
+    script: '/Applications/Steno.app/Contents/Resources/steno-mcp/server/index.mjs',
+  };
+  const CONNECT_INFO = {
+    success: true,
+    serverAvailable: true,
+    claudeBundleAvailable: true,
+    snippets: {
+      claudeCode: `claude mcp add --scope user --env ELECTRON_RUN_AS_NODE=1 steno -- ${CONNECT_SPEC.command} ${CONNECT_SPEC.script}`,
+      codexToml: `[mcp_servers.steno]\ncommand = "${CONNECT_SPEC.command}"\nargs = ["${CONNECT_SPEC.script}"]\nenv = { ELECTRON_RUN_AS_NODE = "1" }`,
+      cursorJson: JSON.stringify({ mcpServers: { steno: { command: CONNECT_SPEC.command, args: [CONNECT_SPEC.script], env: { ELECTRON_RUN_AS_NODE: '1' } } } }, null, 2),
+    },
+    launch: { command: CONNECT_SPEC.command, args: [CONNECT_SPEC.script], env: { ELECTRON_RUN_AS_NODE: '1' } },
+    // Claude Code reads as already connected so the spec covers both states.
+    clients: { claudeDesktop: false, claudeCode: true, codex: false, cursor: false },
+  };
+
   const MOCKS = {
+    'connect-get-info': async () => CONNECT_INFO,
+    'connect-get-settings': async () => ({ success: true, ...global.__connectSettings }),
+    'connect-set-settings': async (_event, patch) => {
+      global.__connectSettings = { ...global.__connectSettings, ...patch };
+      return { success: true, ...global.__connectSettings };
+    },
     'get-privacy-notice-seen': async () => {
       if (delayPrivacyNotice) {
         delayPrivacyNotice = false;
@@ -1740,7 +1768,16 @@ function install({ ipcMain }) {
         shared_notes_enabled: process.env.STENOAI_E2E_SHARED_NOTES !== '0',
       },
     },
-    'list-folders': { success: true, folders: [] },
+    // Seeded only for specs that need folders (connect.t1); others stay empty.
+    'list-folders': () => ({
+      success: true,
+      folders: process.env.STENOAI_E2E_SEED_FOLDERS === '1'
+        ? [
+          { id: 'f-sales', name: 'Sales', color: '#6366f1', icon: 'folder', order: 0 },
+          { id: 'f-eng', name: 'Engineering', color: '#6366f1', icon: 'folder', order: 1 },
+        ]
+        : [],
+    }),
     'get-calendar-events': { success: true, events: [] },
     // Without these, both new toggles fall through to the permissive
     // {success:true} default (no show_menu_bar_icon/premeeting_notifications_enabled

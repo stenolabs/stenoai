@@ -14,6 +14,7 @@ The app is a thin Electron shell over a PyInstaller-bundled Python CLI. There is
 - **State across CLI invocations** is persisted to `recorder_state.json` and similar small JSON files — there is no daemon. Long-running recordings are a `record` subprocess kept alive by the Electron main process.
 - **User data lives in `~/Library/Application Support/stenoai/`** (`recordings/`, `transcripts/`, `output/`), resolved via `src.config.get_data_dirs()`. Repo-root `recordings/`/`transcripts/`/`output/` dirs are dev-only scratch.
 - **Bundled binaries (`bin/`)**: Ollama + ffmpeg, downloaded by `scripts/download-ollama.sh`. PyInstaller copies them into `dist/stenoai/ollama/` and `dist/stenoai/ffmpeg`. Electron then re-bundles `dist/stenoai/` as an `extraResource`. `bin/steno-diarize` (macOS only) is a separate Swift/CoreML sidecar built by `scripts/build-diarize-sidecar.sh` — see "Speaker diarization" below.
+- **Steno MCP server (`app/steno-mcp/`)**: a read-only stdio MCP server over the notes on disk (`store.mjs` owns path safety + the `mcp_folder_allowlist` / `mcp_exclude_transcripts` scope from `config.json`). `scripts/build-steno-mcp.mjs` (also the electron-builder `beforePack` hook) bundles it to `steno-mcp/dist` (+ `Steno.mcpb` for Claude Desktop), shipped as `resources/steno-mcp`. Other assistants run it with Steno's own binary + `ELECTRON_RUN_AS_NODE=1` (`steno-mcp-install.js`). UI: the Connect page.
 - **Deep links**: app registers the `stenoai://` URL scheme. Handler logic is in `app/main.js` near `SHORTCUT_PROTOCOL`. Used by macOS Shortcuts: `stenoai://record/start?name=...` and `stenoai://record/stop`.
 
 ## Development Commands
@@ -184,7 +185,11 @@ overrides an agent's own test-level defaults.
     picker and the upgrade Download action, is `diarization-engine.t1`),
     `caller-id.t2` (the Identify call participants setting and the iMCP status it
     reports, against `e2e/fixtures/mock-imcp-server.js`; macOS only), and the onboarding spec
-    `setup-check.t2` (the setup-wizard allGood + checks contract) (all model-free,
+    `setup-check.t2` (the setup-wizard allGood + checks contract), and the Steno MCP pair
+    `connect.t1` (Connect page: assistant cards, install sheets, scope controls via
+    the `connect` bridge) / `steno-mcp.t2` (spawns the server the app advertises over
+    stdio and calls `search_meetings`/`get_note` on seeded notes; its settings
+    round-trip test needs the backend) (all model-free,
     run in `t2-macos` /
     `t2-windows`); `transcription-pipeline.t2` and `honest-failure.t2` (tagged
     `@pipeline`, run in `t2-pipeline-macos` / `t2-pipeline-windows`), and
