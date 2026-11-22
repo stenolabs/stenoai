@@ -1,9 +1,8 @@
 {
-  "total": 247,
+  "total": 243,
   "files": {
     "renderer/src/components/ChatHistoryRow.tsx": 5,
     "renderer/src/components/CommandPalette.tsx": 16,
-    "renderer/src/components/FolderScopePicker.tsx": 4,
     "renderer/src/components/IconPicker.tsx": 2,
     "renderer/src/components/ImportDropZone.tsx": 2,
     "renderer/src/components/LiveTranscriptBar.tsx": 29,

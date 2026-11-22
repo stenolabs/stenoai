@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { ChevronDown, Folder as FolderIcon, Globe, Inbox } from 'lucide-react';
+import { Check, ChevronDown, CircleOff, FileText, Folder as FolderIcon, Globe, Inbox } from 'lucide-react';
 import {
   Popover,
   PopoverContent,
@@ -26,10 +26,10 @@ interface FolderScopePickerProps {
 }
 
 /**
- * Compact "scope" chip used inside chat composers. Lets the user limit a
- * cross-note query to a single folder instead of asking across everything.
- * Backend filter happens server-side; this just persists the choice and
- * passes it to startGlobalStream.
+ * Compact context chip in chat composers. The default is smart (a note's chat
+ * starts on "This meeting", the Chat page on "All notes"); clicking opens a
+ * short picker: This meeting, All notes, Shared notes, Spaces, No context.
+ * Backend filtering happens server-side; this only persists the choice.
  */
 export function FolderScopePicker({ value, onChange, includeMeeting = false, disabled = false }: FolderScopePickerProps) {
   const folders = useFolders();
@@ -65,7 +65,20 @@ export function FolderScopePicker({ value, onChange, includeMeeting = false, dis
   }, [value, folders.data, folder, orgSessionSettled, orgSignedIn, onChange]);
 
   const isOrg = value === ORG_SHARED_SCOPE;
-  const label = value === GENERAL_SCOPE ? t('chat.scope.general') : value === MEETING_SCOPE ? t('chat.scope.meeting') : isOrg ? 'Shared notes' : folder ? folder.name : 'All notes';
+  const label = value === GENERAL_SCOPE
+    ? t('chat.scope.general')
+    : value === MEETING_SCOPE
+      ? t('chat.scope.meeting')
+      : isOrg
+        ? t('chat.scope.shared')
+        : folder
+          ? folder.name
+          : t('chat.scope.all');
+  const pick = (scope: string | null) => {
+    onChange(scope);
+    setOpen(false);
+  };
+  const Icon = isOrg ? Globe : value === GENERAL_SCOPE ? CircleOff : value === MEETING_SCOPE ? FileText : folder ? FolderIcon : Inbox;
 
   return (
     <Popover open={open && !disabled} onOpenChange={setOpen}>
@@ -75,95 +88,60 @@ export function FolderScopePicker({ value, onChange, includeMeeting = false, dis
           disabled={disabled}
           aria-label={t('chat.context.label', { context: label })}
           title={t('chat.context.label', { context: label })}
-          className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[12px] transition-colors hover:bg-[color:var(--surface-hover)]"
-          style={{ color: 'var(--fg-2)' }}
+          data-testid="chat-context-chip"
+          className="inline-flex h-[24px] items-center gap-1.5 rounded-full border px-2.5 text-[12px] transition-colors hover:bg-[color:var(--surface-hover)] disabled:opacity-60"
+          style={{ color: 'var(--fg-2)', borderColor: 'var(--border-subtle)' }}
         >
-          {isOrg ? (
-            <Globe className="size-[12px]" />
-          ) : folder ? (
-            <FolderIcon className="size-[12px]" />
-          ) : (
-            <Inbox className="size-[12px]" />
-          )}
-          <span className="max-w-[220px] truncate">{t('chat.context.label', { context: label })}</span>
-          <ChevronDown className="size-[11px] opacity-60" />
+          <Icon aria-hidden className="size-[12px]" />
+          <span className="max-w-[200px] truncate">{label}</span>
+          <ChevronDown aria-hidden className="size-[11px] opacity-60" />
         </button>
       </PopoverTrigger>
-      <PopoverContent align="start" className="w-[260px] p-1">
-        <div className="px-2 pb-2 pt-1" style={{ color: 'var(--fg-muted)' }}>
-          <p className="text-xs font-medium" style={{ color: 'var(--fg-2)' }}>{t('chat.context.heading')}</p>
-          <p className="mt-1 text-[11px] leading-relaxed">{t('chat.context.hint')}</p>
-        </div>
-        <button
-          type="button"
-          onClick={() => {
-            onChange(null);
-            setOpen(false);
-          }}
-          className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] transition-colors hover:bg-[color:var(--surface-hover)]"
-          style={{
-            color: 'var(--fg-1)',
-            background: value === null ? 'var(--surface-active)' : undefined,
-          }}
-        >
-          <Inbox className="size-[13px]" style={{ color: 'var(--fg-2)' }} />
-          All notes
-        </button>
-        {[GENERAL_SCOPE, ...(includeMeeting ? [MEETING_SCOPE] : [])].map((scope) => (
-          <button
-            key={scope}
-            type="button"
-            onClick={() => { onChange(scope); setOpen(false); }}
-            className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] hover:bg-[color:var(--surface-hover)]"
-            style={{ color: 'var(--fg-1)', background: value === scope ? 'var(--surface-active)' : undefined }}
-          >
-            {scope === GENERAL_SCOPE ? t('chat.scope.general') : t('chat.scope.meeting')}
-          </button>
-        ))}
+      <PopoverContent align="start" className="w-[220px] p-1">
+        {includeMeeting && (
+          <ScopeOption icon={FileText} label={t('chat.scope.meeting')} selected={value === MEETING_SCOPE} onSelect={() => pick(MEETING_SCOPE)} />
+        )}
+        <ScopeOption icon={Inbox} label={t('chat.scope.all')} selected={value === null} onSelect={() => pick(null)} />
         {orgSignedIn && (
-          <button
-            type="button"
-            onClick={() => {
-              onChange(ORG_SHARED_SCOPE);
-              setOpen(false);
-            }}
-            className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] transition-colors hover:bg-[color:var(--surface-hover)]"
-            style={{
-              color: 'var(--fg-1)',
-              background: isOrg ? 'var(--surface-active)' : undefined,
-            }}
-            title={`Cross-note chat against ${orgSession.data?.orgId ?? 'your org'}'s shared notes`}
-          >
-            <Globe className="size-[13px]" style={{ color: 'var(--fg-2)' }} />
-            <span className="truncate">Shared notes</span>
-          </button>
+          <ScopeOption icon={Globe} label={t('chat.scope.shared')} selected={isOrg} onSelect={() => pick(ORG_SHARED_SCOPE)} />
         )}
-        {(folders.data ?? []).length > 0 && (
-          <div
-            className="mx-2 my-1 h-px"
-            style={{ background: 'var(--border-subtle)' }}
-            aria-hidden
-          />
-        )}
+        {(folders.data ?? []).length > 0 && <Divider />}
         {(folders.data ?? []).map((f) => (
-          <button
-            key={f.id}
-            type="button"
-            onClick={() => {
-              onChange(f.id);
-              setOpen(false);
-            }}
-            className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] transition-colors hover:bg-[color:var(--surface-hover)]"
-            style={{
-              color: 'var(--fg-1)',
-              background: value === f.id ? 'var(--surface-active)' : undefined,
-            }}
-          >
-            <FolderIcon className="size-[13px]" style={{ color: 'var(--fg-2)' }} />
-            <span className="truncate">{f.name}</span>
-          </button>
+          <ScopeOption key={f.id} icon={FolderIcon} label={f.name} selected={value === f.id} onSelect={() => pick(f.id)} />
         ))}
+        <Divider />
+        <ScopeOption icon={CircleOff} label={t('chat.scope.general')} selected={value === GENERAL_SCOPE} onSelect={() => pick(GENERAL_SCOPE)} />
       </PopoverContent>
     </Popover>
+  );
+}
+
+function Divider() {
+  return <div className="mx-2 my-1 h-px" style={{ background: 'var(--border-subtle)' }} aria-hidden />;
+}
+
+function ScopeOption({
+  icon: Icon,
+  label,
+  selected,
+  onSelect,
+}: {
+  icon: React.ComponentType<{ className?: string; style?: React.CSSProperties; 'aria-hidden'?: boolean }>;
+  label: string;
+  selected: boolean;
+  onSelect: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      aria-pressed={selected}
+      onClick={onSelect}
+      className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] transition-colors hover:bg-[color:var(--surface-hover)]"
+      style={{ color: 'var(--fg-1)', background: selected ? 'var(--surface-active)' : undefined }}
+    >
+      <Icon aria-hidden className="size-[13px] shrink-0" style={{ color: 'var(--fg-2)' }} />
+      <span className="min-w-0 flex-1 truncate">{label}</span>
+      {selected && <Check aria-hidden className="size-[12px] shrink-0" style={{ color: 'var(--fg-2)' }} />}
+    </button>
   );
 }
