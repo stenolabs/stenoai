@@ -33,10 +33,11 @@ function codingAgents(): CodingAgent[] {
 type Sheet = { agent: CodingAgent; kind: 'skill' | 'mcp' };
 
 /**
- * Coding agents (Claude Code, Codex): MCP is the primary connection, read-only
- * and bound by "What assistants can see"; the Steno skill is the secondary
- * install that adds workflows. The status reports what the main process
- * found on disk: Connected for MCP, Skill installed for the skill alone.
+ * Coding agents (Claude Code, Codex): the Steno skill is the primary install
+ * (it finds decisions, recaps the week, turns conversations into work); MCP
+ * is the secondary connection, read-only and bound by "What assistants can
+ * see". The status reports what the main process found on disk: Connected,
+ * via the skill, MCP or both.
  */
 export function CodingAgentsSection() {
   const info = useConnectInfo();
@@ -76,9 +77,19 @@ export function CodingAgentsSection() {
               </div>
               <div className="mt-auto flex flex-wrap items-center gap-1.5 pl-12 pt-4">
                 <Button
-                  variant={mcp ? 'outline' : 'default'}
+                  variant={skill ? 'outline' : 'default'}
                   size="sm"
                   className="h-[30px] px-3 text-[13px]"
+                  aria-label={t('connect.codingAgents.installSkillAria', { name: a.name })}
+                  onClick={() => setSheet({ agent: a, kind: 'skill' })}
+                >
+                  {t('connect.codingAgents.installSkill')}
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-[30px] px-2.5 text-[12.5px]"
+                  style={{ color: 'var(--fg-2)' }}
                   aria-label={
                     mcp
                       ? t('connect.codingAgents.viewSetupAria', { name: a.name })
@@ -86,17 +97,7 @@ export function CodingAgentsSection() {
                   }
                   onClick={() => setSheet({ agent: a, kind: 'mcp' })}
                 >
-                  {mcp ? t('connect.codingAgents.viewSetup') : t('connect.connect')}
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-[30px] px-2.5 text-[12.5px]"
-                  style={{ color: 'var(--fg-2)' }}
-                  aria-label={t('connect.codingAgents.installSkillAria', { name: a.name })}
-                  onClick={() => setSheet({ agent: a, kind: 'skill' })}
-                >
-                  {t('connect.codingAgents.installSkill')}
+                  {mcp ? t('connect.codingAgents.viewSetup') : t('connect.codingAgents.connectMcp')}
                 </Button>
               </div>
             </section>

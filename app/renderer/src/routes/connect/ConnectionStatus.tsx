@@ -17,10 +17,10 @@ export function lastUsedLabel(iso: string | null | undefined, now = Date.now()):
 }
 
 /**
- * What is on disk for one assistant, read-only (it is not a control):
- * "Connected" when Steno is configured as its MCP server, otherwise "Skill
- * installed" when only the Steno skill is. A connected card can add a quiet
- * "Skill installed" hint and when the connection was last used.
+ * What is on disk for one coding agent, read-only (it is not a control):
+ * "Connected" when the Steno skill or the Steno MCP server is installed, with
+ * a quiet "via skill" / "via MCP" / "via skill and MCP" hint, and when an MCP
+ * connection was last used.
  */
 export function ConnectionStatus({
   mcp,
@@ -33,6 +33,7 @@ export function ConnectionStatus({
 }) {
   const used = mcp ? lastUsedLabel(lastUsed) : null;
   if (!mcp && !skill) return null;
+  const via = mcp && skill ? t('connect.via.both') : mcp ? t('connect.via.mcp') : t('connect.via.skill');
   return (
     <span
       className="inline-flex shrink-0 flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[12.5px]"
@@ -40,13 +41,11 @@ export function ConnectionStatus({
     >
       <span className="inline-flex items-center gap-1">
         <Check aria-hidden className="size-3.5" />
-        {mcp ? t('connect.connected') : t('connect.skillInstalled')}
+        {t('connect.connected')}
       </span>
-      {mcp && skill && (
-        <span className="text-[11.5px]" style={{ color: 'var(--fg-muted)' }}>
-          {t('connect.skillInstalled')}
-        </span>
-      )}
+      <span className="text-[11.5px]" style={{ color: 'var(--fg-muted)' }}>
+        {via}
+      </span>
       {used && (
         <span className="text-[11.5px]" style={{ color: 'var(--fg-muted)' }}>
           {used}

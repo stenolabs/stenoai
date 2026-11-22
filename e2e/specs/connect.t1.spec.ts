@@ -14,7 +14,7 @@ type ConnectState = { folderAllowlist: string[] | null; excludeTranscripts: bool
 const settingsOf = (app: import('@playwright/test').ElectronApplication) =>
   app.evaluate(() => (globalThis as unknown as { __connectSettings: ConnectState }).__connectSettings);
 
-test('Connect: coding agents connect over MCP first, with the skill as the secondary install', async ({
+test('Connect: coding agents install the skill first, with MCP as the secondary connection', async ({
   launchApp,
 }, testInfo) => {
   const { page, app } = await launchApp({
@@ -42,8 +42,15 @@ test('Connect: coding agents connect over MCP first, with the skill as the secon
   const nav = page.getByRole('button', { name: /^Connect/ });
   await expect(nav).toContainText('New');
   await nav.click();
-  await expect(page.getByText('Bring your meetings to your AI tools')).toBeVisible();
+  await expect(page.getByText('Make your meetings actionable.')).toBeVisible();
+  await expect(page.getByText('Connect your AI tools and the apps you work in. Steno suggests the follow-ups; you approve them.')).toBeVisible();
   await expect(page.getByText('Prefer a skill instead of a connection?')).toHaveCount(0);
+  // Sections: Actions first, then AI apps, then Coding agents.
+  const order = await page.locator('h2').allTextContents();
+  const idx = (h: string) => order.indexOf(h);
+  expect(idx('Actions')).toBeGreaterThanOrEqual(0);
+  expect(idx('Actions')).toBeLessThan(idx('AI apps'));
+  expect(idx('AI apps')).toBeLessThan(idx('Coding agents'));
 
   const coding = page.getByRole('region', { name: 'Coding agents' });
   const apps = page.getByRole('region', { name: 'AI apps' });
@@ -59,15 +66,17 @@ test('Connect: coding agents connect over MCP first, with the skill as the secon
   const claudeCode = coding.getByRole('region', { name: 'Claude Code', exact: true });
   const codex = coding.getByRole('region', { name: 'Codex', exact: true });
   await expect(claudeCode.getByText('Connected', { exact: true })).toBeVisible();
-  await expect(claudeCode.getByText('Skill installed', { exact: true })).toBeVisible();
+  await expect(claudeCode.getByText('via skill and MCP', { exact: true })).toBeVisible();
   await expect(claudeCode.getByText('Last used 5 min ago')).toBeVisible();
-  await expect(codex.getByText('Skill installed', { exact: true })).toBeVisible();
-  await expect(codex.getByText('Connected', { exact: true })).toHaveCount(0);
+  await expect(codex.getByText('Connected', { exact: true })).toBeVisible();
+  await expect(codex.getByText('via skill', { exact: true })).toBeVisible();
+  await expect(page.getByText('Skill installed', { exact: true })).toHaveCount(0);
   // A last-used stamp without an MCP config (removed since) is not shown.
   await expect(codex.getByText(/Last used/)).toHaveCount(0);
-  // Primary: Connect (MCP) when not connected, a quieter View setup once it is.
-  await expect(codex.getByRole('button', { name: 'Connect Codex over MCP' })).toHaveText('Connect');
-  await expect(claudeCode.getByRole('button', { name: 'View the MCP setup for Claude Code' })).toHaveText('View setup');
+  // Primary: Install skill; secondary: Connect MCP, or View MCP setup once connected.
+  await expect(codex.getByRole('button', { name: 'Install the Steno skill in Codex' })).toHaveText('Install skill');
+  await expect(codex.getByRole('button', { name: 'Connect Codex over MCP' })).toHaveText('Connect MCP');
+  await expect(claudeCode.getByRole('button', { name: 'View the MCP setup for Claude Code' })).toHaveText('View MCP setup');
   await expect(claudeCode.getByRole('button', { name: 'Install the Steno skill in Claude Code' })).toHaveText('Install skill');
   await expect(apps.getByRole('region', { name: 'Cursor', exact: true }).getByText('Connected')).toHaveCount(0);
   await expect(apps.getByRole('region', { name: 'Claude', exact: true }).getByText('Last used 2 days ago')).toBeVisible();

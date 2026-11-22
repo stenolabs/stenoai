@@ -6,10 +6,10 @@ import { CodingAgentsSection } from './connect/CodingAgentsSection';
 import { ScopeSection } from './connect/ScopeSection';
 
 /**
- * Connect: bring meetings to coding agents and AI apps through the bundled
- * read-only Steno MCP server (app/steno-mcp; coding agents can add the Steno
- * skill too), the scope controls every MCP connection obeys, and turning
- * meetings into actions in other tools.
+ * Connect: turn meetings into actions in the apps you work in, bring them to
+ * AI apps through the bundled read-only Steno MCP server (app/steno-mcp) and
+ * to coding agents through the Steno skill (or MCP), and the scope controls
+ * every MCP connection obeys.
  */
 export function Connect() {
   return (
@@ -27,10 +27,10 @@ export function Connect() {
             {t('connect.intro.body')}
           </p>
         </div>
-        <CodingAgentsSection />
-        <AiAppsSection />
-        <ScopeSection />
         <ActionsSection />
+        <AiAppsSection />
+        <CodingAgentsSection />
+        <ScopeSection />
       </div>
     </MeetingsShell>
   );
