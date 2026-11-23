@@ -39,6 +39,7 @@ test("an acknowledged release leaves Settings interactive and can be reopened", 
   await expect(page.getByRole("dialog", { name: title })).toBeVisible();
   // Every highlight carries a generated cover picture.
   await expect(page.getByRole("dialog", { name: title }).locator(".cookbook-cover")).toHaveCount(5);
+  await page.waitForTimeout(400);
   await page.screenshot({ path: testInfo.outputPath("whats-new.png") });
   await page.getByRole("button", { name: "Full release notes" }).click();
   await expect(page.getByRole("dialog", { name: title })).toHaveCount(0);

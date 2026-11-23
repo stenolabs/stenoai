@@ -13,7 +13,7 @@ import {
   Sparkles,
   type LucideIcon,
 } from 'lucide-react';
-import { CookbookCover, COLOUR_TONES } from '@/components/cookbooks/CookbookCover';
+import { CookbookCover, type CoverTone } from '@/components/cookbooks/CookbookCover';
 import type { CookbookCategory } from '@/lib/cookbooks';
 import {
   Dialog,
@@ -166,8 +166,7 @@ export function WhatsNewProvider({
           </DialogHeader>
           <div className="divide-y" style={{ borderColor: 'var(--border-subtle)' }}>
             {RELEASE_HIGHLIGHTS.map((highlight, index) => (
-              <section key={highlight.id} className="flex gap-5 py-5">
-                <HighlightCover highlight={highlight} index={index} />
+              <section key={highlight.id} className="flex items-start justify-between gap-5 py-5">
                 <div className="min-w-0">
                   <h3 className="text-sm font-medium">{highlight.title}</h3>
                   <p
@@ -187,6 +186,7 @@ export function WhatsNewProvider({
                     <ArrowUpRight size={13} />
                   </button>
                 </div>
+                <HighlightCover highlight={highlight} index={index} />
               </section>
             ))}
           </div>
@@ -222,10 +222,12 @@ const HIGHLIGHT_ICONS: Record<NonNullable<ReleaseHighlight['icon']>, LucideIcon>
   sparkles: Sparkles,
 };
 const COVER_CATEGORIES: CookbookCategory[] = ['planning', 'briefings', 'interviews', 'everyday'];
+// Ink and paper only, so the dialog stays calm next to the colourful Cookbooks.
+const COVER_TONES: CoverTone[] = ['stone', 'paper', 'ink'];
 
 /**
- * A generated picture for each highlight: the Cookbooks cover art in one of
- * the colour tones, with the feature's icon (or its bespoke visual) on a
+ * A generated picture for each highlight, beside its text: the Cookbooks
+ * cover art in ink and paper tones, with the feature's icon (or its bespoke visual) on a
  * paper chip. No image assets, so every release gets art for free.
  */
 function HighlightCover({ highlight, index }: { highlight: ReleaseHighlight; index: number }) {
@@ -235,7 +237,7 @@ function HighlightCover({ highlight, index }: { highlight: ReleaseHighlight; ind
       <CookbookCover
         seedId={`whats-new-${highlight.id}`}
         category={COVER_CATEGORIES[index % COVER_CATEGORIES.length]}
-        tone={COLOUR_TONES[index % COLOUR_TONES.length]}
+        tone={COVER_TONES[index % COVER_TONES.length]}
         shape="wide"
         className="absolute inset-0"
       />
