@@ -6,6 +6,7 @@ import { GoogleIcon } from '@/components/ui/google-icon';
 import { MetaIcon } from '@/components/ui/meta-icon';
 import { QwenIcon } from '@/components/ui/qwen-icon';
 import { t } from '@/i18n';
+import { modelTier, modelTierLabel } from '@/lib/modelNames';
 import {
   useCurrentModel,
   useDeleteModel,
@@ -123,6 +124,8 @@ export function ModelList() {
       note = m.description;
     } else if (!isRemote) {
       const parts: string[] = [];
+      const tier = modelTier(m.name);
+      if (tier) parts.push(modelTierLabel(tier));
       if (m.speed) parts.push(t('settings.ai.speed', { speed: m.speed }));
       if (m.quality) parts.push(t('settings.ai.quality', { quality: m.quality }));
       note = parts.length ? parts.join(' · ') : undefined;

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { boundedChatHistory, shortModelName } from './chat';
+import { boundedChatHistory, formatActiveModel, shortActiveModel, shortModelName } from './chat';
 
 describe('conversation history follows explicit context', () => {
   test('switching back to an org meeting excludes private general and local-note turns', () => {
@@ -36,5 +36,20 @@ describe('short model names', () => {
     ['mistral-small:latest', 'Mistral Small'],
   ])('%s -> %s', (id, label) => {
     expect(shortModelName(id)).toBe(label);
+  });
+});
+
+describe('OpenRouter model labels', () => {
+  const p = { ai_provider: 'cloud' as const, cloud_provider: 'openrouter' as const, cloud_model: 'google/gemini-2.5-flash', model: '' };
+  test('the tooltip names the provider and the full id', () => {
+    expect(formatActiveModel(p)).toBe('OpenRouter · google/gemini-2.5-flash');
+  });
+  test('the chip drops the vendor path', () => {
+    expect(shortActiveModel(p)).toBe('gemini-2.5-flash');
+  });
+  test('other cloud providers are unchanged', () => {
+    const openai = { ...p, cloud_provider: 'openai' as const, cloud_model: 'gpt-4o' };
+    expect(formatActiveModel(openai)).toBe('openai · gpt-4o');
+    expect(shortActiveModel(openai)).toBe('gpt-4o');
   });
 });

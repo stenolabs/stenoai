@@ -10093,7 +10093,7 @@ def set_cloud_api_url(url):
 @cli.command()
 @click.argument('provider')
 def set_cloud_provider(provider):
-    """Set the cloud provider type (openai or custom)"""
+    """Set the cloud provider type (openai, anthropic, bedrock, custom or openrouter)"""
     from src.config import get_config
     config = get_config()
 
@@ -10276,10 +10276,12 @@ def test_cloud_api():
                     "success": False,
                     "error": f"Bedrock HTTP {he.code}: {detail or he.reason}",
                 }))
+        elif cloud_provider == "openrouter":
+            print(json.dumps(_test_openrouter_key(cloud_api_key)))
         else:
             from openai import OpenAI
-            base_url = cloud_api_url if cloud_provider == "custom" and cloud_api_url else None
-            client = OpenAI(api_key=cloud_api_key, base_url=base_url)
+            from src.cloud_providers import openai_client_kwargs
+            client = OpenAI(**openai_client_kwargs(cloud_provider, cloud_api_key, cloud_api_url))
             models = client.models.list()
             # Newest first so current chat models lead the Settings dropdown.
             # OpenAI returns ~50+ models in arbitrary order, mixing in
@@ -10297,7 +10299,65 @@ def test_cloud_api():
             model_ids = [m.id for m in entries[:25]]
             print(json.dumps({"success": True, "models": model_ids}))
     except Exception as e:
-        print(json.dumps({"success": False, "error": str(e)}))
+        from src.cloud_providers import classify_cloud_error
+        print(json.dumps({
+            "success": False,
+            "error": str(e),
+            "error_code": classify_cloud_error(str(e)),
+        }))
+
+
+def _test_openrouter_key(api_key, urlopen=None):
+    """Verify an OpenRouter key and pick the models to offer.
+
+    OpenRouter's /models catalogue is public, so listing it proves nothing about
+    the key. /key is authenticated: a 401 there is a bad key. The catalogue is
+    then used only to drop curated picks OpenRouter no longer serves.
+    ``urlopen`` is injectable for tests."""
+    import urllib.error
+    import urllib.request
+    from src.cloud_providers import (
+        OPENROUTER_BASE_URL,
+        OPENROUTER_HEADERS,
+        available_recommended,
+        classify_cloud_error,
+    )
+    open_url = urlopen or urllib.request.urlopen
+    headers = {"authorization": f"Bearer {api_key}", **OPENROUTER_HEADERS}
+    try:
+        req = urllib.request.Request(f"{OPENROUTER_BASE_URL}/key", headers=headers)
+        with open_url(req, timeout=15) as resp:
+            key_info = json.loads(resp.read().decode("utf-8") or "{}").get("data") or {}
+    except urllib.error.HTTPError as he:
+        detail = ""
+        try:
+            detail = he.read().decode("utf-8", errors="replace")[:300]
+        except Exception:
+            # Best-effort detail; never mask the HTTP status being reported.
+            pass
+        message = f"OpenRouter HTTP {he.code}: {detail or he.reason}"
+        return {"success": False, "error": message, "error_code": classify_cloud_error(message)}
+    except Exception as e:
+        return {"success": False, "error": str(e), "error_code": classify_cloud_error(str(e))}
+
+    live_ids = []
+    try:
+        req = urllib.request.Request(f"{OPENROUTER_BASE_URL}/models", headers=headers)
+        with open_url(req, timeout=15) as resp:
+            catalogue = json.loads(resp.read().decode("utf-8") or "{}")
+        live_ids = [m.get("id") for m in catalogue.get("data") or [] if isinstance(m, dict)]
+    except Exception:
+        # The key already checked out; a catalogue hiccup only means we offer
+        # the curated list unfiltered.
+        live_ids = []
+
+    result = {"success": True, "models": available_recommended(live_ids)}
+    remaining = key_info.get("limit_remaining") if isinstance(key_info, dict) else None
+    if isinstance(remaining, (int, float)) and remaining <= 0:
+        # The key is valid but has a spending limit already used up. Report it
+        # as a warning rather than a failure: free models still answer.
+        result["warning"] = "no_credit"
+    return result
 
 
 @cli.command()

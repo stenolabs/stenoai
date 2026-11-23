@@ -1237,7 +1237,7 @@ function install({ ipcMain }) {
       cloud_model: state.cloudModel,
       model: state.model,
       remote_ollama_url: state.remoteUrl,
-      cloud_api_key_set: false,
+      cloud_api_key_set: Boolean(state.cloudKey),
     }),
 
     // Mirror the real hard-lock: while a valid session exists the provider is
@@ -1248,6 +1248,56 @@ function install({ ipcMain }) {
       }
       state.provider = provider;
       return { success: true, ai_provider: provider };
+    },
+
+    // Cloud key flow (onboarding + Settings). Stateful like the real config:
+    // switching provider recalls that provider's default model, and the key
+    // test answers from the pasted key so a T1 spec can drive each outcome:
+    // a key containing "bad" is rejected, "nocredit" has no credit,
+    // "offline" cannot reach the provider, anything else connects.
+    // global.__cloudKeyTests counts test calls.
+    'set-cloud-provider': async (_event, provider) => {
+      const defaults = {
+        openai: 'gpt-4o-mini',
+        anthropic: 'claude-haiku-4-5-20251001',
+        bedrock: 'anthropic.claude-haiku-4-5-20251001-v1:0',
+        custom: 'gpt-4o-mini',
+        openrouter: 'google/gemini-2.5-flash',
+      };
+      if (!Object.prototype.hasOwnProperty.call(defaults, provider)) {
+        return { success: false, error: `Invalid cloud provider: ${provider}` };
+      }
+      state.cloudProvider = provider;
+      state.cloudModel = defaults[provider];
+      return { success: true, cloud_provider: provider };
+    },
+    'set-cloud-model': async (_event, model) => {
+      state.cloudModel = model;
+      return { success: true, cloud_model: model };
+    },
+    'set-cloud-api-key': async (_event, key) => {
+      state.cloudKey = key || '';
+      return { success: true, cloud_api_key_set: Boolean(key) };
+    },
+    'test-cloud-api': async () => {
+      const tests = global.__cloudKeyTests ||= { calls: 0, providers: [] };
+      tests.calls++;
+      tests.providers.push(state.cloudProvider);
+      const key = state.cloudKey || '';
+      if (!key) return { success: false, error: 'No API key configured' };
+      if (key.includes('bad')) {
+        return { success: false, error: "Error code: 401 - {'error': {'code': 'invalid_api_key'}}", error_code: 'invalid_key' };
+      }
+      if (key.includes('nocredit')) {
+        return { success: false, error: 'Error code: 429 - insufficient_quota', error_code: 'no_credit' };
+      }
+      if (key.includes('offline')) return { success: false, error: 'Connection error.', error_code: 'network' };
+      const models = {
+        openai: ['gpt-4o-mini', 'gpt-4o'],
+        anthropic: ['claude-haiku-4-5-20251001', 'claude-sonnet-4-5-20250929'],
+        openrouter: ['google/gemini-2.5-flash', 'anthropic/claude-sonnet-4.5'],
+      }[state.cloudProvider] || [];
+      return { success: true, models };
     },
 
     // Stateful idle auto-install toggle: set updates the in-memory value that

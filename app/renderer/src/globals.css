@@ -321,6 +321,15 @@
   from { opacity: 0; transform: translateY(-5px); }
   to   { opacity: 1; transform: translateY(0); }
 }
+/* Onboarding screens ease in when the step changes (Setup.tsx). Motion only
+   when the person hasn't asked for less of it. */
+@keyframes setupStageIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .setup-stage-in { animation: setupStageIn 0.32s cubic-bezier(0.16, 1, 0.3, 1); }
+}
 /* Onboarding transcription-model download: Parakeet exposes only coarse stages
    (no byte counts), so its progress bar is indeterminate - a segment sweeps the
    track to signal "working" without fabricating a percentage. */

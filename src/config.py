@@ -2768,7 +2768,7 @@ class Config:
     # --- AI provider settings ---
 
     VALID_AI_PROVIDERS = ("local", "remote", "cloud", "adapter")
-    VALID_CLOUD_PROVIDERS = ("openai", "anthropic", "bedrock", "custom")
+    VALID_CLOUD_PROVIDERS = ("openai", "anthropic", "bedrock", "custom", "openrouter")
 
     # AWS Bedrock has ~30 regions; we surface the common ones in the UI but
     # accept any value as set_bedrock_region trusts the caller. Defaulting to
@@ -2849,6 +2849,9 @@ class Config:
         "anthropic": "claude-haiku-4-5-20251001",
         "bedrock": "anthropic.claude-haiku-4-5-20251001-v1:0",
         "custom": "gpt-4o-mini",
+        # Kept in step with src.cloud_providers.OPENROUTER_DEFAULT_MODEL
+        # (asserted by tests/test_openrouter_provider.py).
+        "openrouter": "google/gemini-2.5-flash",
     }
 
     def get_cloud_provider(self) -> str:

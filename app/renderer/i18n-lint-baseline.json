@@ -1,5 +1,5 @@
 {
-  "total": 241,
+  "total": 204,
   "files": {
     "renderer/src/components/ChatHistoryRow.tsx": 5,
     "renderer/src/components/CommandPalette.tsx": 16,
@@ -17,7 +17,7 @@
     "renderer/src/components/ui/dialog.tsx": 1,
     "renderer/src/routes/ChatConversation.tsx": 12,
     "renderer/src/routes/OrgShared.tsx": 20,
-    "renderer/src/routes/Setup.tsx": 40,
+    "renderer/src/routes/Setup.tsx": 3,
     "renderer/src/routes/settings/OrganisationTab.tsx": 17,
     "renderer/src/routes/settings/model-card.tsx": 20
   }

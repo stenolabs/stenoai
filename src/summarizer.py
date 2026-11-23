@@ -243,9 +243,15 @@ class OllamaSummarizer:
                     from openai import OpenAI
                 except ImportError:
                     raise ImportError("openai package is required for cloud mode. pip install openai")
-                base_url = cloud_api_url if self.cloud_provider == "custom" and cloud_api_url else None
-                self.cloud_client = OpenAI(api_key=cloud_api_key, base_url=base_url)
-                logger.info(f"Cloud provider initialized: model={self.model_name}")
+                # openai, custom (user base URL) and openrouter (OpenRouter's
+                # OpenAI-compatible gateway + its attribution headers).
+                from .cloud_providers import openai_client_kwargs
+                self.cloud_client = OpenAI(
+                    **openai_client_kwargs(self.cloud_provider, cloud_api_key, cloud_api_url)
+                )
+                logger.info(
+                    f"Cloud provider initialized: provider={self.cloud_provider} model={self.model_name}"
+                )
 
         elif self.ai_provider == "remote":
             # Remote mode: connect to user's Ollama on LAN
