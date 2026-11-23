@@ -11,6 +11,15 @@
 .ent-compare td { width: 41%; font-size: 14px; line-height: 1.65; color: var(--fg-2); }
 .ent-compare td + td { padding-left: 28px; padding-right: 0; border-left: 1px solid var(--border-strong); color: var(--fg-1); }
 
+/* With your Enterprise deployment: the Enterprise edition card, full width, one line per item. */
+.ent-deploy { margin-top: 40px; }
+.ent-deploy-lead { font-size: 14px; line-height: 1.7; color: var(--fg-2); margin-top: 14px; max-width: 70ch; }
+.ent-deploy ul { margin-bottom: 22px; }
+.ent-deploy li { display: grid; grid-template-columns: minmax(0, 1fr) 2fr; gap: 12px 28px; }
+.ent-deploy li strong { font-weight: 500; color: var(--fg-1); }
+.ent-deploy-more { font-size: 13px; color: var(--fg-1); }
+@media (max-width: 767px) { .ent-deploy li { grid-template-columns: 1fr; gap: 4px; } }
+
 /* Diagram: lines and boxes in the site's thin line style. */
 .ent-flow { padding: 36px 32px 40px; }
 .ent-flow svg { display: block; width: 100%; height: auto; overflow: visible; }

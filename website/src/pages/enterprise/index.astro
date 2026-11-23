@@ -45,6 +45,17 @@ const rows = [
   { h: 'The app', c: 'Free. MIT licence. No usage restrictions.', e: 'The same MIT-licensed app. Your security team can read and build the source.' },
 ];
 
+// Owner confirmed 23 Nov 2026 (StenoAI Deployment Deck, slides 3, 4, 12-15, 35-38). Not in the public repo: see NOTES.
+const deployment = [
+  { h: 'Single sign-on', b: 'SAML 2.0 or OpenID Connect, with your own MFA.' },
+  { h: 'Provisioning', b: 'SCIM 2.0, so joiners and leavers follow your process.' },
+  { h: 'Audit events', b: 'Sent to your SIEM.' },
+  { h: 'Retention and export', b: 'Central policy, set once in your adapter and enforced on the server.' },
+  { h: 'Storage under your keys', b: 'Shared notes sit in a bucket under your own keys.' },
+  { h: 'Admin console', b: 'Runs inside your network.' },
+  { h: 'Support', b: 'A named contact and agreed response times.' },
+];
+
 const steps = [
   { name: 'Brief', body: 'A briefing for your team and security lead.' },
   { name: 'Pilot', body: 'A pilot on your own meetings and hardware.' },
@@ -167,6 +178,15 @@ const flowAlt = 'Diagram. Endpoints record and transcribe on each laptop. They c
             ))}
           </tbody>
         </table>
+        <div class="mission-edition mission-edition-featured ent-deploy">
+          <p class="mission-eyebrow">Organisation layer</p>
+          <h3>With your Enterprise deployment</h3>
+          <p class="ent-deploy-lead">The organisation layer is hosted by you and set up with your deployment. Your security team reviews it in the Assure step.</p>
+          <ul>
+            {deployment.map((d) => <li><strong>{d.h}</strong><span>{d.b}</span></li>)}
+          </ul>
+          <p class="ent-deploy-more">More is on the way. We share the roadmap in your briefing.</p>
+        </div>
         <div class="mission-actions ent-adds-actions">
           <a href={CTA_BRIEFING} data-track="demo_request" data-location="enterprise_adds" class="mission-button mission-button-dark">Request a briefing <ArrowUpRight size={16} aria-hidden="true" /></a>
           <a href="/download/?src=enterprise_adds" class="mission-text-link">Try Community on one laptop <ArrowRight size={16} aria-hidden="true" /></a>
