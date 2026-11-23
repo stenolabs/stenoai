@@ -9317,22 +9317,21 @@ function getMcpActionsService() {
 // A local MCP server runs a program with the user's permissions, so adding
 // one is confirmed in a native dialog the renderer cannot draw or click: a
 // compromised page cannot turn "add server" into running a program.
-async function confirmLocalCommand({ name, command, args, envKeys }) {
+async function confirmLocalCommand({ name, command, args, env }) {
   // An e2e seam only: a packaged build ignores it whatever it is started with
   // (ALLOW_E2E_PATH_SEAMS), so an env var can never skip this confirmation.
   if (ALLOW_E2E_PATH_SEAMS && process.env.STENOAI_E2E_CONFIRM_LOCAL_COMMAND === '1') return true;
-  const quote = (a) => (/\s/.test(a) ? JSON.stringify(a) : a);
-  const line = [command, ...args].map(quote).join(' ');
-  const shown = line.length > 600 ? `${line.slice(0, 599)}…` : line;
+  // Every argument and each variable's value, nothing truncated away silently
+  // (local-command-confirm.js): what the user confirms is what will run.
+  const { message, detail } = require('./local-command-confirm').describeLocalCommand({ name, command, args, env });
   const options = {
     type: 'warning',
     buttons: ['Cancel', 'Run on this computer'],
     defaultId: 0,
     cancelId: 0,
     noLink: true,
-    message: name ? `Add "${name}" as a local MCP server?` : 'Add a local MCP server?',
-    detail: `Steno will run this program on this computer, with your permissions, whenever it lists or uses its tools:\n\n${shown}`
-      + `${envKeys.length ? `\n\nEnvironment variables: ${envKeys.join(', ')}` : ''}\n\nOnly add programs you trust.`,
+    message,
+    detail,
   };
   const { response } = mainWindow && !mainWindow.isDestroyed()
     ? await dialog.showMessageBox(mainWindow, options)

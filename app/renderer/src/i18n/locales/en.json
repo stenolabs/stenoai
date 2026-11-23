@@ -980,6 +980,7 @@
   "actions.error.emailNotAllowed": "Your organisation has turned off email drafts.",
   "actions.error.invalidCommand": "Check the command and its arguments.",
   "actions.error.invalidEnv": "Check the environment variables: one KEY=value per line.",
+  "actions.error.envNotAllowed": "Variables that change how programs load, such as NODE_OPTIONS, PYTHONPATH or LD_PRELOAD, can't be set for a local server.",
   "actions.error.commandNotFound": "Steno couldn't find that command. Use its full path, or check that it's installed.",
   "actions.error.localTimeout": "The command didn't respond in time. Try again.",
   "actions.error.localFailed": "The command stopped or couldn't start. Check it in a terminal, then try again.",

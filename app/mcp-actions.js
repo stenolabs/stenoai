@@ -38,7 +38,7 @@ const nodePath = require('node:path');
 
 const oauth = require('./mcp-oauth');
 const remote = require('./mcp-remote-client');
-const { createConnectionsStore, normalizeEndpointUrl, normalizeHeaderName, normalizeLocalCommand } = require('./mcp-connections');
+const { createConnectionsStore, normalizeEndpointUrl, normalizeHeaderName, normalizeLocalCommand, cleanName } = require('./mcp-connections');
 const email = require('./mcp-email');
 const { createStdioPool } = require('./mcp-stdio-client');
 const { createSecretStore } = require('./mcp-secret-store');
@@ -440,6 +440,13 @@ function createActionsService({
     try {
       spec = normalizeLocalCommand({ command, args, env });
     } catch (e) {
+      if (e.code === 'env-not-allowed') {
+        // Validated here, in main, whatever the renderer checked: these
+        // variables make a runtime load or run code of their own.
+        const err = new ActionError('env-not-allowed', `${e.variable} cannot be set for a local server`);
+        err.variable = e.variable;
+        throw err;
+      }
       throw new ActionError(e.code || 'invalid-command', 'Check the command');
     }
     const p = await assertAllowed();
@@ -447,9 +454,12 @@ function createActionsService({
     const envKeys = Object.keys(spec.env);
     if (envKeys.length && !secrets.available()) throw new ActionError('secure-storage', 'Could not store the variables securely');
     if (typeof confirmLocalCommand !== 'function') throw new ActionError('local-not-allowed', 'Local commands are not available');
-    const confirmed = await confirmLocalCommand({ name: typeof name === 'string' ? name : '', command: spec.command, args: spec.args, envKeys });
+    // The dialog shows the same cleaned name the connection will carry, and
+    // the variable values, not only their names (local-command-confirm.js).
+    const shownName = cleanName(name, '');
+    const confirmed = await confirmLocalCommand({ name: shownName, command: spec.command, args: spec.args, envKeys, env: spec.env });
     if (confirmed !== true) throw new ActionError('not-confirmed', 'Not added');
-    const connection = connections.addLocal({ name, command: spec.command, args: spec.args, envKeys });
+    const connection = connections.addLocal({ name: shownName, command: spec.command, args: spec.args, envKeys });
     if (envKeys.length) {
       try {
         secrets.save(secretKey(connection.id), localSecretOrigin(connection), { type: 'env', env: spec.env });

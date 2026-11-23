@@ -18,6 +18,8 @@ export function actionErrorMessage(error: unknown): string {
       return t('actions.error.invalidCommand');
     case 'invalid-env':
       return t('actions.error.invalidEnv');
+    case 'env-not-allowed':
+      return t('actions.error.envNotAllowed');
     case 'command-not-found':
       return t('actions.error.commandNotFound');
     case 'local-timeout':

@@ -75,13 +75,48 @@ const MAX_ENV_VALUE = 8192;
 const ENV_NAME_RE = /^[A-Za-z_][A-Za-z0-9_]{0,127}$/;
 
 /**
+ * Variables that make a runtime, loader or tool run code of their own, or
+ * change where it loads code from. A local MCP server's variables are stored
+ * encrypted and only their names are listed afterwards, so one of these could
+ * turn a harmless-looking command into running something else; they are
+ * refused outright. Names are compared case-insensitively, since Windows
+ * environments are.
+ */
+const BLOCKED_ENV_EXACT = new Set([
+  // Node and npm
+  'NODE_OPTIONS', 'NODE_EXTRA_CA_CERTS', 'NODE_PATH', 'NODE_REPL_EXTERNAL_MODULE',
+  // Shells
+  'BASH_ENV', 'ENV', 'PROMPT_COMMAND', 'ZDOTDIR', 'SHELLOPTS', 'PS4',
+  // Perl, Ruby, Java
+  'PERL5OPT', 'PERL5LIB', 'PERLLIB', 'PERL5DB', 'RUBYOPT', 'RUBYLIB',
+  'JAVA_TOOL_OPTIONS', '_JAVA_OPTIONS', 'JDK_JAVA_OPTIONS', 'CLASSPATH',
+  // git: commands it runs, and config that can set them
+  'GIT_SSH', 'GIT_SSH_COMMAND', 'GIT_PROXY_COMMAND', 'GIT_EXEC_PATH', 'GIT_ASKPASS',
+  'GIT_EDITOR', 'GIT_SEQUENCE_EDITOR', 'GIT_PAGER', 'GIT_EXTERNAL_DIFF', 'GIT_TEMPLATE_DIR',
+  'GIT_CONFIG_PARAMETERS', 'GIT_CONFIG_GLOBAL', 'GIT_CONFIG_SYSTEM', 'GIT_CONFIG_COUNT',
+  // ssh: programs it runs for a passphrase
+  'SSH_ASKPASS', 'SSH_ASKPASS_REQUIRE',
+  // Windows: the command interpreter itself
+  'COMSPEC',
+].map((n) => n.toUpperCase()));
+const BLOCKED_ENV_PREFIX = ['NPM_CONFIG_', 'LD_', 'DYLD_', 'PYTHON', 'GIT_CONFIG_KEY_', 'GIT_CONFIG_VALUE_'];
+
+/** Whether an environment variable name is refused for a local server (see BLOCKED_ENV_EXACT). */
+function isBlockedEnvName(name) {
+  const n = String(name || '').toUpperCase();
+  return BLOCKED_ENV_EXACT.has(n) || BLOCKED_ENV_PREFIX.some((p) => n.startsWith(p));
+}
+
+/**
  * Validate a local command server: { command, args, env }. Throws an Error
- * with code 'invalid-command' | 'invalid-args' | 'invalid-env'.
+ * with code 'invalid-command' | 'invalid-args' | 'invalid-env' |
+ * 'env-not-allowed' (e.variable names the refused variable).
  */
 function normalizeLocalCommand({ command, args, env } = {}) {
-  const fail = (code) => {
+  const fail = (code, extra) => {
     const e = new Error(code);
     e.code = code;
+    Object.assign(e, extra);
     throw e;
   };
   const cmd = typeof command === 'string' ? command.trim() : '';
@@ -96,6 +131,7 @@ function normalizeLocalCommand({ command, args, env } = {}) {
   const outEnv = {};
   for (const [k, v] of Object.entries(vars)) {
     if (!ENV_NAME_RE.test(k) || typeof v !== 'string' || v.length > MAX_ENV_VALUE || v.includes('\0')) fail('invalid-env');
+    if (isBlockedEnvName(k)) fail('env-not-allowed', { variable: k });
     outEnv[k] = v;
   }
   return { command: cmd, args: list.slice(), env: outEnv };
@@ -243,4 +279,5 @@ function createConnectionsStore({ file, fs = nodeFs, path = nodePath, now = () =
 
 module.exports = {
   createConnectionsStore, normalizeEndpointUrl, normalizeHeaderName, normalizeLocalCommand, isPrivateHost, AUTH_TYPES, ENV_NAME_RE,
+  cleanName, isBlockedEnvName,
 };

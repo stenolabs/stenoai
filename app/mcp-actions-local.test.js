@@ -180,7 +180,8 @@ test('local command: confirmed natively, tools listed, env encrypted, approve ru
   const svc = service({ confirmLocalCommand: async (what) => { confirmations.push(what); return true; } });
   const c = await svc.addLocal({ name: 'Notebook', command: process.execPath, args: [FIXTURE], env: { MOCK_SECRET: 'sekrit-value' } });
   assert.equal(confirmations.length, 1);
-  assert.deepEqual(confirmations[0], { name: 'Notebook', command: process.execPath, args: [FIXTURE], envKeys: ['MOCK_SECRET'] });
+  // The dialog gets the values too, so it can show KEY=value, not just names.
+  assert.deepEqual(confirmations[0], { name: 'Notebook', command: process.execPath, args: [FIXTURE], envKeys: ['MOCK_SECRET'], env: { MOCK_SECRET: 'sekrit-value' } });
   assert.equal(c.transport, 'stdio');
   assert.equal(c.locality, 'device');
   assert.equal(c.status, 'ok');
@@ -213,6 +214,24 @@ test('local command: confirmed natively, tools listed, env encrypted, approve ru
   svc2.remove(c.id);
   assert.deepEqual(svc2._stores.local.running(), []);
   assert.equal(svc2._stores.secrets.load(`conn:${c.id}`, `local:${c.id}`), null);
+});
+
+test('local command: loader variables are refused in main before any dialog, and the name is cleaned', async () => {
+  const confirmations = [];
+  const svc = service({ confirmLocalCommand: async (what) => { confirmations.push(what); return true; } });
+  for (const variable of ['NODE_OPTIONS', 'PYTHONPATH', 'ld_preload', 'npm_config_registry', 'GIT_SSH_COMMAND', 'DYLD_INSERT_LIBRARIES']) {
+    await assert.rejects(
+      svc.addLocal({ command: process.execPath, args: [FIXTURE], env: { [variable]: 'x' } }),
+      (e) => e.code === 'env-not-allowed' && e.variable === variable,
+      variable,
+    );
+  }
+  assert.equal(confirmations.length, 0, 'nothing reached the dialog');
+  assert.equal((await svc.list()).connections.filter((c) => !c.builtin).length, 0);
+
+  const c = await svc.addLocal({ name: ' Note\u0000book\n ', command: process.execPath, args: [FIXTURE] });
+  assert.equal(confirmations[0].name, 'Notebook');
+  assert.equal(c.name, 'Notebook');
 });
 
 test('local command: declined or unavailable confirmation adds nothing', async () => {
