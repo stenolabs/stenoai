@@ -107,6 +107,10 @@ test('guided cloud keys: provider cards, key pages, detection and a live test', 
   }
 
   // Begin setup is shut until a key connects.
+  // Clicking anywhere on a provider card selects it, not just its header.
+  await page.locator('[data-setup-provider="openai"] ol').click();
+  await expect(page.locator('[data-setup-provider="openai"]')).toHaveAttribute('data-selected', '');
+
   const begin = page.getByRole('button', { name: 'Begin setup' });
   await expect(begin).toBeDisabled();
   await expect(page.getByText('Connect your API key to continue.')).toBeVisible();

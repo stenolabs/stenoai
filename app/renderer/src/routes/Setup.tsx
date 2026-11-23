@@ -1127,8 +1127,15 @@ export function Setup() {
                             key={p}
                             data-setup-provider={p}
                             data-selected={selected ? '' : undefined}
+                            // The whole card selects the provider (the header
+                            // button stays the keyboard/screen-reader control).
+                            onClick={() => {
+                              setCloudProviderChoice(p);
+                              setOtherProvidersOpen(false);
+                            }}
                             className={cn(
-                              'flex flex-col rounded-[14px] border p-4',
+                              'flex cursor-pointer select-none flex-col rounded-[14px] border p-4',
+                              !selected && 'hover:border-[color:var(--border-strong,var(--fg-muted))]',
                               'motion-safe:transition-[box-shadow,border-color] motion-safe:duration-200',
                               selected ? 'border-foreground' : 'border-[color:var(--border-subtle)]',
                             )}
