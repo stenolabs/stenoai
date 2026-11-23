@@ -6,6 +6,12 @@ import * as React from 'react';
 // One character per pixel; '.' is transparent.
 const FRAMES: string[][] = [
   [
+    '................KK...........',
+    '...............KTTK..........',
+    '..............KRKK...........',
+    '.............KRRrK...........',
+    '............KRRRRrK..........',
+    '...........KTTTTTTTK.........',
     '............KK.KK............',
     '...........KeEKeEK...........',
     '...........KEEKEEK...........',
@@ -31,6 +37,12 @@ const FRAMES: string[][] = [
     '..............K..............',
   ],
   [
+    '................KK...........',
+    '...............KTTK..........',
+    '..............KRKK...........',
+    '.............KRRrK...........',
+    '............KRRRRrK..........',
+    '...........KTTTTTTTK.........',
     '............KK.KK............',
     '...........KeEKeEK...........',
     '...........KEEKEEK...........',
@@ -67,6 +79,9 @@ const PALETTE: Record<string, string> = {
   B: '#2BB3A3', // body
   h: '#7FE3D4', // body highlight
   b: '#167467', // body segment
+  R: '#D2423A', // Christmas hat
+  r: '#A8302A', // hat shade
+  T: '#FFFFFF', // hat trim and pompom
 };
 
 const PIXEL = 4;
