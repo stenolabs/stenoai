@@ -173,6 +173,7 @@ export function Sidebar({
   const updateIcon = useUpdateFolderIcon();
 
   const isHomeActive = currentRoute === '/' || currentRoute === '';
+  const isCookbooksActive = currentRoute === '/cookbooks' || currentRoute.startsWith('/cookbooks?');
   const isAllMeetingsActive = currentRoute === '/meetings';
   // Match /chat as well as any /chat/<id> conversation route — the same Chat
   // tab item should stay highlighted when drilling into a session.
@@ -411,8 +412,8 @@ export function Sidebar({
 
           <button
             type="button"
-            className={cn('sb-row', currentRoute === '/cookbooks' && 'active')}
-            aria-current={currentRoute === '/cookbooks' ? 'page' : undefined}
+            className={cn('sb-row', isCookbooksActive && 'active')}
+            aria-current={isCookbooksActive ? 'page' : undefined}
             onClick={() => navigate('/cookbooks')}
           >
             <ChefHat className="size-[14px]" />

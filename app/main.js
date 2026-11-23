@@ -77,6 +77,7 @@ const { registerObsidianSync } = require('./obsidian-sync');
 const { registerObsidianIpc } = require('./obsidian-ipc');
 const { registerStenoMcpIpc } = require('./steno-mcp-ipc');
 const { registerMcpActionsIpc } = require('./mcp-actions-ipc');
+const { registerRecipesIpc } = require('./recipes-ipc');
 const { createActionsService } = require('./mcp-actions');
 const { getLaunchSpec: getStenoMcpLaunchSpec } = require('./steno-mcp-install');
 const { ensureLauncher: ensureStenoMcpLauncherFile } = require('./steno-mcp-launcher');
@@ -9063,6 +9064,8 @@ registerFoldersIpc({
 });
 
 // Obsidian vault sync IPC (#413): config toggle + vault picker + conflicts read.
+registerRecipesIpc({ ipcMain, recipesPath: () => path.join(getUserDataDir(), 'recipes.json') });
+
 registerObsidianIpc({
   ipcMain,
   runPythonScript,

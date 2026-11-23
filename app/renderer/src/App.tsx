@@ -219,7 +219,7 @@ export function App() {
   // sub-route /chat/<id> (conversation view) also owns its own composer.
   // Note: no /recording exclusion — recording coexists with the app, and
   // during it PrimaryDock renders the Ask bar next to the pill.
-  const isChatRoute = route === '/chat' || route.startsWith('/chat/');
+  const isChatRoute = route === '/chat' || route.startsWith('/chat/') || route.startsWith('/chat?');
   // App-chrome routes where a chat composer never belongs. When idle the
   // AskBar self-hides there anyway (no active meeting), but the recording
   // composer renders even without one — without this exclusion it
@@ -228,6 +228,7 @@ export function App() {
   const isChromeRoute =
     route === '/connect' ||
     route === '/cookbooks' ||
+    route.startsWith('/cookbooks?') ||
     route === '/settings' ||
     route.startsWith('/settings?') ||
     route === '/setup' ||
@@ -344,9 +345,10 @@ function RouteView({ route }: { route: string }) {
   if (route === '/settings' || route.startsWith('/settings?')) return <Settings />;
   if (route === '/setup') return <Setup />;
   if (route === '/recording') return <Recording />;
-  if (route === '/chat') return <Chat />;
+  // ?recipe=<id> deep links (Cookbooks → Recipes → Run) carry a query.
+  if (route === '/chat' || route.startsWith('/chat?')) return <Chat />;
   if (route === '/connect' || route === '/agents') return <Connect />;
-  if (route === '/cookbooks') return <Cookbooks />;
+  if (route === '/cookbooks' || route.startsWith('/cookbooks?')) return <Cookbooks />;
   if (route.startsWith('/chat/')) {
     const sessionId = safeDecode(route.slice('/chat/'.length));
     return <ChatConversation sessionId={sessionId} />;

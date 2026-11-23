@@ -24,6 +24,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { CookbookCover, CATEGORY_GLYPHS, type CoverTone } from '@/components/cookbooks/CookbookCover';
 import { CookbookEditor } from '@/routes/cookbooks/CookbookEditor';
+import { RecipesPanel } from '@/routes/cookbooks/RecipesPanel';
 import { useTemplates } from '@/hooks/useTemplates';
 import {
   COOKBOOK_CATEGORIES,
@@ -35,8 +36,9 @@ import {
   type Cookbook,
   type CookbookCategory,
 } from '@/lib/cookbooks';
-import type { Template } from '@/lib/ipc';
+import type { Template, UserRecipe } from '@/lib/ipc';
 import { ipc } from '@/lib/ipc';
+import { getRouteParam, useRoute } from '@/lib/router';
 import { cn } from '@/lib/utils';
 import { t } from '@/i18n';
 
@@ -55,7 +57,7 @@ const VIEW_KEY = 'steno-cookbooks-view';
 
 const VIEWS = ['grid', 'list'] as const;
 type View = (typeof VIEWS)[number];
-type Tab = 'discover' | 'mine';
+type Tab = 'discover' | 'mine' | 'recipes';
 
 const BLURBS: Record<CookbookCategory, () => string> = {
   briefings: () => t('cookbooks.categoryBlurb.briefings'),
@@ -92,7 +94,12 @@ const FOCUS_RING =
 export function Cookbooks() {
   const { templates, defaultId, isLoading } = useTemplates();
   const [editing, setEditing] = React.useState<Partial<Template> | null>(null);
-  const [tab, setTab] = React.useState<Tab>('discover');
+  const route = useRoute();
+  // /cookbooks?tab=recipes (the chat `/` menu's "Manage recipes") opens Recipes.
+  const [tab, setTab] = React.useState<Tab>(() =>
+    getRouteParam(route, 'tab') === 'recipes' ? 'recipes' : 'discover',
+  );
+  const [editingRecipe, setEditingRecipe] = React.useState<Partial<UserRecipe> | null>(null);
   const [query, setQuery] = React.useState('');
   const [category, setCategory] = React.useState<CookbookCategory | 'all'>('all');
   const [view, setViewState] = React.useState<View>(() =>
@@ -160,7 +167,10 @@ export function Cookbooks() {
                   {t('cookbooks.subtitle')}
                 </p>
               </div>
-              <Button onClick={() => open({})} className={cn('h-9 rounded-full pl-4 pr-3.5', FOCUS_RING)}>
+              <Button
+                onClick={() => (tab === 'recipes' ? setEditingRecipe({}) : open({}))}
+                className={cn('h-9 rounded-full pl-4 pr-3.5', FOCUS_RING)}
+              >
                 {t('cookbooks.create')}
                 <Plus />
               </Button>
@@ -191,15 +201,18 @@ export function Cookbooks() {
                       </span>
                     )}
                   </UnderlineTab>
+                  <UnderlineTab value="recipes">{t('cookbooks.tabs.recipes')}</UnderlineTab>
                 </TabsList>
-                <Toolbar
-                  query={query}
-                  onQuery={setQuery}
-                  category={category}
-                  onCategory={setCategory}
-                  view={view}
-                  onView={setView}
-                />
+                {tab !== 'recipes' && (
+                  <Toolbar
+                    query={query}
+                    onQuery={setQuery}
+                    category={category}
+                    onCategory={setCategory}
+                    view={view}
+                    onView={setView}
+                  />
+                )}
               </div>
 
               <TabsContent value="discover" className="mt-0">
@@ -242,6 +255,10 @@ export function Cookbooks() {
                     />
                   </section>
                 )}
+              </TabsContent>
+
+              <TabsContent value="recipes" className="mt-0">
+                <RecipesPanel editing={editingRecipe} onEdit={setEditingRecipe} />
               </TabsContent>
             </Tabs>
           </div>

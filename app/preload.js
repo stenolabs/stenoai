@@ -372,6 +372,13 @@ const stenoai = {
       invoke('save-diagnostics', defaultFilename, content),
   },
 
+  // Recipes: the user's saved chat prompts (built-ins live in the renderer).
+  recipes: {
+    list: () => invoke('recipes-list'),
+    save: (recipe) => invoke('recipes-save', recipe),
+    remove: (id) => invoke('recipes-delete', id),
+  },
+
   // Connect page: the Steno MCP server's install surfaces + scope settings.
   connect: {
     getInfo: () => invoke('connect-get-info'),

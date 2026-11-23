@@ -15,7 +15,8 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover';
-import { PRESETS, PresetGlyph } from '@/lib/chatPresets';
+import { RecipeMenu } from '@/components/RecipeMenu';
+import { useRecipes } from '@/hooks/useRecipes';
 import {
   useAllChatSessions,
   useChatSessions,
@@ -59,6 +60,7 @@ export function ChatConversation({ sessionId }: ChatConversationProps) {
   const [activeStreamId, setActiveStreamId] = React.useState<string | null>(null);
   const [historyOpen, setHistoryOpen] = React.useState(false);
   const [presetsOpen, setPresetsOpen] = React.useState(false);
+  const recipes = useRecipes();
   // Folder scope persists for the lifetime of the conversation page mount.
   // The entry page's scope is handed off via consumePendingNewChat; later
   // turns in the same conversation can be re-scoped from this composer.
@@ -550,37 +552,14 @@ export function ChatConversation({ sessionId }: ChatConversationProps) {
               className="w-[var(--radix-popover-trigger-width)] max-w-none p-1"
               onOpenAutoFocus={(e) => e.preventDefault()}
             >
-              <div
-                className="px-2 pb-1 pt-0.5 text-[11px] font-medium"
-                style={{ color: 'var(--fg-muted)' }}
-              >
-                Presets
-              </div>
-              <div className="flex flex-col">
-                {PRESETS.map((p) => (
-                  <button
-                    key={p.label}
-                    type="button"
-                    onClick={() => {
-                      setInput(p.prompt);
-                      setPresetsOpen(false);
-                      inputRef.current?.focus();
-                    }}
-                    className="flex flex-col items-start gap-0.5 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-[color:var(--surface-hover)]"
-                  >
-                    <div
-                      className="flex items-center gap-2 text-[13px]"
-                      style={{ color: 'var(--fg-1)' }}
-                    >
-                      <PresetGlyph />
-                      {p.label}
-                    </div>
-                    <div className="pl-[26px] text-[12px]" style={{ color: 'var(--fg-2)' }}>
-                      {p.description}
-                    </div>
-                  </button>
-                ))}
-              </div>
+              <RecipeMenu
+                recipes={recipes}
+                onPick={(r) => {
+                  setInput(r.prompt);
+                  setPresetsOpen(false);
+                  inputRef.current?.focus();
+                }}
+              />
             </PopoverContent>
           </Popover>
         </div>

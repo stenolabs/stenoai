@@ -21,9 +21,11 @@ import { useGlobalStreaming } from '@/hooks/useStreamingQuery';
 import { useAiProvider } from '@/hooks/useAi';
 import { useUserName } from '@/hooks/useSettings';
 import { useOrgSession } from '@/hooks/useOrg';
-import { navigate } from '@/lib/router';
 import { GLOBAL_SCOPE, bucketKey, deriveSessionName, toBucketLabel, formatActiveModel, chatProviderReady } from '@/lib/chat';
-import { PRESETS, PresetGlyph, PRESET_COLORS } from '@/lib/chatPresets';
+import { BUILTIN_RECIPES, PresetGlyph, PRESET_COLORS, type Recipe } from '@/lib/recipes';
+import { RecipeMenu } from '@/components/RecipeMenu';
+import { useRecipes } from '@/hooks/useRecipes';
+import { getRouteParam, navigate, useRoute } from '@/lib/router';
 import { t } from '@/i18n';
 
 function TypewriterPlaceholder({ index, setIndex }: { index: number, setIndex: React.Dispatch<React.SetStateAction<number>> }) {
@@ -41,13 +43,13 @@ function TypewriterPlaceholder({ index, setIndex }: { index: number, setIndex: R
   React.useEffect(() => {
     if (prefersReducedMotion) return;
     let timeout: ReturnType<typeof setTimeout>;
-    const currentFullText = PRESETS[index].label;
+    const currentFullText = BUILTIN_RECIPES[index].label;
 
     if (isDeleting) {
       if (text === '') {
         timeout = setTimeout(() => {
           setIsDeleting(false);
-          setIndex((i) => (i + 1) % PRESETS.length);
+          setIndex((i) => (i + 1) % BUILTIN_RECIPES.length);
         }, 400);
       } else {
         timeout = setTimeout(() => {
@@ -75,7 +77,7 @@ function TypewriterPlaceholder({ index, setIndex }: { index: number, setIndex: R
     <div aria-hidden="true" className="pointer-events-none absolute left-3 top-[10px] flex items-center gap-2">
       <PresetGlyph color={presetColor} size={22} />
       <span style={{ color: 'var(--fg-muted)', fontSize: 16 }}>
-        {prefersReducedMotion ? PRESETS[index].label : text}
+        {prefersReducedMotion ? BUILTIN_RECIPES[index].label : text}
         {!prefersReducedMotion && (
           <>
             <style>{`
@@ -117,6 +119,7 @@ export function Chat() {
       ? orgSession.data.name.split(' ')[0]
       : userName.data;
 
+  const recipes = useRecipes();
   const [input, setInput] = React.useState('');
   const [presetsOpen, setPresetsOpen] = React.useState(false);
   const [isFocused, setIsFocused] = React.useState(false);
@@ -225,6 +228,18 @@ export function Chat() {
     }
   };
 
+  // Cookbooks → Recipes → Run lands here as /chat?recipe=<id>: fill the
+  // composer with that recipe's prompt for the user to review and send.
+  const route = useRoute();
+  const recipeParam = getRouteParam(route, 'recipe');
+  const recipeToFill = recipeParam ? recipes.find((r) => r.id === recipeParam) : undefined;
+  React.useEffect(() => {
+    if (!recipeToFill) return;
+    setInput(recipeToFill.prompt);
+    inputRef.current?.focus();
+    navigate('/chat');
+  }, [recipeToFill]);
+
   const onPickPreset = (prompt: string) => {
     setInput(prompt);
     setPresetsOpen(false);
@@ -302,23 +317,23 @@ export function Chat() {
                     if (presetsOpen) {
                       if (e.key === 'ArrowDown') {
                         e.preventDefault();
-                        setSelectedPresetIndex((prev) => (prev + 1) % PRESETS.length);
+                        setSelectedPresetIndex((prev) => (prev + 1) % recipes.length);
                         return;
                       }
                       if (e.key === 'ArrowUp') {
                         e.preventDefault();
-                        setSelectedPresetIndex((prev) => (prev - 1 + PRESETS.length) % PRESETS.length);
+                        setSelectedPresetIndex((prev) => (prev - 1 + recipes.length) % recipes.length);
                         return;
                       }
                       if (e.key === 'Enter' && input === '') {
                         e.preventDefault();
-                        onPickPreset(PRESETS[selectedPresetIndex].prompt);
+                        onPickPreset(recipes[selectedPresetIndex].prompt);
                         return;
                       }
                     }
                     if (e.key === 'Tab' && input === '' && ready) {
                       e.preventDefault();
-                      setInput(PRESETS[suggestedIndex].prompt);
+                      setInput(BUILTIN_RECIPES[suggestedIndex].prompt);
                       setPresetsOpen(false);
                       return;
                     }
@@ -334,7 +349,7 @@ export function Chat() {
                     }
                   }}
                   disabled={!ready}
-                  placeholder={ready ? (isFocused && !input && !presetsOpen ? `/ ${PRESETS[suggestedIndex].label}` : '') : t('chat.home.providerRequiredPlaceholder')}
+                  placeholder={ready ? (isFocused && !input && !presetsOpen ? `/ ${BUILTIN_RECIPES[suggestedIndex].label}` : '') : t('chat.home.providerRequiredPlaceholder')}
                   className="block w-full bg-transparent px-3 pb-4 pt-2.5 outline-none disabled:cursor-not-allowed placeholder:text-[color:var(--fg-muted)]"
                   style={{ fontSize: 16, color: 'var(--fg-1)', fontFamily: 'var(--font-sans)', fontWeight: 400 }}
                 />
@@ -386,30 +401,12 @@ export function Chat() {
             // user is mid-typing and Enter/Esc need to keep working there.
             onOpenAutoFocus={(e) => e.preventDefault()}
           >
-            <div className="px-2 pb-1 pt-0.5 text-[11px] font-medium" style={{ color: 'var(--fg-muted)' }}>
-              {t('chat.home.skills')}
-            </div>
-            <div className="flex flex-col">
-              {PRESETS.map((p, idx) => {
-                const presetColor = PRESET_COLORS[idx % PRESET_COLORS.length];
-                return (
-                <button
-                  key={p.label}
-                  type="button"
-                  onMouseEnter={() => setSelectedPresetIndex(idx)}
-                  onClick={() => onPickPreset(p.prompt)}
-                  className={`flex flex-col items-start gap-0.5 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-[color:var(--surface-hover)] ${idx === selectedPresetIndex ? 'bg-[color:var(--surface-hover)]' : ''}`}
-                >
-                  <div className="flex items-center gap-2 text-[13px]" style={{ color: 'var(--fg-1)' }}>
-                    <PresetGlyph color={presetColor} />
-                    {p.label}
-                  </div>
-                  <div className="pl-[26px] text-[12px]" style={{ color: 'var(--fg-2)' }}>
-                    {p.description}
-                  </div>
-                </button>
-              )})}
-            </div>
+            <RecipeMenu
+              recipes={recipes}
+              selectedIndex={selectedPresetIndex}
+              onHover={setSelectedPresetIndex}
+              onPick={(r: Recipe) => onPickPreset(r.prompt)}
+            />
           </PopoverContent>
         </Popover>
 

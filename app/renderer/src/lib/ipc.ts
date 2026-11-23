@@ -910,6 +910,21 @@ export type PickStorageFolderResponse = Result<{ folderPath: string }>;
 /** Steno MCP server (Connect page). */
 export type ConnectClientId = 'claudeDesktop' | 'claudeCode' | 'codex' | 'cursor';
 export type ConnectSkillAgentId = 'claudeCode' | 'codex';
+/** A recipe the user made (built-ins live in lib/recipes.ts). */
+export interface UserRecipe {
+  id: string;
+  name: string;
+  description: string;
+  prompt: string;
+  updatedAt: number;
+}
+export interface RecipeInput {
+  id?: string;
+  name: string;
+  description?: string;
+  prompt: string;
+}
+
 export type ConnectInfoResponse = Result<{
   serverAvailable: boolean;
   claudeBundleAvailable: boolean;
@@ -1694,6 +1709,12 @@ export interface StenoaiBridge {
       [defaultFilename: string, content: string],
       Result<{ path: string }>
     >;
+  };
+
+  recipes: {
+    list: RequestFn<[], Result<{ recipes: UserRecipe[] }>>;
+    save: RequestFn<[recipe: RecipeInput], Result<{ recipe: UserRecipe }>>;
+    remove: RequestFn<[id: string], Result<{ deleted: boolean }>>;
   };
 
   connect: {

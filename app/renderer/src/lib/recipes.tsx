@@ -1,18 +1,24 @@
 import { t } from '@/i18n';
 
-// Templated preset prompts surfaced two ways:
-//   1. Chip row at the bottom of the /chat entry page (always visible).
-//   2. Popover triggered by typing '/' as the first character in either
+// Recipes: saved prompts the user runs in chat. Surfaced three ways:
+//   1. The popover opened by typing '/' as the first character in either chat
 //      composer (entry page or /chat/<id> conversation page).
-// Edit the list here; both call sites pick it up automatically.
-export interface ChatPreset {
+//   2. The typewriter suggestion on the /chat entry page (built-ins only).
+//   3. The Recipes tab on the Cookbooks page, where the user's own are made.
+// Built-ins are translated copy defined here; the user's own come from
+// recipes.json through useRecipes (hooks/useRecipes.ts).
+export interface Recipe {
+  id: string;
   label: string;
   prompt: string;
   description: string;
+  builtin: boolean;
 }
 
-export const PRESETS: ChatPreset[] = [
+export const BUILTIN_RECIPES: Recipe[] = [
   {
+    id: 'chart-notes',
+    builtin: true,
     get label() {
       return t('chat.presets.chartNotes.label');
     },
@@ -24,6 +30,8 @@ export const PRESETS: ChatPreset[] = [
     },
   },
   {
+    id: 'recent-todos',
+    builtin: true,
     get label() {
       return t('chat.presets.recentTodos.label');
     },
@@ -35,6 +43,8 @@ export const PRESETS: ChatPreset[] = [
     },
   },
   {
+    id: 'coach',
+    builtin: true,
     get label() {
       return t('chat.presets.coach.label');
     },
@@ -46,6 +56,8 @@ export const PRESETS: ChatPreset[] = [
     },
   },
   {
+    id: 'weekly-recap',
+    builtin: true,
     get label() {
       return t('chat.presets.weeklyRecap.label');
     },
@@ -57,6 +69,8 @@ export const PRESETS: ChatPreset[] = [
     },
   },
   {
+    id: 'blind-spots',
+    builtin: true,
     get label() {
       return t('chat.presets.blindSpots.label');
     },
@@ -65,6 +79,71 @@ export const PRESETS: ChatPreset[] = [
     },
     get description() {
       return t('chat.presets.blindSpots.description');
+    },
+  },
+  {
+    id: 'owe-people',
+    builtin: true,
+    get label() {
+      return t('chat.presets.owePeople.label');
+    },
+    get prompt() {
+      return t('chat.presets.owePeople.prompt');
+    },
+    get description() {
+      return t('chat.presets.owePeople.description');
+    },
+  },
+  {
+    id: 'prep-next',
+    builtin: true,
+    get label() {
+      return t('chat.presets.prepNext.label');
+    },
+    get prompt() {
+      return t('chat.presets.prepNext.prompt');
+    },
+    get description() {
+      return t('chat.presets.prepNext.description');
+    },
+  },
+  {
+    id: 'follow-up',
+    builtin: true,
+    get label() {
+      return t('chat.presets.followUp.label');
+    },
+    get prompt() {
+      return t('chat.presets.followUp.prompt');
+    },
+    get description() {
+      return t('chat.presets.followUp.description');
+    },
+  },
+  {
+    id: 'decision-log',
+    builtin: true,
+    get label() {
+      return t('chat.presets.decisionLog.label');
+    },
+    get prompt() {
+      return t('chat.presets.decisionLog.prompt');
+    },
+    get description() {
+      return t('chat.presets.decisionLog.description');
+    },
+  },
+  {
+    id: 'prd',
+    builtin: true,
+    get label() {
+      return t('chat.presets.prd.label');
+    },
+    get prompt() {
+      return t('chat.presets.prd.prompt');
+    },
+    get description() {
+      return t('chat.presets.prd.description');
     },
   },
 ];

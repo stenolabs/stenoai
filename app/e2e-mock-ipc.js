@@ -578,6 +578,7 @@ function install({ ipcMain }) {
   // connect.t1 spec can assert what the renderer asked the bridge to save;
   // global.__connectSettings exposes them to app.evaluate().
   global.__connectSettings = { folderAllowlist: null, excludeTranscripts: false };
+  global.__mockRecipes = [];
   // Built with the real snippet builders, from the stable launcher path, so the
   // T1 spec asserts the exact text a user copies.
   const connectInstall = require('./steno-mcp-install');
@@ -817,6 +818,17 @@ function install({ ipcMain }) {
 
   const MOCKS = {
     ...ACTIONS_MOCKS,
+    // Recipes: an in-memory list (the store itself is covered by recipes-store.test.js / recipes.t2).
+    'recipes-list': async () => ({ success: true, recipes: global.__mockRecipes }),
+    'recipes-save': async (_event, input) => {
+      const recipe = { description: '', ...input, id: input.id || `r_${String(global.__mockRecipes.length + 1).padStart(12, '0')}`, updatedAt: Date.now() };
+      global.__mockRecipes = [...global.__mockRecipes.filter((r) => r.id !== recipe.id), recipe];
+      return { success: true, recipe };
+    },
+    'recipes-delete': async (_event, id) => {
+      global.__mockRecipes = global.__mockRecipes.filter((r) => r.id !== id);
+      return { success: true, deleted: true };
+    },
     'connect-get-info': async () => connectInfo(),
     'connect-get-settings': async () => ({ success: true, ...global.__connectSettings }),
     'connect-set-settings': async (_event, patch) => {
