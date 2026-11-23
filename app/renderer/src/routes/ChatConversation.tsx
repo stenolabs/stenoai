@@ -30,7 +30,8 @@ import {
 // a fresh `[]` on every render, invalidating downstream deps.
 const EMPTY_MESSAGES: ChatMessage[] = [];
 import { useGlobalStreaming } from '@/hooks/useStreamingQuery';
-import { AgentRecord, LiveAgentTrail, actionRecords } from '@/components/chat/ChatAgentTrail';
+import { AgentRecord, LiveAgentTrail } from '@/components/chat/ChatAgentTrail';
+import { trackChatTurn, useChatTurn } from '@/lib/chatTurns';
 import { useAiProvider } from '@/hooks/useAi';
 import { navigate } from '@/lib/router';
 import {
@@ -58,14 +59,15 @@ export function ChatConversation({ sessionId }: ChatConversationProps) {
   const provider = useAiProvider();
 
   const [input, setInput] = React.useState('');
-  const [activeStreamId, setActiveStreamId] = React.useState<string | null>(null);
+  // The live answer for this session, if any (it outlives this page: see lib/chatTurns).
+  const activeTurn = useChatTurn(sessionId);
+  const activeStreamId = activeTurn?.streamId ?? null;
   const [historyOpen, setHistoryOpen] = React.useState(false);
   const recipes = useRecipes();
   // Folder scope persists for the lifetime of the conversation page mount.
   // The entry page's scope is handed off via consumePendingNewChat; later
   // turns in the same conversation can be re-scoped from this composer.
   const [scopeFolderId, setScopeFolderId] = React.useState<string | null>(null);
-  const pendingPersistRef = React.useRef<{ sessionId: string; context: string } | null>(null);
   const submittingRef = React.useRef(false);
   const inputRef = React.useRef<HTMLInputElement>(null);
   const scrollRef = React.useRef<HTMLDivElement>(null);
@@ -91,11 +93,7 @@ export function ChatConversation({ sessionId }: ChatConversationProps) {
   // composer here starts with the same folder context.
   React.useEffect(() => {
     const pending = consumePendingNewChat(sessionId);
-    if (pending) {
-      pendingPersistRef.current = { sessionId: pending.sessionId, context: pending.folderId ?? 'notes' };
-      setActiveStreamId(pending.streamId);
-      setScopeFolderId(pending.folderId);
-    }
+    if (pending) setScopeFolderId(pending.folderId);
   }, [sessionId]);
 
   const session = React.useMemo(() => {
@@ -141,32 +139,7 @@ export function ChatConversation({ sessionId }: ChatConversationProps) {
   const activeStream = activeStreamId ? streaming.streams[activeStreamId] : null;
   const isStreaming = activeStream?.status === 'streaming';
 
-  // Persist the assistant turn when its stream finishes.
-  React.useEffect(() => {
-    if (!activeStreamId) return;
-    const stream = streaming.streams[activeStreamId];
-    if (!stream || stream.status === 'streaming') return;
-    const pending = pendingPersistRef.current;
-    if (!pending) return;
-    const content =
-      stream.text.trim() ||
-      (stream.status === 'error'
-        ? `Error: ${stream.error ?? 'query failed'}`
-        : '(empty response)');
-    const actions = actionRecords(stream.cards);
-    const message: ChatMessage = {
-      role: 'assistant',
-      context: pending.context,
-      content,
-      ts: Date.now(),
-      ...(stream.steps?.length ? { steps: stream.steps } : {}),
-      ...(actions ? { actions } : {}),
-    };
-    void chat.appendMessage(pending.sessionId, message);
-    pendingPersistRef.current = null;
-    streaming.clearStream(activeStreamId);
-    setActiveStreamId(null);
-  }, [activeStreamId, streaming, chat]);
+  // ChatTurnPersister saves the answer when it finishes, even if this page is gone.
 
   // Virtualized message list. Long meetings produce thousands of messages
   // (diarised replay + long prompts), and rendering them all on every
@@ -182,7 +155,7 @@ export function ChatConversation({ sessionId }: ChatConversationProps) {
     () => session?.messages ?? EMPTY_MESSAGES,
     [session?.messages],
   );
-  const streamingContent = isStreaming && pendingPersistRef.current?.sessionId === sessionId
+  const streamingContent = isStreaming && activeTurn !== null
     ? activeStream?.text || ''
     : null;
   const totalItems = messages.length + (streamingContent !== null ? 1 : 0);
@@ -226,8 +199,7 @@ export function ChatConversation({ sessionId }: ChatConversationProps) {
       // Follow-ups include only bounded history from the selected context.
       const history = boundedChatHistory(session.messages ?? [], scopeFolderId ?? 'notes', 'notes');
       const streamId = streaming.startGlobalStream(q, scopeFolderId, history);
-      pendingPersistRef.current = { sessionId: session.id, context: scopeFolderId ?? 'notes' };
-      setActiveStreamId(streamId);
+      trackChatTurn({ sessionId: session.id, streamId, context: scopeFolderId ?? 'notes' });
     } catch (err) {
       // Disk write / IPC / streaming setup can all fail. Surface the error.
       // Only restore the input if nothing made it to disk — once the user

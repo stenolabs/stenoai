@@ -9,6 +9,7 @@ import { Connect } from '@/routes/Connect';
 import { Cookbooks } from '@/routes/Cookbooks';
 import { ChatConversation } from '@/routes/ChatConversation';
 import { StreamingProvider } from '@/hooks/useStreamingQuery';
+import { ChatTurnPersister } from '@/components/ChatTurnPersister';
 import { Home } from '@/routes/Home';
 import { MeetingDetail } from '@/routes/MeetingDetail';
 import { FolderDetail } from '@/routes/FolderDetail';
@@ -248,6 +249,7 @@ export function App() {
     <CommandPaletteProvider>
       <CommandPaletteHotkey />
       <StreamingProvider>
+      <ChatTurnPersister />
       <AskBarProvider>
         <RouteView route={route} />
         <QuitDialog />

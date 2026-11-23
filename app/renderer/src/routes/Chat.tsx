@@ -28,6 +28,7 @@ import { ModelIndicator } from '@/components/ModelIndicator';
 import { RecipeMenu } from '@/components/RecipeMenu';
 import { useRecipes } from '@/hooks/useRecipes';
 import { useSlashMenu } from '@/hooks/useSlashMenu';
+import { trackChatTurn } from '@/lib/chatTurns';
 import { getRouteParam, navigate, useRoute } from '@/lib/router';
 import { t } from '@/i18n';
 
@@ -206,6 +207,7 @@ export function Chat() {
       // can't clobber an earlier in-flight stream before the conversation
       // page mounts and claims it.
       recordPendingNewChat({ sessionId: createdSessionId, streamId, folderId: scopeFolderId });
+      trackChatTurn({ sessionId: createdSessionId, streamId, context: scopeFolderId ?? 'notes' });
       navigate(`/chat/${encodeURIComponent(createdSessionId)}`);
     } catch (err) {
       // appendMessage / startGlobalStream / createSession can all fail
