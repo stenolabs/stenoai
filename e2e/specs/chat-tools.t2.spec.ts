@@ -67,7 +67,7 @@ test('chat asks to create an issue: approval card in chat, approve sends the edi
     await input.press('Enter');
 
     // Read tool ran on its own; the write waits on a card.
-    await expect(page.getByTestId('chat-tool-step')).toHaveText('Searched Team n8n');
+    await expect(page.getByTestId('chat-tool-step').filter({ hasText: 'Searched Team n8n' })).toHaveCount(1);
     const card = page.getByRole('article', { name: 'Create issue via Team n8n' });
     await expect(card.getByRole('heading', { name: 'Create issue in Team n8n · Prep the release notes' })).toBeVisible({ timeout: 60_000 });
     expect(mcp.calls()).toEqual([{ name: 'search_issues', args: { query: 'release notes' } }]);
