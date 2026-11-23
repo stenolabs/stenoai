@@ -84,12 +84,15 @@
 .sector-related-card h3 + p { font-size: 13px; line-height: 1.6; color: var(--fg-2); margin-top: 8px; }
 .sector-related-card:hover { border-color: var(--fg-1); }
 
-.sector-film-grid { display: grid; grid-template-columns: 1fr clamp(280px, 26vw, 360px); gap: 80px; align-items: center; }
+.sector-film-grid { display: grid; grid-template-columns: 1fr clamp(280px, 28vw, 380px); gap: 80px; align-items: center; }
+.sector-film-grid .teaser { max-width: 380px; }
 .sector-film-grid p { color: var(--fg-2); font-size: 16px; line-height: 1.7; max-width: 43ch; margin-top: 24px; }
-.sector-film-video { display: block; width: 100%; aspect-ratio: 9 / 16; object-fit: cover; background: #000; }
+.sector-film-button { margin-top: 32px; }
+.film-length-inline { opacity: .7; }
+.film-length-inline::before { content: '·'; margin-right: 8px; }
 @media (max-width: 899px) {
   .sector-film-grid { grid-template-columns: 1fr; gap: 35px; }
-  .sector-film-video { max-width: 360px; justify-self: center; }
+  .sector-film-grid .teaser { width: min(100%, 300px); }
 }
 .industry-hero-media { position: relative; }
 .industry-hero-media .industry-hero-image { display: block; }

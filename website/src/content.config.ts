@@ -106,6 +106,8 @@ const industries = defineCollection({
     heroVideo: z.object({ src: z.string(), poster: z.string(), position: z.string().optional() }).optional(),
     loop: z.object({ src: z.string(), poster: z.string(), heading: z.string(), body: z.string() }).optional(),
     film: z.object({ src: z.string(), poster: z.string(), title: z.string() }).optional(),
+    // Scroll motion assets for the page (corridor lights, take stills, doors stage); see components/LightRoom.astro.
+    motion: z.any().optional(),
     faqs: z.array(faqSchema),
   }),
 })

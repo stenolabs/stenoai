@@ -3,6 +3,9 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
 import { Nav } from '../../sections/Nav';
 import Footer from '../../sections/Footer.astro';
 import CTAFooter from '../../sections/CTAFooter.astro';
+import Stage from '../../components/Stage.astro';
+import ScrollLight from '../../components/ScrollLight.astro';
+import ScrollSeq from '../../components/ScrollSeq.astro';
 import { CTA_BRIEFING, enterpriseHero } from '../../content/industries.data';
 import { ArrowUpRight, ArrowRight, Check } from 'lucide-react';
 import '../../sector.css';
@@ -18,6 +21,14 @@ const hero = {
   alt: 'An empty boardroom in the evening: a long dark table, six empty chairs, one open laptop and papers lying face down in the light of a low lamp',
   heroVideo: enterpriseHero,
 };
+
+// Light zones: rectangles as fractions of the still (x, y, w, h). Measured from the stills in motion-studio/preproduction/keyframes/web-ent-*.png.
+const roomCol = [[.29, .239], [.532, .223], [.758, .226]], roomRow = [[.218, .313], [.563, .253]];
+const roomZones = [[0,0],[1,0],[2,0],[0,1],[1,1],[2,1]].map(([c, r], i) => ({ r: [roomCol[c][0], roomRow[r][0], roomCol[c][1], roomRow[r][1]], a: +(.05 + i * .14).toFixed(3), b: +(.17 + i * .14).toFixed(3), d: +(.05 + (i + 1) * .14).toFixed(3), f: .1 }));
+const floorBands = [[90,142],[153,205],[215,268],[277,330],[340,392],[403,455],[465,518],[527,580],[589,642],[651,704],[713,765],[775,836]]; // top to bottom, px of 941
+const towerZones = floorBands.map(([y0, y1], k) => { const j = 11 - k; return { r: [.41, y0 / 941, .182, (y1 - y0) / 941], a: +(.06 + j * .07).toFixed(3), b: +(.16 + j * .07).toFixed(3), f: .06 }; });
+const houseZones = [{ r: [.562, .555, .074, .16], a: .08, b: .4, f: .1 }, { r: [.389, .548, .078, .24], a: .52, b: .82, f: .08 }]; // window, then the door line
+const houseZonesPhone = [{ r: [.368, .555, .074, .16], a: .08, b: .4, f: .1 }, { r: [.533, .548, .078, .24], a: .52, b: .82, f: .08 }]; // the phone picture is mirrored
 
 const readers = [
   { h: 'Large companies', b: 'Many teams, and one IT and security group to answer to. People sign in through your organisation’s adapter. You set the AI route, so desktops never hold provider keys. IT rolls the signed app out through MDM.' },
@@ -125,8 +136,11 @@ const flowAlt = 'Diagram. Endpoints record, and transcribe by default, on each l
           <p>A large company and a private company need different things from it. Here is what each one gets.</p>
         </div>
         <div class="sector-points">
-          {readers.map((r) => (
+          {readers.map((r, i) => (
             <div>
+              <div class="ent-obj">
+                <ScrollLight name={i ? 'house' : 'tower'} zones={i ? houseZones : towerZones} zones-phone={JSON.stringify(i ? houseZonesPhone : towerZones)} w="1280" h="720" fit="cover" flow-start=".9" flow-end=".5" />
+              </div>
               <h3><Check size={15} strokeWidth={2.2} aria-hidden="true" />{r.h}</h3>
               <p>{r.b}</p>
             </div>
@@ -135,13 +149,15 @@ const flowAlt = 'Diagram. Endpoints record, and transcribe by default, on each l
       </div>
     </section>
 
-    <section id="rooms" class="mission-section sector-section" aria-labelledby="rooms-heading">
-      <div class="mission-wrap">
+    <section id="rooms" class="mission-section sector-section has-stage" aria-labelledby="rooms-heading">
+      <Stage on class="stage-rooms">
+      <div class="mission-wrap stage-text">
         <div class="mission-section-top"><p class="mission-eyebrow">02 / Where it is used</p><span class="mission-eyebrow">Illustrative settings · {rooms.length}</span></div>
         <div class="mission-section-heading">
           <h2 id="rooms-heading">Six rooms where<br />it earns its place.</h2>
           <p>Meetings you cannot hand to a cloud vendor, and the record StenoAI makes in each, on your device or your infrastructure.</p>
         </div>
+        <div class="stage-m stage-m-rooms"><ScrollLight name="rooms" zones={roomZones} w="1600" h="900" fit="contain" ground=".955" hfrac=".8" avoid=".stage-rooms .ent-cases, .stage-rooms .sector-note" below=".stage-rooms .mission-section-heading" gy=".824" fit-phone="cover" align-phone="right" later=".55" items=".ent-cases > li" flow-target=".ent-cases" flow-start=".85" flow-end=".5" /></div>
         <ol class="sector-cases ent-cases">
           {rooms.map((u) => (
             <li class="sector-case">
@@ -155,14 +171,16 @@ const flowAlt = 'Diagram. Endpoints record, and transcribe by default, on each l
         </ol>
         <p class="sector-note">StenoAI does not tell other people that a meeting is being recorded. Consent to record stays your responsibility.</p>
       </div>
+      </Stage>
     </section>
 
     <section id="adds" class="mission-section sector-section sector-sunken" aria-labelledby="adds-heading">
       <div class="mission-wrap">
         <div class="mission-section-top"><p class="mission-eyebrow">03 / Community and Enterprise</p><span class="mission-eyebrow">Same app. Your systems.</span></div>
-        <div class="mission-section-heading">
+        <div class="mission-section-heading ent-adds-head">
           <h2 id="adds-heading">What Enterprise<br />adds.</h2>
           <p>Community is the free app on a laptop. Enterprise connects the same app to your organisation’s own systems.</p>
+          <div class="ent-card-fig" aria-hidden="true"><img src="/scroll/ent/card2-start-d.webp" srcset="/scroll/ent/card2-start-p.webp 640w, /scroll/ent/card2-start-d.webp 960w" sizes="(max-width: 767px) 100vw, 420px" alt="" width="960" height="540" loading="lazy" decoding="async" /><ScrollSeq src="/scroll/ent-card-d" src-phone="/scroll/ent-card-p" frames="64" start=".92" centre=".55" /></div>
         </div>
         <table class="ent-compare">
           <thead><tr><th scope="col"><span class="sr-only">Feature</span></th><th scope="col">Community</th><th scope="col">Enterprise</th></tr></thead>
@@ -198,7 +216,11 @@ const flowAlt = 'Diagram. Endpoints record, and transcribe by default, on each l
         <div class="mission-boundary ent-boundary">
           <div class="mission-boundary-top"><span class="mission-eyebrow">Your boundary</span><span class="mission-eyebrow">Content goes only where you point it <span class="mission-status-dot"></span></span></div>
           <div class="ent-flow" data-flow>
-            <svg class="dk" viewBox="0 0 1200 380" role="img" aria-label={flowAlt}>
+            <svg class="dk" viewBox="0 0 1200 510" role="img" aria-label={flowAlt}>
+              <image data-obj data-a="0.02" data-b="0.1" href="/scroll/ent/deploy-device-end-b-d.webp" x="60" y="5" width="200" height="120" preserveAspectRatio="xMidYMid meet" />
+              <image data-obj data-a="0.28" data-b="0.36" href="/scroll/ent/deploy-infra-end-d.webp" x="480" y="5" width="200" height="120" preserveAspectRatio="xMidYMid meet" />
+              <image data-obj data-a="0.6" data-b="0.68" href="/scroll/ent/deploy-cloud-end-d.webp" x="920" y="5" width="200" height="120" preserveAspectRatio="xMidYMid meet" />
+              <g transform="translate(0,130)">
               <g data-fade data-a="0.7" data-b="0.9"><rect class="dash" x="400" y="20" width="780" height="340" /><text class="tm" x="424" y="48">Your tenancy</text></g>
               <rect data-draw data-a="0" data-b="0.14" x="20" y="120" width="280" height="140" />
               <g data-fade data-a="0.06" data-b="0.16"><text class="tm" x="44" y="152">01</text><text class="t1" x="44" y="190">Endpoints</text><text class="t2" x="44" y="218">Record and transcribe</text><text class="t2" x="44" y="238">on the laptop, by default.</text></g>
@@ -212,7 +234,7 @@ const flowAlt = 'Diagram. Endpoints record, and transcribe by default, on each l
               <rect data-draw data-a="0.66" data-b="0.8" x="880" y="230" width="280" height="100" />
               <g data-fade data-a="0.72" data-b="0.82"><text class="tm" x="904" y="260">04</text><text class="t1" x="904" y="292">Your storage bucket</text><text class="t2" x="904" y="316">Shared notes, if you use them.</text></g>
               <g data-fade data-a="0.85" data-b="1"><rect class="dash" x="20" y="300" width="280" height="60" /><text class="t3" x="44" y="326">StenoAI servers</text><text class="t2" x="44" y="346">No meeting content.</text></g>
-            </svg>
+            </g></svg>
             <svg class="ph" viewBox="0 0 360 700" role="img" aria-label={flowAlt}>
               <g data-fade data-a="0.7" data-b="0.9"><rect class="dash" x="8" y="170" width="344" height="420" /><text class="tm" x="24" y="194">Your tenancy</text></g>
               <rect data-draw data-a="0" data-b="0.14" x="20" y="20" width="320" height="110" />
@@ -246,6 +268,7 @@ const flowAlt = 'Diagram. Endpoints record, and transcribe by default, on each l
           <h2 id="rollout-heading">From briefing<br />to deployment.</h2>
           <p>When your organisation is ready, we take you through four steps, from the first briefing to the rollout.</p>
         </div>
+        <div class="ent-fleet" aria-hidden="true"><img src="/scroll/ent/fleet3-start-d.webp" srcset="/scroll/ent/fleet3-start-p.webp 780w, /scroll/ent/fleet3-start-d.webp 1600w" sizes="(max-width: 767px) 100vw, 1328px" alt="" width="1600" height="900" loading="lazy" decoding="async" /><ScrollSeq src="/scroll/ent-fleet-d" src-phone="/scroll/ent-fleet-p" frames="72" start=".92" centre=".55" lit="0,.2,.48,.74" lit-phone="0,.25,.5,.75" lit-items=".sector-timeline > li" /></div>
         <ol class="sector-timeline">
           {steps.map((s, i) => (
             <li>
@@ -286,6 +309,7 @@ const flowAlt = 'Diagram. Endpoints record, and transcribe by default, on each l
 </BaseLayout>
 
 <script>
+  import '../../scripts/scroll-light.js';
   import '../../scripts/scroll-seq.js';
 </script>
 

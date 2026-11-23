@@ -24,19 +24,29 @@ export function whenNear(el, fn) {
   io.observe(el);
 }
 
+// Extra fit tests registered by other players (a pinned panel that needs more room than its text, e.g. the six rooms): each returns true when the pinned layout fits.
+export const fitTests = [];
+
 // Pinned panels cut their text when it is taller than the screen. Measured with the pinned layout on; the answer decides flow or pinned.
+// A stage marked data-own-fit (Stage ownFit) decides for itself: it gets data-nofit on the stage element and the rest of the page is not affected.
+// Every other stage keeps the page-wide html[data-nofit].
 export function checkFit() {
   const root = document.documentElement, was = root.hasAttribute('data-nofit');
+  const own = [...document.querySelectorAll('.stage[data-own-fit]')], wasOwn = own.map((s) => s.hasAttribute('data-nofit'));
   root.removeAttribute('data-nofit');
+  own.forEach((s) => s.removeAttribute('data-nofit'));
   let fits = true;
   if (root.dataset.ss === 'on' && !FLOWQ.matches) {
     for (const panel of document.querySelectorAll('.stage-panel')) {
       const t = panel.querySelector('.stage-text'), a = t?.firstElementChild, z = t?.lastElementChild, r = panel.getBoundingClientRect();
-      if (a && (a.getBoundingClientRect().top < r.top || z.getBoundingClientRect().bottom > r.bottom + 1)) fits = false;
+      if (!a || (a.getBoundingClientRect().top >= r.top && z.getBoundingClientRect().bottom <= r.bottom + 1)) continue;
+      const stage = panel.closest('.stage');
+      if (stage?.hasAttribute('data-own-fit')) stage.setAttribute('data-nofit', ''); else fits = false;
     }
   }
+  if (fits) for (const f of fitTests) if (!f()) fits = false;
   if (!fits) root.setAttribute('data-nofit', '');
-  if (!fits !== was) flowSubs.forEach((fn) => fn());
+  if (!fits !== was || own.some((s, i) => s.hasAttribute('data-nofit') !== wasOwn[i])) flowSubs.forEach((fn) => fn());
 }
 addEventListener('resize', checkFit);
 addEventListener('load', checkFit);

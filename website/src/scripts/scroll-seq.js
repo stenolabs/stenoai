@@ -5,6 +5,7 @@
 // Progress: 0 when the element's top is at data-start x viewport height, 1 when data-target's top is at data-end x viewport height
 // (data-target = a selector, or "bottom" = the element's bottom; default its top). Inside a pinned .stage (not in flow layout)
 // progress follows the stage's scroll length instead. data-map="a,b": frames 0..N-1 over progress a..b (values outside 0..1 trim the ends).
+// data-centre=".55": instead of data-end, progress is 1 when the element's centre reaches that fraction of the viewport height.
 // data-place: right | region (data-region = left edge as a fraction, at least data-region-after's right edge + 24px; data-region-top px) | center; with data-anchor="x,y,w" the frame is
 // aligned to the real element data-target (the frame's x,y,w); otherwise it fills the element.
 // data-dim (+ data-dim-pad): soft holes in the picture behind text. data-lit + data-lit-items: step highlight by progress.
@@ -13,6 +14,12 @@ import { PHONE, FLOW, REDUCED, clamp, still, syncMode, whenNear } from './scroll
 
 const TAU = 65; // ms; 95% settled in about 200 ms
 const MAXPX = 12e6; // canvas pixels per element, well under the 16.7 MP iOS limit
+// Several sets can be near at once (films and deploy are about a screen apart): bitmaps are decoded one at a time across all sets, off the main thread,
+// and sets start fetching 450 ms apart, so a slow phone or a 4x-throttled laptop never gets one long task.
+let lock = Promise.resolve();
+const serial = (fn) => { const p = lock.then(fn, fn); lock = p.then(() => {}, () => {}); return p; };
+let nextAt = 0;
+const stagger = (fn, now_ = false) => { if (now_) return fn(); const now = performance.now(); nextAt = Math.max(nextAt, now) + 450; setTimeout(fn, nextAt - now - 450); };
 
 function init(el) {
   const canvas = el.querySelector('canvas'), ctx = canvas.getContext('2d');
@@ -60,14 +67,15 @@ function init(el) {
   }
   function progress() {
     if (M.pin) return clamp((scrollY - M.sTop) / (M.sH - M.vh));
-    const s0 = M.top - +A('start') * M.vh, s1 = M.end - +A('end') * M.vh;
+    const s0 = M.top - +A('start') * M.vh, s1 = A('centre') ? M.top + M.h / 2 - +A('centre') * M.vh : M.end - +A('end') * M.vh; // data-centre: finished when the picture's centre is at that fraction of the viewport
     return clamp((scrollY - s0) / (s1 - s0));
   }
 
   async function decode(i) {
     if (bmps.has(i) || !blobs[i]) return;
     const k = loadedKey;
-    const b = typeof createImageBitmap === 'function' ? await createImageBitmap(blobs[i]) : await new Promise((res) => { const im = new Image(); im.onload = () => res(im); im.src = URL.createObjectURL(blobs[i]); });
+    const blob = blobs[i];
+    const b = await serial(() => (typeof createImageBitmap === 'function' ? createImageBitmap(blob) : new Promise((res) => { const im = new Image(); im.onload = () => res(im); im.src = URL.createObjectURL(blob); })));
     if (k !== loadedKey || (!visible && !still())) { b.close?.(); return; } // stale, or arrived while off screen (the settled still is kept)
     bmps.set(i, b);
   }
@@ -120,7 +128,7 @@ function init(el) {
         } catch { /* a missing frame is skipped: the nearest decoded one is shown */ }
       }
     };
-    await Promise.all([worker(), worker(), worker(), worker(), worker(), worker()]);
+    await Promise.all([worker(), worker(), worker()]);
   }
   function settle() { measure(); target = still() ? 1 : progress(); cur = target; paint(true); }
   function remeasure() { measure(); if (visible && loadedKey) { target = still() ? 1 : progress(); if (!raf) { cur = target; paint(true); } } }
@@ -129,7 +137,9 @@ function init(el) {
   const items = el.dataset.lit ? [...sec.querySelectorAll(el.dataset.litItems)] : [], lit = el.dataset.lit?.split(',').map(Number);
   const light = el.dataset.light?.split(',').map(Number), h2 = light && sec.querySelector('h2');
   const setLit = (p, T) => { let k = 0; T.forEach((t, i) => { if (p >= t) k = i; }); items.forEach((e, i) => e.classList.toggle('is-lit', i === k)); };
+  const rest = el.dataset.rest ? el.closest('.teaser') : null; // film teasers: the play ring shows once the reveal has settled
   function onProgress(p) {
+    if (rest) rest.classList.toggle('is-rest', p >= +el.dataset.rest);
     if (items.length && !FLOW.matches) setLit(p, lit);
     if (light) h2.style.setProperty('--lit', clamp((p - light[0]) / (light[1] - light[0])).toFixed(3));
   }
@@ -143,7 +153,14 @@ function init(el) {
   }
   if (items.length) setLit(0, lit);
 
-  whenNear(el, () => { started = true; measure(); load().then(() => visible && settle()); });
+  whenNear(el, () => stagger(() => { started = true; measure(); load().then(() => visible && settle()); }, visible)); // on screen already (anchor jump): no wait
+  // More than 2 viewports away: the encoded frames are dropped too (fetched again from the cache on return).
+  new IntersectionObserver((es) => {
+    const near = es[es.length - 1].isIntersecting;
+    if (!started || still()) return;
+    if (near && !loadedKey) stagger(() => load().then(() => visible && settle()), visible);
+    else if (!near && loadedKey) { release(); blobs = []; loadedKey = ''; }
+  }, { rootMargin: '200% 0px' }).observe(el);
   new IntersectionObserver((es) => {
     visible = es[es.length - 1].isIntersecting;
     if (visible) { measure(); if (loadedKey) settle(); } else release();

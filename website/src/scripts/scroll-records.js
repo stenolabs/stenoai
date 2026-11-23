@@ -23,7 +23,7 @@ const easeScrub = bez(.4, 0, .2, 1), easeGlide = bez(.16, .84, .3, 1), easeOpen 
 const cards = [...document.querySelectorAll('.mission-sector-rec')].map((a) => {
   const slot = a.querySelector('.mission-sector-image'), rec = slot.querySelector('.rec'), obj = rec.querySelector('.rec-obj'), cv = obj.querySelector('canvas'), wv = rec.querySelector('.rec-wave');
   return { a, slot, key: a.dataset.rec, m: META[a.dataset.rec], obj, cv, ctx: cv.getContext('2d'), seam: obj.querySelector('.rec-seam'), wv, wctx: wv.getContext('2d'),
-    mode: 'd', gen: 0, atlas: null, poster: null, loaded: false, inView: false, E: [], Es: null, h: { cur: 0, from: 0, to: 0, t0: 0, delay: 0, dur: 0, on: false, ease: easeOpen }, hw: null, drawn: '', L: null };
+    mode: 'd', gen: 0, pgen: 0, pReq: false, pm: 'd', atlas: null, poster: null, loaded: false, inView: false, E: [], Es: null, h: { cur: 0, from: 0, to: 0, t0: 0, delay: 0, dur: 0, on: false, ease: easeOpen }, hw: null, drawn: '', L: null };
 });
 // Phones and tablets (coarse pointer, or touch under 1280px wide) use the small atlases.
 const SMALL = matchMedia('(pointer: coarse), (max-width: 1279px) and (any-pointer: coarse)');
@@ -42,14 +42,22 @@ function layout(c) {
   c.drawn = '';
 }
 // gen changes on every load and unload: a result from an earlier one (other mode, or unloaded since) is ignored.
-const fetchImg = (c, gen, src, set) => { const im = new Image(); im.src = src; im.decode().then(() => { if (gen !== c.gen) return; set(im); c.drawn = ''; schedule(); }, () => {}); }; // decode() keeps the large atlas off the main thread
+const fetchImg = (c, gen, src, set, key = 'gen') => { const im = new Image(); im.src = src; im.decode().then(() => { if (gen !== c[key]) return; set(im); c.drawn = ''; schedule(); }, () => {}); }; // decode() keeps the large atlas off the main thread
 const loadAtlas = (c, gen) => { if (!still() && !c.atlas) fetchImg(c, gen, `/scroll/rec/${c.key}-${c.mode}.webp`, (im) => { c.atlas = im; }); };
+// The poster (a few KB) is fetched as soon as the section is within 2 viewports, right away and not in an idle slot: it is what replaces the card photo,
+// and three cards that enter together must not be swapped one after another. Atlases come later (within 1.5 viewports, staggered, in idle time).
+function loadPoster(c) {
+  if (c.poster || c.pReq) return;
+  c.pReq = true; c.pm = c.mode = mode(); const gen = c.pgen;
+  fetchImg(c, gen, `/scroll/rec/${c.key}-poster-${c.pm}.webp`, (im) => { c.poster = im; c.pReq = false; c.a.classList.add('rec-ready'); }, 'pgen'); // the photo goes only now
+}
 function load(c) {
   c.loaded = true; c.mode = mode(); const gen = ++c.gen;
-  fetchImg(c, gen, `/scroll/rec/${c.key}-poster-${c.mode}.webp`, (im) => { c.poster = im; c.a.classList.add('rec-ready'); }); // the photo goes only now
+  loadPoster(c);
   if (!still()) setTimeout(() => gen === c.gen && loadAtlas(c, gen), 500 * cards.indexOf(c)); // staggered: each large atlas is uploaded to the GPU on its own
 }
-function unload(c) { c.gen++; c.loaded = false; c.atlas = c.poster = null; c.drawn = ''; c.a.classList.remove('rec-ready'); } // far off screen: the decoded atlas is released
+function unload(c) { c.gen++; c.loaded = false; c.atlas = null; c.drawn = ''; } // beyond 1.5 viewports the decoded atlas is released
+function unloadPoster(c) { c.pgen++; c.pReq = false; c.poster = null; c.drawn = ''; c.a.classList.remove('rec-ready'); } // beyond 3 viewports the poster goes too
 function drawObj(c, pos) {
   const sq = c.m.seq[c.mode], idx = Math.round(clamp(pos) * (sq.N - 1)), key = `${idx}:${c.atlas ? 1 : 0}:${c.poster ? 1 : 0}`;
   if (key === c.drawn) return; c.drawn = key;
@@ -122,12 +130,13 @@ cards.forEach((c) => {
   a.addEventListener('focusin', () => { if (a.matches(':focus-visible')) hot(true); });
   a.addEventListener('focusout', () => hot(false));
   new IntersectionObserver((es) => { c.inView = es[es.length - 1].isIntersecting; if (c.inView) { act = performance.now(); schedule(); } }, { rootMargin: '20% 0px' }).observe(a);
-  // Nothing is fetched until the card is within 1.5 viewports; beyond 3 viewports the decoded atlas is released and fetched again (from cache) on return.
+  // Nothing is fetched until the card is within 2 viewports (poster) or 1.5 viewports (atlas); beyond 3 viewports both are released and fetched again (from cache) on return.
+  new IntersectionObserver((es) => { if (es[es.length - 1].isIntersecting) loadPoster(c); }, { rootMargin: '200% 0px' }).observe(a);
   new IntersectionObserver((es) => { if (es[es.length - 1].isIntersecting && !c.loaded) idle(() => load(c)); }, { rootMargin: '150% 0px' }).observe(a);
-  new IntersectionObserver((es) => { if (!es[es.length - 1].isIntersecting && c.loaded) unload(c); }, { rootMargin: '300% 0px' }).observe(a);
+  new IntersectionObserver((es) => { if (!es[es.length - 1].isIntersecting && (c.loaded || c.poster)) { unload(c); unloadPoster(c); } }, { rootMargin: '300% 0px' }).observe(a);
 });
 addEventListener('scroll', () => { act = performance.now(); schedule(); }, { passive: true });
-const remode = () => { cards.forEach((c) => { layout(c); if (c.loaded && mode() !== c.mode) { unload(c); load(c); } }); schedule(); };
+const remode = () => { cards.forEach((c) => { layout(c); if ((c.loaded || c.poster) && mode() !== c.pm) { unload(c); unloadPoster(c); if (c.inView) load(c); else loadPoster(c); } }); schedule(); };
 addEventListener('resize', remode);
 SMALL.addEventListener('change', remode);
 // Reduced motion changed: take effect at once (motion allowed again fetches the atlas, a still draws the open case).

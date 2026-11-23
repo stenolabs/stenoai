@@ -59,3 +59,99 @@
   .ent-compare td::before { content: attr(data-label); display: block; margin-bottom: 4px; font: 9px var(--font-mono); letter-spacing: .115em; text-transform: uppercase; color: var(--fg-2); }
   .ent-compare td + td::before { color: var(--green-text); }
 }
+
+/* ---- Scroll light (scripts/scroll-light.js). A dark still and its lit edit; the black of the picture is screen-blended so it IS the section colour. ---- */
+[data-scroll-light] { position: relative; width: 100%; height: 100%; pointer-events: none; }
+[data-scroll-light] canvas, [data-scroll-light] img { position: absolute; inset: 0; width: 100%; height: 100%; display: block; mix-blend-mode: screen; }
+[data-scroll-light] img { object-fit: contain; -webkit-mask-image: linear-gradient(to bottom, #000 86%, transparent 99.5%); mask-image: linear-gradient(to bottom, #000 86%, transparent 99.5%); }
+[data-scroll-light] canvas { opacity: 0; transition: opacity .5s; }
+[data-scroll-light].is-ready canvas { opacity: 1; }
+html[data-ss=on] [data-scroll-light] img { visibility: hidden; } /* the lit still is the no-JS and reduced-motion picture */
+html[data-ss] [data-scroll-light] canvas { display: block; }
+html[data-ss=still] [data-scroll-light] canvas { display: none; }
+
+/* 01: one object above each column. */
+.ent-obj { position: relative; aspect-ratio: 16 / 10; margin: -6px 0 14px; }
+.sector-points .ent-obj + h3 { margin-top: 0; }
+@media (max-width: 767px) { .ent-obj { aspect-ratio: 4 / 3; } }
+
+/* 02: six rooms. Flow (phones, short windows): the model sits above the list, inside the content edge. */
+.stage-m-rooms { display: none; mix-blend-mode: screen; } /* the stage-m is its own stacking context (z-index), so the blend is set here */
+html[data-ss] .stage-m-rooms { display: block; position: relative; width: 100%; aspect-ratio: 16 / 9; margin: 0 0 24px; background: transparent; }
+@media (max-width: 767px) { html[data-ss] .stage-m-rooms { aspect-ratio: 4 / 3; margin-bottom: 16px; } }
+html[data-ss=on] .ent-cases > li { transition: opacity .35s; }
+html[data-ss=on] .ent-cases > li:not(.is-lit):not(.is-done) { opacity: .62; }
+html[data-ss=on] .ent-cases > li.is-done { opacity: .8; }
+html[data-ss=on] .ent-cases > li.is-lit { opacity: 1; }
+html[data-ss=on] .ent-cases > li.is-lit .sector-tag { color: var(--green-text); }
+
+/* Pinned: the site's heading as it is (title left, lead right), the list left under it, the model right. About 220svh in all (100svh pinned + 120svh of travel). */
+@media (min-width: 912px) and (min-height: 720px), (min-width: 768px) and (max-width: 911px) and (min-height: 800px) {
+  html[data-ss=on]:not([data-nofit]) .stage-rooms { height: calc(100vh + 120vh); height: calc(100svh + 120svh); }
+  html[data-ss=on]:not([data-nofit]) .stage-rooms .stage-text { justify-content: flex-start; padding-top: 84px; }
+  html[data-ss=on]:not([data-nofit]) .stage-rooms .stage-m-rooms { position: absolute; z-index: -1; top: 0; bottom: 0; left: 26%; right: max(56px, calc((100% - 1440px) / 2)); width: auto; aspect-ratio: auto; margin: 0; }
+  html[data-ss=on]:not([data-nofit]) .stage-rooms .mission-section-heading { margin-bottom: 34px; }
+  html[data-ss=on]:not([data-nofit]) .stage-rooms .ent-cases { display: block; width: min(34%, 460px); }
+  html[data-ss=on]:not([data-nofit]) .stage-rooms .ent-cases > li, html[data-ss=on]:not([data-nofit]) .stage-rooms .ent-cases > li:not(:nth-child(4n + 1)) { padding: 8px 0 8px 14px; border-left: 2px solid var(--border-strong); border-top: 0; border-bottom: 0; }
+  html[data-ss=on]:not([data-nofit]) .stage-rooms .ent-cases > li { position: relative; display: grid; align-content: start; transition: opacity .35s, transform .4s cubic-bezier(.2, 0, 0, 1); }
+  html[data-ss=on]:not([data-nofit]) .stage-rooms .ent-cases > li > h3 { order: 1; }
+  html[data-ss=on]:not([data-nofit]) .stage-rooms .ent-cases > li > :not(h3) { order: 2; }
+  html[data-ss=on]:not([data-nofit]) .stage-rooms .ent-cases > li.is-lit { border-left-color: transparent; }
+  html[data-ss=on]:not([data-nofit]) .stage-rooms .ent-cases > li.is-lit::before { content: ''; position: absolute; left: -2px; top: 0; width: 2px; height: var(--lit-h, 100%); background: var(--green-text); } /* the green rule spans the whole open card */
+  html[data-ss=on]:not([data-nofit]) .stage-rooms .ent-cases > li h3 { margin: 4px 0 0; }
+  html[data-ss=on]:not([data-nofit]) .stage-rooms .ent-cases > li .sector-case-outcome { margin: 4px 0 0; font-size: 13px; line-height: 1.5; }
+  html[data-ss=on]:not([data-nofit]) .stage-rooms .ent-cases > li:not(.is-lit) :is(.sector-case-top, .sector-case-outcome, .sector-case-for, .sector-case-outputs) { display: none; } /* a room opens its card as it lights; the text is all in the markup */
+  html[data-ss=on]:not([data-nofit]) .stage-rooms .ent-cases > li .sector-case-for { margin: 8px 0 0; font-size: 12px; }
+  html[data-ss=on]:not([data-nofit]) .stage-rooms .sector-note { margin-top: 18px; width: min(34%, 460px); }
+}
+@media (min-width: 912px) and (max-width: 1180px) { html[data-ss=on]:not([data-nofit]) .stage-rooms .stage-m-rooms { right: 32px; } }
+/* Laptops 720 to 899px tall: tighter inside the open card only, so list, card and note stay inside the panel (type styles unchanged). */
+@media (min-width: 912px) and (min-height: 720px) and (max-height: 899px) {
+  html[data-ss=on]:not([data-nofit]) .stage-rooms .stage-text { padding-top: 80px; }
+  html[data-ss=on]:not([data-nofit]) .stage-rooms .mission-section-heading { margin-bottom: 12px; }
+  html[data-ss=on]:not([data-nofit]) .stage-rooms .ent-cases > li, html[data-ss=on]:not([data-nofit]) .stage-rooms .ent-cases > li:not(:nth-child(4n + 1)) { padding-top: 2px; padding-bottom: 2px; }
+  html[data-ss=on]:not([data-nofit]) .stage-rooms .ent-cases > li .sector-case-top { margin-bottom: 0; }
+  html[data-ss=on]:not([data-nofit]) .stage-rooms .ent-cases > li .sector-case-for { margin-top: 4px; }
+  html[data-ss=on]:not([data-nofit]) .stage-rooms .ent-cases > li .sector-case-outputs { margin-top: 5px; }
+  html[data-ss=on]:not([data-nofit]) .stage-rooms .sector-note { margin-top: 8px; font-size: 11.5px; line-height: 1.45; }
+}
+
+/* 03: the card and the reader slot (start still; the take is pending). Right of the heading. */
+.ent-card-fig { display: none; }
+.ent-card-fig img { display: block; width: 100%; height: auto; mix-blend-mode: screen; -webkit-mask-image: linear-gradient(to bottom, transparent, #000 12%, #000 70%, transparent), linear-gradient(to right, transparent, #000 16%, #000 84%, transparent); -webkit-mask-composite: source-in; mask-image: linear-gradient(to bottom, transparent, #000 12%, #000 70%, transparent), linear-gradient(to right, transparent, #000 16%, #000 84%, transparent); mask-composite: intersect; }
+@media (min-width: 1100px) {
+  .ent-adds-head { grid-template-columns: 1.2fr 1fr 1.05fr; gap: 48px; align-items: center; }
+  .ent-adds-head > p { justify-self: start; }
+  .ent-card-fig { display: block; }
+}
+@media (max-width: 1099px) { .ent-card-fig { display: block; max-width: 420px; margin-top: 8px; } }
+
+/* 04: three objects, each directly above its own box at full brightness (screen-blended so their black is the diagram's). Left out on phones. */
+.ent-flow image { mix-blend-mode: screen; }
+.ent-flow .ph image { display: none; }
+
+/* 05: the long table (start still; the take is pending). Its own band above the steps. The blend sits on the masked box itself (a blend inside a masked box has nothing to blend with). */
+.ent-fleet { margin: 0 0 40px; aspect-ratio: 2 / 1; overflow: hidden; position: relative; mix-blend-mode: screen;
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 3%, #000 97%, transparent), linear-gradient(to bottom, transparent, #000 8%, #000 80%, transparent); -webkit-mask-composite: source-in;
+  mask-image: linear-gradient(to right, transparent, #000 3%, #000 97%, transparent), linear-gradient(to bottom, transparent, #000 8%, #000 80%, transparent); mask-composite: intersect; }
+.ent-fleet img { display: block; width: 100%; height: 100%; object-fit: cover; object-position: 50% 50%; }
+@media (max-width: 767px) { .ent-fleet { aspect-ratio: 4 / 3; -webkit-mask-image: linear-gradient(to right, transparent, #000 12%, #000 88%, transparent), linear-gradient(to bottom, transparent, #000 12%, #000 80%, transparent); mask-image: linear-gradient(to right, transparent, #000 12%, #000 88%, transparent), linear-gradient(to bottom, transparent, #000 12%, #000 80%, transparent); } .ent-fleet img { object-position: 30% 50%; } }
+
+/* 01: the ground line fades out before the picture's edge instead of ending in a cut. */
+.ent-obj canvas { -webkit-mask-image: linear-gradient(to right, transparent, #000 12%, #000 88%, transparent); mask-image: linear-gradient(to right, transparent, #000 12%, #000 88%, transparent); }
+.ent-obj img { -webkit-mask-image: linear-gradient(to bottom, #000 86%, transparent 99.5%), linear-gradient(to right, transparent, #000 12%, #000 88%, transparent); -webkit-mask-composite: source-in; mask-image: linear-gradient(to bottom, #000 86%, transparent 99.5%), linear-gradient(to right, transparent, #000 12%, #000 88%, transparent); mask-composite: intersect; }
+@media (max-width: 1099px) { .ent-card-fig img { -webkit-mask-image: linear-gradient(to bottom, transparent, #000 18%, #000 66%, transparent), linear-gradient(to right, transparent, #000 24%, #000 76%, transparent); mask-image: linear-gradient(to bottom, transparent, #000 18%, #000 66%, transparent), linear-gradient(to right, transparent, #000 24%, #000 76%, transparent); } }
+
+/* 03 and 05: the two takes play through the home page's scroll player (scripts/scroll-seq.js), finished when the picture's centre is at 55% of the screen.
+   The frames carry their own faded edges and a true-black floor, so the whole box is screen-blended onto the section colour. */
+html[data-ss] .ent-card-fig img, html[data-ss] .ent-fleet img { display: none; } /* the start stills stay for no JavaScript */
+.ent-card-fig, .ent-fleet { position: relative; }
+.ent-card-fig [data-scroll-seq], .ent-fleet [data-scroll-seq] { -webkit-mask-image: none; mask-image: none; }
+@media (min-width: 1100px) { .ent-card-fig { width: min(100%, 380px); justify-self: end; aspect-ratio: 860 / 648; } }
+@media (max-width: 1099px) { .ent-card-fig { aspect-ratio: 860 / 648; width: min(100%, 380px); } }
+.ent-card-fig { mix-blend-mode: screen; }
+.ent-fleet { aspect-ratio: 1178 / 608; -webkit-mask-image: none; mask-image: none; mix-blend-mode: screen; overflow: visible; }
+@media (max-width: 767px) { .ent-fleet { aspect-ratio: 849 / 650; } } /* phone frames are cropped tighter (the nearest laptops) */
+/* Rollout steps light in order with the laptops (the player's step highlight). */
+html[data-ss=on] .sector-timeline > li { opacity: .7; transition: opacity .35s; }
+html[data-ss=on] .sector-timeline > li.is-lit { opacity: 1; }

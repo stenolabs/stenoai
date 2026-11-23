@@ -1,0 +1,32 @@
+---
+import { X } from "lucide-react";
+import { films } from "../content/films.js";
+---
+<dialog id="film-dialog" class="film-dialog" aria-label="Film">
+  <video controls playsinline preload="none" crossorigin="anonymous" width="720" height="1280"></video>
+  <button type="button" class="film-close" aria-label="Close the film"><X size={20} aria-hidden="true" /></button>
+</dialog>
+<script define:vars={{ films }}>
+  const dlg = document.getElementById('film-dialog');
+  const video = dlg.querySelector('video');
+  let opener = null, y = 0;
+  const open = (slug, from) => {
+    const f = films.find((x) => x.slug === slug); if (!f) return;
+    opener = from;
+    video.replaceChildren();
+    video.setAttribute('aria-label', `${f.name} film, ${f.length}`);
+    video.src = f.src;
+    if (f.track) { const t = document.createElement('track'); t.kind = 'captions'; t.srclang = 'en'; t.label = 'English'; t.src = f.track; t.default = true; video.append(t); t.addEventListener('load', () => { for (const c of t.track.cues || []) c.size = 82; }); } // 82% of the picture width: two lines at most, inset from the sides
+    y = scrollY; document.documentElement.classList.add('film-open'); // page scroll locked (stable gutter, no shift)
+    dlg.showModal();                                                  // modal: the page behind is inert and Tab stays inside
+    video.play().catch(() => {});
+  };
+  document.addEventListener('click', (e) => { const b = e.target.closest('[data-film-open]'); if (b) open(b.dataset.filmOpen, b.closest('.teaser') ? document.querySelector(`.film-watch[data-film-open="${b.dataset.filmOpen}"],.sector-film-button[data-film-open="${b.dataset.filmOpen}"]`) || b : b); });
+  dlg.querySelector('.film-close').addEventListener('click', () => dlg.close());
+  dlg.addEventListener('click', (e) => { if (e.target === dlg) dlg.close(); }); // backdrop
+  dlg.addEventListener('close', () => {
+    video.pause(); video.removeAttribute('src'); video.replaceChildren(); video.load();
+    document.documentElement.classList.remove('film-open'); scrollTo(0, y);
+    opener?.focus({ preventScroll: true });
+  });
+</script>

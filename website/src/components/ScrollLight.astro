@@ -1,0 +1,10 @@
+---
+// A dark still and its lit edit joined through soft zone masks by scroll (see scripts/scroll-light.js). Decorative: hidden from assistive tech, no pointer events.
+// Without JavaScript, or with reduced motion or data saver, the fully lit picture (the <img>) stays.
+const { class: cls, name, zones, w, h, ...rest } = Astro.props;
+const data = Object.fromEntries(Object.entries(rest).map(([k, v]) => [`data-${k}`, v]));
+---
+<div data-scroll-light class={cls} aria-hidden="true" data-dark={`/scroll/ent/${name}-start-d.webp`} data-lit={`/scroll/ent/${name}-end-d.webp`}
+  data-dark-phone={`/scroll/ent/${name}-start-p.webp`} data-lit-phone={`/scroll/ent/${name}-end-p.webp`} data-zones={JSON.stringify(zones)} {...data}>
+  <img src={`/scroll/ent/${name}-end-d.webp`} alt="" width={w} height={h} loading="lazy" decoding="async" /><canvas></canvas>
+</div>

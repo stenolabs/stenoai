@@ -4,6 +4,7 @@ import { Nav } from "../sections/Nav";
 import Hero from "../sections/Hero.astro";
 import MissionTrust from "../sections/MissionTrust.astro";
 import MissionSectors from "../sections/MissionSectors.astro";
+import MissionFilms from "../sections/MissionFilms.astro";
 import { MissionPlatform } from "../components/MissionPlatform";
 import MissionEditions from "../sections/MissionEditions.astro";
 import MissionAssurance from "../sections/MissionAssurance.astro";
@@ -34,6 +35,7 @@ const description =
       <MissionPlatform client:visible />
     </div>
     <MissionSectors records />
+    <MissionFilms />
     <MissionDeploy />
     <MissionAssurance stage />
     <MissionThreats />
