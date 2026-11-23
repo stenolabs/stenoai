@@ -9318,7 +9318,9 @@ function getMcpActionsService() {
 // one is confirmed in a native dialog the renderer cannot draw or click: a
 // compromised page cannot turn "add server" into running a program.
 async function confirmLocalCommand({ name, command, args, envKeys }) {
-  if (IS_E2E && process.env.STENOAI_E2E_CONFIRM_LOCAL_COMMAND === '1') return true;
+  // An e2e seam only: a packaged build ignores it whatever it is started with
+  // (ALLOW_E2E_PATH_SEAMS), so an env var can never skip this confirmation.
+  if (ALLOW_E2E_PATH_SEAMS && process.env.STENOAI_E2E_CONFIRM_LOCAL_COMMAND === '1') return true;
   const quote = (a) => (/\s/.test(a) ? JSON.stringify(a) : a);
   const line = [command, ...args].map(quote).join(' ');
   const shown = line.length > 600 ? `${line.slice(0, 599)}…` : line;
