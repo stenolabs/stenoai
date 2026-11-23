@@ -1,0 +1,107 @@
+---
+title: "Cookbooks and recipes"
+sidebarTitle: "Cookbooks and recipes"
+description: "Cookbooks set the format of your meeting notes. Recipes are saved prompts you run in chat. Use the built-in ones or write your own."
+icon: "book-open"
+---
+
+Open **Cookbooks** in the sidebar to find two kinds of reusable prompt:
+
+- A **cookbook** turns a meeting into a specific kind of note or report, such as a sales debrief, a 1:1 record or a standup digest. Pick one when you generate notes, or make it your default.
+- A **recipe** is a saved prompt you run in chat, such as a weekly recap, a follow-up email or a decision log.
+
+<Note>
+Cookbooks used to be called report templates. Your existing templates and reports carry over as cookbooks.
+</Note>
+
+The Cookbooks page has three tabs: **Discover** for the built-in cookbooks, **My cookbooks** for the ones you write, and **Recipes**.
+
+## Cookbooks
+
+### Built-in cookbooks
+
+| Cookbook | What it produces |
+|----------|------------------|
+| **Standard** | Steno's classic structured note: a summary, discussion areas, key points and action items. |
+| **Product Demo** | What was shown, how well it fits, pricing, open concerns and next steps. |
+| **Sales Call** | Needs, objections, budget and timeline, and the next steps agreed on a sales call. |
+| **1:1** | Updates, feedback in both directions, blockers, and follow-ups with owners. |
+| **Standup** | A brief digest of done, next and blocked, grouped by person or topic. |
+| **Shareable summary** | A plain-language recap of key points and decisions, ready to forward. |
+
+**Standard** is protected and can't be edited or deleted. You can edit any other built-in cookbook; click **Reset** to go back to Steno's version.
+
+### Create a cookbook
+
+<Steps>
+  <Step title="Start a new cookbook">
+    On the Cookbooks page, click **Create**, then **New cookbook**.
+  </Step>
+  <Step title="Describe the note">
+    Enter a **Name**, choose a **Language** if you want notes in a fixed language, and write the **System Prompt** that tells the AI how to structure the note. Markdown is supported.
+  </Step>
+  <Step title="Save">
+    Click **Save cookbook**. It appears under **My cookbooks**.
+  </Step>
+</Steps>
+
+To delete a cookbook you made, open it and click delete. Notes already generated from it are not affected.
+
+### Set the default
+
+The default cookbook is used automatically for new meetings. Open a cookbook and click **Set as default**. New installs use **Standard**.
+
+### Several reports per meeting
+
+A meeting can have more than one report. In a meeting, use **Generate from cookbook** to create a report with a different cookbook, then switch between the note and its reports. Deleting a report doesn't affect the transcript or other reports.
+
+## Recipes
+
+### Built-in recipes
+
+| Recipe | What it does |
+|--------|--------------|
+| **List recent todos** | Pulls outstanding to-dos from recent meeting notes. |
+| **Coach me** | Looks for patterns and suggests areas to improve. |
+| **Write weekly recap** | Summary of the week across every meeting. |
+| **Blind spots** | Surfaces themes you may have missed. |
+| **What do I owe people** | Your open commitments, grouped by person. |
+| **Prep my next meeting** | Past context, open items and questions to raise. Finish the sentence with who the meeting is with. |
+| **Draft the follow-up** | A recap email, ready to send. |
+| **Decision log** | Every decision, with when and who. |
+| **Write a PRD** | Turns discussions into a requirements doc. |
+
+Built-in recipes can't be edited or deleted. To change one, copy its prompt into a new recipe.
+
+### Run a recipe
+
+- **From chat**: on the **Chat** page, type `/` at the start of the message box, choose a recipe, and press Return. See [Chat](/features/ask-your-meetings#use-a-recipe).
+- **From Cookbooks**: on the **Recipes** tab, click **Run** on a recipe. Chat opens with the recipe's prompt filled in.
+
+Either way the prompt fills the message box without sending, so you can edit it first. The recipe runs against the context selected in chat, which is **All notes** by default.
+
+### Create a recipe
+
+<Steps>
+  <Step title="Start a new recipe">
+    On the Cookbooks page, click **Create**, then **New recipe**. Or click **New recipe** on the **Recipes** tab.
+  </Step>
+  <Step title="Fill it in">
+    Enter a **Name**, an optional **Description** shown under the name in the `/` menu, and the **Prompt**.
+  </Step>
+  <Step title="Save">
+    Click **Save recipe**. It appears under **My recipes** and in the `/` menu.
+  </Step>
+</Steps>
+
+To change or remove a recipe you made, open it from **My recipes**. Deleting a recipe doesn't affect chats that used it.
+
+---
+
+<Accordion title="Where are cookbooks and recipes stored?">
+On this device, in Steno's data folder. Generated reports are saved alongside each meeting. Nothing is uploaded unless you use a cloud AI provider, which receives the prompt along with the meeting text.
+</Accordion>
+
+<Accordion title="Can I write a cookbook in another language?">
+Yes. Set the cookbook's **Language** to pin its output language, whatever language the meeting was in. Left on auto, notes follow your summarization language setting.
+</Accordion>
