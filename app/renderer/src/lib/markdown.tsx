@@ -1,7 +1,7 @@
 import * as React from 'react';
 import ReactMarkdown, { type ExtraProps } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { CHART_COPY, parseChatChart } from '@/lib/chatChart';
+import { parseChatChart } from '@/lib/chatChart';
 import { ChartErrorBoundary } from '@/components/ChartErrorBoundary';
 import yaml, { type EventType, type State } from 'js-yaml';
 import { t } from '@/i18n';
@@ -41,7 +41,7 @@ function ChartCodeBlock({ node, children, ...props }: React.ComponentProps<'pre'
   if (!spec) return fallback;
   return (
     <ChartErrorBoundary fallback={fallback}>
-      <React.Suspense fallback={<p role="status">{CHART_COPY.loading}</p>}>
+      <React.Suspense fallback={<p role="status">{t('chat.chart.loading')}</p>}>
         <ChatChart spec={spec} />
       </React.Suspense>
     </ChartErrorBoundary>

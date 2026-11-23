@@ -1051,5 +1051,12 @@
   "cookbooks.createMenu.cookbook": "New cookbook",
   "cookbooks.createMenu.cookbookHint": "A note format for your meetings",
   "cookbooks.createMenu.recipe": "New recipe",
-  "cookbooks.createMenu.recipeHint": "A saved prompt you run in chat"
+  "cookbooks.createMenu.recipeHint": "A saved prompt you run in chat",
+  "chat.chart.loading": "Loading chart…",
+  "chat.chart.viewData": "View data",
+  "chat.chart.copyImage": "Copy as image",
+  "chat.chart.copyData": "Copy data",
+  "chat.chart.copied": "Copied",
+  "chat.chart.copyFailed": "Couldn’t copy",
+  "chat.chart.other": "Other"
 }

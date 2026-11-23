@@ -69,6 +69,17 @@
     --success-bg: var(--green-50);
     --recording: var(--red-600);
 
+    /* Chat chart series: muted categorical hues in a fixed order, validated
+       for CVD separation and >= 3:1 contrast against --surface-raised. */
+    --chart-1: #3F6EA8;
+    --chart-2: #C2603E;
+    --chart-3: #14937A;
+    --chart-4: #B5841C;
+    --chart-5: #97578C;
+    --chart-6: #6E8B33;
+    --chart-7: #6A5DB3;
+    --chart-8: #B5485A;
+
     /* Elevation */
     --shadow-sm: 0 1px 2px rgba(27, 27, 25, 0.05);
     --shadow-md: 0 8px 24px -8px rgba(27, 27, 25, 0.14), 0 2px 4px -2px rgba(27, 27, 25, 0.06);
@@ -188,6 +199,15 @@
     --success: #7DA088;
     --success-bg: rgba(125, 160, 136, 0.14);
     --recording: #D17563;
+
+    --chart-1: #5F8FD6;
+    --chart-2: #CC6A48;
+    --chart-3: #22A184;
+    --chart-4: #B88A26;
+    --chart-5: #B26AA6;
+    --chart-6: #7E9A3E;
+    --chart-7: #8A7FDB;
+    --chart-8: #CF5D70;
 
     --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.45);
     --shadow-md: 0 8px 24px -8px rgba(0, 0, 0, 0.55), 0 2px 4px -2px rgba(0, 0, 0, 0.3);
