@@ -45,6 +45,9 @@ const CTA_MAILTO =
 
 export const government = {
   slug: "government",
+  film: { src: "/video/sectors/government.mp4", poster: "/images/enterprise/government-film.webp", title: "Every meeting leaves a record." },
+  heroVideo: { src: "/video/sectors/hero-government.mp4", poster: "/images/enterprise/hero-government-poster.webp", position: "0% 50%" },
+  loop: { src: "/video/sectors/loop-government.mp4", poster: "/images/enterprise/loop-government-poster.webp", heading: "Decisions, ready for the minutes.", body: "After the meeting, the transcript becomes a summary with decisions and actions, on your device." },
   name: "Government",
   metaTitle: "StenoAI for Government — On-Device Meeting Notes, No Cloud",
   metaDescription:
@@ -113,6 +116,9 @@ export const government = {
 
 export const defense = {
   slug: "defense",
+  film: { src: "/video/sectors/defense.mp4", poster: "/images/enterprise/defense-film.webp", title: "Every meeting leaves a record." },
+  heroVideo: { src: "/video/sectors/hero-defense.mp4", poster: "/images/enterprise/hero-defense-poster.webp", position: "85% 50%" },
+  loop: { src: "/video/sectors/loop-defense.mp4", poster: "/images/enterprise/loop-defense-poster.webp", heading: "No network. Still recording.", body: "In local mode, recording and notes carry on with the network off. Recordings stay on the device." },
   name: "Defence",
   metaTitle: "StenoAI for Defence — Meeting Notes on Your Device or Your Infrastructure",
   metaDescription:
@@ -184,6 +190,8 @@ const BREACH_INTRO_LE =
 
 export const lawEnforcement = {
   slug: "law-enforcement",
+  heroVideo: { src: "/video/sectors/hero-law-enforcement.mp4", poster: "/images/enterprise/hero-law-enforcement-poster.webp" },
+  loop: { src: "/video/sectors/loop-law-enforcement.mp4", poster: "/images/enterprise/loop-law-enforcement-poster.webp", heading: "The briefing, written up.", body: "After the briefing, the transcript becomes a decision log and a list of actions, on your device." },
   name: "Law enforcement",
   metaTitle: "StenoAI for Law Enforcement — On-Device Meeting Notes for Policing",
   metaDescription:

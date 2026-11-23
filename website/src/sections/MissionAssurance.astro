@@ -1,5 +1,9 @@
 ---
 import { ArrowUpRight, AudioLines, FileText, HardDrive, Cpu, ShieldCheck } from 'lucide-react';
+import Stage from '../components/Stage.astro';
+import ScrollSeq from '../components/ScrollSeq.astro';
+// stage: the home page pins this part while the cable is pulled out (scroll.css, scripts/scroll-seq.js). Other pages leave it off.
+const { stage = false } = Astro.props;
 const steps = [{icon: AudioLines, title: 'Capture', detail: 'Mic + system audio'}, {icon: Cpu, title: 'Process', detail: 'Your AI models'}, {icon: FileText, title: 'Understand', detail: 'Notes + answers'}, {icon: HardDrive, title: 'Retain', detail: 'Your files'}];
 // What does leave the device. Keep this honest and complete: a buyer's
 // security team will test it against the source.
@@ -10,9 +14,11 @@ const egress = [
   { what: 'Model downloads', when: 'During setup, or when you choose a new model.' },
 ];
 ---
-<section id="security" class="mission-assurance mission-section" aria-labelledby="assurance-heading">
-  <div class="mission-wrap">
+<section id="security" class:list={["mission-assurance mission-section", { "has-stage": stage }]} aria-labelledby="assurance-heading">
+  <Stage on={stage} class="stage-cable">
+  <div class:list={["mission-wrap", { "stage-text": stage }]}>
     <div class="mission-section-top"><p class="mission-eyebrow">04 / Verify, don’t trust</p><ShieldCheck size={21} aria-hidden="true" /></div>
+    {stage && <div class="stage-m"><ScrollSeq src="/scroll/cable-d" src-phone="/scroll/cable-p" frames="97" map="-0.27,1.22" place="right" place-phone="fill" start-phone=".8" end-phone=".2" target-phone="bottom" lit="0,.06,.15,.85" lit-phone="0,.25,.5,.75" lit-items=".mission-principles > div" /></div>}
     <div class="mission-assurance-layout">
       <div>
         <h2 id="assurance-heading">Don’t take our word for it.<br />Check it.</h2>
@@ -26,6 +32,9 @@ const egress = [
         <div><span>04</span><div><h3>We tell you what does go out.</h3><p>The full list is below. Meeting content only ever goes to an endpoint you run or choose.</p></div></div>
       </div>
     </div>
+  </div>
+  </Stage>
+  <div class:list={["mission-wrap", { "stage-after": stage }]}>
     <div class="mission-boundary">
       <div class="mission-boundary-top"><span class="mission-eyebrow">Your boundary / device or your infrastructure</span><span class="mission-eyebrow">Meeting content stays inside <span class="mission-status-dot"></span></span></div>
       <div class="mission-pipeline">

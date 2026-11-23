@@ -4,6 +4,9 @@
 // on /enterprise/, and IndustryPage.astro on the sector pages (only sections that page renders are listed).
 // Images live in /images/nav/ (illustrative scenes, no insignia); `img` is the file name without extension.
 
+import { government, defense, lawEnforcement } from "./industries.data.js";
+
+// `video` on an overview card (sector menus) plays the page's hero take in place of the still.
 export const MEGA = {
   "/#how": {
     key: "platform",
@@ -25,7 +28,7 @@ export const MEGA = {
     key: "gov",
     kicker: "Government · Public sector",
     title: "Meeting notes that never leave your perimeter.",
-    overview: { label: "Government overview", img: "gov-exterior" },
+    overview: { label: "Government overview", img: "gov-exterior", video: government.heroVideo },
     items: [
       { id: "use-cases", icon: "list-checks", label: "Where it is used", line: "Eight settings, room by room", img: "gov-ministerial" },
       { id: "why-now", icon: "trending-up", label: "Why now", line: "AI moving inside the perimeter", img: "gov-committee" },
@@ -40,7 +43,7 @@ export const MEGA = {
     key: "def",
     kicker: "Defence · Forward to programme board",
     title: "Built for the discussions that can’t leave your boundary.",
-    overview: { label: "Defence overview", img: "def-forward" },
+    overview: { label: "Defence overview", img: "def-forward", video: defense.heroVideo },
     items: [
       { id: "use-cases", icon: "map", label: "Where it is used", line: "Planning, debriefs, forward operations", img: "def-planning" },
       { id: "why-now", icon: "book-open-text", label: "Why now", line: "Doctrine already assigns a recorder", img: "def-wargame" },
@@ -55,7 +58,7 @@ export const MEGA = {
     key: "le",
     kicker: "Law enforcement · Policing",
     title: "Notes that stay inside the force.",
-    overview: { label: "Law enforcement overview", img: "le-briefing" },
+    overview: { label: "Law enforcement overview", img: "le-briefing", video: lawEnforcement.heroVideo },
     items: [
       { id: "use-cases", icon: "list-checks", label: "Where it is used", line: "Briefings, reviews, witness contact", img: "le-review" },
       { id: "not-for", icon: "ban", label: "What it is not for", line: "Not a PACE interview recorder", img: "le-notfor" },

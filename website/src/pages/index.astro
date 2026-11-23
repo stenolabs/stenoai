@@ -12,6 +12,8 @@ import MissionThreats from "../sections/MissionThreats.astro";
 import MissionFAQ from "../sections/MissionFAQ.astro";
 import CTAFooter from "../sections/CTAFooter.astro";
 import Footer from "../sections/Footer.astro";
+import ScrollSeq from "../components/ScrollSeq.astro";
+import "../scroll.css";
 
 const title = "StenoAI — Private Meeting Notes for Government, Defence & Law Enforcement";
 const description =
@@ -19,18 +21,30 @@ const description =
 ---
 
 <BaseLayout title={title} description={description} canonical="https://stenoai.co/">
+  <!-- Scroll-driven footage: "on", or "still" for reduced motion and data saver; absent without JavaScript, which keeps the plain page. -->
+  <script is:inline>
+    (function (d, c) { d.dataset.ss = matchMedia('(prefers-reduced-motion: reduce)').matches || (c && c.saveData) ? 'still' : 'on'; })(document.documentElement, navigator.connection);
+  </script>
   <Nav client:load />
   <main id="main-content" class="mission-site">
     <Hero />
     <MissionTrust />
-    <MissionPlatform client:visible />
-    <MissionSectors />
+    <div class="scroll-host">
+      <ScrollSeq src="/scroll/voice-d" src-phone="/scroll/voice-p" frames="97" start=".9" end=".45" target=".platform-console-wrap" anchor="770,415,891" anchor-phone="40,1290,700" dim=".7" />
+      <MissionPlatform client:visible />
+    </div>
+    <MissionSectors records />
     <MissionDeploy />
-    <MissionAssurance />
+    <MissionAssurance stage />
     <MissionThreats />
     <MissionEditions />
     <MissionFAQ />
-    <CTAFooter />
+    <CTAFooter stage />
   </main>
   <Footer />
 </BaseLayout>
+
+<script>
+  import "../scripts/scroll-seq.js";
+  import "../scripts/scroll-records.js";
+</script>

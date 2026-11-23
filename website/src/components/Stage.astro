@@ -1,0 +1,6 @@
+---
+// A pinned scroll stage: the panel stays on screen while the section scrolls through its extra length (see scroll.css).
+// With on={false} it renders its children as they are, so other pages keep the section exactly as it is.
+const { on = false, class: cls } = Astro.props;
+---
+{on ? <div class:list={["stage", cls]}><div class="stage-panel"><slot /></div></div> : <slot />}
