@@ -13,7 +13,9 @@ import {
 import { Input } from '@/components/ui/input';
 import { toRecipe, useDeleteRecipe, useSaveRecipe, useUserRecipes } from '@/hooks/useRecipes';
 import type { UserRecipe } from '@/lib/ipc';
-import { BUILTIN_RECIPES, PresetGlyph, PRESET_COLORS, type Recipe } from '@/lib/recipes';
+import { CookbookCover, COLOUR_TONES } from '@/components/cookbooks/CookbookCover';
+import type { CookbookCategory } from '@/lib/cookbooks';
+import { BUILTIN_RECIPES, type Recipe } from '@/lib/recipes';
 import { navigate } from '@/lib/router';
 import { t } from '@/i18n';
 
@@ -50,17 +52,12 @@ export function RecipesPanel({
         </h2>
         <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {own.map((r, idx) => (
-            <RecipeCard
-              key={r.id}
-              recipe={toRecipe(r)}
-              color={PRESET_COLORS[idx % PRESET_COLORS.length]}
-              onEdit={() => onEdit(r)}
-            />
+            <RecipeCard key={r.id} recipe={toRecipe(r)} index={idx} onEdit={() => onEdit(r)} />
           ))}
           <button
             type="button"
             onClick={() => onEdit({})}
-            className="flex min-h-[112px] flex-col items-center justify-center gap-1.5 rounded-xl border border-dashed p-4 text-[13px] transition-colors hover:bg-[color:var(--surface-hover)]"
+            className="flex min-h-[180px] flex-col items-center justify-center gap-1.5 rounded-xl border border-dashed p-4 text-[13px] transition-colors hover:bg-[color:var(--surface-hover)]"
             style={{
               borderColor: 'var(--border-strong, var(--border-subtle))',
               color: 'var(--fg-2)',
@@ -78,7 +75,7 @@ export function RecipesPanel({
         </h2>
         <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {BUILTIN_RECIPES.map((r, idx) => (
-            <RecipeCard key={r.id} recipe={r} color={PRESET_COLORS[idx % PRESET_COLORS.length]} />
+            <RecipeCard key={r.id} recipe={r} index={idx + 2} />
           ))}
         </div>
       </section>
@@ -90,53 +87,59 @@ export function RecipesPanel({
   );
 }
 
-function RecipeCard({
-  recipe,
-  color,
-  onEdit,
-}: {
-  recipe: Recipe;
-  color: string;
-  onEdit?: () => void;
-}) {
+const RECIPE_CATEGORIES: CookbookCategory[] = ['planning', 'briefings', 'interviews', 'everyday'];
+
+function RecipeCard({ recipe, index, onEdit }: { recipe: Recipe; index: number; onEdit?: () => void }) {
   return (
     <section
       aria-label={recipe.label}
-      className="flex min-w-0 flex-col rounded-xl border p-4"
+      className="group flex min-w-0 flex-col overflow-hidden rounded-[16px] border shadow-[var(--shadow-sm)] motion-safe:transition-[transform,box-shadow] motion-safe:duration-300 hover:shadow-[var(--shadow-lg)] motion-safe:hover:-translate-y-0.5"
       style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-raised)' }}
     >
-      <div className="flex items-center gap-2">
-        <PresetGlyph color={color} size={22} />
-        <h3 className="min-w-0 truncate text-[14px] font-medium">{recipe.label}</h3>
-      </div>
-      <p
-        className="mt-1.5 line-clamp-2 flex-1 text-[12.5px] leading-snug"
-        style={{ color: 'var(--fg-2)' }}
-      >
-        {recipe.description || recipe.prompt}
-      </p>
-      <div className="mt-3 flex items-center gap-1.5">
-        <Button
-          size="sm"
-          variant="outline"
-          className="h-[28px] px-2.5 text-[12.5px]"
-          aria-label={t('recipes.runAria', { name: recipe.label })}
-          onClick={() => navigate(`/chat?recipe=${encodeURIComponent(recipe.id)}`)}
+      <div className="relative h-[88px]">
+        <CookbookCover
+          seedId={recipe.id}
+          category={RECIPE_CATEGORIES[index % RECIPE_CATEGORIES.length]}
+          tone={COLOUR_TONES[index % COLOUR_TONES.length]}
+          shape="wide"
+          className="absolute inset-0"
+        />
+        <span
+          aria-hidden
+          className="absolute left-3 top-3 inline-flex size-8 items-center justify-center rounded-[9px] font-mono text-[17px] font-semibold"
+          style={{ background: 'var(--surface-raised)', color: 'var(--fg-1)', boxShadow: '0 6px 14px -8px rgba(0,0,0,0.5)' }}
         >
-          <Play aria-hidden />
-          {t('recipes.run')}
-        </Button>
-        {onEdit && (
+          /
+        </span>
+      </div>
+      <div className="flex flex-1 flex-col p-4">
+        <h3 className="min-w-0 truncate text-[14px] font-medium">{recipe.label}</h3>
+        <p className="mt-1 line-clamp-2 flex-1 text-[12.5px] leading-snug" style={{ color: 'var(--fg-2)' }}>
+          {recipe.description || recipe.prompt}
+        </p>
+        <div className="mt-3 flex items-center gap-1.5">
           <Button
             size="sm"
-            variant="ghost"
+            variant="outline"
             className="h-[28px] px-2.5 text-[12.5px]"
-            aria-label={t('recipes.editAria', { name: recipe.label })}
-            onClick={onEdit}
+            aria-label={t('recipes.runAria', { name: recipe.label })}
+            onClick={() => navigate(`/chat?recipe=${encodeURIComponent(recipe.id)}`)}
           >
-            {t('recipes.edit')}
+            <Play aria-hidden />
+            {t('recipes.run')}
           </Button>
-        )}
+          {onEdit && (
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-[28px] px-2.5 text-[12.5px]"
+              aria-label={t('recipes.editAria', { name: recipe.label })}
+              onClick={onEdit}
+            >
+              {t('recipes.edit')}
+            </Button>
+          )}
+        </div>
       </div>
     </section>
   );

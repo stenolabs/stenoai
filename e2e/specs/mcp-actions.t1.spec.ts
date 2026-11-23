@@ -59,7 +59,10 @@ test('Connect: connector cards, add a custom endpoint, toggle and disconnect', a
   // Brief status: count · locality, without the long data-leaves note.
   await expect(card.getByText('2 actions available · Runs on this computer')).toBeVisible();
   await expect(card.getByText('so that data leaves your device')).toHaveCount(0);
-  const tools = card.getByRole('list', { name: 'Actions offered by Team n8n' });
+  // The action list is a hover away, not a wall of chips.
+  await expect(card.getByRole('list', { name: 'Actions offered by Team n8n' })).toHaveCount(0);
+  await card.getByText('2 actions available').hover();
+  const tools = page.getByRole('tooltip').getByRole('list', { name: 'Actions offered by Team n8n' });
   await expect(tools.getByText('Create issue')).toBeVisible();
   await expect(tools.getByText('Search issues')).toHaveCount(0); // read-only tools are not actions
   const toggle = card.getByRole('switch', { name: 'Use Team n8n for suggestions' });

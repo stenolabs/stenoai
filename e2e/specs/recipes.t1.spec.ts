@@ -10,7 +10,13 @@ test('Recipes: create one on Cookbooks, run it, and pick it from / in chat', asy
   const { page } = await launchApp({ mockIpc: true, releaseHighlightsSeen: true });
   await page.evaluate(() => { window.location.hash = '#/chat'; });
   await page.getByRole('button', { name: /^Cookbooks/ }).click();
-  await page.getByRole('tab', { name: 'Recipes' }).click();
+  // The intro carousel's second slide explains recipes and opens the tab.
+  await page.getByRole('button', { name: 'Show “What\'s a recipe?”' }).click();
+  const slide = page.getByRole('region', { name: "What's a recipe?" });
+  await expect(slide).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath('recipe-slide.png') });
+  await slide.getByRole('button', { name: 'See recipes' }).click();
+  await expect(page.getByRole('tab', { name: 'Recipes' })).toHaveAttribute('aria-selected', 'true');
 
   const builtin = page.getByRole('region', { name: 'Built-in' });
   for (const name of ['Write weekly recap', 'What do I owe people', 'Draft the follow-up', 'Write a PRD']) {

@@ -712,5 +712,9 @@
   "settings.connectors.connectionsIntro": "Steno 可傳送已核准動作的應用程式。",
   "settings.connectors.empty": "尚無連線。",
   "settings.connectors.openConnect": "開啟連接",
-  "connect.actions.manageConnections": "在設定中管理連線"
+  "connect.actions.manageConnections": "在設定中管理連線",
+  "cookbooks.intro.recipeTitle": "什麼是食譜？",
+  "cookbooks.intro.recipeBody": "食譜是您在聊天中執行的已儲存提示：每週回顧、後續信件、決策紀錄。在任何聊天中輸入 / 即可使用，或自行建立。",
+  "cookbooks.intro.seeRecipes": "查看食譜",
+  "cookbooks.intro.showSlide": "顯示「{{name}}」"
 }

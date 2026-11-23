@@ -138,14 +138,26 @@
      * neutral ink tone so the interface reads as one paper+ink palette. */
     --accent-primary: 60 4% 10%;
 
-    /* Cookbook cover art (generative, ink/paper only). Three tones so a row
-     * of covers has rhythm without any chromatic accent. */
+    /* Cookbook cover art (generative). Ink/paper tones so a row
+     * of covers has rhythm, plus the muted colour tones below. */
     --cover-ink-bg: #1B1B19;
     --cover-ink-fg: #FAF9F5;
     --cover-stone-bg: #E5DFD1;
     --cover-stone-fg: #1B1B19;
     --cover-paper-bg: #F1EEE5;
     --cover-paper-fg: #3D3D39;
+    /* Muted colour tones: printed-ink colours that sit on paper, for rhythm
+     * across a row of covers without a single brand accent. */
+    --cover-sage-bg: #C9D3BF;
+    --cover-sage-fg: #26301F;
+    --cover-clay-bg: #E2BFA8;
+    --cover-clay-fg: #3B2116;
+    --cover-sky-bg: #BCCCDA;
+    --cover-sky-fg: #1C2A38;
+    --cover-plum-bg: #D3C0D2;
+    --cover-plum-fg: #33213A;
+    --cover-ochre-bg: #E6CF95;
+    --cover-ochre-fg: #3A2E0E;
     --cover-grain: 0.22;
   }
 
@@ -213,6 +225,16 @@
     --cover-stone-fg: #CFCABC;
     --cover-paper-bg: #22221E;
     --cover-paper-fg: #A9A496;
+    --cover-sage-bg: #2F3A2B;
+    --cover-sage-fg: #C9D3BF;
+    --cover-clay-bg: #4A3024;
+    --cover-clay-fg: #E8C9B5;
+    --cover-sky-bg: #263646;
+    --cover-sky-fg: #C3D2DF;
+    --cover-plum-bg: #3B2A3D;
+    --cover-plum-fg: #DCCADB;
+    --cover-ochre-bg: #4A3D19;
+    --cover-ochre-fg: #EBD7A3;
     --cover-grain: 0.3;
   }
 }
@@ -866,6 +888,11 @@
 .cookbook-cover[data-cover-tone='ink'] { --cover-bg: var(--cover-ink-bg); color: var(--cover-ink-fg); }
 .cookbook-cover[data-cover-tone='stone'] { --cover-bg: var(--cover-stone-bg); color: var(--cover-stone-fg); }
 .cookbook-cover[data-cover-tone='paper'] { --cover-bg: var(--cover-paper-bg); color: var(--cover-paper-fg); }
+.cookbook-cover[data-cover-tone='sage'] { --cover-bg: var(--cover-sage-bg); color: var(--cover-sage-fg); }
+.cookbook-cover[data-cover-tone='clay'] { --cover-bg: var(--cover-clay-bg); color: var(--cover-clay-fg); }
+.cookbook-cover[data-cover-tone='sky'] { --cover-bg: var(--cover-sky-bg); color: var(--cover-sky-fg); }
+.cookbook-cover[data-cover-tone='plum'] { --cover-bg: var(--cover-plum-bg); color: var(--cover-plum-fg); }
+.cookbook-cover[data-cover-tone='ochre'] { --cover-bg: var(--cover-ochre-bg); color: var(--cover-ochre-fg); }
 .cookbook-cover { background: var(--cover-bg); }
 .cookbook-cover-glyph {
   width: 54%;

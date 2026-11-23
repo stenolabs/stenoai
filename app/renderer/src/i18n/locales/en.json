@@ -957,7 +957,7 @@
   "cookbooks.create": "Create",
   "cookbooks.intro.eyebrow": "New",
   "cookbooks.intro.title": "What's a cookbook?",
-  "cookbooks.intro.body": "A cookbook is a reusable way to turn a meeting into a specific kind of note or report: a sales debrief, a 1:1 record, a standup digest. Pick one when you generate notes, or make it your default. A recipe is a saved prompt you run in chat, like a weekly recap.",
+  "cookbooks.intro.body": "A cookbook is a reusable way to turn a meeting into a specific kind of note or report: a sales debrief, a 1:1 record, a standup digest. Pick one when you generate notes, or make it your default.",
   "cookbooks.intro.learnMore": "Learn more",
   "cookbooks.intro.dismiss": "Dismiss",
   "cookbooks.tabs.discover": "Discover",
@@ -1043,5 +1043,9 @@
   "settings.connectors.connectionsIntro": "Apps Steno can send approved actions to.",
   "settings.connectors.empty": "No connections yet.",
   "settings.connectors.openConnect": "Open Connect",
-  "connect.actions.manageConnections": "Manage connections in Settings"
+  "connect.actions.manageConnections": "Manage connections in Settings",
+  "cookbooks.intro.recipeTitle": "What's a recipe?",
+  "cookbooks.intro.recipeBody": "A recipe is a saved prompt you run in chat: a weekly recap, a follow-up email, a decision log. Type / in any chat to use one, or make your own.",
+  "cookbooks.intro.seeRecipes": "See recipes",
+  "cookbooks.intro.showSlide": "Show “{{name}}”"
 }

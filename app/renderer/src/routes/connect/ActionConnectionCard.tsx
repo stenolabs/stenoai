@@ -2,6 +2,7 @@ import * as React from 'react';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Switch } from '@/components/ui/switch';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import {
   useAuthorizeConnection,
   useRefreshConnection,
@@ -12,7 +13,7 @@ import { actionErrorMessage } from '@/lib/actionErrors';
 import type { ActionConnection, ActionLocality } from '@/lib/ipc';
 import { t } from '@/i18n';
 
-const TOOL_PREVIEW = 6;
+const TOOL_LIST_MAX = 40;
 
 export function localityLabel(locality: ActionLocality | null): string {
   if (locality === 'device') return t('actions.locality.device');
@@ -36,7 +37,6 @@ export function ActionConnectionCard({
   const [error, setError] = React.useState('');
 
   const actionTools = c.tools.filter((tool) => !tool.readOnly);
-  const preview = actionTools.slice(0, TOOL_PREVIEW);
   const busy = refresh.isPending || authorize.isPending;
 
   const statusText = c.blockedByPolicy
@@ -77,34 +77,44 @@ export function ActionConnectionCard({
         />
       </div>
       <p className="mt-2 text-[12.5px]" style={{ color: 'var(--fg-2)' }}>
-        {statusText}
+        {actionTools.length > 0 ? (
+          // The actions themselves are a hover away: a long vendor list
+          // (Notion offers ~40) would otherwise dominate the card.
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span
+                tabIndex={0}
+                className="cursor-default underline decoration-dotted underline-offset-2 outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--accent-primary)]"
+              >
+                {statusText}
+              </span>
+            </TooltipTrigger>
+            <TooltipContent side="bottom" align="start" className="max-w-[320px]">
+              <ul
+                className="max-h-[260px] overflow-y-auto"
+                aria-label={t('connect.actions.connection.toolsAria', { name: c.name })}
+              >
+                {actionTools.slice(0, TOOL_LIST_MAX).map((tool) => (
+                  <li key={tool.name} className="py-0.5">
+                    {tool.title || tool.name}
+                  </li>
+                ))}
+                {actionTools.length > TOOL_LIST_MAX && (
+                  <li className="py-0.5 opacity-70">
+                    {t('connect.actions.connection.moreTools', {
+                      count: actionTools.length - TOOL_LIST_MAX,
+                    })}
+                  </li>
+                )}
+              </ul>
+            </TooltipContent>
+          </Tooltip>
+        ) : (
+          statusText
+        )}
         {t('actions.separator')}
         {localityLabel(c.locality)}
       </p>
-      {preview.length > 0 && (
-        <ul
-          className="mt-2 flex flex-wrap gap-1.5"
-          aria-label={t('connect.actions.connection.toolsAria', { name: c.name })}
-        >
-          {preview.map((tool) => (
-            <li
-              key={tool.name}
-              title={tool.description}
-              className="rounded-md px-1.5 py-0.5 font-mono text-[11.5px]"
-              style={{ background: 'var(--surface-sunken)', color: 'var(--fg-2)' }}
-            >
-              {tool.title || tool.name}
-            </li>
-          ))}
-          {actionTools.length > TOOL_PREVIEW && (
-            <li className="px-1 py-0.5 text-[11.5px]" style={{ color: 'var(--fg-muted)' }}>
-              {t('connect.actions.connection.moreTools', {
-                count: actionTools.length - TOOL_PREVIEW,
-              })}
-            </li>
-          )}
-        </ul>
-      )}
       <div className="mt-3 flex flex-wrap gap-2">
         {c.auth === 'oauth' && c.status === 'needs-auth' ? (
           <Button

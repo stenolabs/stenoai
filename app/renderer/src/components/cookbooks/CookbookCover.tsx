@@ -6,7 +6,7 @@ import { seedFromId, seededRandom, type CookbookCategory } from '@/lib/cookbooks
 // ---------------------------------------------------------------------------
 // Generative cover art for a cookbook. No stock imagery: every cover is line-
 // work drawn from a seed derived from the cookbook id, so a cookbook always
-// gets the same cover, in ink/paper tones only (no chromatic accent). Each
+// gets the same cover, in ink/paper tones plus a few muted printed-ink colours. Each
 // category has its own pair of motifs so a section reads as a family:
 //
 //   briefings  → steno-pad ruling with shorthand strokes | concentric arcs
@@ -20,7 +20,9 @@ import { seedFromId, seededRandom, type CookbookCategory } from '@/lib/cookbooks
 // SVG is aria-hidden.
 // ---------------------------------------------------------------------------
 
-export type CoverTone = 'ink' | 'paper' | 'stone';
+export type CoverTone = 'ink' | 'paper' | 'stone' | 'sage' | 'clay' | 'sky' | 'plum' | 'ochre';
+/** The colour tones, for rows that want colour (recipes, featured cookbooks). */
+export const COLOUR_TONES: CoverTone[] = ['sage', 'clay', 'sky', 'plum', 'ochre'];
 type Motif = 'ruled' | 'arcs' | 'ridges' | 'halftone' | 'contours' | 'survey';
 
 const CATEGORY_MOTIFS: Record<CookbookCategory, [Motif, Motif]> = {
@@ -37,7 +39,7 @@ export const CATEGORY_GLYPHS: Record<CookbookCategory, LucideIcon> = {
   everyday: Coffee,
 };
 
-const TONES: CoverTone[] = ['ink', 'stone', 'paper'];
+const TONES: CoverTone[] = ['ink', 'stone', 'paper', 'sage', 'clay', 'sky', 'plum', 'ochre'];
 
 export function toneForSeed(id: string): CoverTone {
   return TONES[seedFromId(id) % TONES.length];

@@ -25,6 +25,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { CookbookCover, CATEGORY_GLYPHS, type CoverTone } from '@/components/cookbooks/CookbookCover';
 import { CookbookEditor } from '@/routes/cookbooks/CookbookEditor';
 import { RecipesPanel } from '@/routes/cookbooks/RecipesPanel';
+import { PresetGlyph, PRESET_COLORS } from '@/lib/recipes';
 import { useTemplates } from '@/hooks/useTemplates';
 import {
   COOKBOOK_CATEGORIES,
@@ -86,7 +87,7 @@ function prefersReducedMotion() {
   return typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 }
 
-const FEATURED_TONES: CoverTone[] = ['ink', 'stone', 'ink', 'paper'];
+const FEATURED_TONES: CoverTone[] = ['ink', 'sage', 'clay', 'sky', 'plum', 'ochre'];
 
 const FOCUS_RING =
   'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--focus-ring)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--page)]';
@@ -178,6 +179,7 @@ export function Cookbooks() {
 
             {introOpen && (
               <IntroCard
+                onShowRecipes={() => setTab('recipes')}
                 onDismiss={dismissIntro}
                 onLearnMore={() => void ipc().shell.openExternal(DOCS_URL)}
               />
@@ -383,42 +385,150 @@ function Toolbar({
   );
 }
 
-function IntroCard({ onDismiss, onLearnMore }: { onDismiss: () => void; onLearnMore: () => void }) {
+const INTRO_SLIDE_MS = 7000;
+
+/**
+ * The intro: an auto-advancing two-slide carousel, "What's a cookbook?" then
+ * "What's a recipe?". It pauses while hovered or focused and stays put under
+ * reduced motion; the dots switch slides by hand.
+ */
+function IntroCard({
+  onDismiss,
+  onLearnMore,
+  onShowRecipes,
+}: {
+  onDismiss: () => void;
+  onLearnMore: () => void;
+  onShowRecipes: () => void;
+}) {
+  const [index, setIndex] = React.useState(0);
+  const [paused, setPaused] = React.useState(false);
+  const slides = [
+    {
+      id: 'cookbooks-intro-title',
+      title: t('cookbooks.intro.title'),
+      body: t('cookbooks.intro.body'),
+      action: (
+        <Button size="sm" onClick={onLearnMore} className={cn('rounded-full px-4', FOCUS_RING)}>
+          {t('cookbooks.intro.learnMore')}
+          <ArrowUpRight />
+        </Button>
+      ),
+      art: <IntroArt />,
+    },
+    {
+      id: 'recipes-intro-title',
+      title: t('cookbooks.intro.recipeTitle'),
+      body: t('cookbooks.intro.recipeBody'),
+      action: (
+        <Button size="sm" onClick={onShowRecipes} className={cn('rounded-full px-4', FOCUS_RING)}>
+          {t('cookbooks.intro.seeRecipes')}
+          <ChevronRight />
+        </Button>
+      ),
+      art: <RecipeIntroArt />,
+    },
+  ];
+
+  React.useEffect(() => {
+    if (paused || prefersReducedMotion()) return;
+    const timer = window.setTimeout(() => setIndex((i) => (i + 1) % slides.length), INTRO_SLIDE_MS);
+    return () => window.clearTimeout(timer);
+  }, [index, paused, slides.length]);
+
   return (
     <section
-      aria-labelledby="cookbooks-intro-title"
-      className="mt-8 grid overflow-hidden rounded-[18px] lg:grid-cols-[minmax(0,1fr)_360px]"
+      aria-labelledby={slides[index].id}
+      aria-roledescription="carousel"
+      className="relative mt-8 overflow-hidden rounded-[18px]"
       style={{ border: '1px solid var(--border-subtle)', background: 'var(--surface-raised)', boxShadow: 'var(--shadow-sm)' }}
+      onMouseEnter={() => setPaused(true)}
+      onMouseLeave={() => setPaused(false)}
+      onFocus={() => setPaused(true)}
+      onBlur={() => setPaused(false)}
     >
-      <div className="order-2 flex flex-col justify-center p-7 lg:order-1 lg:p-9">
-        <p
-          className="text-[10.5px] font-semibold uppercase tracking-[0.14em]"
-          style={{ color: 'var(--fg-2)' }}
-        >
-          {t('cookbooks.intro.eyebrow')}
-        </p>
-        <h2
-          id="cookbooks-intro-title"
-          className="mt-2 text-[26px] leading-tight"
-          style={{ fontFamily: 'var(--font-serif)' }}
-        >
-          {t('cookbooks.intro.title')}
-        </h2>
-        <p className="mt-3 max-w-[520px] text-[14px] leading-relaxed" style={{ color: 'var(--fg-2)' }}>
-          {t('cookbooks.intro.body')}
-        </p>
-        <div className="mt-6 flex items-center gap-2">
-          <Button size="sm" onClick={onLearnMore} className={cn('rounded-full px-4', FOCUS_RING)}>
-            {t('cookbooks.intro.learnMore')}
-            <ArrowUpRight />
-          </Button>
-          <Button size="sm" variant="ghost" onClick={onDismiss} className={cn('rounded-full px-4', FOCUS_RING)}>
-            {t('cookbooks.intro.dismiss')}
-          </Button>
-        </div>
+      <div className="grid">
+        {slides.map((slide, i) => (
+          <div
+            key={slide.id}
+            aria-hidden={i !== index}
+            inert={i !== index}
+            className="grid motion-safe:transition-opacity motion-safe:duration-500 lg:grid-cols-[minmax(0,1fr)_360px]"
+            style={{ gridArea: '1 / 1', opacity: i === index ? 1 : 0, pointerEvents: i === index ? 'auto' : 'none' }}
+          >
+            <div className="order-2 flex flex-col justify-center p-7 lg:order-1 lg:p-9">
+              <p
+                className="text-[10.5px] font-semibold uppercase tracking-[0.14em]"
+                style={{ color: 'var(--fg-2)' }}
+              >
+                {t('cookbooks.intro.eyebrow')}
+              </p>
+              <h2
+                id={slide.id}
+                className="mt-2 text-[26px] leading-tight"
+                style={{ fontFamily: 'var(--font-serif)' }}
+              >
+                {slide.title}
+              </h2>
+              <p className="mt-3 max-w-[520px] text-[14px] leading-relaxed" style={{ color: 'var(--fg-2)' }}>
+                {slide.body}
+              </p>
+              <div className="mt-6 flex items-center gap-2">
+                {slide.action}
+                <Button size="sm" variant="ghost" onClick={onDismiss} className={cn('rounded-full px-4', FOCUS_RING)}>
+                  {t('cookbooks.intro.dismiss')}
+                </Button>
+              </div>
+            </div>
+            {slide.art}
+          </div>
+        ))}
       </div>
-      <IntroArt />
+      <div className="absolute bottom-4 left-7 flex gap-1.5 lg:left-9">
+        {slides.map((slide, i) => (
+          <button
+            key={slide.id}
+            type="button"
+            aria-label={t('cookbooks.intro.showSlide', { name: slide.title })}
+            aria-current={i === index}
+            onClick={() => setIndex(i)}
+            className={cn('h-1.5 rounded-full motion-safe:transition-all', FOCUS_RING, i === index ? 'w-5' : 'w-1.5')}
+            style={{ background: i === index ? 'var(--fg-1)' : 'var(--border-strong, var(--fg-muted))' }}
+          />
+        ))}
+      </div>
     </section>
+  );
+}
+
+/** The recipe slide's art: a colour plate with three `/` recipe chips. */
+function RecipeIntroArt() {
+  const chips = [
+    { key: 'weeklyRecap', label: t('chat.presets.weeklyRecap.label'), color: PRESET_COLORS[0], rot: -4, x: -24, y: -52 },
+    { key: 'followUp', label: t('chat.presets.followUp.label'), color: PRESET_COLORS[1], rot: 2, x: 18, y: 0 },
+    { key: 'decisionLog', label: t('chat.presets.decisionLog.label'), color: PRESET_COLORS[2], rot: -2, x: -8, y: 52 },
+  ];
+  return (
+    <div aria-hidden="true" className="relative order-1 h-[200px] overflow-hidden lg:order-2 lg:h-auto lg:min-h-[248px]">
+      <CookbookCover seedId="recipes-intro" category="everyday" tone="clay" shape="wide" className="absolute inset-0" />
+      <div className="absolute inset-0 flex items-center justify-center">
+        {chips.map((c) => (
+          <div
+            key={c.key}
+            className="absolute flex items-center gap-2 whitespace-nowrap rounded-[10px] px-3 py-2 text-[13px]"
+            style={{
+              transform: `translate(${c.x}px, ${c.y}px) rotate(${c.rot}deg)`,
+              background: 'var(--surface-raised)',
+              color: 'var(--fg-1)',
+              boxShadow: '0 14px 26px -14px rgba(0,0,0,0.45), 0 0 0 1px rgba(0,0,0,0.04)',
+            }}
+          >
+            <PresetGlyph color={c.color} />
+            {c.label}
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }
 
