@@ -3,7 +3,6 @@ import {
   Building2,
   Code2,
   Info,
-  Plug,
   Settings2,
   Sparkles,
   Users,
@@ -22,7 +21,6 @@ export type SettingsTabId =
   | 'ai'
   | 'people'
   | 'organisation'
-  | 'integrations'
   | 'advanced'
   | 'developer'
   | 'about';
@@ -84,13 +82,6 @@ const NAV_GROUPS: NavGroup[] = [
     },
     items: [
       {
-        id: 'integrations',
-        get label() {
-          return t('settings.nav.integrations');
-        },
-        icon: Plug,
-      },
-      {
         id: 'advanced',
         get label() {
           return t('settings.nav.advanced');
@@ -128,8 +119,6 @@ export function settingsTabLabel(id: SettingsTabId): string {
       return t('settings.nav.people');
     case 'organisation':
       return t('settings.nav.organisation');
-    case 'integrations':
-      return t('settings.nav.integrations');
     case 'advanced':
       return t('settings.nav.advanced');
     case 'developer':

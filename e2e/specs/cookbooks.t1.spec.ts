@@ -7,7 +7,7 @@ async function openCookbooks(page: Page) {
   await page.evaluate(() => {
     window.location.hash = "#/chat";
   });
-  await page.getByRole("button", { name: "Cook", exact: true }).click();
+  await page.getByRole("button", { name: /^Cookbooks/ }).click();
 }
 
 // Cookbooks: the gallery over the existing note templates. Drives the real
@@ -22,10 +22,10 @@ test("Cookbooks opens from the sidebar and renders featured + category sections"
   await openCookbooks(page);
   await expect(page.getByRole("heading", { level: 1, name: "Cookbooks" })).toBeVisible();
   await expect(page.getByText("Let's cook!")).toBeVisible();
-  await expect(page.getByRole("button", { name: "Cook", exact: true })).toHaveAttribute(
-    "aria-pressed",
-    "true",
-  );
+  // Sits right after Connect in the sidebar, marked New.
+  const entry = page.getByRole("button", { name: /^Cookbooks/ });
+  await expect(entry).toHaveAttribute("aria-current", "page");
+  await expect(entry).toContainText("New");
 
   const featured = page.getByRole("region", { name: "Featured" });
   for (const name of ["Sales Call", "1:1", "Product Demo", "Standup"]) {

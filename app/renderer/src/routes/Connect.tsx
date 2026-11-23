@@ -4,12 +4,13 @@ import { ActionsSection } from './connect/ActionsSection';
 import { AiAppsSection } from './connect/AiAppsSection';
 import { CodingAgentsSection } from './connect/CodingAgentsSection';
 import { ScopeSection } from './connect/ScopeSection';
+import { SyncSection } from './connect/SyncSection';
 
 /**
  * Connect: turn meetings into actions in the apps you work in, bring them to
  * AI apps through the bundled read-only Steno MCP server (app/steno-mcp) and
  * to coding agents through the Steno skill (or MCP), and the scope controls
- * every MCP connection obeys.
+ * every MCP connection obeys, then one-way note sync (Obsidian).
  */
 export function Connect() {
   return (
@@ -31,6 +32,7 @@ export function Connect() {
         <AiAppsSection />
         <ScopeSection />
         <ActionsSection />
+        <SyncSection />
       </div>
     </MeetingsShell>
   );

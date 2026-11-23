@@ -45,12 +45,13 @@ test('Connect: coding agents install the skill first, with MCP as the secondary 
   await expect(page.getByText('Make your meetings actionable.')).toBeVisible();
   await expect(page.getByText('Connect your AI tools and the apps you work in. Steno suggests the follow-ups; you approve them.')).toBeVisible();
   await expect(page.getByText('Prefer a skill instead of a connection?')).toHaveCount(0);
-  // Sections: Coding agents, then AI apps, then Actions.
+  // Sections: Coding agents, then AI apps, then Actions, then Sync.
   const order = await page.locator('h2').allTextContents();
   const idx = (h: string) => order.indexOf(h);
   expect(idx('Coding agents')).toBeGreaterThanOrEqual(0);
   expect(idx('Coding agents')).toBeLessThan(idx('AI apps'));
   expect(idx('AI apps')).toBeLessThan(idx('Actions'));
+  expect(idx('Actions')).toBeLessThan(idx('Sync'));
 
   const coding = page.getByRole('region', { name: 'Coding agents' });
   const apps = page.getByRole('region', { name: 'AI apps' });
@@ -194,4 +195,19 @@ test('Connect: AI apps install over MCP and scope controls save', async ({ launc
   await expect(actions.getByText('Connect your tools and Steno will suggest follow-ups')).toBeVisible();
   await expect(actions.getByRole('region', { name: 'Custom endpoint', exact: true })).toBeVisible();
   await expect(actions.getByRole('region', { name: 'Slack', exact: true }).locator('path[fill="#E01E5A"]')).toHaveCount(1);
+});
+
+test('Connect: Obsidian sync lives in the Sync section, and the old Settings tab redirects there', async ({ launchApp }) => {
+  const { page } = await launchApp({ mockIpc: true });
+  await page.evaluate(() => { window.location.hash = '#/settings?tab=integrations'; });
+  await expect(page.getByRole('heading', { name: 'Connect', exact: true })).toBeVisible();
+  const sync = page.getByRole('region', { name: 'Sync', exact: true });
+  const card = sync.getByRole('region', { name: 'Obsidian', exact: true });
+  await expect(card.getByText('Mirror your notes into an Obsidian vault folder as Markdown.', { exact: false })).toBeVisible();
+  await expect(card.getByRole('switch', { name: 'Sync to Obsidian' })).toBeVisible();
+  await expect(card.getByRole('button', { name: 'Choose…' })).toBeVisible();
+  await expect(card.locator('path[fill="#7C3AED"]')).toHaveCount(1);
+
+  await page.evaluate(() => { window.location.hash = '#/settings'; });
+  await expect(page.getByRole('button', { name: 'Integrations' })).toHaveCount(0);
 });

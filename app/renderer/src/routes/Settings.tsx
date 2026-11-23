@@ -10,7 +10,6 @@ import { AiTab } from './settings/AiTab';
 import { PeopleTab } from './settings/PeopleTab';
 import { OrganisationTab } from './settings/OrganisationTab';
 import { AdvancedTab } from './settings/AdvancedTab';
-import { IntegrationsTab } from './settings/IntegrationsTab';
 import { DeveloperTab } from './settings/DeveloperTab';
 import { AboutTab } from './settings/AboutTab';
 import { t } from '@/i18n';
@@ -33,15 +32,15 @@ const SETTINGS_TAB_DESCRIPTIONS: Partial<Record<SettingsTabId, React.ReactNode>>
 // 'transcription' as a legacy alias that resolves onto 'ai' (its content
 // moved into AiTab's Transcription section, which renders first on that
 // page) — keeps `/settings?tab=transcription` links working unmodified.
-// 'templates' is not here: templates moved to the Cookbooks page, and
-// Settings redirects that old deep link there (see TEMPLATES_MOVED).
+// 'templates' and 'integrations' are not here: templates moved to the
+// Cookbooks page and Obsidian sync to Connect, and Settings redirects those
+// old deep links there (see legacyRouteTarget).
 const DEEP_LINK_IDS = [
   'general',
   'transcription',
   'ai',
   'people',
   'organisation',
-  'integrations',
   'advanced',
   'developer',
   'about',
@@ -72,9 +71,12 @@ function tabFromRoute(route: string): SettingsTabId | null {
 // context menus MeetingsShell also drags in.
 // ---------------------------------------------------------------------------
 
-/** The old Settings → Templates deep link; templates now live in Cookbooks. */
-function isLegacyTemplatesRoute(route: string): boolean {
-  return getRouteParam(route, 'tab') === 'templates';
+/** Where an old Settings deep link now lives: Templates in Cookbooks, Obsidian sync in Connect. */
+function legacyRouteTarget(route: string): string | null {
+  const tab = getRouteParam(route, 'tab');
+  if (tab === 'templates') return '/cookbooks';
+  if (tab === 'integrations') return '/connect';
+  return null;
 }
 
 export function Settings() {
@@ -102,10 +104,11 @@ export function Settings() {
     setTab(tabFromRoute(route) ?? 'general');
   }, [route]);
   const version = useAppVersion();
-  // Old /settings?tab=templates links (release notes, docs, muscle memory)
-  // land on Cookbooks, the only home for templates now.
+  // Old /settings?tab=templates and ?tab=integrations links (release notes,
+  // docs, muscle memory) land on the page that now owns them.
   React.useEffect(() => {
-    if (isLegacyTemplatesRoute(route)) navigate('/cookbooks');
+    const target = legacyRouteTarget(route);
+    if (target) navigate(target);
   }, [route, navigate]);
 
   // Supplies AppShell's recordingStatus/onToggleRecording props directly —
@@ -200,7 +203,6 @@ export function Settings() {
             {tab === 'ai' && <AiTab />}
             {tab === 'people' && <PeopleTab />}
             {tab === 'organisation' && <OrganisationTab />}
-            {tab === 'integrations' && <IntegrationsTab />}
             {tab === 'advanced' && <AdvancedTab />}
             {tab === 'developer' && <DeveloperTab />}
             {tab === 'about' && <AboutTab />}
