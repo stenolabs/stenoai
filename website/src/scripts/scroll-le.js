@@ -6,7 +6,7 @@
 import { PHONE, REDUCED, clamp, still, syncMode, whenNear } from './scroll-env.js';
 
 const TAU = 90; // ms; follow is settled in about 270 ms
-const REC = { cx: 0.514, cy: 0.61, top: 0.08, span: 0.72 }; // the recorder's centre and the part of the picture shown (whole lamp)
+const REC = { cx: 0.34, cy: 0.425, top: 0.2, span: 0.62, ky: 0.5 }; // the recorder's centre, the part of the picture shown, and the squash of the lit ellipse
 const BOOK = { sy: 0.725, sx0: 0.1206, sx1: 0.8735, d: { N: 48, cols: 8, fw: 562, fh: 400 }, m: { N: 32, cols: 8, fw: 349, fh: 248 } }; // scroll-records.js META.le; frame 0 closed .. N-1 open
 
 const ss = (x) => x * x * (3 - 2 * x);
@@ -38,7 +38,7 @@ function init(el) {
   }
   const progress = () => { const q = el.getBoundingClientRect(), vh = innerHeight; return clamp((vh * 0.92 - q.top) / (vh * 0.5 + q.height)); }; // the row's own travel through the screen
   function place(iw, ih) {
-    if (kind === 'recorder') { // the whole shelf with its lamp: the part from REC.top down, REC.span of the height, fills the row (phones: the whole width)
+    if (kind === 'recorder') { // the table with the recorder: the part from REC.top down, REC.span of the height, fills the row (phones: the whole width)
       let dh = H / REC.span, dw = dh * iw / ih; if (PHONE.matches || dw > W) { dw = Math.min(dw, W); dh = dw * ih / iw; }
       return [(W - dw) / 2, H / 2 - (REC.top + REC.span / 2) * dh, dw, dh];
     }
@@ -59,13 +59,13 @@ function init(el) {
       feather(x, fw, fh, 0.05);
       const [dx, dy, dw, dh] = place(fw, fh); ctx.drawImage(f, dx, dy, dw, dh); return;
     }
-    // recorder: the lit shelf; the dim one shows outside a circle that shrinks onto the recorder (which stays inside it, so it keeps its full light)
+    // recorder: the lit shelf; the dim one shows outside a ellipse that shrinks onto the recorder (which stays inside it, so it keeps its full light)
     const w = imgs.dark.width, h = imgs.dark.height; comp ||= mk(w, h); mask ||= mk(w, h);
     const c = comp.getContext('2d'), m = mask.getContext('2d');
     c.globalCompositeOperation = 'source-over'; c.clearRect(0, 0, w, h); c.drawImage(imgs.lit, 0, 0);
     m.setTransform(1, 0, 0, 1, 0, 0); m.globalCompositeOperation = 'source-over'; m.clearRect(0, 0, w, h);
-    const R = (0.78 - 0.48 * ss(clamp(p))) * w, cx = REC.cx * w, cy = REC.cy * h, g = m.createRadialGradient(cx, cy, R * 0.86, cx, cy, R);
-    g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, 'rgba(0,0,0,1)'); m.fillStyle = g; m.fillRect(0, 0, w, h);
+    const R = (0.8 - 0.51 * ss(clamp(p))) * w, cx = REC.cx * w, cy = REC.cy * h, g = m.createRadialGradient(0, 0, R * 0.86, 0, 0, R);
+    g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, 'rgba(0,0,0,1)'); m.save(); m.translate(cx, cy); m.scale(1, REC.ky); m.fillStyle = g; m.fillRect(-2 * w, -2 * h / REC.ky, 4 * w, 4 * h / REC.ky); m.restore(); // an ellipse around the recorder
     m.globalCompositeOperation = 'source-in'; m.drawImage(imgs.dark, 0, 0); c.drawImage(mask, 0, 0);
     const [dx, dy, dw, dh] = place(w, h); ctx.drawImage(comp, dx, dy, dw, dh);
   }
@@ -83,7 +83,7 @@ function init(el) {
     bg = bgOf(sec);
     try {
       if (kind === 'book') { const a = await load(`/scroll/rec/le-${still() ? 'poster-' : ''}${k}.webp`); if (mode !== key) return; imgs = { atlas: a, poster: still() }; } // still: the 5 KB open-case poster, not the atlas
-      else { const got = await Promise.all(['dark', 'lit'].map((n) => load(`/scroll/le/recorder2-${n}-${k}.webp`))); if (mode !== key) return; imgs = {}; ['dark', 'lit'].forEach((n, i) => { imgs[n] = grade(got[i], bg, 0.05); got[i].close?.(); }); }
+      else { const got = await Promise.all(['dark', 'lit'].map((n) => load(`/scroll/le/recorder3-${n}-${k}.webp`))); if (mode !== key) return; imgs = {}; ['dark', 'lit'].forEach((n, i) => { imgs[n] = grade(got[i], bg, 0.05); got[i].close?.(); }); }
     } catch { imgs = null; }
   }
   const start = () => { started = true; fetchAll().then(() => visible && settle()); };

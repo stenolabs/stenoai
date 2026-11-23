@@ -47,11 +47,11 @@ html[data-ss=on] .light-room.is-near .lr-dark, html[data-ss=on] .light-room.is-n
   html[data-ss=on] .cases-stage .sector-corridor .light-room { width: 100%; }
   /* Rows keep a fixed height: the open card's text overflows into a reserved gap and the rows below it move by transform, so nothing shifts the layout (CLS 0). */
   html[data-ss=on] .cases-stage .sector-cases { --open: 134px; grid-column: 1; grid-row: 1; display: block; padding-bottom: var(--open); }
-  html[data-ss=on] .cases-stage .sector-case, html[data-ss=on] .cases-stage .sector-case:not(:nth-child(4n + 1)) { display: grid; grid-template-columns: 78px minmax(0, 1fr); align-content: start; box-sizing: border-box; height: 46px; padding: 12px 0 0; border-left: 0; border-bottom: 0; opacity: .72; transition: opacity .25s, transform .3s cubic-bezier(.3, .1, .2, 1) .12s; }
+  html[data-ss=on] .cases-stage .sector-case, html[data-ss=on] .cases-stage .sector-case:not(:nth-child(4n + 1)) { display: grid; grid-template-columns: 78px minmax(0, 1fr); align-content: start; box-sizing: border-box; min-height: 46px; padding: 12px 0 12px; border-left: 0; border-bottom: 0; opacity: .72; transition: opacity .25s, transform .3s cubic-bezier(.3, .1, .2, 1) .12s; }
   html[data-ss=on] .cases-stage .sector-case + .sector-case { border-top: 1px solid var(--border-strong); }
   html[data-ss=on] .cases-stage .sector-case:last-child { position: relative; }
-  html[data-ss=on] .cases-stage .sector-case:last-child::after { content: ""; position: absolute; left: 0; right: 0; top: 46px; border-bottom: 1px solid var(--border-strong); transition: top .3s cubic-bezier(.3, .1, .2, 1) .12s; }
-  html[data-ss=on] .cases-stage .sector-case:last-child.is-active::after { top: calc(46px + var(--open)); transition-delay: 0s; }
+  html[data-ss=on] .cases-stage .sector-case:last-child::after { content: ""; position: absolute; left: 0; right: 0; top: 100%; border-bottom: 1px solid var(--border-strong); transition: top .3s cubic-bezier(.3, .1, .2, 1) .12s; }
+  html[data-ss=on] .cases-stage .sector-case:last-child.is-active::after { top: calc(100% + var(--open)); transition-delay: 0s; }
   html[data-ss=on] .cases-stage .sector-case > * { grid-column: 2; }
   html[data-ss=on] .cases-stage .sector-case-top { grid-column: 1; grid-row: 1 / span 5; display: block; align-self: start; padding-top: 4px; }
   html[data-ss=on] .cases-stage .sector-case-top .sector-tag { display: none; }

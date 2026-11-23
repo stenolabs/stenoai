@@ -484,6 +484,8 @@ html[data-ss] .deploy-still { display: none; }
 .film { min-width: 0; max-width: 300px; }
 .teaser { position: relative; }
 .teaser-box { position: relative; width: 117.6%; margin-left: -8.81%; aspect-ratio: 534 / 985; }
+/* Phones: the teaser box is at most 56% of the screen height and sits inside the page column (it was 117.6% of the column, which spilled over both edges at 390 px). */
+@media (max-width: 767px) { .teaser-box { width: min(100%, calc(56vh * 534 / 985)); width: min(100%, calc(56svh * 534 / 985)); margin-left: auto; margin-right: auto; } }
 .teaser-still { display: block; width: 100%; height: 100%; mix-blend-mode: screen; }
 html[data-ss] .teaser-still { display: none; }
 .seq-plain, html[data-ss] .seq-plain { mix-blend-mode: screen; /* frames are black where there is no object, so screen over the page leaves the page colour untouched: no box */ -webkit-mask-image: linear-gradient(to right, transparent, #000 2.5%, #000 97.5%, transparent), linear-gradient(to bottom, transparent, #000 2.5%, #000 97.5%, transparent); -webkit-mask-composite: source-in;
