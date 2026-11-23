@@ -1,0 +1,15 @@
+/* Page cable (scripts/page-cable.js): one grey network cable down the left gutter that bends into the empty band between the hero and the first section,
+   where its plug sits in a wall socket and is unplugged on scroll. Built by the script, so without JavaScript (or with data saver) nothing exists.
+   Sizes and positions are set inline. */
+.pc { position: absolute; left: 0; z-index: 5; pointer-events: none; user-select: none; -webkit-user-select: none; }
+.pc * { position: absolute; display: block; max-width: none; margin: 0; padding: 0; border: 0; pointer-events: none; }
+.pc-win { left: 0; top: 0; clip-path: inset(0 -3000px -3000px 0); } /* clips the cable at its start edge only */
+.pc-sc { transform-origin: 0 0; will-change: transform; }
+.pc-ac { will-change: opacity; }
+.pc-asm, .pc-live { left: 0; top: 0; will-change: transform; }
+.pc-liveclip { clip-path: inset(-300px -3000px -300px 0); }
+.pc-pulse { left: 0; top: 0; opacity: 0; transform-origin: 0 0; will-change: transform, opacity;
+  background: linear-gradient(to top, rgba(226, 255, 205, 1) 0, rgba(170, 215, 150, .92) 12%, rgba(120, 170, 100, .55) 46%, rgba(86, 109, 72, 0) 100%);
+  -webkit-mask-image: linear-gradient(to right, transparent 0, #000 30%, #000 70%, transparent 100%); mask-image: linear-gradient(to right, transparent 0, #000 30%, #000 70%, transparent 100%); }
+.pc-glow { opacity: 0; will-change: opacity; background: radial-gradient(closest-side, rgba(157, 184, 141, .55), rgba(86, 109, 72, .2) 55%, rgba(86, 109, 72, 0) 100%); }
+.pc-plate { -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 24%, #000 76%, transparent 100%); mask-image: linear-gradient(to bottom, transparent 0, #000 24%, #000 76%, transparent 100%); } /* the plate fades out at both ends */
