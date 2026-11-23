@@ -18,7 +18,8 @@ organization-specific features, for teams that want that on top of the free app.
 - Account required: no
 - Includes: recording (system audio + microphone), on-device transcription (Parakeet and
   Whisper engines), on-device summarization (local models via Ollama), live transcription,
-  report templates, ask-your-meetings chat, speaker labels, and Apple Shortcuts automation.
+  cookbooks and recipes, chat, editable notes, actions in connected apps, MCP access for AI apps
+  and coding agents, speaker labels, and Apple Shortcuts automation.
 
 ## Enterprise (optional paid tier)
 - A separate, optional offering on top of the free app: managed deployment with admin controls
