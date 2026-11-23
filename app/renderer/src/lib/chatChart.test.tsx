@@ -277,6 +277,8 @@ describe('chart families', () => {
       'table',
     ])
       expect(CHART_INSTRUCTIONS).toContain(word);
-    expect(CHART_INSTRUCTIONS).toContain('Never invent values or treat missing data as zero.');
+    expect(CHART_INSTRUCTIONS).toContain('never invent values or treat missing data as zero');
+    expect(CHART_INSTRUCTIONS).toContain('never say you cannot display or create charts');
+    expect(CHART_INSTRUCTIONS).toContain('approximate, from general knowledge');
   });
 });
