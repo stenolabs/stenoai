@@ -42,27 +42,32 @@ html[data-ss=on] .light-room.is-near .lr-dark, html[data-ss=on] .light-room.is-n
   html[data-ss=on] .cases-panel { position: sticky; top: 0; height: 100vh; height: 100svh; overflow: hidden; box-sizing: border-box; padding-top: 96px; background: #121311; }
   html[data-ss=on] .cases-panel .mission-section-top { margin-bottom: 28px; }
   html[data-ss=on] .cases-panel .mission-section-heading { margin-bottom: 26px; }
-  html[data-ss=on] .cases-stage .sector-cases-wrap { display: grid; grid-template-columns: minmax(0, 36fr) minmax(0, 64fr); gap: 48px; align-items: center; }
+  html[data-ss=on] .cases-stage .sector-cases-wrap { display: grid; grid-template-columns: minmax(420px, 36fr) minmax(0, 64fr); gap: 48px; align-items: center; }
   html[data-ss=on] .cases-stage .sector-corridor { grid-column: 2; grid-row: 1; margin: 0; width: 100%; }
   html[data-ss=on] .cases-stage .sector-corridor .light-room { width: 100%; }
-  /* Rows keep a fixed height: the open card's text overflows into a reserved gap and the rows below it move by transform, so nothing shifts the layout (CLS 0). */
-  html[data-ss=on] .cases-stage .sector-cases { --open: 134px; grid-column: 1; grid-row: 1; display: block; padding-bottom: var(--open); }
-  html[data-ss=on] .cases-stage .sector-case, html[data-ss=on] .cases-stage .sector-case:not(:nth-child(4n + 1)) { display: grid; grid-template-columns: 78px minmax(0, 1fr); align-content: start; box-sizing: border-box; min-height: 46px; padding: 12px 0 12px; border-left: 0; border-bottom: 0; opacity: .72; transition: opacity .25s, transform .3s cubic-bezier(.3, .1, .2, 1) .12s; }
-  html[data-ss=on] .cases-stage .sector-case + .sector-case { border-top: 1px solid var(--border-strong); }
-  html[data-ss=on] .cases-stage .sector-case:last-child { position: relative; }
-  html[data-ss=on] .cases-stage .sector-case:last-child::after { content: ""; position: absolute; left: 0; right: 0; top: 100%; border-bottom: 1px solid var(--border-strong); transition: top .3s cubic-bezier(.3, .1, .2, 1) .12s; }
-  html[data-ss=on] .cases-stage .sector-case:last-child.is-active::after { top: calc(100% + var(--open)); transition-delay: 0s; }
+  /* Rows grow with wrapping titles (min-height); only the active card expands its details in flow, while min-height on the list keeps the corridor steady (CLS 0). */
+  html[data-ss=on] .cases-stage .sector-cases { grid-column: 1; grid-row: 1; display: block; min-height: 502px; align-self: start; }
+  html[data-ss=on] .cases-stage .sector-case, html[data-ss=on] .cases-stage .sector-case:not(:nth-child(4n + 1)) { display: grid; grid-template-columns: 78px minmax(0, 1fr); align-content: start; box-sizing: border-box; min-height: 46px; padding: 12px 0; border-left: 0; border-bottom: 0; opacity: .72; transition: opacity .25s, min-height .28s cubic-bezier(.3, .1, .2, 1) .12s; }
+  html[data-ss=on] .cases-stage .sector-case + .sector-case { border-top: 1px solid var(--border-strong); padding-bottom: 11px; }
+  html[data-ss=on] .cases-stage .sector-case:last-child { border-bottom: 1px solid var(--border-strong); padding-bottom: 10px; }
   html[data-ss=on] .cases-stage .sector-case > * { grid-column: 2; }
-  html[data-ss=on] .cases-stage .sector-case-top { grid-column: 1; grid-row: 1 / span 5; display: block; align-self: start; padding-top: 4px; }
+  html[data-ss=on] .cases-stage .sector-case-top { grid-column: 1; grid-row: 1 / span 5; display: block; align-self: start; padding-top: 4px; line-height: 1; }
   html[data-ss=on] .cases-stage .sector-case-top .sector-tag { display: none; }
   html[data-ss=on] .cases-stage .sector-case h3 { margin-top: 0; font-size: 18px; line-height: 22px; }
-  html[data-ss=on] .cases-stage .sector-case-outcome, html[data-ss=on] .cases-stage .sector-case-for, html[data-ss=on] .cases-stage .sector-case-outputs { opacity: 0; pointer-events: none; transition: opacity .15s; }
-  html[data-ss=on] .cases-stage .sector-case-outcome { margin-top: 8px; }
-  html[data-ss=on] .cases-stage .sector-case-for { margin-top: 10px; }
-  html[data-ss=on] .cases-stage .sector-case-outputs { padding-top: 10px; margin: 0; }
-  html[data-ss=on] .cases-stage .sector-case.is-active { opacity: 1; }
-  html[data-ss=on] .cases-stage .sector-case.is-active > * { opacity: 1; transition: opacity .25s .25s; }
-  html[data-ss=on] .cases-stage .sector-case.is-active ~ .sector-case { transform: translateY(var(--open)); transition: opacity .25s, transform .3s cubic-bezier(.3, .1, .2, 1); }
+  html[data-ss=on] .cases-stage .sector-case-outcome, html[data-ss=on] .cases-stage .sector-case-for, html[data-ss=on] .cases-stage .sector-case-outputs { max-height: 0; margin: 0; padding: 0; overflow: hidden; opacity: 0; pointer-events: none; transition: max-height .28s cubic-bezier(.3, .1, .2, 1) .12s, margin .28s cubic-bezier(.3, .1, .2, 1) .12s, padding .28s cubic-bezier(.3, .1, .2, 1) .12s, opacity .15s; }
+  html[data-ss=on] .cases-stage .sector-case.is-active { opacity: 1; min-height: 180px; transition: opacity .25s, min-height .3s cubic-bezier(.3, .1, .2, 1); }
+  html[data-ss=on] .cases-stage .sector-case.is-active > * { opacity: 1; pointer-events: auto; transition: opacity .25s .25s; }
+  html[data-ss=on] .cases-stage .sector-case.is-active .sector-case-outcome, html[data-ss=on] .cases-stage .sector-case.is-active .sector-case-for, html[data-ss=on] .cases-stage .sector-case.is-active .sector-case-outputs { transition: max-height .3s cubic-bezier(.3, .1, .2, 1), margin .3s cubic-bezier(.3, .1, .2, 1), padding .3s cubic-bezier(.3, .1, .2, 1), opacity .25s .25s; }
+  html[data-ss=on] .cases-stage .sector-case.is-active .sector-case-outcome { max-height: 120px; margin-top: 8px; }
+  html[data-ss=on] .cases-stage .sector-case.is-active .sector-case-for { max-height: 120px; margin-top: 10px; }
+  html[data-ss=on] .cases-stage .sector-case.is-active .sector-case-outputs { max-height: 120px; padding-top: 10px; }
+}
+@media (min-width: 1100px) and (min-height: 860px) and (max-height: 899px) {
+  html[data-ss=on] .cases-panel { padding-top: 90px; }
+  html[data-ss=on] .cases-panel .mission-section-top { margin-bottom: 14px; }
+  html[data-ss=on] .cases-panel .mission-section-heading { margin-bottom: 14px; }
+  html[data-ss=on] .cases-stage .sector-cases { min-height: 480px; }
+  html[data-ss=on] .cases-stage .sector-case.is-active { min-height: 46px; }
 }
 
 /* Takes (papers, drawer): the start still of a later take, beside the heading, in its own clear space at full brightness. */
