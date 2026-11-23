@@ -72,11 +72,11 @@ export function SyncSection() {
         >
           <div className="min-w-0 flex-1">
             <div className="text-[13px] font-medium">{t('connect.obsidian.vaultFolder.label')}</div>
-            <div className="mt-0.5 text-[12.5px]" style={{ color: 'var(--fg-2)' }}>
-              {path
-                ? t('connect.obsidian.vaultFolder.withPath')
-                : t('connect.obsidian.vaultFolder.noPath')}
-            </div>
+            {!path && (
+              <div className="mt-0.5 text-[12.5px]" style={{ color: 'var(--fg-2)' }}>
+                {t('connect.obsidian.vaultFolder.noPath')}
+              </div>
+            )}
             {path && (
               <code
                 className="mt-1.5 block max-w-full truncate select-all font-mono text-[12px]"
@@ -117,12 +117,9 @@ export function SyncSection() {
 
         {conflictCount > 0 && (
           <p className="mt-3 text-[12.5px]" style={{ color: 'var(--fg-2)' }}>
-            <span style={{ color: 'var(--fg-1)' }}>
-              {conflictCount === 1
-                ? t('connect.obsidian.conflicts.skipped.one', { count: conflictCount })
-                : t('connect.obsidian.conflicts.skipped.other', { count: conflictCount })}
-            </span>{' '}
-            {t('connect.obsidian.conflicts.afterCount')}
+            {conflictCount === 1
+              ? t('connect.obsidian.conflicts.skipped.one', { count: conflictCount })
+              : t('connect.obsidian.conflicts.skipped.other', { count: conflictCount })}
           </p>
         )}
       </section>

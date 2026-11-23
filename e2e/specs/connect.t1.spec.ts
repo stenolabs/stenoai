@@ -210,7 +210,7 @@ test('Connect: Obsidian sync lives in the Sync section, and the old Settings tab
   await expect(page.getByRole('heading', { name: 'Connect', exact: true })).toBeVisible();
   const sync = page.getByRole('region', { name: 'Sync', exact: true });
   const card = sync.getByRole('region', { name: 'Obsidian', exact: true });
-  await expect(card.getByText('Mirror your notes into an Obsidian vault folder as Markdown.', { exact: false })).toBeVisible();
+  await expect(card.getByText('Mirrors your notes into an Obsidian vault as Markdown.', { exact: false })).toBeVisible();
   await expect(card.getByRole('switch', { name: 'Sync to Obsidian' })).toBeVisible();
   await expect(card.getByRole('button', { name: 'Choose…' })).toBeVisible();
   await expect(card.locator('path[fill="#7C3AED"]')).toHaveCount(1);
