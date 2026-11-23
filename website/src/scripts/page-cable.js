@@ -39,11 +39,33 @@ if (main && first && !navigator.connection?.saveData) {
     pts.forEach((p, i) => { if (p.a !== undefined) return; const a = pts[Math.max(0, i - 1)], b = pts[Math.min(pts.length - 1, i + 1)]; p.a = Math.atan2(b.y - a.y, b.x - a.x); });
     return pts;
   }
-  function sweep(cv, pts, ox, oy, w, h) { // the cable: a matte grey body, a soft shade on one side and a thin cool rim on the other (the side facing up/right)
+  function sweep(cv, pts, ox, oy, w, h, clearOnly) { // the cable: a matte grey body, a soft shade on one side and a thin cool rim on the other (the side facing up/right)
     const ctx = cv.getContext('2d'), dpr = Math.min(devicePixelRatio || 1, 2), cw = G.cw;
-    cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr); ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.lineJoin = 'round'; ctx.lineCap = 'butt';
+    if (!clearOnly) { cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr); }
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    if (clearOnly) ctx.clearRect(0, 0, w, h);
+    ctx.lineJoin = 'round'; ctx.lineCap = 'butt';
     const line = (off, lw, col) => { ctx.beginPath(); pts.forEach((p, i) => { const x = p.x - ox + Math.sin(p.a) * off, y = p.y - oy - Math.cos(p.a) * off; i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); }); ctx.lineWidth = lw; ctx.strokeStyle = col; ctx.stroke(); };
     line(0, cw, 'rgb(60,61,62)'); line(-.27 * cw, .46 * cw, 'rgba(34,35,36,.55)'); line(.3 * cw, .3 * cw, 'rgba(110,116,121,.5)'); line(.43 * cw, Math.max(.9, .13 * cw), 'rgba(160,170,179,.8)');
+  }
+  // One continuous, tangent-continuous path for bend + cubic droop run + boot lead-in (zero slope at bend end and at boot).
+  function bendRunPts(xBoot, d, leadLen) {
+    const g = G, yv = g.yb - g.R, pts = [{ x: g.cx, y: yv - 4, a: Math.PI / 2 }, { x: g.cx, y: yv - 2, a: Math.PI / 2 }];
+    const nArc = 40;
+    for (let k = 0; k <= nArc; k++) { const th = (k / nArc) * Math.PI / 2; pts.push({ x: g.cx + g.R - g.R * Math.cos(th), y: yv + g.R * Math.sin(th), a: Math.PI / 2 - th }); }
+    const L = xBoot - g.xb;
+    if (L > .5) {
+      const nRun = Math.max(16, Math.ceil(L / 1.5));
+      for (let k = 1; k <= nRun; k++) {
+        const u = k / nRun, y = g.yb + d * (3 * u * u - 2 * u * u * u), slope = (d / L) * 6 * u * (1 - u);
+        pts.push({ x: g.xb + L * u, y, a: Math.atan2(slope, 1) });
+      }
+    }
+    if (leadLen > .5) {
+      const x0 = Math.max(g.xb, xBoot), y0 = L > .5 ? g.yb + d : g.yb;
+      pts.push({ x: x0 + leadLen * .5, y: y0, a: 0 }, { x: x0 + leadLen, y: y0, a: 0 });
+    }
+    return pts;
   }
   const at = (s) => { const P = G.pts; let lo = 0, hi = P.length - 1; while (lo < hi) { const m = (lo + hi) >> 1; if (P[m].s < s) lo = m + 1; else hi = m; } return P[lo]; };
 
@@ -52,30 +74,32 @@ if (main && first && !navigator.connection?.saveData) {
     const vh = innerHeight, phone = innerWidth < 768, tablet = !phone && innerWidth < 1100;
     const wrap = first.querySelector('.mission-wrap') || main.querySelector('.mission-wrap'); if (!wrap) return;
     const L = abs(wrap).l, gut = phone ? 20 : Math.min(L, 56);
-    const kp = (phone ? 120 : tablet ? 160 : 220) / A.plugLen, cw = kp * A.lead, kc = cw / 44, R = phone ? 36 : tablet ? 44 : 60;
+    const kp = (phone ? 120 : tablet ? 160 : 220) / A.plugLen, cw = phone ? 6.6 : tablet ? 8.8 : 12, kc = cw / 44, R = phone ? 36 : tablet ? 44 : 60;
     const cx = Math.round(phone ? 10 : L - gut / 2);
     let anchor = first; while (anchor.parentElement && anchor.parentElement !== main) anchor = anchor.parentElement; let prev = anchor.previousElementSibling; while (prev && prev.tagName === 'SCRIPT') prev = prev.previousElementSibling;
     const home = !!main.querySelector(':scope > section.mission-hero'), yStart = Math.round(home && prev ? abs(prev).t : abs(main).t); // home: the trust strip's top edge (the hero's lower edge)
     const bandTop = prev ? contentBottom(prev) : yStart, eye = first.querySelector('.mission-section-top'), bandBot = abs(eye).t, line = abs(first).t, yb = Math.round(line > bandTop + 30 && line < bandBot - 30 ? line : (bandTop + bandBot) / 2); // the cable meets the plate on the band's tone-change line
     // No clear band (the home voice footage fills it): no cable on that page rather than a crowded one.
     if ([...main.querySelectorAll('[data-scroll-seq]')].some((e) => { const r = abs(e); return r.t < bandBot && r.b > bandTop && getComputedStyle(e).display !== 'none'; })) { G = null; root.replaceChildren(); return; }
-    const plateH = A.sockH * kp, run = phone ? 70 : tablet ? 110 : 150, slide = phone ? 45 : tablet ? 55 : 70;
+    const plateH = A.sockH * kp, run = phone ? 80 : tablet ? 112 : 150;
+    const clearSlide = (A.tip - A.shoulder + A.lip - 1) * kp + 3; // pull distance needed for the plug tip to clear the housing's left lip
+    const slide = Math.round(clearSlide + (phone ? 8 : tablet ? 12 : 15));
+    const maxDroop = 10 * (kp / (220 / A.plugLen)), leadMax = 9 * kp;
     const xb = cx + R, xPlug = xb + run, plateL = xPlug + A.shoulder * kp - A.lip * kp, plateR = plateL + A.sockW * kp; // the housing's lip sits at the boot's shoulder when plugged in
     const yClip = yStart + Math.round((yb - R - yStart) * .55);
     const sStart = yb - .72 * vh, U = .34 * vh;
-    G = { vh, phone, tablet, L, gut, kp, cw, kc, R, cx, yStart, yb, bandTop, bandBot, plateH, slide, xb, xPlug, plateL, plateR, yClip, sStart, U, D: yb - yStart + 90, pts: [] };
+    G = { vh, phone, tablet, L, gut, kp, cw, kc, R, cx, yStart, yb, bandTop, bandBot, plateH, slide, clearSlide, maxDroop, leadMax, xb, xPlug, plateL, plateR, yClip, sStart, U, D: yb - yStart + 90, pts: [], bKey: '' };
     G.pts = buildPath();
-    const W = Math.ceil(plateR + 6), Hh = Math.ceil(yb + Math.max(plateH, A.plugH * kp) / 2 + 8 - yStart);
+    const W = Math.ceil(plateR + 6), Hh = Math.ceil(yb + Math.max(plateH / 2, maxDroop + (A.plugH - A.axis) * kp) + 8 - yStart);
     root.style.cssText = `top:${yStart}px;width:${W}px;height:${Hh}px`;
     root.replaceChildren();
     const win = el('pc-win', 'div', `width:${W}px;height:${Hh}px`), asm = el('pc-asm', 'div', `width:${W}px;height:${Hh}px`);
-    const yv = yb - R, vw = Math.ceil(cx + cw + 8), vh2 = Math.ceil(yv - yStart + 2), ay = Math.floor(yv) - 2, ah = Math.ceil(yb + cw - ay + 4), aw = Math.ceil(xb + cw + 4);
-    const sc = el('pc-sc', 'canvas', `left:0;top:0;width:${vw}px;height:${vh2}px`), ac = el('pc-ac', 'canvas', `left:0;top:${ay - yStart}px;width:${aw}px;height:${ah}px`);
-    asm.append(sc, ac);
-    const lc = el('pc-liveclip', 'div', `left:${px(xb)};top:${px(yb - yStart - 100)};width:${px(xPlug + A.plugLen * kp - xb)};height:200px`), live = el('pc-live', 'div', `width:${px(xPlug + A.plugLen * kp - xb)};height:200px;transform-origin:0 100px`);
-    const hc = 2 * Math.ceil(cw / 2 + 2), lcv = el('pc-lc', 'canvas', `left:0;top:${100 - hc / 2}px;width:${Math.ceil(xPlug + 4 - xb)}px;height:${hc}px`); G.hc = hc;
-    live.append(lcv, el('pc-plug', 'img', `left:${px(xPlug - xb)};top:${px(100 - A.axis * kp)};width:${px(A.plugLen * kp)}`, '/page-cable/plugh.webp'));
-    lc.append(live); asm.append(lc);
+    const yv = yb - R, vw = Math.ceil(cx + cw + 8), vh2 = Math.max(1, yv - yStart);
+    const bw = Math.ceil(xPlug + leadMax + 4), bh = Math.ceil(R + maxDroop + cw / 2 + 6);
+    const sc = el('pc-sc', 'canvas', `left:0;top:0;width:${vw}px;height:${vh2}px`);
+    const bc = el('pc-bc', 'canvas', `left:0;top:${yv - yStart}px;width:${bw}px;height:${bh}px`);
+    const plug = el('pc-plug', 'img', `width:${px(A.plugLen * kp)}`, '/page-cable/plugh.webp');
+    asm.append(sc, bc, plug);
     G.pulses = []; const n = Math.max(1, Math.round(G.pts[G.pts.length - 1].s / 520));
     for (let i = 0; i < n; i++) { const pe = el('pc-pulse', 'i', `width:${px(cw + 9)};height:${PL}px`); asm.append(pe); G.pulses.push({ el: pe, off: (i / n) * (G.pts[G.pts.length - 1].s + PL) }); }
     win.append(asm); root.append(win);
@@ -83,36 +107,44 @@ if (main && first && !navigator.connection?.saveData) {
     glow.style.cssText = `left:${px(cx - 24)};top:${px(yClip - yStart - 24)};width:48px;height:48px`;
     root.append(glow, el('pc-clip', 'img', `left:${px(cx - A.clipAxis * kc)};top:${px(yClip - yStart - cs / 2)};width:${px(A.clipW * kc)}`, '/page-cable/clip.webp'));
     root.append(el('pc-plate', 'img', `left:${px(plateL)};top:${px(yb - yStart - A.row * kp)};width:${px(A.sockW * kp)}`, '/page-cable/sock.webp'));
-    Object.assign(G, { asm, live, glow, sc, ac, lcv, win, run });
-    const draw = () => {
-      sweep(sc, G.pts.filter((p) => p.part === 'v').concat(G.pts.filter((p) => p.part === 'a').slice(0, 1)), 0, yStart, vw, vh2);
-      sweep(ac, G.pts.filter((p) => p.part === 'v').slice(-3).concat(G.pts.filter((p) => p.part === 'a')), 0, ay, aw, ah);
-      sweep(lcv, G.pts.filter((p) => p.x >= xb - 2 && p.y >= yb - 1e-3).concat([{ x: xPlug + 4, y: yb, a: 0 }]), xb, yb - hc / 2, Math.ceil(xPlug + 4 - xb), hc);
-    };
-    G.draw = draw; draw();
+    const dpr = Math.min(devicePixelRatio || 1, 2);
+    bc.width = Math.round(bw * dpr); bc.height = Math.round(bh * dpr);
+    Object.assign(G, { asm, bc, plug, glow, sc, win, run, yv, bw, bh });
+    sweep(sc, G.pts.filter((p) => p.part === 'v').concat([{ x: cx, y: yv, a: Math.PI / 2 }, { x: cx, y: yv + 4, a: Math.PI / 2 }]), 0, yStart, vw, vh2, false);
     pp = {}; render(true);
   }
   const set = (k, e, prop, v) => { if (pp[k] !== v) { e.style[prop] = v; pp[k] = v; } };
   function render(force) {
     if (!G) return;
-    const y = scrollY, quiet = REDUCED.matches, q = quiet ? .9 * G.U : y - G.sStart, now = performance.now();
-    if (force) pp = {};
-    const slideT = ease(clamp((q - .05 * G.U) / (.5 * G.U))), droopT = ease(clamp((q - .35 * G.U) / (.55 * G.U))), drawT = quiet ? 0 : ease(clamp((q - G.U - .05 * G.vh) / (.5 * G.vh)));
-    const lag = quiet ? 0 : clamp(vs * 1.6, -2, 2), droop = Math.atan2(10 * (G.kp / .579), Math.max(80, G.plateL - G.xb));
+    const y = scrollY, quiet = REDUCED.matches, q = quiet ? G.U : y - G.sStart, now = performance.now();
+    if (force) { pp = {}; G.bKey = ''; }
+    const p = clamp(q / G.U);
+    const slideT = ease(clamp(p / .74)), curSlide = slideT * G.slide;
+    const droopT = curSlide >= G.clearSlide ? ease(clamp((p - .62) / .34)) : 0;
+    const drawT = quiet ? 0 : ease(clamp((q - G.U - .05 * G.vh) / (.5 * G.vh)));
+    const lag = quiet ? 0 : clamp(vs * 1.6, -2, 2);
     const tailT = clamp(drawT / .5), vT = ease(clamp((drawT - .4) / .6)); // draw-up: the free end retracts left along the run and fades at the bend, then the gutter cable shortens from the bottom
+    const xBoot = G.xPlug - curSlide - tailT * Math.max(0, G.xPlug - G.slide - G.xb);
+    const d = droopT * G.maxDroop * (1 - tailT);
+    const leadLen = G.leadMax * (1 - smooth(tailT, .5, .9));
+    const bKey = `${xBoot.toFixed(2)}:${d.toFixed(2)}:${leadLen.toFixed(2)}`;
+    if (bKey !== G.bKey) { G.bKey = bKey; sweep(G.bc, bendRunPts(xBoot, d, leadLen), 0, G.yv, G.bw, G.bh, true); }
     set('asm', G.asm, 'transform', `translate3d(${lag.toFixed(2)}px,0,0)`);
     set('sc', G.sc, 'transform', `scaleY(${Math.max(.001, 1 - vT).toFixed(4)})`);
-    set('ac', G.ac, 'opacity', (1 - smooth(tailT, .75, 1)).toFixed(3));
-    set('live', G.live, 'transform', `translate3d(${(-(slideT * G.slide + tailT * (G.run + 40 - G.slide))).toFixed(2)}px,0,0) rotate(${(droopT * droop * (1 - tailT)).toFixed(4)}rad)`);
-    set('liveo', G.live, 'opacity', (1 - smooth(tailT, .55, .95)).toFixed(3));
+    set('bc', G.bc, 'opacity', (1 - smooth(tailT, .75, 1)).toFixed(3));
+    set('plugt', G.plug, 'transform', `translate3d(${xBoot.toFixed(2)}px,${(G.yb - G.yStart + d - A.axis * G.kp).toFixed(2)}px,0)`);
+    set('plugo', G.plug, 'opacity', (1 - smooth(tailT, .55, .95)).toFixed(3));
     const act = quiet ? 0 : 1 - smooth(now - tScroll, 0, FADE), env = act * (1 - smooth(q, 0, .3 * G.U)), S = G.pts[G.pts.length - 1].s;
     let near = 0;
     G.pulses.forEach((pu, i) => {
-      const period = S + PL, s = ((1.6 * y + pu.off) % period + period) % period, e = env * smooth(s, 0, 40) * smooth(period - s, 0, 40);
+      const period = S + PL, s = ((1.6 * y + pu.off) % period + period) % period;
+      let e = env * smooth(s, 0, 40) * smooth(period - s, 0, 40);
+      const pt = e > .002 ? at(clamp(s, 0, S)) : null;
+      if (pt && pt.x > xBoot) e = 0;
       set('po' + i, pu.el, 'opacity', e.toFixed(3));
-      if (e > .002) { const p = at(clamp(s, 0, S)), rot = p.a - Math.PI / 2 + (dir < 0 ? Math.PI : 0), w = G.cw + 9;
-        set('pt' + i, pu.el, 'transform', `translate(${(p.x - G.yStart * 0).toFixed(1)}px,${(p.y - G.yStart).toFixed(1)}px) rotate(${rot.toFixed(4)}rad) translate(${(-w / 2).toFixed(1)}px,${dir < 0 ? 0 : -PL}px)`);
-        const d = Math.hypot(p.x - G.cx, p.y - G.yClip); near = Math.max(near, e * Math.max(0, 1 - d / (PL * .8))); }
+      if (e > .002) { const rot = pt.a - Math.PI / 2 + (dir < 0 ? Math.PI : 0), w = G.cw + 9;
+        set('pt' + i, pu.el, 'transform', `translate(${pt.x.toFixed(1)}px,${(pt.y - G.yStart).toFixed(1)}px) rotate(${rot.toFixed(4)}rad) translate(${(-w / 2).toFixed(1)}px,${dir < 0 ? 0 : -PL}px)`);
+        const dClip = Math.hypot(pt.x - G.cx, pt.y - G.yClip); near = Math.max(near, e * Math.max(0, 1 - dClip / (PL * .8))); }
     });
     set('glow', G.glow, 'opacity', near.toFixed(3));
   }

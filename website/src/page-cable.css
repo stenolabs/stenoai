@@ -5,9 +5,9 @@
 .pc * { position: absolute; display: block; max-width: none; margin: 0; padding: 0; border: 0; pointer-events: none; }
 .pc-win { left: 0; top: 0; clip-path: inset(0 -3000px -3000px 0); } /* clips the cable at its start edge only */
 .pc-sc { transform-origin: 0 0; will-change: transform; }
-.pc-ac { will-change: opacity; }
-.pc-asm, .pc-live { left: 0; top: 0; will-change: transform; }
-.pc-liveclip { clip-path: inset(-300px -3000px -300px 0); }
+.pc-bc { will-change: opacity; }
+.pc-asm { left: 0; top: 0; will-change: transform; }
+.pc-plug { left: 0; top: 0; will-change: transform, opacity; }
 .pc-pulse { left: 0; top: 0; opacity: 0; transform-origin: 0 0; will-change: transform, opacity;
   background: linear-gradient(to top, rgba(226, 255, 205, 1) 0, rgba(170, 215, 150, .92) 12%, rgba(120, 170, 100, .55) 46%, rgba(86, 109, 72, 0) 100%);
   -webkit-mask-image: linear-gradient(to right, transparent 0, #000 30%, #000 70%, transparent 100%); mask-image: linear-gradient(to right, transparent 0, #000 30%, #000 70%, transparent 100%); }
