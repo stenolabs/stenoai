@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { Check, Plus } from 'lucide-react';
+import { Check, Plus, ServerCog } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useActionsOverview, useConnectConnector } from '@/hooks/useActions';
 import { actionErrorMessage } from '@/lib/actionErrors';
@@ -208,7 +208,13 @@ export function ActionsSection() {
             className="flex min-w-0 items-start gap-3 rounded-xl border p-4"
             style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-raised)' }}
           >
-            <ConnectGlyph kind="initials" initials={t('connect.actions.custom.initials')} />
+            <span
+              aria-hidden
+              className="flex size-9 shrink-0 items-center justify-center rounded-lg border"
+              style={{ background: 'var(--surface-raised)', borderColor: 'var(--border-subtle)', color: 'var(--fg-1)' }}
+            >
+              <ServerCog className="size-[18px]" strokeWidth={1.7} />
+            </span>
             <div className="min-w-0 flex-1">
               <h3 className="text-[14px] font-medium">{t('connect.actions.custom.name')}</h3>
               <div className="mt-1.5 flex items-center gap-1.5" aria-hidden>

@@ -907,7 +907,7 @@
   "connect.actions.slack.description": "Post meeting summaries to channels. Until then, connect Slack through n8n or Zapier.",
   "connect.actions.custom.name": "Custom MCP server",
   "connect.actions.custom.initials": "+",
-  "connect.actions.custom.description": "Any MCP server by URL, including n8n, Zapier and Make. Self-hosted keeps everything on your network.",
+  "connect.actions.custom.description": "Any MCP server by URL, including n8n, Zapier and Make.",
   "connect.actions.custom.add": "Add",
   "connect.actions.connectionsHeading": "Your connections",
   "connect.actions.connection.account": "{{account}} · {{origin}}",

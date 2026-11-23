@@ -166,6 +166,7 @@ export function TranscriptToggle() {
     <button
       type="button"
       data-testid="transcript-toggle"
+      data-transcript-toggle
       onClick={() => setTranscriptOpen(!transcriptOpen)}
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
@@ -268,12 +269,14 @@ export function AskBar({ visible = true }: { visible?: boolean }) {
     if (!expanded && !transcriptOpen) return;
     const handler = (e: MouseEvent) => {
       const target = e.target as Element | null;
-      // Treat the AskBar container AND the floating TranscriptBar as in-bounds.
+      // Treat the AskBar container, the floating TranscriptBar AND its toggle
+      // as in-bounds. Without the toggle, pressing it to close the panel
+      // closed it here on mousedown and the click then reopened it.
       // Without the transcript check, clicks inside the transcript's search
       // input or copy button would close the panel before the click resolves.
       const inside =
         (containerRef.current && containerRef.current.contains(target as Node)) ||
-        (target && target.closest?.('[data-transcript-bar]'));
+        (target && target.closest?.('[data-transcript-bar], [data-transcript-toggle]'));
       if (!inside) {
         setExpanded(false);
         setSessionMenuOpen(false);
