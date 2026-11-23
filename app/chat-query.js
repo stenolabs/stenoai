@@ -56,7 +56,13 @@ function runQuery({ spawn, backend, env, cwd, payload, send, onFinish, timeoutMs
       while (!done && (nl = buffer.indexOf('\n')) !== -1) {
         const line = buffer.slice(0, nl).replace(/\r$/, '');
         buffer = buffer.slice(nl + 1);
-        if (line.startsWith('CHAT_CHUNK:')) {
+        if (line.startsWith('CHAT_STEP:')) {
+          // What the answer read ("Read 12 notes"): counts and a title only.
+          try {
+            const step = JSON.parse(Buffer.from(line.slice(10), 'base64').toString('utf8'));
+            if (step && step.source === 'context') send('query-tool-step', { step });
+          } catch (_) {}
+        } else if (line.startsWith('CHAT_CHUNK:')) {
           const chunk = Buffer.from(line.slice(11), 'base64').toString('utf8');
           answerBytes += Buffer.byteLength(chunk);
           if (answerBytes > MAX_BYTES) return finish(false, ERROR);

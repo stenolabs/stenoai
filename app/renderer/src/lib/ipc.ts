@@ -160,10 +160,12 @@ export interface ChatRequest {
 /** A read tool a chat-agent turn ran ("Searched Linear…"). */
 export interface ChatToolStep {
   id: string;
-  source: 'steno' | 'connection';
+  source: 'steno' | 'connection' | 'context';
   connection: string;
   tool: string;
   title: string | null;
+  /** context steps: how many notes the answer read. */
+  count?: number;
 }
 
 /** What a finished chat-agent turn keeps of an action card. */

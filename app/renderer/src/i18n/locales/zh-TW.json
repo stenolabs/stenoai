@@ -720,5 +720,12 @@
   "cookbooks.createMenu.cookbook": "新增食譜集",
   "cookbooks.createMenu.cookbookHint": "會議筆記的格式",
   "cookbooks.createMenu.recipe": "新增食譜",
-  "cookbooks.createMenu.recipeHint": "在聊天中執行的已儲存提示"
+  "cookbooks.createMenu.recipeHint": "在聊天中執行的已儲存提示",
+  "chat.trace.readNotes.one": "已讀取 {{count}} 則筆記",
+  "chat.trace.readNotes.other": "已讀取 {{count}} 則筆記",
+  "chat.trace.noNotes": "此空間尚無筆記",
+  "chat.trace.readMeeting": "已讀取「{{title}}」",
+  "chat.trace.readThisMeeting": "已讀取此會議",
+  "chat.trace.readLive": "已讀取即時逐字稿",
+  "chat.trace.thinkingFor": "思考中 · {{seconds}} 秒"
 }

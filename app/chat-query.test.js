@@ -56,3 +56,12 @@ test('cancel, early close and provider errors terminate with fixed errors', () =
     assert.doesNotMatch(JSON.stringify(h.events), /PRIVATE/);
   }
 });
+
+test('a context step is forwarded as a tool step before the answer', () => {
+  const h = harness();
+  const step = { id: 'context', source: 'context', connection: '', tool: 'notes', count: 12, title: null };
+  h.proc.stdout.write(`CHAT_STEP:${Buffer.from(JSON.stringify(step)).toString('base64')}\n`);
+  h.proc.stdout.write(`CHAT_STEP:${Buffer.from(JSON.stringify({ source: 'other' })).toString('base64')}\n`);
+  h.proc.stdout.write(`CHAT_CHUNK:${Buffer.from('hi').toString('base64')}\nCHAT_STREAM_COMPLETE\n`);
+  assert.deepEqual(h.events.slice(0, 2), [{ channel: 'query-tool-step', step }, { channel: 'query-chunk', chunk: 'hi' }]);
+});

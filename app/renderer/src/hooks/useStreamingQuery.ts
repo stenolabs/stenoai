@@ -4,6 +4,13 @@ import { GENERAL_SCOPE, ORG_SHARED_SCOPE } from '@/components/FolderScopePicker'
 import { buildOrgChatPayload } from '@/lib/orgChat';
 import { CHART_INSTRUCTIONS } from '@/lib/chatChart';
 
+/** Add a step, or replace one with the same id (a repeated context step). */
+function upsertStep(steps: ChatToolStep[] | undefined, step: ChatToolStep): ChatToolStep[] {
+  const list = steps ?? [];
+  const at = list.findIndex((s) => s.id === step.id);
+  return at === -1 ? [...list, step] : list.map((s, i) => (i === at ? step : s));
+}
+
 export type StreamStatus = 'streaming' | 'done' | 'error';
 
 export interface StreamState {
@@ -118,7 +125,7 @@ export function useStreamingQuery() {
         setStreams((prev) => {
           const current = prev[id];
           if (!current) return prev;
-          return { ...prev, [id]: { ...current, steps: [...(current.steps ?? []), step] } };
+          return { ...prev, [id]: { ...current, steps: upsertStep(current.steps, step) } };
         });
       },
       onActionCard: (card) => {
@@ -255,7 +262,7 @@ export function useStreamingQuery() {
       },
       onToolStep: (step) => {
         if (finished) return;
-        result = { ...result, steps: [...(result.steps ?? []), step] };
+        result = { ...result, steps: upsertStep(result.steps, step) };
         const snapshot = result;
         setStreams((prev) => ({ ...prev, [id]: snapshot }));
       },

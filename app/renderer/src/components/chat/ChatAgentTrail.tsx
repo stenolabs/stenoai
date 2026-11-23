@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { Check, ExternalLink, Search } from 'lucide-react';
+import { Check, ExternalLink, FileText, Search } from 'lucide-react';
 import { ActionCardView } from '@/components/actions/ActionCardView';
 import { ActionValidationFailure } from '@/hooks/useActions';
 import { actionPhrase, headlineValue } from '@/lib/actionCopy';
@@ -9,6 +9,16 @@ import { t } from '@/i18n';
 
 /** "Searched Linear", "Searched your notes", "Read a note". */
 export function stepLabel(step: ChatToolStep): string {
+  if (step.source === 'context') {
+    if (step.tool === 'notes') {
+      const count = step.count ?? 0;
+      if (count === 0) return t('chat.trace.noNotes');
+      return count === 1 ? t('chat.trace.readNotes.one', { count }) : t('chat.trace.readNotes.other', { count });
+    }
+    if (step.tool === 'meeting') return step.title ? t('chat.trace.readMeeting', { title: step.title }) : t('chat.trace.readThisMeeting');
+    if (step.tool === 'live') return t('chat.trace.readLive');
+    return '';
+  }
   if (step.source === 'steno') {
     return step.tool === 'get_note' ? t('chat.agent.readNote') : t('chat.agent.searchedNotes');
   }
@@ -33,10 +43,40 @@ export function actionRecords(cards: ActionCard[] | undefined): ChatActionRecord
 }
 
 function StepLine({ step }: { step: ChatToolStep }) {
+  const label = stepLabel(step);
+  if (!label) return null;
+  const Icon = step.source === 'context' ? FileText : Search;
   return (
     <p className="flex items-center gap-1.5 text-[12.5px]" style={{ color: 'var(--fg-muted)' }} data-testid="chat-tool-step">
-      <Search aria-hidden className="size-3" />
-      {stepLabel(step)}
+      <Icon aria-hidden className="size-3" />
+      {label}
+    </p>
+  );
+}
+
+/**
+ * The live "Thinking · 4s" line shown until the answer's first words arrive,
+ * under whatever the turn has read so far, like Claude's thinking trace.
+ */
+export function ThinkingLine() {
+  const [started] = React.useState(() => Date.now());
+  const [now, setNow] = React.useState(started);
+  React.useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
+  const seconds = Math.floor((now - started) / 1000);
+  return (
+    <p
+      className="flex items-center gap-1.5 py-1 text-[13px]"
+      style={{ color: 'var(--fg-muted)' }}
+      data-testid="chat-thinking"
+      role="status"
+    >
+      <span>{seconds > 0 ? t('chat.trace.thinkingFor', { seconds }) : t('askBar.thinking')}</span>
+      <span className="thinking-dot" />
+      <span className="thinking-dot" />
+      <span className="thinking-dot" />
     </p>
   );
 }
@@ -50,13 +90,17 @@ export function LiveAgentTrail({
   queryId,
   steps,
   cards,
+  pending = false,
 }: {
   queryId: string;
   steps?: ChatToolStep[];
   cards?: ActionCard[];
+  /** No answer text yet: show the live thinking line under the steps. */
+  pending?: boolean;
 }) {
   const [busy, setBusy] = React.useState<string | null>(null);
-  if (!steps?.length && !cards?.length) return null;
+  const waitingOnCard = cards?.some((c) => c.status !== 'done' && c.status !== 'dismissed');
+  if (!steps?.length && !cards?.length && !pending) return null;
   const approve = async (card: ActionCard, args: Record<string, unknown>) => {
     setBusy(card.id);
     try {
@@ -74,6 +118,7 @@ export function LiveAgentTrail({
   return (
     <div className="mb-2 flex flex-col gap-2" data-testid="chat-agent-trail">
       {steps?.map((s) => <StepLine key={s.id} step={s} />)}
+      {pending && !waitingOnCard && <ThinkingLine />}
       {cards?.map((card) =>
         card.status === 'dismissed' ? (
           <p key={card.id} className="text-[12.5px]" style={{ color: 'var(--fg-muted)' }}>

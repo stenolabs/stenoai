@@ -3964,6 +3964,8 @@ function runChatAgent({ queryId, payload, tools, entry, send, cleanup, runPlain 
     try {
       return await backend('chat-agent-step', body, 'CHAT_AGENT:', 'CHAT_AGENT_ERROR:', {
         deltaPrefix: 'CHAT_AGENT_DELTA:', onDelta: onText,
+        stepPrefix: 'CHAT_STEP:',
+        onStep: (step) => { if (step && step.source === 'context') send('query-tool-step', { step }); },
       });
     } catch (e) {
       // The first call failing before any text (a custom endpoint or model

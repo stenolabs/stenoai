@@ -214,7 +214,7 @@ async function runAgentTurn({ request, tools, step, runRead, proposeWrite, emit 
  * `<prefix><base64 JSON>` line. Resolves the parsed JSON; rejects with
  * err.code = the `<errorPrefix>` code, or 'failed'.
  */
-function runBackendJson({ spawn, backend, command, env, cwd, payload, prefix, errorPrefix, deltaPrefix = null, onDelta = () => {}, timeoutMs = 240000, onProc = () => {} }) {
+function runBackendJson({ spawn, backend, command, env, cwd, payload, prefix, errorPrefix, deltaPrefix = null, onDelta = () => {}, stepPrefix = null, onStep = () => {}, timeoutMs = 240000, onProc = () => {} }) {
   return new Promise((resolve, reject) => {
     let done = false;
     let out = '';
@@ -238,6 +238,12 @@ function runBackendJson({ spawn, backend, command, env, cwd, payload, prefix, er
       out = lines.pop(); // keep a partial last line for the next chunk
       for (const raw of lines) {
         const line = raw.replace(/\r$/, '');
+        if (stepPrefix && line.startsWith(stepPrefix)) {
+          try {
+            onStep(JSON.parse(Buffer.from(line.slice(stepPrefix.length), 'base64').toString('utf8')));
+          } catch (_) {}
+          continue;
+        }
         if (deltaPrefix && line.startsWith(deltaPrefix)) {
           try {
             onDelta(Buffer.from(line.slice(deltaPrefix.length), 'base64').toString('utf8'));

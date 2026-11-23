@@ -12,7 +12,8 @@ Protocol (stdin JSON, bounded):
       tools: [{name, description, parameters}],
       turns: [{type: "assistant", text, tool_calls: [{id, name, arguments}]},
               {type: "tool_result", id, name, content}] }
-stdout: zero or more ``CHAT_AGENT_DELTA:<base64 text>`` lines as the answer
+stdout: on the first step a ``CHAT_STEP:<base64 JSON>`` line (what the answer
+read), then zero or more ``CHAT_AGENT_DELTA:<base64 text>`` lines as the answer
 streams, then ``CHAT_AGENT:<base64 JSON {text, tool_calls}>`` or
 ``CHAT_AGENT_ERROR:<code>`` (``tools-unsupported`` | ``failed``).
 
@@ -26,7 +27,7 @@ import re
 import sys
 import uuid
 
-from src.chat_query import MAX_PAYLOAD, build_prompt_parts, validate_request
+from src.chat_query import MAX_PAYLOAD, build_prompt_parts, emit_step, validate_request
 
 MAX_TOOLS = 64
 MAX_TURNS = 40
@@ -319,6 +320,8 @@ def run_chat_agent_step(load_note, load_corpus, resolve_language=None, make_summ
             from src.summarizer import OllamaSummarizer
             make_summarizer = OllamaSummarizer
         parts = build_prompt_parts(data, get_config(), load_note, load_corpus, resolve_language)
+        if not data.get('turns'):
+            emit_step(parts['step'])
         def on_text(piece):
             print(f"CHAT_AGENT_DELTA:{base64.b64encode(piece.encode('utf-8')).decode('ascii')}", flush=True)
 

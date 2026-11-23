@@ -450,7 +450,12 @@ export function AskBar({ visible = true }: { visible?: boolean }) {
               liveText={showStream ? (activeStream?.text ?? '') : ''}
               streaming={showStream}
               trail={showStream && activeStreamId ? (
-                <LiveAgentTrail queryId={activeStreamId} steps={activeStream?.steps} cards={activeStream?.cards} />
+                <LiveAgentTrail
+                  queryId={activeStreamId}
+                  steps={activeStream?.steps}
+                  cards={activeStream?.cards}
+                  pending={!activeStream?.text}
+                />
               ) : null}
             />
           </div>
@@ -705,14 +710,7 @@ function MessageList({ messages, liveText, streaming, trail }: MessageListProps)
               {renderMarkdown(liveText)}
               <span className="ml-0.5 inline-block h-3.5 w-0.5 animate-pulse align-text-bottom" style={{ background: 'var(--fg-2)' }} />
             </div>
-          ) : (
-            <div className="flex items-center gap-1.5 py-1" style={{ color: 'var(--fg-muted)' }}>
-              <span className="text-[13px]">{t('askBar.thinking')}</span>
-              <span className="thinking-dot" />
-              <span className="thinking-dot" />
-              <span className="thinking-dot" />
-            </div>
-          )}
+          ) : null}
         </div>
       )}
     </div>

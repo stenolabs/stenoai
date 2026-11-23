@@ -112,10 +112,10 @@ test('an answer keeps its original conversation and scope after switching histor
   await expect(page.getByRole('button', { name: 'Context: No context' })).toBeVisible();
   await page.getByRole('textbox').first().fill('Explain DNS');
   await page.getByRole('textbox').first().press('Enter');
-  await expect(page.getByText('Thinking…', { exact: true })).toBeVisible();
+  await expect(page.getByTestId('chat-thinking')).toBeVisible();
   await page.evaluate(() => { window.location.hash = '#/chat/notes'; });
   await expect(page.getByRole('button', { name: 'Context: All notes' })).toBeVisible();
-  await expect(page.getByText('Thinking…', { exact: true })).toHaveCount(0);
+  await expect(page.getByTestId('chat-thinking')).toHaveCount(0);
   await app.evaluate(() => (global as any).__finishChat());
   await expect.poll(async () => {
     const saved = await page.evaluate(() => window.stenoai.chat.load());

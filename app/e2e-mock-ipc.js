@@ -2335,7 +2335,8 @@ function install({ ipcMain }) {
           // Word by word, holding before the last word until __finishChat.
           const words = reply.split(/(?<= )/);
           const send = (c, d) => { if (!event.sender.isDestroyed()) event.sender.send(c, { queryId, ...d }); };
-          words.slice(0, -1).forEach((w, i) => setTimeout(() => send('query-chunk', { chunk: w }), 20 * (i + 1)));
+          send('query-tool-step', { step: { id: 'context', source: 'context', connection: '', tool: 'notes', count: 3, title: null } });
+          words.slice(0, -1).forEach((w, i) => setTimeout(() => send('query-chunk', { chunk: w }), 400 + 20 * i));
           global.__finishChat = () => {
             send('query-chunk', { chunk: words[words.length - 1] });
             send('query-done', { success: true });

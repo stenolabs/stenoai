@@ -15,7 +15,10 @@ test('a chat answer shows its first words before the stream finishes', async ({ 
   await input.fill('Tell me something');
   await input.press('Enter');
 
+  // The trace says what the answer read, with a live thinking line until words arrive.
+  await expect(page.getByTestId('chat-tool-step').filter({ hasText: 'Read 3 notes' })).toBeVisible();
   await expect(page.getByText(/Streaming answers arrive word by word/)).toBeVisible();
+  await expect(page.getByTestId('chat-thinking')).toHaveCount(0);
   await expect(page.getByText(/FINALWORD/)).toHaveCount(0);
 
   await app.evaluate(() => (globalThis as unknown as { __finishChat: () => void }).__finishChat());

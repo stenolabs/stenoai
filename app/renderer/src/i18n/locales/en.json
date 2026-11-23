@@ -1058,5 +1058,12 @@
   "chat.chart.copyData": "Copy data",
   "chat.chart.copied": "Copied",
   "chat.chart.copyFailed": "Couldn’t copy",
-  "chat.chart.other": "Other"
+  "chat.chart.other": "Other",
+  "chat.trace.readNotes.one": "Read {{count}} note",
+  "chat.trace.readNotes.other": "Read {{count}} notes",
+  "chat.trace.noNotes": "No notes in this space yet",
+  "chat.trace.readMeeting": "Read “{{title}}”",
+  "chat.trace.readThisMeeting": "Read this meeting",
+  "chat.trace.readLive": "Read the live transcript",
+  "chat.trace.thinkingFor": "Thinking · {{seconds}}s"
 }

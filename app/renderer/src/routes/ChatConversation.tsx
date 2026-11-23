@@ -183,7 +183,7 @@ export function ChatConversation({ sessionId }: ChatConversationProps) {
     [session?.messages],
   );
   const streamingContent = isStreaming && pendingPersistRef.current?.sessionId === sessionId
-    ? activeStream?.text || 'Thinking…'
+    ? activeStream?.text || ''
     : null;
   const totalItems = messages.length + (streamingContent !== null ? 1 : 0);
 
@@ -421,11 +421,16 @@ export function ChatConversation({ sessionId }: ChatConversationProps) {
                     className="pb-5"
                   >
                     {isStreamingBubble && activeStreamId ? (
-                      <LiveAgentTrail queryId={activeStreamId} steps={activeStream?.steps} cards={activeStream?.cards} />
+                      <LiveAgentTrail
+                        queryId={activeStreamId}
+                        steps={activeStream?.steps}
+                        cards={activeStream?.cards}
+                        pending={!activeStream?.text}
+                      />
                     ) : msg?.role === 'assistant' ? (
                       <AgentRecord steps={msg.steps} actions={msg.actions} />
                     ) : null}
-                    {!(isStreamingBubble && !activeStream?.text && activeStream?.cards?.some((c) => c.status !== 'done' && c.status !== 'dismissed')) && (
+                    {!(isStreamingBubble && !activeStream?.text) && (
                       <Bubble
                         role={role}
                         content={content}

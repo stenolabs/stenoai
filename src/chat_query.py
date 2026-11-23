@@ -66,6 +66,32 @@ def _saved_meeting_context(note, budget):
     return notes
 
 
+CORPUS_SEPARATOR = '\n\n---\n\n'
+
+
+def context_step(scope, context, note):
+    """What this answer read, for the chat's trace ("Read 12 notes").
+
+    Emitted as a ``CHAT_STEP:`` line before the answer streams; it carries
+    counts and a title only, never note content.
+    """
+    step = {'id': 'context', 'source': 'context', 'connection': '', 'title': None}
+    if scope == 'notes':
+        blocks = [b for b in context.split(CORPUS_SEPARATOR) if b.strip() and not b.lstrip().startswith('_Note:')] if context else []
+        return {**step, 'tool': 'notes', 'count': len(blocks)}
+    if scope == 'meeting':
+        title = (note.get('session_info') or {}).get('name') if isinstance(note, dict) else None
+        return {**step, 'tool': 'meeting', 'title': str(title)[:120] if title else None}
+    if scope == 'live':
+        return {**step, 'tool': 'live'}
+    return {**step, 'tool': 'none'}
+
+
+def emit_step(step):
+    encoded = base64.b64encode(json.dumps(step).encode('utf-8')).decode('ascii')
+    print(f'CHAT_STEP:{encoded}', flush=True)
+
+
 def build_prompt_parts(data, config, load_note, load_corpus, resolve_language=None):
     """The pieces of a chat prompt: instructions, bounded context and history."""
     from src.chat_charts import CHART_INSTRUCTIONS
@@ -122,6 +148,7 @@ def build_prompt_parts(data, config, load_note, load_corpus, resolve_language=No
     )
     return {
         'instructions': instructions,
+        'step': context_step(scope, context, note),
         'scope': scope,
         'context': context or '(No meeting content attached.)',
         'history': history_text,
@@ -129,8 +156,9 @@ def build_prompt_parts(data, config, load_note, load_corpus, resolve_language=No
     }
 
 
-def build_prompt(data, config, load_note, load_corpus, resolve_language=None):
-    parts = build_prompt_parts(data, config, load_note, load_corpus, resolve_language)
+def build_prompt(data, config, load_note, load_corpus, resolve_language=None, parts=None):
+    if parts is None:
+        parts = build_prompt_parts(data, config, load_note, load_corpus, resolve_language)
     return (
         f"{parts['instructions']}\n\n"
         f"CONTEXT SCOPE: {parts['scope']}\nMEETING CONTEXT:\n{parts['context']}\n\n"
@@ -150,7 +178,9 @@ def run_chat_query(load_note, load_corpus, resolve_language=None):
         data = validate_request(json.loads(raw))
         from src.config import get_config
         from src.summarizer import OllamaSummarizer
-        prompt = build_prompt(data, get_config(), load_note, load_corpus, resolve_language)
+        parts = build_prompt_parts(data, get_config(), load_note, load_corpus, resolve_language)
+        emit_step(parts['step'])
+        prompt = build_prompt(data, None, load_note, load_corpus, resolve_language, parts=parts)
         answer_size = 0
         for chunk in OllamaSummarizer().stream_chat_prompt(prompt):
             if not isinstance(chunk, str):
