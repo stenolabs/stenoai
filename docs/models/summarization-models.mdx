@@ -37,12 +37,14 @@ The new model is used for all future recordings. You can re-summarize an existin
 
 ## Using a cloud model
 
-Steno optionally supports OpenAI, Anthropic, AWS Bedrock, or a custom API endpoint as an alternative to a local model. If configured, your transcript and any typed notes (not your audio) are sent to that API for summarization.
+Steno optionally supports OpenRouter, OpenAI, Anthropic, AWS Bedrock, or a custom OpenAI-compatible endpoint as an alternative to a local model. If configured, your transcript and any typed notes (not your audio) are sent to that API for summarization.
 
 To configure a cloud model:
 1. Open **Settings → AI**
-2. Select **Cloud API**
-3. Choose the provider and enter your credentials
+2. Set **AI provider** to **Cloud API**
+3. Choose the **Service** and enter your credentials
+
+For step-by-step help creating an OpenRouter, OpenAI or Anthropic key, see [Get an API key](/getting-started/api-key).
 
 Cloud models are off by default. If you work with confidential recordings, use a local model.
 

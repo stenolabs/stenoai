@@ -7,7 +7,7 @@ Live transcription shows the transcript building in real time while you record. 
 
 ## How it works
 
-While recording, Steno feeds audio through voice-activity detection and the Parakeet model to produce a running transcript. When you stop, the same recording is finalized into the saved transcript that your notes are built from. The live view is a convenience during the meeting; the saved transcript is the source of record.
+While recording, Steno feeds audio through voice-activity detection and the Parakeet model to produce a running transcript. When you stop, Steno saves the live transcript and an early summary straight away, then refines the transcript from the full recording in the background. See [Instant transcripts](/features/instant-transcripts).
 
 When the model is still loading at the start of a recording, Steno shows that it is warming up while audio continues to be captured — nothing is lost.
 
@@ -18,7 +18,7 @@ Live transcription is available when the **Parakeet** engine is active (Settings
 ---
 
 <Accordion title="Does the live transcript get saved?">
-When you stop recording, Steno finalizes the recording into the saved transcript under `~/Library/Application Support/stenoai/transcripts/`, and your notes are generated from it. The live view is what you see during the meeting.
+Yes. When you stop, Steno saves the live transcript immediately and writes a first summary from it, then refines both in the background. See [Instant transcripts](/features/instant-transcripts).
 </Accordion>
 
 <Accordion title="Is any audio sent to a server for live transcription?">

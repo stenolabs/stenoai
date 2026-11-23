@@ -1,0 +1,99 @@
+---
+title: "Connect Steno to your tools"
+sidebarTitle: "Overview"
+description: "Give AI apps and coding agents read-only access to your meetings, and send approved follow-ups to the apps you work in."
+icon: "plug"
+---
+
+Open **Connect** in the sidebar to link Steno with the tools you already use. The page has four sections:
+
+| Section | What it does |
+|---------|--------------|
+| **Coding agents** | Lets Claude Code and Codex read your meetings through the Steno skill or MCP. |
+| **AI apps** | Lets the Claude desktop app and Cursor search and read your meetings over MCP. |
+| **Actions** | Connects apps such as Linear and Notion so Steno can suggest follow-ups after each meeting. See [Actions](/connect/actions). |
+| **Sync** | Keeps a copy of every note in a folder you own. |
+
+Steno never changes anything in another app without your approval. AI apps and coding agents can only read your meetings.
+
+## AI apps
+
+AI apps connect over a read-only MCP connection that runs Steno on your computer. Click **Connect** on a card, then follow the steps in the dialog.
+
+<Tabs>
+  <Tab title="Claude">
+    <Steps>
+      <Step title="Open the dialog">
+        On the **Claude** card, click **Connect**.
+      </Step>
+      <Step title="Add the extension">
+        Click **Add to Claude**. The Claude desktop app opens and asks you to confirm the Steno extension.
+      </Step>
+      <Step title="Ask about a meeting">
+        In Claude, ask something like "What did we decide in yesterday's pricing call?"
+      </Step>
+    </Steps>
+    You need the Claude desktop app installed. If Claude does not open, install it and try again.
+  </Tab>
+  <Tab title="Cursor">
+    <Steps>
+      <Step title="Open the dialog">
+        On the **Cursor** card, click **Connect**.
+      </Step>
+      <Step title="Add the server">
+        Click **Add to Cursor**, then confirm in Cursor. Or copy the **mcp.json** snippet into `~/.cursor/mcp.json` yourself.
+      </Step>
+    </Steps>
+  </Tab>
+</Tabs>
+
+Once Steno detects the connection, the card shows **Connected**. ChatGPT is listed as **Coming soon**.
+
+The connection keeps working when you move or update Steno, because each app runs a small launcher that Steno keeps up to date.
+
+## Coding agents
+
+Claude Code and Codex can use your meetings in two ways. Install the skill first; connect MCP as well if you want the "What assistants can see" limits to apply.
+
+<Steps>
+  <Step title="Install the skill">
+    On the **Claude Code** or **Codex** card, click **Install skill**, then **Copy install prompt**. Paste the prompt into your agent on this computer. See [Use Steno with your agent](/features/agents) for the full prompts.
+  </Step>
+  <Step title="Connect MCP (optional)">
+    Click **Connect MCP** and follow the dialog:
+
+    - **Claude Code**: run the **Terminal command** shown. It adds Steno to Claude Code for all your projects.
+    - **Codex**: add the **config.toml** snippet to `~/.codex/config.toml`, then restart Codex.
+  </Step>
+</Steps>
+
+The card status shows how the agent is connected: **Connected** via skill, via MCP, or via skill and MCP. MCP connections also show when they were last used.
+
+## What assistants can see
+
+Go to **Settings → Connectors → What assistants can see** to limit what MCP connections can read:
+
+- **All meetings**: on by default. Turn it off to let assistants read only meetings in the spaces you choose.
+- **Notes only**: hides transcripts. Assistants can still read your notes and action items.
+
+These controls apply to every MCP connection, for both AI apps and coding agents.
+
+<Warning>
+The Steno skill reads your notes on this device directly, so these limits do not apply to it. If you need them, connect your coding agent over MCP and do not install the skill.
+</Warning>
+
+## MCP and the skill compared
+
+|  | MCP | Steno skill |
+|--|-----|-------------|
+| Works with | Claude, Cursor, Claude Code, Codex | Claude Code, Codex |
+| Access | Read-only | Read-only |
+| Honours "What assistants can see" | Yes | No |
+| Needs | Nothing extra | Python 3.8 or later, or `uv` |
+| Good for | Searching and reading meetings from any MCP app | Recaps, drafts and documents built from your meetings |
+
+Through MCP, assistants can search meetings, read a note or transcript, list action items and list the spaces shared with them.
+
+## Privacy
+
+Assistants read your meetings on this device through a read-only connection that makes no network requests. Anything an assistant reads is then sent to that assistant's service under its own privacy terms. Steno's local processing does not make an external assistant's requests local.

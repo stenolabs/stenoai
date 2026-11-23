@@ -28,6 +28,7 @@ docs/
 ├── logo/                          Brand assets (mark + wordmark)
 ├── getting-started/               Installation and quick start
 ├── features/                      Feature documentation
+├── connect/                       Connect page: MCP for AI apps, actions, custom MCP servers
 ├── privacy/                       On-device processing and use cases
 ├── models/                        Transcription and summarization model guides
 ├── compare/                       Comparison pages (vs Otter, Fireflies, Granola, Fathom, tl;dv, MacWhisper, Zoom AI Companion, local vs cloud)

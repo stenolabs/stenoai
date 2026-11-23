@@ -19,6 +19,7 @@
             "pages": [
               "getting-started/what-is-steno",
               "getting-started/installation",
+              "getting-started/api-key",
               "getting-started/first-recording"
             ]
           },
@@ -28,12 +29,22 @@
               "features/recording",
               "features/transcription",
               "features/live-transcription",
+              "features/instant-transcripts",
               "features/summaries",
-              "features/report-templates",
+              "features/editing-notes",
+              "features/cookbooks",
               "features/ask-your-meetings",
-              "features/agents",
               "features/speaker-labels",
               "features/apple-shortcuts"
+            ]
+          },
+          {
+            "group": "Connect",
+            "pages": [
+              "connect/overview",
+              "features/agents",
+              "connect/actions",
+              "connect/custom-mcp-servers"
             ]
           },
           {
@@ -136,10 +147,18 @@
       "x": "https://x.com/ruzin_saleem"
     }
   },
-  "css": ["/custom.css"],
+  "css": [
+    "/custom.css"
+  ],
   "integrations": {
     "posthog": {
       "apiKey": "phc_U2cnTyIyKGNSVaK18FyBMltd8nmN7uHxhhm21fAHwqb"
     }
-  }
+  },
+  "redirects": [
+    {
+      "source": "/features/report-templates",
+      "destination": "/features/cookbooks"
+    }
+  ]
 }

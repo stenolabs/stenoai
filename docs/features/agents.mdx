@@ -13,8 +13,12 @@ Use an agent running on the same computer as your Steno notes.
 In Steno, open **Connect** in the sidebar. Under **Coding agents**, choose
 **Install skill** on **Claude Code** or **Codex**, click **Copy install prompt**,
 and paste it into your agent. The agent installs the skill and can help with any
-missing setup. Once the skill is in place, the card shows **Connected · via
-skill**. To connect over MCP instead, choose **Use MCP instead**.
+missing setup. Once the skill is in place, the card shows **Connected** via
+skill.
+
+To also connect over MCP, click **Connect MCP** on the same card. MCP respects
+the **What assistants can see** limits in **Settings → Connectors**; the skill
+reads your notes directly and does not. See [Connect overview](/connect/overview#mcp-and-the-skill-compared).
 
 You can also copy the prompts below. The source is available in the
 [Steno skill folder on GitHub](https://github.com/stenolabs/stenoai/tree/main/skills/steno).

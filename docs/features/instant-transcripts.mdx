@@ -1,0 +1,51 @@
+---
+title: "Instant transcripts"
+description: "With Parakeet, your transcript and a first summary are ready the moment you press Stop. Steno then refines both in the background."
+icon: "forward-fast"
+---
+
+With the **Parakeet** engine, you don't wait for transcription after a meeting. When you press **Stop**, Steno saves the live transcript straight away, writes a first summary from it, and then refines both in the background.
+
+## What happens after Stop
+
+<Steps>
+  <Step title="The live transcript is saved">
+    The transcript you saw while recording becomes the meeting's transcript immediately, with timestamps. When both sides of a call were recorded, turns are labelled **You** and **Others**.
+  </Step>
+  <Step title="An early summary appears">
+    Steno writes notes from the live transcript, so you can read the summary and action items within moments.
+  </Step>
+  <Step title="Steno refines the transcript">
+    In the background, Steno transcribes the full recording again for better accuracy and speaker labels. The note shows **Refining transcript** and "Speaker labels and notes update here when it's done."
+  </Step>
+  <Step title="The final note replaces the early one">
+    When refining finishes, the transcript, speaker labels and summary update in place. If you renamed the meeting in the meantime, your title is kept.
+  </Step>
+</Steps>
+
+While Steno is refining, the note is read-only. Any edits you start are saved once it finishes. See [Editing notes](/features/editing-notes#when-a-note-is-read-only).
+
+If the refined summary can't be generated, Steno keeps the early summary and offers **Generate notes** so you can try again.
+
+## When there's no early summary
+
+Steno skips the early summary and writes notes once, after refining, when:
+
+- you continued recording on an existing note;
+- the early summary fails for any reason.
+
+If **Generate notes automatically** is turned off in **Settings → AI**, Steno doesn't write notes on its own at all. Click **Generate notes** when you want them.
+
+## With Whisper
+
+The **Whisper** engine has no live transcript, so there is nothing to save instantly. After you press **Stop**, Steno transcribes the recording and then writes the notes. Switch engines in **Settings → Transcribe**; see [Transcription models](/models/transcription-models).
+
+---
+
+<Accordion title="Can I turn instant transcripts off?">
+There is no separate setting. Instant transcripts come with the Parakeet engine. To wait for the full transcript before notes are written, switch to Whisper.
+</Accordion>
+
+<Accordion title="Does refining send anything off my device?">
+No. Refining runs the same on-device transcription as the rest of Steno. If you use a cloud AI provider, the transcript text is sent to it for the summary, as usual.
+</Accordion>
