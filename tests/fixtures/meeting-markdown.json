@@ -1,0 +1,231 @@
+{
+  "defaults": {
+    "session_info": {
+      "name": "fixture",
+      "processed_at": "",
+      "duration_seconds": null,
+      "output_language": null,
+      "configured_language": null,
+      "detected_language": null
+    },
+    "summary": "",
+    "participants": [],
+    "discussion_areas": [],
+    "key_points": [],
+    "action_items": [],
+    "transcript": "",
+    "is_diarised": false,
+    "diarised_text": null,
+    "user_notes": null,
+    "folders": [],
+    "continued_recordings": []
+  },
+  "cases": [
+    {
+      "name": "empty note",
+      "content": "",
+      "expected": {}
+    },
+    {
+      "name": "plain body",
+      "content": "## Summary\nFirst line\nSecond line\n\n## Transcript\nA\nB",
+      "expected": {
+        "summary": "First line\nSecond line",
+        "transcript": "A\nB"
+      }
+    },
+    {
+      "name": "empty frontmatter",
+      "content": "---\n---\n## Summary\nBody",
+      "expected": {
+        "summary": "Body"
+      }
+    },
+    {
+      "name": "closing boundary at EOF",
+      "content": "---\ntitle: EOF\n---",
+      "expected": {
+        "session_info": {
+          "name": "EOF"
+        }
+      }
+    },
+    {
+      "name": "quoted inline delimiters and provenance",
+      "content": "---\ntitle: \"Before --- after: \\\"quoted\\\"\"\ndate: 2026-01-02\nduration_seconds: 7\nlanguage: de\nconfigured_language: auto\ndetected_language: de\nfolders: [\"folder---one\"]\ncontinued_recordings: [\"segment---two\"]\n---\n## Summary\nBody",
+      "expected": {
+        "session_info": {
+          "name": "Before --- after: \"quoted\"",
+          "processed_at": "2026-01-02",
+          "duration_seconds": 7,
+          "output_language": "de",
+          "configured_language": "auto",
+          "detected_language": "de"
+        },
+        "summary": "Body",
+        "folders": [
+          "folder---one"
+        ],
+        "continued_recordings": [
+          "segment---two"
+        ]
+      }
+    },
+    {
+      "name": "no closing boundary",
+      "content": "---\ntitle: Ignore\n## Summary\nBody",
+      "expected": {
+        "summary": "Body"
+      }
+    },
+    {
+      "name": "inline dashes do not close frontmatter",
+      "content": "---\ntitle: Ignore --- still metadata\n## Summary\nBody before --- after",
+      "expected": {
+        "summary": "Body before --- after"
+      }
+    },
+    {
+      "name": "body separators survive",
+      "content": "---\ntitle: Separators\n---\n## Summary\nBefore --- after\n---\n----\n---suffix\nLast line\n## Transcript\nA\n---\nB",
+      "expected": {
+        "session_info": {
+          "name": "Separators"
+        },
+        "summary": "Before --- after\n---\n----\n---suffix\nLast line",
+        "transcript": "A\n---\nB"
+      }
+    },
+    {
+      "name": "invalid boundaries before a real close",
+      "content": "---\ntitle: First\n----\n---suffix\ninline --- delimiter\ntitle: Last\n---\n## Summary\nBody",
+      "expected": {
+        "session_info": {
+          "name": "Last"
+        },
+        "summary": "Body"
+      }
+    },
+    {
+      "name": "all surfaced sections and flags",
+      "content": "---\ntitle: Complete\nis_diarised: true\nnotes_generated: false\nnotes_stale: true\nis_live_transcript: true\nprocessing: true\ntranscription_failed: true\nreprocessable: true\naudio_file: synthetic.wav\nerror: synthetic failure\n---\n## SUMMARY\nFirst\nSecond\n## Participants\nAnn, Bob,,\n## Key Topics\n### Budget\nLine one\nLine two\n## Key Points\n- one\n- two\n## Action Items\n- [ ] open\n- [x] done\n## Transcript\nA\nB\n## User Notes\nMine\nSecond",
+      "expected": {
+        "session_info": {
+          "name": "Complete",
+          "notes_generated": false,
+          "notes_stale": true,
+          "is_live_transcript": true,
+          "processing": true,
+          "transcription_failed": true,
+          "reprocessable": true,
+          "audio_file": "synthetic.wav",
+          "error": "synthetic failure"
+        },
+        "summary": "First\nSecond",
+        "participants": [
+          "Ann",
+          "Bob"
+        ],
+        "discussion_areas": [
+          {
+            "title": "Budget",
+            "analysis": "Line one\nLine two"
+          }
+        ],
+        "key_points": [
+          "one",
+          "two"
+        ],
+        "action_items": [
+          "open",
+          "done"
+        ],
+        "transcript": "A\nB",
+        "is_diarised": true,
+        "diarised_text": "A\nB",
+        "user_notes": "Mine\nSecond"
+      }
+    },
+    {
+      "name": "duplicate sections keep the last",
+      "content": "## Summary\nFirst\n## Summary\nLast\n## User Notes\n",
+      "expected": {
+        "summary": "Last",
+        "user_notes": ""
+      }
+    },
+    {
+      "name": "reasoning tag before heading",
+      "content": "## Summary\nText</think>## Key Points\n- Point",
+      "expected": {
+        "summary": "Text</think>",
+        "key_points": [
+          "Point"
+        ]
+      }
+    },
+    {
+      "name": "BOM remains unsupported",
+      "content": "﻿---\ntitle: Ignore\n---\n## Summary\nBody",
+      "expected": {
+        "summary": "Body"
+      }
+    },
+    {
+      "name": "non-exact opening '---suffix'",
+      "content": "---suffix\ntitle: Ignore\n---\n## Summary\nBody",
+      "expected": {
+        "summary": "Body"
+      }
+    },
+    {
+      "name": "non-exact opening '----'",
+      "content": "----\ntitle: Ignore\n---\n## Summary\nBody",
+      "expected": {
+        "summary": "Body"
+      }
+    },
+    {
+      "name": "non-exact opening '--- '",
+      "content": "--- \ntitle: Ignore\n---\n## Summary\nBody",
+      "expected": {
+        "summary": "Body"
+      }
+    },
+    {
+      "name": "non-exact opening ' ---'",
+      "content": " ---\ntitle: Ignore\n---\n## Summary\nBody",
+      "expected": {
+        "summary": "Body"
+      }
+    },
+    {
+      "name": "non-exact closing '---suffix'",
+      "content": "---\ntitle: Ignore\n---suffix\n## Summary\nBody",
+      "expected": {
+        "summary": "Body"
+      }
+    },
+    {
+      "name": "non-exact closing '----'",
+      "content": "---\ntitle: Ignore\n----\n## Summary\nBody",
+      "expected": {
+        "summary": "Body"
+      }
+    },
+    {
+      "name": "non-exact closing '--- '",
+      "content": "---\ntitle: Ignore\n--- \n## Summary\nBody",
+      "expected": {
+        "summary": "Body"
+      }
+    },
+    {
+      "name": "non-exact closing ' ---'",
+      "content": "---\ntitle: Ignore\n ---\n## Summary\nBody",
+      "expected": {
+        "summary": "Body"
+      }
+    }
+  ]
+}
