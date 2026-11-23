@@ -908,3 +908,28 @@
 }
 .cookbook-row { scrollbar-width: none; }
 .cookbook-row::-webkit-scrollbar { display: none; }
+
+/* =============================================================================
+   Chat mascot — see components/Mascot.tsx. A sunset-poster gradient on the
+   ASCII dragonfly; the same stops read on paper and on ink.
+   =============================================================================*/
+.steno-mascot {
+  margin: 0;
+  height: 9.45em;
+  font-size: 11px;
+  line-height: 1.05;
+  font-weight: 600;
+  white-space: pre;
+  background: linear-gradient(180deg, #f6b545 0%, #f0708f 48%, #7d5bd6 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  user-select: none;
+}
+.steno-mascot-float {
+  animation: steno-mascot-float 3.2s ease-in-out infinite;
+}
+@keyframes steno-mascot-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-4px); }
+}

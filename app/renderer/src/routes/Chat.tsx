@@ -23,6 +23,7 @@ import { useUserName } from '@/hooks/useSettings';
 import { useOrgSession } from '@/hooks/useOrg';
 import { GLOBAL_SCOPE, bucketKey, deriveSessionName, toBucketLabel, chatProviderReady } from '@/lib/chat';
 import { BUILTIN_RECIPES, PresetGlyph, PRESET_COLORS, type Recipe } from '@/lib/recipes';
+import { Mascot } from '@/components/Mascot';
 import { ModelIndicator } from '@/components/ModelIndicator';
 import { RecipeMenu } from '@/components/RecipeMenu';
 import { useRecipes } from '@/hooks/useRecipes';
@@ -257,7 +258,7 @@ export function Chat() {
 
         <div className="w-full">
           <h1
-          className="mb-8 text-center"
+          className="mb-4 text-center"
           style={{
             fontFamily: 'var(--font-serif)',
             fontSize: 36,
@@ -274,6 +275,7 @@ export function Chat() {
             t('chat.home.greeting.anonymous')
           )}
         </h1>
+        <Mascot resting={isFocused || input !== ''} />
 
         {!providerReady && !orgScopeActive && provider.isFetched && <ProviderRequiredBanner />}
         {submitError && (
