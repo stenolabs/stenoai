@@ -9,13 +9,47 @@ const MAX_RECIPES = 100;
 const LIMITS = { name: 60, description: 160, prompt: 4000 };
 const ID = /^r_[a-f0-9]{12}$/;
 
-function readRecipes(file) {
+/**
+ * Read recipes.json. A missing file reads as no recipes; a file that exists
+ * but cannot be parsed is kept aside as recipes.json.corrupt-<timestamp> so
+ * a write never overwrites what the user had. Returns { recipes, corrupt }.
+ */
+function readRecipesFile(file) {
+  let text;
+  try {
+    text = fs.readFileSync(file, 'utf8');
+  } catch (e) {
+    if (e && e.code === 'ENOENT') return { recipes: [], corrupt: false };
+    // Unreadable for another reason (permissions, EISDIR): nothing to salvage
+    // and nothing safe to write over either; treat it as corrupt.
+    return { recipes: [], corrupt: true };
+  }
   let raw;
   try {
-    raw = JSON.parse(fs.readFileSync(file, 'utf8'));
+    raw = JSON.parse(text);
   } catch (_) {
-    return [];
+    return { recipes: [], corrupt: true };
   }
+  return { recipes: sanitize(raw), corrupt: false };
+}
+
+/** Move an unparseable recipes.json aside. Best effort; returns the new path or null. */
+function quarantine(file, now = Date.now) {
+  const stamp = new Date(now()).toISOString().replace(/[:.]/g, '-');
+  const target = `${file}.corrupt-${stamp}`;
+  try {
+    fs.renameSync(file, target);
+    return target;
+  } catch (_) {
+    return null;
+  }
+}
+
+function readRecipes(file) {
+  return readRecipesFile(file).recipes;
+}
+
+function sanitize(raw) {
   const list = Array.isArray(raw?.recipes) ? raw.recipes : [];
   return list.filter((r) => r && ID.test(r.id) && typeof r.name === 'string' && typeof r.prompt === 'string')
     .slice(0, MAX_RECIPES)
@@ -32,6 +66,13 @@ function write(file, recipes) {
   writeFileAtomicSync(file, JSON.stringify({ version: 1, recipes }, null, 2));
 }
 
+/** Read for a write: an unparseable file is moved aside first, never overwritten. */
+function readForWrite(file, now) {
+  const { recipes, corrupt } = readRecipesFile(file);
+  if (corrupt) quarantine(file, now);
+  return recipes;
+}
+
 /** Create (no id) or update a recipe. Returns the saved recipe; throws on bad input. */
 function saveRecipe(file, input, now = Date.now()) {
   if (!input || typeof input !== 'object') throw new Error('Invalid recipe');
@@ -41,7 +82,7 @@ function saveRecipe(file, input, now = Date.now()) {
   if (!name || name.length > LIMITS.name) throw new Error('Invalid name');
   if (!prompt || prompt.length > LIMITS.prompt) throw new Error('Invalid prompt');
   if (description.length > LIMITS.description) throw new Error('Invalid description');
-  const recipes = readRecipes(file);
+  const recipes = readForWrite(file, () => now);
   let recipe;
   if (input.id !== undefined) {
     if (typeof input.id !== 'string' || !ID.test(input.id)) throw new Error('Invalid id');
@@ -60,10 +101,10 @@ function saveRecipe(file, input, now = Date.now()) {
 
 function deleteRecipe(file, id) {
   if (typeof id !== 'string' || !ID.test(id)) throw new Error('Invalid id');
-  const recipes = readRecipes(file);
+  const recipes = readForWrite(file, Date.now);
   const next = recipes.filter((r) => r.id !== id);
   if (next.length !== recipes.length) write(file, next);
   return { deleted: next.length !== recipes.length };
 }
 
-module.exports = { MAX_RECIPES, LIMITS, readRecipes, saveRecipe, deleteRecipe };
+module.exports = { MAX_RECIPES, LIMITS, readRecipes, readRecipesFile, saveRecipe, deleteRecipe };

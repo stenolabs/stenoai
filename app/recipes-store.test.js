@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { readRecipes, saveRecipe, deleteRecipe } = require('./recipes-store');
+const { readRecipes, readRecipesFile, saveRecipe, deleteRecipe } = require('./recipes-store');
 
 const tmp = () => path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'recipes-')), 'recipes.json');
 
@@ -12,6 +12,26 @@ test('a missing or corrupt file reads as no recipes', () => {
   assert.deepEqual(readRecipes(file), []);
   fs.writeFileSync(file, '{not json');
   assert.deepEqual(readRecipes(file), []);
+  // A read alone never touches the file.
+  assert.equal(fs.readFileSync(file, 'utf8'), '{not json');
+  assert.deepEqual(readRecipesFile(file), { recipes: [], corrupt: true });
+  assert.deepEqual(readRecipesFile(path.join(path.dirname(file), 'missing.json')), { recipes: [], corrupt: false });
+});
+
+test('a write moves an unparseable recipes.json aside instead of overwriting it', () => {
+  const file = tmp();
+  fs.writeFileSync(file, '{"version":1,"recipes":[{"id":"r_0123456789ab","name":"Lost?","prompt":"x"');
+  const made = saveRecipe(file, { name: 'New', prompt: 'Fresh prompt' }, Date.UTC(2026, 10, 23, 12, 30, 0));
+  const dir = path.dirname(file);
+  const kept = fs.readdirSync(dir).filter((f) => f.startsWith('recipes.json.corrupt-'));
+  assert.deepEqual(kept, ['recipes.json.corrupt-2026-11-23T12-30-00-000Z']);
+  assert.equal(fs.readFileSync(path.join(dir, kept[0]), 'utf8'), '{"version":1,"recipes":[{"id":"r_0123456789ab","name":"Lost?","prompt":"x"');
+  assert.deepEqual(readRecipes(file), [made]);
+  // Deleting from a corrupt file quarantines it too and deletes nothing.
+  fs.writeFileSync(file, 'garbage');
+  assert.deepEqual(deleteRecipe(file, made.id), { deleted: false });
+  assert.equal(fs.readdirSync(dir).filter((f) => f.startsWith('recipes.json.corrupt-')).length, 2);
+  assert.equal(fs.existsSync(file), false);
 });
 
 test('recipes are created, updated and deleted on disk', () => {
