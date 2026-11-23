@@ -172,6 +172,8 @@ export interface ChatToolStep {
   title: string | null;
   /** context steps: how many notes the answer read. */
   count?: number;
+  /** connection reads on a custom URL or local command: the arguments, one bounded line. */
+  detail?: string;
 }
 
 /** What a finished chat-agent turn keeps of an action card. */

@@ -363,6 +363,8 @@ test('chat agent: read tools run, writes become cards approved through the same 
   const c = await svc.addCustom({ name: 'Tracker', url: mock.url, auth: 'none' });
   const toolset = await svc.chatToolset();
   assert.deepEqual(toolset.filter((t) => t.connectionId === c.id).map((t) => [t.tool, t.readOnly]), [['search_issues', true], ['create_issue', false]]);
+  // A custom endpoint is not one Steno ships: chat shows what its reads ask for.
+  assert.ok(toolset.filter((t) => t.connectionId === c.id).every((t) => t.curated === false));
 
   const read = await svc.callReadTool(c.id, 'search_issues', { query: 'x' });
   assert.equal(read.isError, false);

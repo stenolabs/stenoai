@@ -982,6 +982,10 @@ function createActionsService({
     if (!p.actionsEnabled) return [];
     const out = [];
     for (const c of usableConnections(p)) {
+      // Curated: a connector Steno ships (mcp-connectors.js) or Email drafts.
+      // A custom URL or a local command is whatever the user pointed at, so
+      // chat shows what a read on it actually asked for (chat-agent.js).
+      const curated = transportOf(c) === 'builtin' || Boolean(connectorById(c.kind));
       const simple = await simpleActionsOf(c);
       for (const a of simple) {
         out.push({
@@ -992,6 +996,7 @@ function createActionsService({
           description: a.description,
           inputSchema: a.schema,
           readOnly: false,
+          curated,
           simple: a,
         });
       }
@@ -1006,6 +1011,7 @@ function createActionsService({
           description: (t.description || t.title || '').slice(0, 400),
           inputSchema: compactSchema(t.inputSchema),
           readOnly: t.readOnly === true,
+          curated,
         });
         if (out.length >= MAX_PROMPT_TOOLS) return out;
       }

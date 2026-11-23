@@ -74,6 +74,7 @@
   "chat.agent.readNote": "Read a note",
   "chat.agent.searched": "Searched {{connection}}",
   "chat.agent.checked": "Checked {{connection}}",
+  "chat.agent.stepDetail": "{{tool}}: {{args}}",
   "chat.agent.dismissed": "Dismissed: {{action}}",
   "chat.agent.notDone": "Not done: {{action}}",
   "downloads.parakeet.bytes": "Downloading model… {{downloaded}} of {{total}}",

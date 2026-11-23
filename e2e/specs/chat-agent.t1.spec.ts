@@ -26,7 +26,13 @@ test('chat agent: approval card in the chat, Approve sends the edited args', asy
   const { page, app } = await launchApp({ mockIpc: true, env: { STENOAI_E2E_CHAT_AGENT: '1' } });
   await ask(page, 'Create a Linear issue for the release notes');
 
-  await expect(page.getByTestId('chat-tool-step')).toHaveText('Searched Linear');
+  // A curated connector's read shows the connection only; a read on a custom
+  // endpoint also shows the tool and what it asked for.
+  await expect(page.getByTestId('chat-tool-step')).toHaveText([
+    'Searched Linear',
+    'Searched TrackerSearch issues: query: "release notes", limit: "5"',
+  ]);
+  await expect(page.getByTestId('chat-tool-step-detail')).toHaveText('Search issues: query: "release notes", limit: "5"');
   const card = page.getByRole('article', { name: 'Create issue via Linear' });
   await expect(card.getByRole('heading', { name: 'Create issue in Linear · Prep the release notes' })).toBeVisible();
   await expect(card.getByText('Leaves your device for Linear.')).toBeVisible();

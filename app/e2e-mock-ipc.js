@@ -2488,6 +2488,8 @@ function install({ ipcMain }) {
           chatAgentTurns.set(queryId, { send, card });
           setTimeout(() => {
             send('query-tool-step', { step: { id: 's1', source: 'connection', connection: 'Linear', tool: 'search_issues', title: 'Search issues' } });
+            // A read on a custom endpoint carries what it asked for (chat-agent.js compactArguments).
+            send('query-tool-step', { step: { id: 's2', source: 'connection', connection: 'Tracker', tool: 'search_issues', title: 'Search issues', detail: 'query: "release notes", limit: "5"' } });
             send('query-action-card', { card });
           }, 20);
           return;

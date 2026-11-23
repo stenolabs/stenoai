@@ -71,10 +71,21 @@ function StepLine({ step }: { step: ChatToolStep }) {
   const label = stepLabel(step);
   if (!label) return null;
   const Icon = step.source === 'context' ? FileText : Search;
+  // A read on a custom URL or local command says what it asked for: the
+  // server's read-only hint is its own word, so the user can see what ran.
+  const detail =
+    step.source === 'connection' && typeof step.detail === 'string'
+      ? t('chat.agent.stepDetail', { tool: step.title ?? step.tool, args: step.detail })
+      : null;
   return (
     <p className="flex items-center gap-1.5 text-[12.5px]" style={{ color: 'var(--fg-muted)' }} data-testid="chat-tool-step">
-      <Icon aria-hidden className="size-3" />
-      {label}
+      <Icon aria-hidden className="size-3 shrink-0" />
+      <span className="shrink-0">{label}</span>
+      {detail !== null && (
+        <span className="min-w-0 truncate font-mono text-[11.5px]" title={detail} data-testid="chat-tool-step-detail">
+          {detail}
+        </span>
+      )}
     </p>
   );
 }

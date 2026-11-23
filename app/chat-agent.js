@@ -139,11 +139,37 @@ function buildAgentTools({ connectionTools = [], steno = true } = {}) {
       connectionName: t.connectionName,
       tool: t.tool,
       title: t.title || null,
+      // A connector Steno ships: its read-only hints are trusted silently. For
+      // a custom URL or local command the step line shows the arguments.
+      curated: t.curated === true,
       // A simple action (mcp-simple-actions.js): the service translates it on Approve.
       simple: t.simple && typeof t.simple.id === 'string' ? t.simple.id : null,
     });
   }
   return { defs, byName };
+}
+
+const MAX_STEP_DETAIL = 80;
+const SECRET_KEY = /token|secret|password|passwd|api[_-]?key|authorization|credential|cookie|session/i;
+
+/**
+ * A one-line view of a tool call's arguments for the step line ("query:
+ * "release", limit: 5"), at most MAX_STEP_DETAIL characters. Values under a
+ * credential-looking key are never shown.
+ */
+function compactArguments(args, max = MAX_STEP_DETAIL) {
+  if (!args || typeof args !== 'object' || Array.isArray(args)) return '';
+  const parts = [];
+  for (const [key, value] of Object.entries(args)) {
+    let shown;
+    if (SECRET_KEY.test(key)) shown = '[hidden]';
+    else if (value === null || value === undefined) shown = String(value);
+    else if (typeof value === 'object') shown = Array.isArray(value) ? `[${value.length}]` : '{…}';
+    else shown = JSON.stringify(String(value).replace(/\s+/g, ' '));
+    parts.push(`${key}: ${shown}`);
+  }
+  const line = parts.join(', ');
+  return line.length > max ? `${line.slice(0, max - 1)}…` : line;
 }
 
 function clip(text, max = MAX_TOOL_OUTPUT) {
@@ -213,7 +239,15 @@ async function runAgentTurn({ request, tools, step, runRead, proposeWrite, emit 
         else content = 'The user declined this action. Do not retry it; acknowledge it in your answer.';
       } else {
         stepSeq += 1;
-        emit('step', { id: `s${stepSeq}`, source: entry.kind === 'steno' ? 'steno' : 'connection', connection: entry.connectionName, tool: entry.tool, title: entry.title || null });
+        emit('step', {
+          id: `s${stepSeq}`,
+          source: entry.kind === 'steno' ? 'steno' : 'connection',
+          connection: entry.connectionName,
+          tool: entry.tool,
+          title: entry.title || null,
+          // What a read on a custom URL or local command actually asked for.
+          ...(entry.kind === 'read' && !entry.curated ? { detail: compactArguments(call.arguments) } : {}),
+        });
         try {
           const res2 = await runRead(entry, call.arguments);
           content = untrusted(entry.connectionName, res2?.isError ? `Tool error: ${res2.text || ''}` : res2?.text || '');
@@ -306,4 +340,5 @@ module.exports = {
   runBackendJson,
   untrusted,
   slug,
+  compactArguments,
 };

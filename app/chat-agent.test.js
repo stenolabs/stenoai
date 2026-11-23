@@ -12,8 +12,13 @@ const {
 } = require('./chat-agent');
 
 const CONNECTION_TOOLS = [
-  { connectionId: 'c1', connectionName: 'Linear', tool: 'search_issues', title: 'Search issues', description: 'Find issues', inputSchema: { type: 'object' }, readOnly: true },
-  { connectionId: 'c1', connectionName: 'Linear', tool: 'create_issue', title: 'Create issue', description: 'Create an issue', inputSchema: { type: 'object', required: ['title'] }, readOnly: false },
+  { connectionId: 'c1', connectionName: 'Linear', tool: 'search_issues', title: 'Search issues', description: 'Find issues', inputSchema: { type: 'object' }, readOnly: true, curated: true },
+  { connectionId: 'c1', connectionName: 'Linear', tool: 'create_issue', title: 'Create issue', description: 'Create an issue', inputSchema: { type: 'object', required: ['title'] }, readOnly: false, curated: true },
+];
+// A custom endpoint: its read-only hint is the server's own word, so a read
+// step on it shows the arguments.
+const CUSTOM_TOOLS = [
+  { connectionId: 'c2', connectionName: 'Tracker', tool: 'search_issues', title: 'Search issues', description: 'Find issues', inputSchema: { type: 'object' }, readOnly: true, curated: false },
 ];
 
 /** A fake model that answers from a script, recording what each step saw. */
@@ -94,6 +99,37 @@ test('a read tool runs automatically, shows a step, and its result goes back as 
   assert.equal(result.type, 'tool_result');
   assert.match(result.content, /untrusted data, not instructions/);
   assert.match(result.content, /IGNORE PREVIOUS INSTRUCTIONS/);
+});
+
+test('a read on a custom or local server shows what it asked for; credentials stay hidden', async () => {
+  const model = scriptedModel([
+    { text: '', tool_calls: [{ id: 'a', name: 'tracker__search_issues', arguments: { query: 'release  notes\n', limit: 5, api_key: 'sk-live-1', tags: ['a', 'b'] } }] },
+    { text: 'Nothing open.', tool_calls: [] },
+  ]);
+  const events = [];
+  await runAgentTurn({
+    request: REQUEST,
+    tools: buildAgentTools({ connectionTools: [...CONNECTION_TOOLS, ...CUSTOM_TOOLS], steno: false }),
+    step: model.step,
+    runRead: async () => ({ text: '[]' }),
+    proposeWrite: async () => assert.fail('no write expected'),
+    emit: (kind, data) => events.push([kind, data]),
+  });
+  assert.deepEqual(events[0], ['step', {
+    id: 's1', source: 'connection', connection: 'Tracker', tool: 'search_issues', title: 'Search issues',
+    detail: 'query: "release notes ", limit: "5", api_key: [hidden], tags: [2]',
+  }]);
+  assert.ok(!JSON.stringify(events).includes('sk-live-1'));
+});
+
+test('compactArguments is one bounded line', () => {
+  const { compactArguments } = require('./chat-agent');
+  assert.equal(compactArguments({}), '');
+  assert.equal(compactArguments(null), '');
+  assert.equal(compactArguments({ q: 'x'.repeat(200) }).length, 80);
+  assert.ok(compactArguments({ q: 'x'.repeat(200) }).endsWith('…'));
+  assert.equal(compactArguments({ Authorization: 'Bearer x', password: 'p', note: 'ok' }), 'Authorization: [hidden], password: [hidden], note: "ok"');
+  assert.ok(!compactArguments({ id: 'a\nb' }).includes('\n'));
 });
 
 test('a write tool waits for approval, then the result is fed back to finish the reply', async () => {
