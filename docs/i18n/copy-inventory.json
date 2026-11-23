@@ -3444,7 +3444,7 @@
         "How should Steno think?",
         "Individual speakers",
         "Inference profile (optional)",
-        "Labels each voice on a call as Speaker 2, Speaker 3 and so on. Downloads about 250 MB. You can also download it later in Settings → AI.",
+        "Labels each voice as Speaker 2, Speaker 3 and so on. 250 MB download, or add it later in Settings → AI.",
         "Launch on login",
         "Launch on login",
         "Local model (~2 GB) — private, runs on your device",
