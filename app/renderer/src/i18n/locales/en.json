@@ -650,6 +650,8 @@
   "meeting.transcriptionFailed": "Transcription failed",
   "meeting.transcriptionFailedDetail": "No notes could be generated for this recording. Your audio was preserved (not deleted), so nothing was lost.",
   "meeting.errorDetails": "Details: {{error}}",
+  "meeting.refiningTranscript": "Refining transcript",
+  "meeting.refiningTranscriptHint": "Speaker labels and notes update here when it’s done.",
   "meeting.finishingUp": "Finishing up",
   "meeting.transcriptFinishing.withNotes.beforeStrong": "Finishing your transcript in the background, then generating notes. You can read and edit",
   "meeting.myNotes": "My notes",

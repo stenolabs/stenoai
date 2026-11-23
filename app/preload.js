@@ -501,6 +501,7 @@ const stenoai = {
     summaryTitle: (cb) => subscribe('summary-title', cb),
     summaryComplete: (cb) => subscribe('summary-complete', cb),
     processingComplete: (cb) => subscribe('processing-complete', cb),
+    noteUpdated: (cb) => subscribe('note-updated', cb),
     processingProgress: (cb) => subscribe('processing-progress', cb),
     queryChunk: (cb) => subscribe('query-chunk', cb),
     queryDone: (cb) => subscribe('query-done', cb),

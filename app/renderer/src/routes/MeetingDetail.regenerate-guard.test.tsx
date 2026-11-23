@@ -130,6 +130,7 @@ vi.mock('@/lib/ipc', () => ({
       summaryChunk: h.noop,
       summaryComplete: h.noop,
       processingComplete: h.noop,
+      noteUpdated: h.noop,
       processingProgress: h.noop,
     },
     meetings: {

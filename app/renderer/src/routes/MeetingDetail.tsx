@@ -529,11 +529,24 @@ function DetailContent({
         setChunkProgress(null);
       }
     });
+    // Instant transcript: the early note (from the live transcript) was saved
+    // mid-job, or its summary failed and the full pass will stream one. Drop
+    // the early stream and show the note as it now is on disk.
+    const offNoteUpdated = ipc().on.noteUpdated((e) => {
+      if (e.summaryFile !== summaryFile) return;
+      setChunkProgress(null);
+      void qc.invalidateQueries({ queryKey: meetingsKeys.all }).then(() => {
+        setStreamText('');
+        setStreamPhase('idle');
+        streamCache.delete(summaryFile);
+      });
+    });
     return () => {
       offChunk();
       offComplete();
       offProcessing();
       offProgress();
+      offNoteUpdated();
     };
   }, [info.name, summaryFile, qc]);
 
@@ -599,6 +612,9 @@ function DetailContent({
     const cached = streamCache.get(summaryFile);
     return (
       editing ||
+      // The processing pipeline still owns this note (placeholder or early
+      // note being refined); its final write would race a rebuild.
+      backgroundWriterActive ||
       reprocess.isPending ||
       streamPhase !== 'idle' ||
       cached?.phase === 'analyzing' ||
@@ -1008,6 +1024,11 @@ function DetailContent({
   // "finishing up" affordance and suppress the Generate-notes CTA until the
   // pipeline completes (or clears the flag on failure).
   const isProcessing = meeting.session_info.processing === true;
+  // Instant transcript: notes already written from the live transcript, the
+  // batch pass is refining transcript + notes. Readable (summary, transcript,
+  // search, chat) like any note; only rewrites stay off until it lands.
+  const isRefining = meeting.session_info.refining === true && !isProcessing;
+  const backgroundWriterActive = isProcessing || isRefining;
   // While a recording is live on THIS note (resume/continue), the transcript
   // is still growing — offering "Generate notes" mid-recording would summarise
   // a moving target and strand the CTA once it finishes. Suppress it until the
@@ -1027,7 +1048,7 @@ function DetailContent({
   const canEditNote =
     summaryFile.endsWith('_summary.md') && !activeReport &&
     streamPhase === 'idle' && !reprocess.isPending &&
-    !isProcessing && !isRecordingThisNote;
+    !backgroundWriterActive && !isRecordingThisNote;
 
   // Publish this note's reprocess trigger + streaming state so the floating
   // GenerateNotesBar (mounted at App level, above the Ask bar) drives THIS
@@ -1042,7 +1063,7 @@ function DetailContent({
   const summaryPending =
     notesNotGenerated &&
     !transcriptionFailed &&
-    !isProcessing &&
+    !backgroundWriterActive &&
     !isRecordingThisNote &&
     Boolean(meeting.transcript);
   // A continued note (continue-recording appended a segment after notes were
@@ -1051,7 +1072,7 @@ function DetailContent({
   const summaryStale =
     meeting.session_info.notes_stale === true &&
     !transcriptionFailed &&
-    !isProcessing &&
+    !backgroundWriterActive &&
     !isRecordingThisNote &&
     Boolean(meeting.transcript);
   const reprocessStreaming = reprocess.isPending || streamPhase !== 'idle';
@@ -1163,6 +1184,7 @@ function DetailContent({
                       reprocess.isPending ||
                       streamPhase !== 'idle' ||
                       isRecordingThisNote ||
+                      backgroundWriterActive ||
                       editing
                     }
                   >
@@ -1372,7 +1394,7 @@ function DetailContent({
                       recording.status === 'recording' ||
                       recording.status === 'paused' ||
                       recording.status === 'processing' ||
-                      isProcessing ||
+                      backgroundWriterActive ||
                       streamPhase !== 'idle'
                     }
                   >
@@ -1398,6 +1420,7 @@ function DetailContent({
                       retranscribe.isPending ||
                       streamPhase !== 'idle' ||
                       isRecordingThisNote ||
+                      backgroundWriterActive ||
                       // A re-transcribe rewrites the note exactly like a
                       // regenerate, so it gets the same editing lock as the two
                       // Generate-notes CTAs (startRetranscribe's own
@@ -1763,6 +1786,22 @@ function DetailContent({
                 </section>
               ) : summary ? (
                 <section className="flex flex-col gap-3">
+                  {isRefining && (
+                    <div
+                      className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[12.5px]"
+                      style={{ color: 'var(--fg-2)' }}
+                      role="status"
+                      data-testid="note-refining"
+                    >
+                      <span className="flex items-center gap-1.5 font-medium">
+                        {t('meeting.refiningTranscript')}
+                        <span className="thinking-dot" aria-hidden="true" />
+                        <span className="thinking-dot" aria-hidden="true" />
+                        <span className="thinking-dot" aria-hidden="true" />
+                      </span>
+                      <span>{t('meeting.refiningTranscriptHint')}</span>
+                    </div>
+                  )}
                   <SectionTitle>{t('meeting.summary')}</SectionTitle>
                   <div data-testid="tab-summary-content">
                     {stripReasoning(summary)
@@ -1839,7 +1878,7 @@ function DetailContent({
                 </section>
               )}
 
-              {!transcriptionFailed && !isProcessing && (
+              {!transcriptionFailed && !backgroundWriterActive && (
                 <SuggestedActions
                   summaryFile={routeSummaryFile}
                   hasNote={Boolean(summary) || actionItems.length > 0}
