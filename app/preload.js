@@ -188,6 +188,8 @@ const stenoai = {
     generateReport: (summaryFile, templateId) => invoke('generate-report-meeting', summaryFile, templateId),
     setActiveReport: (summaryFile, reportId) => invoke('set-active-report', summaryFile, reportId),
     deleteReport: (summaryFile, reportId) => invoke('delete-report', summaryFile, reportId),
+    updateReport: (summaryFile, reportId, frontmatter, body) =>
+      invoke('update-report', summaryFile, reportId, frontmatter, body),
     exportTranscript: (defaultFilename, content) =>
       invoke('export-transcript', defaultFilename, content),
     exportNotePdf: (defaultFilename, html) =>

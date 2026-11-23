@@ -139,14 +139,14 @@ function captureSnapshot(summaryPath, fields, capture) {
 //
 //   * JS vs JS: impossible. Every JS caller runs synchronously inside the one
 //     Electron main process.
-//   * JS vs Python, on the SAME note: the only ways to start a rebuild while an
-//     editor is open now go through startReprocess (MeetingDetail.tsx), whose
-//     rebuildInFlight() refuses while `editing` is true, and the note is busy
-//     for the duration of a rebuild (isSummaryBusy). So a Save cannot normally
-//     land in the middle of a regenerate.
-//   * What that gate does NOT close: a save arriving through the IPC while a
-//     rebuild started BEFORE the editor opened is still running (a background
-//     regenerate, or a second window). Then Python's unconditional overwrite
+//   * JS vs Python, on the SAME note: update-meeting refuses an edit to the
+//     generated sections while isSummaryBusy() (a rebuild, the post-Stop
+//     pipeline or a recording owns the note), and the renderer flushes its
+//     autosave before it starts a rebuild (MeetingDetail.tsx afterEditsSaved).
+//     So a save cannot normally land in the middle of a regenerate.
+//   * What that gate does NOT close: a rebuild started outside main's job
+//     tracking (a second app instance, or the CLI by hand). Then Python's
+//     unconditional overwrite
 //     and this read-modify-write race, and last-writer-wins silently discards
 //     the loser's edited_fields/edited_at. The cost is the confirm not firing
 //     on a later regenerate, never note content - both writers only ever

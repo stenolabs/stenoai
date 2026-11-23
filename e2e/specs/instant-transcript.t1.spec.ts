@@ -34,7 +34,9 @@ test('a refining note shows its summary and a small refining marker, not "Finish
   await expect(page.getByTestId('generate-notes-dock-button')).toHaveCount(0);
 
   // The background writer still owns the note: rewrites stay off.
-  await expect(page.getByRole('button', { name: 'Edit note' })).toBeDisabled();
+  // The note reads as text with a hint, not as inline fields.
+  await expect(page.getByRole('textbox', { name: 'Summary', exact: true })).toHaveCount(0);
+  await expect(page.getByTestId('note-readonly-hint')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Generate notes' }).first()).toBeDisabled();
 });
 

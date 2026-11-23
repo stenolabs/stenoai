@@ -165,8 +165,14 @@ export type ReportProperty = [string, unknown];
  * Returns no properties for ordinary reports, which have no frontmatter, so
  * the caller renders exactly what it always did.
  */
-export function splitFrontmatter(text: string): { properties: ReportProperty[]; body: string } {
-  const empty = { properties: [] as ReportProperty[], body: text ?? '' };
+export function splitFrontmatter(text: string): {
+  properties: ReportProperty[];
+  body: string;
+  /** The exact delimited block the properties came from ('' when none), for
+   *  the inline report editor to send back unchanged. */
+  frontmatter: string;
+} {
+  const empty = { properties: [] as ReportProperty[], body: text ?? '', frontmatter: '' };
   // CRLF line endings, from a report written or synced elsewhere, would hide
   // both delimiters.
   const source = text?.replace(/\r\n/g, '\n');
@@ -193,7 +199,8 @@ export function splitFrontmatter(text: string): { properties: ReportProperty[]; 
     return empty;
   }
   if (!properties.every(([, v]) => isFlat(v))) return empty;
-  return { properties, body };
+  const frontmatter = source.slice(0, open[0].length + close.index + close[0].length);
+  return { properties, body, frontmatter };
 }
 
 // One value: booleans read yes/no. The lookups stay in JSX, where the i18n

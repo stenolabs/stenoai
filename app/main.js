@@ -110,6 +110,7 @@ const {
 const { writeFileAtomicSync } = require('./atomic-write');
 const { createToastScheduler, toastLayering } = require('./toast-scheduler');
 const { readSnapshot, captureSnapshot, markEdited, editedFieldNames } = require('./note-snapshot');
+const { updateReportInSidecar } = require('./report-body');
 const {
   buildNoteReadyNotificationOptions,
   buildTranscriptReadyBody,
@@ -3725,6 +3726,52 @@ ipcMain.handle('delete-report', async (_e, summaryFile, reportId) => {
   } catch (error) { return { success: false, error: error.message }; }
 });
 
+// Inline report editing: rewrite the BODY of one generated report in the
+// <stem>_reports.json sidecar. Done here rather than through a Python CLI
+// command because it is an autosave (one spawn per pause in typing would be
+// slow) and the edit is a pure string transform (app/report-body.js) that
+// keeps the report's frontmatter byte-for-byte and refuses a body that would
+// grow a new one. Only this report's `content` (+ `edited_at`) changes.
+ipcMain.handle('update-report', async (_e, summaryFile, reportId, frontmatter, body) => {
+  try {
+    const validated = await validateMeetingFilePath(summaryFile);
+    if (validated.error) return { success: false, error: validated.error };
+    const { realPath, allowedOutputDirs } = validated;
+    // Python appends to this same sidecar when a report generation or a
+    // regenerate (#249 backup) finishes; a write here meanwhile would race it.
+    if (isSummaryBusy(realPath)) {
+      return { success: false, error: 'Steno is still updating this note. Try again when it finishes.' };
+    }
+    const ext = path.extname(realPath);
+    const base = path.basename(realPath, ext);
+    const stem = base.endsWith('_summary') ? base.slice(0, -'_summary'.length) : base;
+    const sidecarPath = path.join(path.dirname(realPath), `${stem}_reports.json`);
+    let realSidecar;
+    try {
+      realSidecar = await fs.promises.realpath(sidecarPath);
+    } catch {
+      return { success: false, error: 'This note has no reports.' };
+    }
+    // Same containment rule as readReportsSidecar: a symlinked sidecar must
+    // not let a write escape the output tree.
+    if (!allowedOutputDirs.some((b) => b && realSidecar.startsWith(b))) {
+      return { success: false, error: 'Access denied' };
+    }
+    let sidecar;
+    try {
+      sidecar = JSON.parse(await fs.promises.readFile(realSidecar, 'utf8'));
+    } catch {
+      return { success: false, error: 'The reports file could not be read.' };
+    }
+    const result = updateReportInSidecar(sidecar, reportId, frontmatter, body);
+    if (!result.ok) return { success: false, error: result.error };
+    writeFileAtomicSync(realSidecar, JSON.stringify(result.sidecar, null, 2));
+    return { success: true, content: result.content };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
 ipcMain.handle('regen-meeting-title', async (event, summaryFile, sessionName) => {
   try {
     // Security: symlink-safe containment-check the renderer-supplied summary path
@@ -4999,6 +5046,18 @@ ipcMain.handle('update-meeting', async (event, summaryFilePath, updates) => {
       && /^## /m.test(normalizeMarkdownForParsing(updates.user_notes));
     if (userNotesBoundary || textCandidates.some((value) => containsStructuralLine(normalizeMarkdownForParsing(value)))) {
       return { success: false, error: 'A note field may not contain a markdown heading.' };
+    }
+
+    // The generated sections are rewritten wholesale by a reprocess, the
+    // post-Stop pipeline and a continuing recording. An edit landing while one
+    // of those owns the note is either overwritten or overwrites fresher text,
+    // so refuse it; the renderer keeps the draft and retries once the note is
+    // free (noteEditability.ts is the renderer half of this rule). My notes is
+    // deliberately not included: it has always autosaved during a recording.
+    const touchesGenerated = ['summary', 'key_points', 'action_items', 'discussion_areas']
+      .some((key) => updates[key] !== undefined);
+    if (touchesGenerated && isSummaryBusy(realPath)) {
+      return { success: false, error: 'Steno is still updating this note. Try again when it finishes.' };
     }
 
     // Read existing data

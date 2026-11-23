@@ -158,6 +158,68 @@ export function useUpdateMeeting() {
 }
 
 /**
+ * Autosave for the inline note editor. Like useUpdateUserNotes it patches the
+ * open note's detail cache in place instead of refetching it on every pause in
+ * typing, so exports, copy and the regenerate guard read the saved text the
+ * moment the write lands. `cacheKey` is the route identity the detail query is
+ * keyed by (see DetailContent's routeSummaryFile).
+ */
+export function useAutosaveNote() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (args: { summaryFile: string; cacheKey: string; patch: UpdateMeetingPatch }) =>
+      unwrap(await ipc().meetings.update(args.summaryFile, args.patch)),
+    onSuccess: (data, args) => {
+      qc.setQueryData<Meeting>(meetingsKeys.detail(args.cacheKey), (prev) => {
+        if (!prev) return prev;
+        const next: Meeting = { ...prev };
+        const { patch } = args;
+        if (patch.summary !== undefined) next.summary = patch.summary;
+        if (patch.key_points !== undefined) next.key_points = patch.key_points;
+        if (patch.action_items !== undefined) next.action_items = patch.action_items;
+        if (patch.discussion_areas !== undefined) next.discussion_areas = patch.discussion_areas;
+        const edited = Array.isArray(data?.edited_fields) ? data.edited_fields : [];
+        if (edited.length) {
+          next.edited_fields = [...new Set([...(prev.edited_fields ?? []), ...edited])];
+        }
+        return next;
+      });
+      // The list shows a summary snippet; it refetches in the background.
+      void qc.invalidateQueries({ queryKey: meetingsKeys.list() });
+    },
+  });
+}
+
+/** Autosave for an inline-edited template report (update-report). */
+export function useUpdateReportBody() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (args: {
+      summaryFile: string;
+      cacheKey: string;
+      reportId: string;
+      frontmatter: string;
+      body: string;
+    }) =>
+      unwrap(
+        await ipc().meetings.updateReport(args.summaryFile, args.reportId, args.frontmatter, args.body)
+      ),
+    onSuccess: (data, args) => {
+      qc.setQueryData<Meeting>(meetingsKeys.detail(args.cacheKey), (prev) =>
+        prev
+          ? {
+              ...prev,
+              reports: (prev.reports ?? []).map((r) =>
+                r.id === args.reportId ? { ...r, content: data.content } : r
+              ),
+            }
+          : prev
+      );
+    },
+  });
+}
+
+/**
  * Autosave for the My notes tab. Unlike useUpdateMeeting it does NOT invalidate
  * the whole meetings list (a full backend re-scan) on every debounced save —
  * user_notes is invisible in the list, so it patches only the detail cache in
