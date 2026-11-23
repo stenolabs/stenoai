@@ -59,7 +59,7 @@ function MegaPanel({ href, m, open, loaded, onEnter, onLeave }) {
           {layers.map((it, k) => (
             <figure className={`mega-layer${k === layer ? " is-on" : ""}`} key={k}>
               {!loaded ? null : k === 0 && m.overview.video ? (
-                <video ref={video} muted playsInline preload="none" poster={m.overview.video.poster} aria-hidden="true" tabIndex={-1}
+                <video ref={video} muted loop={m.overview.video.loop || undefined} playsInline preload="none" poster={m.overview.video.poster} aria-hidden="true" tabIndex={-1}
                   disablePictureInPicture disableRemotePlayback style={m.overview.video.position ? { objectPosition: m.overview.video.position } : undefined}>
                   <source src={m.overview.video.src} type="video/mp4" />
                 </video>

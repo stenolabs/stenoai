@@ -134,8 +134,8 @@ html[data-ss=on] .ent-cases > li.is-lit .sector-tag { color: var(--green-text); 
 .ent-fleet { margin: 0 0 40px; aspect-ratio: 2 / 1; overflow: hidden; position: relative; mix-blend-mode: screen;
   -webkit-mask-image: linear-gradient(to right, transparent, #000 3%, #000 97%, transparent), linear-gradient(to bottom, transparent, #000 8%, #000 80%, transparent); -webkit-mask-composite: source-in;
   mask-image: linear-gradient(to right, transparent, #000 3%, #000 97%, transparent), linear-gradient(to bottom, transparent, #000 8%, #000 80%, transparent); mask-composite: intersect; }
-.ent-fleet img { display: block; width: 100%; height: 100%; object-fit: cover; object-position: 50% 50%; }
-@media (max-width: 767px) { .ent-fleet { aspect-ratio: 4 / 3; -webkit-mask-image: linear-gradient(to right, transparent, #000 12%, #000 88%, transparent), linear-gradient(to bottom, transparent, #000 12%, #000 80%, transparent); mask-image: linear-gradient(to right, transparent, #000 12%, #000 88%, transparent), linear-gradient(to bottom, transparent, #000 12%, #000 80%, transparent); } .ent-fleet img { object-position: 30% 50%; } }
+.ent-fleet img { display: block; width: 100%; height: 100%; object-fit: contain; object-position: 50% 50%; }
+@media (max-width: 767px) { .ent-fleet { aspect-ratio: 580 / 498; -webkit-mask-image: none; mask-image: none; } .ent-fleet img { object-position: 50% 50%; } }
 
 /* 01: the ground line fades out before the picture's edge instead of ending in a cut. */
 .ent-obj canvas { -webkit-mask-image: linear-gradient(to right, transparent, #000 12%, #000 88%, transparent); mask-image: linear-gradient(to right, transparent, #000 12%, #000 88%, transparent); }
@@ -151,7 +151,7 @@ html[data-ss] .ent-card-fig img, html[data-ss] .ent-fleet img { display: none; }
 @media (max-width: 1099px) { .ent-card-fig { aspect-ratio: 860 / 648; width: min(100%, 380px); } }
 .ent-card-fig { mix-blend-mode: screen; }
 .ent-fleet { aspect-ratio: 1178 / 608; -webkit-mask-image: none; mask-image: none; mix-blend-mode: screen; overflow: visible; }
-@media (max-width: 767px) { .ent-fleet { aspect-ratio: 849 / 650; } } /* phone frames are cropped tighter (the nearest laptops) */
+@media (max-width: 767px) { .ent-fleet { aspect-ratio: 580 / 498; } } /* phone frames are composed on the front three laptops */
 /* Rollout steps light in order with the laptops (the player's step highlight). */
 html[data-ss=on] .sector-timeline > li { opacity: .7; transition: opacity .35s; }
 html[data-ss=on] .sector-timeline > li.is-lit { opacity: 1; }

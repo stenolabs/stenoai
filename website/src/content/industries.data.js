@@ -44,7 +44,7 @@ const CTA_MAILTO =
   "mailto:chantelle@stenoai.co?subject=StenoAI%20demo%20request&body=Hi%20StenoAI%20team%2C%0A%0AWe%27d%20like%20to%20see%20a%20demo.%0A%0AOrganisation%3A%20%0ATeam%20size%3A%20%0AUse%20case%3A%20%0A%0AThanks%2C";
 
 // Hero take of the /enterprise/ page and its menu card (the page is not in the industries collection).
-export const enterpriseHero = { src: "/video/hero-enterprise.mp4", poster: "/images/enterprise/hero-enterprise-poster.webp", position: "46% 50%" };
+export const enterpriseHero = { src: "/video/hero-enterprise.mp4", poster: "/images/enterprise/hero-enterprise-poster.webp", position: "46% 50%", loop: true };
 
 export const government = {
   slug: "government",

@@ -122,7 +122,7 @@ const flowAlt = 'Diagram. Endpoints record, and transcribe by default, on each l
         <div class="industry-hero-chips"><span>Your device or your infrastructure</span><span>No meeting bot</span><span>Open source</span></div>
       </div>
       <div class="industry-hero-media" role="img" aria-label={hero.alt}>
-        <video class="industry-hero-image" muted playsinline preload="none" poster={hero.heroVideo.poster} aria-hidden="true" tabindex="-1" disablepictureinpicture disableremoteplayback data-hero-take style={hero.heroVideo.position ? `object-position: ${hero.heroVideo.position}` : undefined}>
+        <video class="industry-hero-image" muted loop playsinline preload="none" poster={hero.heroVideo.poster} aria-hidden="true" tabindex="-1" disablepictureinpicture disableremoteplayback data-hero-take style={hero.heroVideo.position ? `object-position: ${hero.heroVideo.position}` : undefined}>
           <source src={hero.heroVideo.src} type="video/mp4" />
         </video>
         <span class="mega-tag" aria-hidden="true"><span class="mission-status-dot"></span> Illustrative scene</span>
@@ -269,7 +269,7 @@ const flowAlt = 'Diagram. Endpoints record, and transcribe by default, on each l
           <h2 id="rollout-heading">From briefing<br />to deployment.</h2>
           <p>When your organisation is ready, we take you through four steps, from the first briefing to the rollout.</p>
         </div>
-        <div class="ent-fleet" aria-hidden="true"><img src="/scroll/ent/fleet3-start-d.webp" srcset="/scroll/ent/fleet3-start-p.webp 780w, /scroll/ent/fleet3-start-d.webp 1600w" sizes="(max-width: 767px) 100vw, 1328px" alt="" width="1600" height="900" loading="lazy" decoding="async" /><ScrollSeq src="/scroll/ent-fleet-d" src-phone="/scroll/ent-fleet-p" frames="72" start=".92" centre=".55" lit="0,.2,.48,.74" lit-phone="0,.25,.5,.75" lit-items=".sector-timeline > li" /></div>
+        <div class="ent-fleet" aria-hidden="true"><picture><source media="(max-width: 767px)" srcset="/scroll/ent/ent-fleet-still-p.webp" /><img src="/scroll/ent/ent-fleet-still-d.webp" alt="" width="1000" height="516" loading="lazy" decoding="async" /></picture><ScrollSeq src="/scroll/ent-fleet-d" src-phone="/scroll/ent-fleet-p" frames="72" start=".92" centre=".55" lit="0,.2,.48,.74" lit-phone="0,.25,.5,.75" lit-items=".sector-timeline > li" /></div>
         <ol class="sector-timeline">
           {steps.map((s, i) => (
             <li>
@@ -316,20 +316,13 @@ const flowAlt = 'Diagram. Endpoints record, and transcribe by default, on each l
 </script>
 
 <script>
-  // Hero take: same behaviour as IndustryPage.astro. Plays once when in view, holds at 4.9 s (this take is 2.4 s long, so it ends on its held last frame), never loops.
+  // Hero take: seamless 8 s loop while in view; pauses when scrolled out of view.
   // Poster only under reduced motion, data saver, or if the browser blocks play(). Nothing is fetched before play().
   const take = document.querySelector<HTMLVideoElement>('[data-hero-take]');
   const calm = matchMedia('(prefers-reduced-motion: reduce)').matches || !!navigator.connection?.saveData;
   if (take && !calm && 'IntersectionObserver' in window) {
-    const HOLD = 4.9;
-    let done = false;
-    const stop = () => { done = true; take.pause(); };
-    const watch = () => take.requestVideoFrameCallback?.((_, m) => (m.mediaTime >= HOLD ? stop() : watch()));
-    take.addEventListener('play', watch);
-    take.addEventListener('ended', () => { done = true; }); // this take is shorter than HOLD: once it has ended it stays on its last frame
-    take.addEventListener('timeupdate', () => { if (take.currentTime >= HOLD) stop(); });
     new IntersectionObserver((entries) => {
-      if (entries[entries.length - 1].isIntersecting) { if (!done) take.play().catch(() => {}); }
+      if (entries[entries.length - 1].isIntersecting) take.play().catch(() => {});
       else take.pause();
     }, { threshold: 0.25 }).observe(take);
   }

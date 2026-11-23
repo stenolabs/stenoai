@@ -22,8 +22,8 @@ const { data } = Astro.props;
 const film = films.find((f) => f.slug === data.slug);
 // Defence scroll-motion preview (D1 terrain route, D2 mast, D3 posture stills, D4 doors). Other sectors are untouched.
 const mo = data.slug === "defense";
-// Deployment posture takes: the same frame sets the home page "Where it runs" cards use (public/scroll/deploy-*), same timings.
-const postureSeq = [{ k: "device", frames: 73, start: ".98", end: ".58" }, { k: "infra", frames: 61, start: ".93", end: ".55" }, { k: "cloud", frames: 73, start: ".88", end: ".52" }];
+// Deployment posture takes: Defence uses its own on-device laptop sequence (deploy-device-def-*); infra and cloud match the home page "Where it runs" cards, same timings.
+const postureSeq = [{ k: "device-def", frames: 73, start: ".98", end: ".58" }, { k: "infra", frames: 61, start: ".93", end: ".55" }, { k: "cloud", frames: 73, start: ".88", end: ".52" }];
 const others = ALL.filter((c) => c.slug !== data.slug);
 // Government and law enforcement wrap the use-cases in a light-room stage; other sectors keep the plain markup (defence has its own Stage).
 const GW = data.motion?.corridor ? "div" : Fragment;
