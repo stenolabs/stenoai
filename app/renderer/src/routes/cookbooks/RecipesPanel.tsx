@@ -61,6 +61,11 @@ export function RecipesPanel({
         <h2 id="recipes-mine-heading" className="text-[15px] font-medium">
           {t('recipes.mine.heading')}
         </h2>
+        {mine.isFetched && own.length === 0 && (
+          <p className="mt-1 text-[13px]" style={{ color: 'var(--fg-2)' }}>
+            {t('recipes.mine.empty')}
+          </p>
+        )}
         <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {own.map((r, idx) => (
             <RecipeCard key={r.id} recipe={toRecipe(r)} index={idx} onEdit={() => onEdit(r)} />

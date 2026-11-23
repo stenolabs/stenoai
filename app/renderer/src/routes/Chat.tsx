@@ -298,6 +298,7 @@ export function Chat() {
           <PopoverAnchor asChild>
             <form
               onSubmit={onSubmit}
+              data-tip-anchor="chat-composer"
               className="glass-input-wrapper mb-12 p-3 relative"
               style={{
                 opacity: ready ? 1 : 0.6,
@@ -397,6 +398,22 @@ export function Chat() {
                 <History className="size-4 text-muted-foreground" />
               </div>
               {t('chat.home.noPastChats')}
+              {ready && (
+                <div className="mt-4 flex justify-center">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setInput(BUILTIN_RECIPES[0].prompt);
+                      inputRef.current?.focus();
+                    }}
+                    className="inline-flex h-8 items-center gap-1.5 rounded-full border px-3.5 text-[13px] transition-colors hover:bg-[color:var(--surface-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--accent-primary)]"
+                    style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-raised)', color: 'var(--fg-1)' }}
+                  >
+                    <Sparkles aria-hidden className="size-[13px]" style={{ color: 'var(--fg-2)' }} />
+                    {t('chat.home.tryRecipe', { label: BUILTIN_RECIPES[0].label })}
+                  </button>
+                </div>
+              )}
             </div>
           ) : recentsExpanded && groupedRecents ? (
             <div className="flex flex-col">

@@ -3894,7 +3894,7 @@ ipcMain.handle('query-transcript', async (event, summaryFile, question) => {
 
 const activeQueryProcs = new Map();
 const contextQueries = new Map();
-const { validateRequest: validateChatRequest, liveSnapshot, runQuery: runChatQuery } = require('./chat-query');
+const { validateRequest: validateChatRequest, liveSnapshot, runQuery: runChatQuery, aiErrorCode } = require('./chat-query');
 
 ipcMain.on('chat-context-stream', async (event, queryId, request) => {
   const sender = event.sender;
@@ -3994,12 +3994,12 @@ function runChatAgent({ queryId, payload, tools, entry, send, cleanup, runPlain 
   let cancelled = false;
   let finished = false;
   let answered = false;
-  const finish = (success, error) => {
+  const finish = (success, error, errorCode) => {
     if (finished) return;
     finished = true;
     for (const resolve of pending.values()) resolve({ status: 'declined' });
     pending.clear();
-    send('query-done', { success, ...(error ? { error } : {}) });
+    send('query-done', { success, ...(error ? { error } : {}), ...(error && errorCode ? { errorCode } : {}) });
     cleanup();
   };
   entry.agent = { chatKey, pending, service };
@@ -4056,7 +4056,8 @@ function runChatAgent({ queryId, payload, tools, entry, send, cleanup, runPlain 
   chatAgent.runAgentTurn({
     request: payload, tools, step, runRead, proposeWrite, emit, isCancelled: () => cancelled,
   }).then(() => {
-    finish(answered, answered ? undefined : CHAT_AGENT_ERROR);
+    if (answered) finish(true);
+    else finish(false, CHAT_AGENT_ERROR, 'unknown');
   }).catch((e) => {
     if (cancelled || finished) return;
     if (e?.fallback) {
@@ -4066,7 +4067,9 @@ function runChatAgent({ queryId, payload, tools, entry, send, cleanup, runPlain 
       return;
     }
     sendDebugLog(`[chat-agent] turn failed (${e?.code || e?.name || 'error'})`);
-    finish(false, CHAT_AGENT_ERROR);
+    // CHAT_AGENT_ERROR:<code> carries a stable src/ai_errors.py code (or the
+    // historical 'failed' / 'tools-unsupported', which map to 'unknown').
+    finish(false, CHAT_AGENT_ERROR, aiErrorCode(e?.code));
   });
 }
 

@@ -40,6 +40,7 @@ import { ipc } from '@/lib/ipc';
 import { primeDebugLogs } from '@/lib/debugLogs';
 import { useMeetingTransferEvents } from '@/hooks/useMeetingTransfer';
 import { WhatsNewProvider } from '@/components/WhatsNew';
+import { FirstRunTips } from '@/components/FirstRunTips';
 
 async function hasInstalledTranscriptionModel() {
   const [parakeet, whisper] = await Promise.all([
@@ -255,6 +256,11 @@ export function App() {
         <QuitDialog />
         <PrivacyConsentModal open={showPrivacyModal} />
         <ImportDropZone />
+        {/* One first-run tip at a time; never during onboarding or a recording. */}
+        <FirstRunTips
+          route={route}
+          blocked={recording.isLoading || recordingActive || !setupGateResolved || showPrivacyModal}
+        />
 
         {/* Bottom dock — shared anchor across recording → processing → meeting.
             Recording is status-driven, not route-driven: PrimaryDock docks the

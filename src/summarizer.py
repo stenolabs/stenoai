@@ -13,6 +13,7 @@ from typing import Optional, Dict, Any
 from .models import MeetingTranscript, ActionItem, Decision
 from .config import Config, resolve_runtime_tag, BEDROCK_REGION_RE
 from . import ollama_manager
+from .ai_errors import ModelNotAvailableError, OllamaNotRunningError
 
 logger = logging.getLogger(__name__)
 
@@ -780,13 +781,13 @@ class OllamaSummarizer:
         # Step 1: Check if Ollama is running
         if not self._is_ollama_running():
             if not self._start_ollama_service():
-                raise Exception("Failed to start Ollama service")
+                raise OllamaNotRunningError("Failed to start Ollama service")
         else:
             logger.info("Ollama service is already running")
         
         # Step 2: Ensure model is available
         if not self._ensure_model_available():
-            raise Exception(f"Failed to ensure model {self.model_name} is available")
+            raise ModelNotAvailableError(f"Failed to ensure model {self.model_name} is available")
         
         logger.info(f"Ollama ready with model {self.model_name}")
         return True

@@ -15,7 +15,8 @@ Protocol (stdin JSON, bounded):
 stdout: on the first step a ``CHAT_STEP:<base64 JSON>`` line (what the answer
 read), then zero or more ``CHAT_AGENT_DELTA:<base64 text>`` lines as the answer
 streams, then ``CHAT_AGENT:<base64 JSON {text, tool_calls}>`` or
-``CHAT_AGENT_ERROR:<code>`` (``tools-unsupported`` | ``failed``).
+``CHAT_AGENT_ERROR:<code>`` (``tools-unsupported`` | ``failed`` | an
+src/ai_errors.py code such as ``auth`` or ``ollama-unreachable``).
 
 Also the Steno read tools (search_meetings / get_note) the loop offers next to
 the connectors' tools, run through ``chat-tool``.
@@ -27,6 +28,7 @@ import re
 import sys
 import uuid
 
+from src.ai_errors import UNKNOWN, classify_ai_error, configured_provider
 from src.chat_query import MAX_PAYLOAD, build_prompt_parts, emit_step, validate_request
 
 MAX_TOOLS = 64
@@ -331,9 +333,12 @@ def run_chat_agent_step(load_note, load_corpus, resolve_language=None, make_summ
     except ToolsUnsupported:
         print('CHAT_AGENT_ERROR:tools-unsupported', flush=True)
         sys.exit(1)
-    except Exception:
+    except Exception as exc:
         # Never echo provider errors: they can carry prompts or response bodies.
-        print('CHAT_AGENT_ERROR:failed', flush=True)
+        # A classified failure sends its stable code (src/ai_errors.py); an
+        # unclassified one keeps the historical ``failed``.
+        code = classify_ai_error(exc, configured_provider())
+        print(f"CHAT_AGENT_ERROR:{'failed' if code == UNKNOWN else code}", flush=True)
         sys.exit(1)
     finally:
         logging.disable(previous)

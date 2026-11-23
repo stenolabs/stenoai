@@ -117,7 +117,17 @@ function Sprite({ rows }: { rows: string[] }) {
   );
 }
 
-export function Mascot({ resting = false, snow = true }: { resting?: boolean; snow?: boolean }) {
+export function Mascot({
+  resting = false,
+  snow = true,
+  className = 'mb-5',
+  testId = 'chat-mascot',
+}: {
+  resting?: boolean;
+  snow?: boolean;
+  className?: string;
+  testId?: string;
+}) {
   const [frame, setFrame] = React.useState(0);
   const still = resting || prefersReducedMotion();
 
@@ -131,7 +141,7 @@ export function Mascot({ resting = false, snow = true }: { resting?: boolean; sn
   }, [still]);
 
   return (
-    <div aria-hidden="true" data-testid="chat-mascot" className="mb-5 flex justify-center">
+    <div aria-hidden="true" data-testid={testId} className={`${className} flex justify-center`}>
       <div className="relative">
         {snow && <Snow />}
         <div className={still ? 'steno-mascot' : 'steno-mascot steno-mascot-float'}>

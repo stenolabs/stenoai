@@ -196,6 +196,8 @@ export interface ChatSessionsBlob {
       /** Chat-agent turns: the read steps it took and the actions it proposed. */
       steps?: ChatToolStep[];
       actions?: ChatActionRecord[];
+      /** A failed answer: its stable failure code (lib/aiError.ts). */
+      error?: string;
     }>;
     createdAt: number;
     updatedAt: number;
@@ -1334,6 +1336,8 @@ export interface StenoaiBridge {
 
   app: {
     platform: 'darwin' | 'linux' | 'win32';
+    /** Whether first-run tips may show (false under e2e unless a spec opts in). */
+    firstRunTips?: boolean;
     getVersion: RequestFn<[], AppVersionResponse>;
   };
 
@@ -1939,7 +1943,7 @@ export interface StenoaiBridge {
     handlers: {
       onChunk?: (chunk: string) => void;
       onDone?: () => void;
-      onError?: (err: Error) => void;
+      onError?: (err: Error, errorCode?: string) => void;
       onToolStep?: (step: ChatToolStep) => void;
       onActionCard?: (card: ActionCard) => void;
     }

@@ -5,6 +5,8 @@ import logging
 import sys
 from pathlib import Path
 
+from src.ai_errors import ContextTooLargeError, classify_ai_error, configured_provider
+
 MAX_PAYLOAD = 1024 * 1024
 MAX_ANSWER = 1024 * 1024
 
@@ -174,7 +176,7 @@ def run_chat_query(load_note, load_corpus, resolve_language=None):
     try:
         raw = sys.stdin.buffer.read(MAX_PAYLOAD + 1)
         if len(raw) > MAX_PAYLOAD:
-            raise ValueError('Payload too large')
+            raise ContextTooLargeError('Payload too large')
         data = validate_request(json.loads(raw))
         from src.config import get_config
         from src.summarizer import OllamaSummarizer
@@ -196,8 +198,9 @@ def run_chat_query(load_note, load_corpus, resolve_language=None):
         if not answer_size:
             raise ValueError('Empty answer')
         print('CHAT_STREAM_COMPLETE', flush=True)
-    except Exception:
-        print('CHAT_STREAM_ERROR:Unable to answer. Check your AI provider and try again.', flush=True)
+    except Exception as exc:
+        # A stable code only (src/ai_errors.py): never the provider's message.
+        print(f'CHAT_STREAM_ERROR:{classify_ai_error(exc, configured_provider())}', flush=True)
         sys.exit(1)
     finally:
         logging.disable(previous)
