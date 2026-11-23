@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { acceleratorKeys, captureAccelerator, formatAccelerator } from './accelerator';
+import { acceleratorKeys, captureAccelerator, formatAccelerator, acceleratorCaps } from './accelerator';
 
 const press = (code: string, mods: Partial<Record<'metaKey' | 'ctrlKey' | 'altKey' | 'shiftKey', boolean>> = {}, key = '') => ({
   code,
@@ -45,5 +45,15 @@ describe('captureAccelerator', () => {
   it('waits while only modifiers are held, and Esc cancels', () => {
     expect(captureAccelerator(press('ControlLeft', { ctrlKey: true }, 'Control'))).toEqual({ kind: 'incomplete' });
     expect(captureAccelerator(press('Escape', {}, 'Escape'))).toEqual({ kind: 'cancel' });
+  });
+});
+
+describe('readable key caps', () => {
+  it('spells out the modifier names on macOS', () => {
+    expect(acceleratorCaps('Control+Alt+R', true)).toEqual(['⌃ Ctrl', '⌥ Opt', 'R']);
+    expect(acceleratorCaps('Command+Shift+K', true)).toEqual(['⇧ Shift', '⌘ Cmd', 'K']);
+  });
+  it('keeps words elsewhere', () => {
+    expect(acceleratorCaps('Control+Alt+R', false)).toEqual(['Ctrl', 'Alt', 'R']);
   });
 });

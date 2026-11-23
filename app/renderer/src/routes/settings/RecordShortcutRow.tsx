@@ -4,7 +4,7 @@ import { KbdKey } from '@/components/ui/kbd';
 import { useRecordHotkeySetting, useSetRecordHotkeyAccelerator } from '@/hooks/useSettings';
 import {
   DEFAULT_RECORD_ACCELERATOR,
-  acceleratorKeys,
+  acceleratorCaps,
   captureAccelerator,
   formatAccelerator,
 } from '@/lib/accelerator';
@@ -130,7 +130,7 @@ export function RecordShortcutRow() {
           {capturing ? (
             <span>{t('settings.general.recordShortcut.pressKeys')}</span>
           ) : (
-            acceleratorKeys(accel).map((k, i) => <KbdKey key={`${k}-${i}`}>{k}</KbdKey>)
+            acceleratorCaps(accel).map((k, i) => <KbdKey key={`${k}-${i}`}>{k}</KbdKey>)
           )}
         </button>
       </div>

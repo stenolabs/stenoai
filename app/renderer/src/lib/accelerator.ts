@@ -48,6 +48,15 @@ export function acceleratorKeys(accel: string, mac: boolean = isMac): string[] {
   return [...mods.map((m) => (mac ? MAC_GLYPH[m] : OTHER_LABEL[m])), keyLabel];
 }
 
+// Key-cap labels with the name spelled out on macOS, where the glyphs alone
+// (⌃ ⌥ ⇧ ⌘) are unfamiliar to many people.
+const MAC_CAP: Record<string, string> = { '⌃': '⌃ Ctrl', '⌥': '⌥ Opt', '⇧': '⇧ Shift', '⌘': '⌘ Cmd' };
+
+/** One readable label per key cap: ["⌃ Ctrl", "⌥ Opt", "R"] on macOS, ["Ctrl", "Alt", "R"] elsewhere. */
+export function acceleratorCaps(accel: string, mac: boolean = isMac): string[] {
+  return acceleratorKeys(accel, mac).map((k) => (mac ? (MAC_CAP[k] ?? k) : k));
+}
+
 /** The accelerator as one string: "⌃⌥R" on macOS, "Ctrl+Alt+R" elsewhere. */
 export function formatAccelerator(accel: string, mac: boolean = isMac): string {
   const keys = acceleratorKeys(accel, mac);

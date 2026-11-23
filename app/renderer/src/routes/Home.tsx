@@ -6,7 +6,7 @@ import { UpcomingCard } from '@/components/home/UpcomingCard';
 import { PreviousRow } from '@/components/home/PreviousRow';
 import { Button } from '@/components/ui/button';
 import { AppIcon } from '@/components/ui/app-icon';
-import { KbdKey } from '@/components/ui/kbd';
+import { ShortcutKeys } from '@/components/ShortcutKeys';
 import { useMeetings } from '@/hooks/useMeetings';
 import { useRecording } from '@/hooks/useRecording';
 import {
@@ -16,7 +16,7 @@ import {
 } from '@/hooks/useCalendarEvents';
 import { useFolders } from '@/hooks/useFolders';
 import { useRecordHotkeySetting } from '@/hooks/useSettings';
-import { DEFAULT_RECORD_ACCELERATOR, acceleratorKeys, formatAccelerator } from '@/lib/accelerator';
+import { DEFAULT_RECORD_ACCELERATOR, formatAccelerator } from '@/lib/accelerator';
 import { ipc, type CalendarEvent, type Meeting } from '@/lib/ipc';
 import { pickInProgressEvent } from '@/lib/calendar';
 import { heroHeadline, heroSubtitle } from '@/lib/hero';
@@ -479,8 +479,9 @@ export function Home({ mode }: HomeProps) {
     month: 'long',
     day: 'numeric',
   });
-  // Keyboard-hint glyphs for the current record shortcut, not translatable copy.
-  const quickKeys = acceleratorKeys(hotkeyAccel);
+  // The subtitle names the shortcut in its copy ("Press ⌃⌥R to start…");
+  // show it as readable key caps instead of bare glyphs.
+  const heroSubParts = hotkeyEnabled && heroSub.includes(hotkeyLabel) ? heroSub.split(hotkeyLabel) : null;
 
   return (
     <MeetingsShell
@@ -531,9 +532,7 @@ export function Home({ mode }: HomeProps) {
                 style={{ color: 'var(--fg-muted)' }}
               >
                 <span>{t('home.quickStart.label')}</span>
-                {quickKeys.map((k, i) => (
-                  <KbdKey key={`${k}-${i}`}>{k}</KbdKey>
-                ))}
+                <ShortcutKeys accelerator={hotkeyAccel} />
                 <span>{t('home.quickStart.anywhere')}</span>
               </p>
             )}
@@ -562,7 +561,14 @@ export function Home({ mode }: HomeProps) {
                 className="max-w-[52ch] text-sm leading-[1.55]"
                 style={{ color: 'var(--fg-2)' }}
               >
-                {heroSub}
+                {heroSubParts
+                  ? heroSubParts.map((part, i) => (
+                      <React.Fragment key={i}>
+                        {i > 0 && <ShortcutKeys accelerator={hotkeyAccel} className="mx-0.5 inline-flex items-center gap-1 align-[1px]" />}
+                        {part}
+                      </React.Fragment>
+                    ))
+                  : heroSub}
               </p>
             </div>
           )}
