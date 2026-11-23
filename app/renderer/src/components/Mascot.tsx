@@ -69,7 +69,7 @@ const PALETTE: Record<string, string> = {
   b: '#167467', // body segment
 };
 
-const PIXEL = 5;
+const PIXEL = 4;
 const FLAP_MS = 180;
 
 function prefersReducedMotion() {

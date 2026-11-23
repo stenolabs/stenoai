@@ -135,6 +135,16 @@
         "Untitled chat"
       ]
     },
+    "renderer/src/components/ChatTurnPersister.tsx": {
+      "copy": [
+        "(empty response)",
+        "Error: {{…}}",
+        "query failed"
+      ],
+      "uncertain": [
+        "assistant"
+      ]
+    },
     "renderer/src/components/CommandPalette.tsx": {
       "copy": [
         "AI provider",
@@ -2562,34 +2572,30 @@
         "change",
         "change",
         "notes",
+        "notes",
         "recipe",
         "user"
       ]
     },
     "renderer/src/routes/ChatConversation.tsx": {
       "copy": [
-        "(empty response)",
         "Ask anything /",
         "Back to Chat",
         "Back to Chat",
         "Back to Chat",
         "Chat not found.",
         "Could not save this chat update. Keep this window open and try again.",
-        "Error: {{…}}",
         "Failed to send",
         "History",
         "No other chats yet.",
         "Send",
         "Stop",
         "Switch chat",
-        "This conversation may have been deleted.",
-        "query failed"
+        "This conversation may have been deleted."
       ],
       "uncertain": [
         "assistant",
-        "assistant",
         "end",
-        "notes",
         "notes",
         "notes",
         "notes",
