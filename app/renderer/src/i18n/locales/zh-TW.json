@@ -622,6 +622,8 @@
   "meeting.transcriptionFailed": "轉錄失敗",
   "meeting.transcriptionFailedDetail": "這段錄音無法產生筆記。您的音訊已保留（未刪除），沒有遺失任何內容。",
   "meeting.errorDetails": "詳細資訊：{{error}}",
+  "meeting.refiningTranscript": "正在優化逐字稿",
+  "meeting.refiningTranscriptHint": "完成後，講者標籤與筆記會在此更新。",
   "meeting.finishingUp": "即將完成",
   "meeting.transcriptFinishing.withNotes.beforeStrong": "正在背景完成逐字稿，隨後產生筆記。您可以閱讀並編輯",
   "meeting.myNotes": "我的筆記",

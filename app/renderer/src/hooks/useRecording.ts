@@ -485,6 +485,17 @@ export function useRecordingEvents() {
  */
 export function useRecordingProcessingEffects() {
   const qc = useQueryClient();
+  // Instant transcript: an early note was written mid-job. Refresh lists and
+  // drop a stale stream entry even when that note's detail isn't mounted, so
+  // opening it later shows the saved note rather than a half-finished stream.
+  React.useEffect(
+    () =>
+      ipc().on.noteUpdated((data) => {
+        if (data.summaryFile) streamCache.delete(data.summaryFile);
+        void qc.invalidateQueries({ queryKey: meetingsKeys.all });
+      }),
+    [qc]
+  );
   React.useEffect(() => {
     const off = ipc().on.processingComplete((data) => {
       if (data.success && data.meetingData?.session_info.summary_file) {

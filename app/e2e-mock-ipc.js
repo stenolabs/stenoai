@@ -176,6 +176,30 @@ const PROCESSING_MEETING = {
   participants: [],
 };
 
+// An early note (instant transcript, refining:true): notes written from the
+// live transcript at stop while the batch pass refines them in the
+// background. Readable like a normal note, with a small "Refining transcript"
+// marker. Seeded only when STENOAI_E2E_SEED_REFINING_NOTE=1.
+const REFINING_NOTE_FILE = 'refining_summary.md';
+const REFINING_MEETING = {
+  session_info: {
+    name: 'Budget sync',
+    summary_file: REFINING_NOTE_FILE,
+    processed_at: '2026-07-12T10:00:00Z',
+    duration_seconds: 60,
+    is_live_transcript: true,
+    refining: true,
+  },
+  transcript: "[00:01] [You] Let's review the budget.\n\n[00:06] [Others] Q3 came in under plan.",
+  is_diarised: true,
+  diarised_text: "[00:01] [You] Let's review the budget.\n\n[00:06] [Others] Q3 came in under plan.",
+  summary: 'Early summary written from the live transcript.',
+  key_points: ['Q3 came in under plan'],
+  action_items: [],
+  discussion_areas: [],
+  participants: [],
+};
+
 // A generated template report attached to SEED_MEETING when
 // STENOAI_E2E_SEED_REPORT=1 (copy-notes-report T1). Gated separately so the
 // transcript-export T1 keeps seeing the report-less meeting it asserts on.
@@ -1202,6 +1226,9 @@ function install({ ipcMain }) {
       if (process.env.STENOAI_E2E_SEED_PROCESSING_NOTE === '1') {
         return { success: true, meetings: [PROCESSING_MEETING] };
       }
+      if (process.env.STENOAI_E2E_SEED_REFINING_NOTE === '1') {
+        return { success: true, meetings: [REFINING_MEETING] };
+      }
       if (seedSpeakers) {
         return { success: true, meetings: [seededSpeakerMeeting()] };
       }
@@ -1258,6 +1285,9 @@ function install({ ipcMain }) {
       }
       if (process.env.STENOAI_E2E_SEED_PROCESSING_NOTE === '1') {
         return { success: true, meeting: applyOverlay(PROCESSING_MEETING) };
+      }
+      if (process.env.STENOAI_E2E_SEED_REFINING_NOTE === '1') {
+        return { success: true, meeting: applyOverlay(REFINING_MEETING) };
       }
       if (seedSpeakers) {
         return { success: true, meeting: seededSpeakerMeeting() };

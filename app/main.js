@@ -96,6 +96,7 @@ const { buildTrayRecordingTitle, buildTrayTooltip } = require('./tray-indicator'
 const { normalizeAutoOpenSettings, decideMeetingOpen, planPremeetingTimers, isOverlapping, isMicGuardAvailable, openReservationEndMs, MAX_LEAD_MINUTES } = require('./meeting-open');
 const { isLinuxLoopbackSupported, startLoopbackCapture, createFrameAligner, createSerialQueue } = require('./linux-loopback');
 const { sweepOrphanedLiveSnapshots } = require('./live-snapshot-sweep');
+const { finalLiveSegments, formatLiveTranscript, buildLiveSnapshot } = require('./live-transcript-format');
 const { shareTempDir, sweepShareTemp, SHARE_TEMP_MAX_AGE_MS } = require('./share-temp');
 const { userNotesFilePath } = require('./notes-file');
 const {
@@ -3142,6 +3143,11 @@ function parseMeetingMarkdown(content, mdPath) {
   }
   if (meta.processing) {
     sessionInfo.processing = true;
+  }
+  // Early note (instant transcript): notes written from the live transcript
+  // while the batch pass refines the transcript and notes in the background.
+  if (meta.refining) {
+    sessionInfo.refining = true;
   }
 
   return {
@@ -6483,6 +6489,13 @@ async function processNextInQueue() {
     // so it can rescue the meeting if the batch transcription comes back empty.
     if (currentProcessingJob.liveTranscriptFile && fs.existsSync(currentProcessingJob.liveTranscriptFile)) {
       processArgs.push('--live-transcript', currentProcessingJob.liveTranscriptFile);
+      // Instant transcript: a new recording with a live transcript gets its
+      // notes from that transcript first (seconds after Stop), then the batch
+      // re-transcription refines the transcript and notes in the background.
+      // The backend prints EARLY_SAVED:<note> once the early note is on disk.
+      if (currentProcessingJob.summaryFile && !currentProcessingJob.appendTo) {
+        processArgs.push('--early-summary');
+      }
     }
     // Continue-recording: fold this segment into an existing note instead of
     // creating a new one. The backend appends the transcript, marks the note
@@ -6569,6 +6582,20 @@ async function processNextInQueue() {
               provider: summarizationCtx.provider,
               processing_bucket: durationBucket((Date.now() - summarizationStartMs) / 1000),
             });
+          } else if (line.startsWith('EARLY_SAVED:') || line === 'EARLY_SUMMARY_FAILED') {
+            // The early (live-transcript) note was written, or its summary
+            // failed and the full pass will stream one instead. Either way the
+            // note's StreamingView must drop the early stream and re-read the
+            // note from disk; the job itself keeps running (refine pass).
+            const early = line.startsWith('EARLY_SAVED:');
+            sendDebugLog(early ? 'Early note saved from the live transcript; refining in the background' : 'Early summary failed; continuing with the full pass');
+            if (mainWindow && !mainWindow.isDestroyed()) {
+              mainWindow.webContents.send('note-updated', {
+                sessionName: currentProcessingJob.sessionName,
+                summaryFile: currentProcessingJob.summaryFile,
+                refining: early,
+              });
+            }
           } else if (line.startsWith('SAVED:')) {
             savedSummaryFile = line.slice(6).trim();
             sendDebugLog(`Summary saved: ${savedSummaryFile}`);
@@ -6854,21 +6881,21 @@ async function snapshotLiveTranscriptForFallback(sessionName) {
     // would duplicate sentences in the fallback transcript. The non-final
     // tail is a preview of speech that a final segment will (or already did)
     // cover, so dropping it loses nothing but the duplication.
-    const text = (liveTranscriptState.segments || [])
-      .filter(s => s && s.isFinal && s.text)
-      .map(s => String(s.text).trim())
-      .filter(Boolean)
-      .join('\n\n')
-      .trim();
-    if (text.length < LIVE_TRANSCRIPT_FALLBACK_MIN_CHARS) {
+    // The snapshot keeps each final segment's speaker + timestamps (JSON, see
+    // live-transcript-format.js) so Python can summarise it early and, on the
+    // fallback path, save it with the same You/Others labels as the batch note.
+    const finals = finalLiveSegments(liveTranscriptState.segments);
+    const { plainText } = formatLiveTranscript(finals);
+    if (plainText.length < LIVE_TRANSCRIPT_FALLBACK_MIN_CHARS) {
       return null;
     }
     // Write to the OS temp dir (cross-platform) with a unique name so
-    // overlapping recordings can't clobber each other's snapshot.
+    // overlapping recordings can't clobber each other's snapshot. The .txt
+    // name is kept so the orphan sweep (live-snapshot-sweep.js) still matches.
     const fileName = `stenoai-live-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.txt`;
     const filePath = path.join(os.tmpdir(), fileName);
-    fs.writeFileSync(filePath, text, 'utf-8');
-    sendDebugLog(`Captured live transcript fallback (${text.length} chars): ${filePath}`);
+    fs.writeFileSync(filePath, buildLiveSnapshot(finals), 'utf-8');
+    sendDebugLog(`Captured live transcript fallback (${plainText.length} chars, ${finals.length} segments): ${filePath}`);
     return filePath;
   } catch (e) {
     sendDebugLog(`Failed to snapshot live transcript fallback: ${e.message}`);
@@ -6887,16 +6914,16 @@ function summaryFileForAudio(audioFilePath) {
   return path.join(getOutputDir(), `${stem}_summary.md`);
 }
 
-// Finalised live-transcript text for the current session (mirrors the snapshot
-// filter — final segments only, joined). '' when there's nothing usable.
-function liveTranscriptTextForPlaceholder(sessionName) {
-  if (!liveTranscriptState || liveTranscriptState.sessionName !== sessionName) return '';
-  return (liveTranscriptState.segments || [])
-    .filter((s) => s && s.isFinal && s.text)
-    .map((s) => String(s.text).trim())
-    .filter(Boolean)
-    .join('\n\n')
-    .trim();
+// Finalised live transcript for the current session, formatted like the
+// batch note's transcript (speaker labels + timestamps when both channels
+// spoke; see live-transcript-format.js). text is '' when there's nothing usable.
+function liveTranscriptForPlaceholder(sessionName) {
+  if (!liveTranscriptState || liveTranscriptState.sessionName !== sessionName) {
+    return { text: '', isDiarised: false };
+  }
+  const { plainText, diarisedText, isDiarised } =
+    formatLiveTranscript(finalLiveSegments(liveTranscriptState.segments));
+  return { text: (isDiarised ? diarisedText : plainText) || '', isDiarised };
 }
 
 // Write the instant-stop placeholder note atomically. `processing: true` marks
@@ -6904,14 +6931,14 @@ function liveTranscriptTextForPlaceholder(sessionName) {
 // drops the flag), and a failure/startup sweep clears it otherwise. Always
 // `notes_generated: false` — a valid transcript-only note is the correct
 // fallback if the batch pass never completes (the user can Generate notes).
-function writeInstantPlaceholderNote({ summaryFile, name, transcriptText, notesText }) {
+function writeInstantPlaceholderNote({ summaryFile, name, transcriptText, isDiarised, notesText }) {
   const yamlQuote = (s) =>
     '"' + String(s).replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, '\\n').replace(/\r/g, '') + '"';
   const lines = [
     '---',
     `title: ${yamlQuote(name)}`,
     `date: ${yamlQuote(new Date().toISOString())}`,
-    'is_diarised: false',
+    `is_diarised: ${isDiarised ? 'true' : 'false'}`,
     'is_live_transcript: true',
     'processing: true',
     'notes_generated: false',
@@ -6947,17 +6974,23 @@ function clearNoteProcessingFlag(summaryFile) {
     if (parts.length < 3) return;
     const frontmatter = parts[1];
     const body = parts.slice(2).join('---');
+    // `refining` is the early-note state (summary written from the live
+    // transcript, batch refine still running): clearing it leaves a valid
+    // note WITH notes, so only a cleared `processing` placeholder (which has
+    // no summary) gets notes_generated: false.
     let removed = false;
+    let removedProcessing = false;
     let sawNotesGenerated = false;
     const kept = [];
     for (const line of frontmatter.split('\n')) {
       const key = line.slice(0, line.indexOf(':')).trim();
-      if (key === 'processing') { removed = true; continue; }
+      if (key === 'processing') { removed = true; removedProcessing = true; continue; }
+      if (key === 'refining') { removed = true; continue; }
       if (key === 'notes_generated') sawNotesGenerated = true;
       kept.push(line);
     }
     if (!removed) return;
-    if (!sawNotesGenerated) {
+    if (removedProcessing && !sawNotesGenerated) {
       const at = kept[kept.length - 1] === '' ? kept.length - 1 : kept.length;
       kept.splice(at, 0, 'notes_generated: false');
     }
@@ -6987,7 +7020,7 @@ function noteFrontmatterHasProcessing(filePath) {
     if (!head.startsWith('---')) return false;
     const end = head.indexOf('\n---', 3);
     const frontmatter = end === -1 ? head : head.slice(0, end);
-    return /(^|\n)processing:\s*true\s*(\n|$)/.test(frontmatter);
+    return /(^|\n)(processing|refining):\s*true\s*(\n|$)/.test(frontmatter);
   } catch {
     return false;
   } finally {
@@ -7467,7 +7500,7 @@ ipcMain.handle('stop-recording-ui', async (event) => {
       if (currentRecordingAppendTarget) {
         instantSummaryFile = currentRecordingAppendTarget;
       } else if (loadTranscriptionEngine() === 'parakeet' && activeSysAudioSummaryFile) {
-        const transcriptText = liveTranscriptTextForPlaceholder(sessionName);
+        const { text: transcriptText, isDiarised } = liveTranscriptForPlaceholder(sessionName);
         const notesFile = userNotesFilePath(getOutputDir(), sessionName);
         let notesText = '';
         try {
@@ -7478,6 +7511,7 @@ ipcMain.handle('stop-recording-ui', async (event) => {
             summaryFile: activeSysAudioSummaryFile,
             name: sessionName,
             transcriptText,
+            isDiarised,
             notesText,
           });
           instantSummaryFile = activeSysAudioSummaryFile;

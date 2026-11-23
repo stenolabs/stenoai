@@ -45,6 +45,12 @@ export interface SessionInfo {
    *  pipeline clears it (on success by rewriting fresh; on failure/startup via
    *  a sweep). */
   processing?: boolean;
+  /** Instant transcript: notes were written from the live transcript seconds
+   *  after stop, and the batch re-transcription is refining the transcript,
+   *  speaker labels and notes in the background. The note reads normally with
+   *  a small "Refining transcript" marker; editing and regenerating stay off
+   *  until the refined note replaces it (which drops the flag). */
+  refining?: boolean;
   /** Set when the batch transcription came back empty and the note's transcript
    *  was rescued from the live capture instead (#207). Both parsers surface it;
    *  the UI can note that no batch transcript exists. */
@@ -1138,6 +1144,15 @@ export interface SummaryCompleteEvent {
    *  failure banner for report failures, independent of event ordering. */
   report?: boolean;
 }
+/** Main rewrote a note mid-job (instant transcript): the early note from the
+ *  live transcript was saved (`refining: true`), or its summary failed and the
+ *  full pass will stream one. Views showing that note drop any in-flight
+ *  stream and re-read it. */
+export interface NoteUpdatedEvent {
+  sessionName: string;
+  summaryFile?: string;
+  refining: boolean;
+}
 export interface ProcessingCompleteEvent {
   success: boolean;
   /** Fixed reprocess failure code; never raw backend diagnostics. */
@@ -1797,6 +1812,7 @@ export interface StenoaiBridge {
     summaryTitle: Subscribe<SummaryTitleEvent>;
     summaryComplete: Subscribe<SummaryCompleteEvent>;
     processingComplete: Subscribe<ProcessingCompleteEvent>;
+    noteUpdated: Subscribe<NoteUpdatedEvent>;
     processingProgress: Subscribe<ProcessingProgressEvent>;
     queryChunk: Subscribe<QueryChunkEvent>;
     queryDone: Subscribe<QueryDoneEvent>;

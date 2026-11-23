@@ -1247,6 +1247,138 @@ def _read_existing_user_notes(summary_path: Path):
     return text or None
 
 
+def _stream_summary_markdown(summarizer, text, duration_minutes, output_language,
+                             notes_text, *, emit_chunks=True):
+    """Run the streaming summariser; returns ``(markdown, error)``.
+
+    ``emit_chunks=True`` relays every chunk as ``CHUNK:<base64>`` (and map-reduce
+    steps as ``PROGRESS:``) so the renderer streams the summary in. ``False`` is
+    the background refine of an early note: the note the user is reading must
+    not be replaced by a second stream mid-read, so only ``HEARTBEAT:`` lines are
+    printed -- enough for Electron's inactivity watchdog, invisible in the UI.
+    The final note write is what brings the refined summary on screen.
+    """
+    import base64
+    streamed_chunks = []
+    # Keep the watchdog alive through model load + prompt eval -- the silent
+    # stretch before the first streamed token.
+    summary_heartbeat = _start_summary_heartbeat()
+    last_beat = [0.0]
+
+    def _silent_progress(step, total):
+        sys.stdout.write(f"HEARTBEAT:refine-summarize:{step}/{total}\n")
+        sys.stdout.flush()
+
+    try:
+        for chunk in summarizer.summarize_transcript_streaming(
+            text, duration_minutes, output_language, notes_text,
+            progress_callback=_emit_progress if emit_chunks else _silent_progress,
+        ):
+            if emit_chunks:
+                # From the first chunk on, the chunks are the liveness signal.
+                summary_heartbeat.set()
+                encoded = base64.b64encode(chunk.encode('utf-8')).decode('ascii')
+                sys.stdout.write(f"CHUNK:{encoded}\n")
+                sys.stdout.flush()
+            else:
+                now = time.monotonic()
+                if now - last_beat[0] >= 10:
+                    last_beat[0] = now
+                    sys.stdout.write("HEARTBEAT:refine-summarize:stream\n")
+                    sys.stdout.flush()
+            streamed_chunks.append(chunk)
+    except Exception as e:
+        return None, e
+    finally:
+        summary_heartbeat.set()
+    return _apply_chinese_variant(''.join(streamed_chunks)) or '', None
+
+
+def _write_early_note(recorder, audio_path, name, snapshot, refresh_notes):
+    """Instant transcript: summarise the LIVE transcript and save the note
+    before the batch re-transcription runs, so the note has notes seconds after
+    Stop instead of after the full transcribe + diarize + summarise pass.
+
+    The note is written with ``refining: true`` and ``is_live_transcript:
+    true``; process-streaming's final write replaces it (refined transcript,
+    batch speaker labels, a fresh summary) and drops both flags. Prints
+    ``EARLY_SAVED:<path>`` on success. Returns a dict the final pass reuses
+    (summary markdown, title), or None when no early note was written --
+    auto-summarize off, or the summary failed/came back empty, in which case
+    ``EARLY_SUMMARY_FAILED`` is printed and the full pass runs exactly as it
+    would have without an early summary.
+    """
+    from src.config import get_config
+    config = get_config()
+    if not config.get_auto_summarize_enabled():
+        return None
+    configured_language = config.get_language()
+    text = snapshot.text_for_note
+    streamed_md, error = None, None
+    output_language = configured_language
+    try:
+        if recorder.summarizer is None:
+            recorder.summarizer = OllamaSummarizer()
+        _set_call_context(recorder.summarizer, recorder.output_dir, audio_path.stem)
+        output_language = recorder._resolve_output_language(
+            configured_language, None, transcript_text=text,
+        )
+        duration_minutes = int(snapshot.duration_seconds / 60) if snapshot.duration_seconds else 0
+        streamed_md, error = _stream_summary_markdown(
+            recorder.summarizer, text, duration_minutes, output_language,
+            refresh_notes(), emit_chunks=True,
+        )
+    except Exception as e:
+        error = e
+    if error is not None or not (streamed_md or '').strip():
+        logger.warning(
+            "Early summary from the live transcript failed (%s); the full pass will summarise",
+            error or "empty result",
+        )
+        print("EARLY_SUMMARY_FAILED", flush=True)
+        return None
+
+    session_name = name
+    title_generated = False
+    if _AUTO_NAMED_PATTERN.match(name):
+        try:
+            generated_title = _apply_chinese_variant(recorder.summarizer.generate_title(
+                streamed_md, snapshot.transcript_text, language=output_language
+            ))
+            if generated_title:
+                session_name = generated_title
+                title_generated = True
+                print(f"TITLE:{session_name}", flush=True)
+        except Exception as e:
+            logger.warning(f"Early title generation failed: {e}")
+
+    summary_path = recorder.output_dir / f"{audio_path.stem}_summary.md"
+    md_meta = {
+        'title': session_name,
+        'date': datetime.now().isoformat(),
+        'duration_seconds': int(snapshot.duration_seconds) if snapshot.duration_seconds else None,
+        'language': output_language,
+        'configured_language': configured_language,
+        'is_diarised': snapshot.is_diarised,
+        'is_live_transcript': True,
+        'refining': True,
+    }
+    md_lines = _render_frontmatter(md_meta)
+    md_lines += ['', streamed_md, '', '## Transcript', '', text]
+    notes_text = refresh_notes()
+    if notes_text:
+        md_lines += ['', '## User Notes', '', notes_text]
+    _atomic_write_text(summary_path, '\n'.join(md_lines))
+    _add_callers_to_participants(recorder.output_dir, audio_path.stem)
+    _write_original_snapshot(summary_path)
+    print(f"EARLY_SAVED:{summary_path}", flush=True)
+    return {
+        'streamed_md': streamed_md,
+        'session_name': session_name,
+        'title_generated': title_generated,
+    }
+
+
 @cli.command(name='process-streaming')
 @click.argument('audio_file', default='')
 @click.option('--name', '-n', default='Recording', help='Session name')
@@ -1254,12 +1386,16 @@ def _read_existing_user_notes(summary_path: Path):
 @click.option('--live-transcript', 'live_transcript', default=None,
               help='Path to the live transcript captured during recording, '
                    'used as a fallback if batch transcription returns empty (#207)')
+@click.option('--early-summary', 'early_summary', is_flag=True, default=False,
+              help='Summarise the --live-transcript first and save the note '
+                   '(refining: true) before the batch re-transcription, which '
+                   'then refines the transcript and notes in the background.')
 @click.option('--append-to', 'append_to', default=None,
               help='Path to an existing note to append this transcription to '
                    '(continue-recording): the new transcript is appended to the '
                    "note's Transcript section, the note is marked notes_stale, "
                    'and no summary/title generation runs.')
-def process_streaming(audio_file, name, notes, live_transcript, append_to):
+def process_streaming(audio_file, name, notes, live_transcript, append_to, early_summary=False):
     """Process audio with streaming summary output.
 
     Transcribes audio, then streams the summary as CHUNK: prefixed lines
@@ -1310,14 +1446,31 @@ def process_streaming(audio_file, name, notes, live_transcript, append_to):
         # Read the live transcript fallback (#207). The renderer accumulates
         # live segments during recording; Electron writes them to this file so
         # we can rescue a meeting whose batch transcription came back empty.
+        # The snapshot carries speakers + timestamps (v1 JSON) or, from an older
+        # app build, plain text -- see src/live_snapshot.py.
+        from src.live_snapshot import parse_live_snapshot
+        live_snapshot = None
         live_transcript_text = None
         if live_transcript:
             try:
-                live_transcript_text = Path(live_transcript).read_text(encoding='utf-8').strip()
-                if live_transcript_text:
+                live_snapshot = parse_live_snapshot(
+                    Path(live_transcript).read_text(encoding='utf-8')
+                )
+                if live_snapshot:
+                    live_transcript_text = live_snapshot.transcript_text
                     logger.info(f"Loaded live transcript fallback ({len(live_transcript_text)} chars)")
             except Exception as e:
                 logger.warning(f"Failed to read live transcript file: {e}")
+
+        # Instant transcript: notes from the live transcript first, then the
+        # batch pass below refines them. Never for a continuation (append
+        # never rewrites a note wholesale).
+        early = None
+        if early_summary and live_snapshot is not None and not append_to:
+            early = _write_early_note(
+                recorder, Path(audio_file), name, live_snapshot,
+                lambda: _refresh_edited_notes(notes_text),
+            )
 
         # Step 1: Transcribe. HEARTBEAT: lines are a liveness signal for the
         # Electron inactivity watchdog — without them a long transcription is
@@ -1411,11 +1564,15 @@ def process_streaming(audio_file, name, notes, live_transcript, append_to):
                 )
             # Rebuild transcript_data so the rest of the pipeline (summary, save)
             # uses the live transcript. Live transcripts are not channel-diarised.
+            # Keep the live You/Others labels (v1 snapshot); a legacy
+            # plain-text snapshot has none, so it stays undiarised.
             transcript_data = {
                 "transcript_text": live_transcript_text,
-                "diarised_text": None,
-                "is_diarised": False,
-                "duration_seconds": transcript_data.get("duration_seconds"),
+                "diarised_text": live_snapshot.diarised_text,
+                "is_diarised": live_snapshot.is_diarised,
+                "duration_seconds": (
+                    transcript_data.get("duration_seconds") or live_snapshot.duration_seconds
+                ),
                 "detected_language": transcript_data.get("detected_language"),
                 "transcript_file": existing_transcript_file,
             }
@@ -1492,7 +1649,9 @@ def process_streaming(audio_file, name, notes, live_transcript, append_to):
         # (reprocess), which regenerates the summary and drops notes_generated.
         from src.config import get_config
         gate_config = get_config()
-        if not gate_config.get_auto_summarize_enabled():
+        # An early note already has a summary, so a toggle flipped mid-run must
+        # not strip it back to a transcript-only note.
+        if early is None and not gate_config.get_auto_summarize_enabled():
             output_language = recorder._resolve_output_language(
                 gate_config.get_language(),
                 transcript_data.get("detected_language"),
@@ -1559,45 +1718,53 @@ def process_streaming(audio_file, name, notes, live_transcript, append_to):
             transcript_text=text_for_summary,
         )
 
-        import base64
-        streamed_chunks = []
-        # Keep the watchdog alive through model load + prompt eval — the
-        # silent stretch before the first streamed token. Stopped on the
-        # first chunk; from then on the chunks themselves are the signal.
-        summary_heartbeat = _start_summary_heartbeat()
-        _stream_error = None
-        try:
-            for chunk in recorder.summarizer.summarize_transcript_streaming(
-                text_for_summary, duration_minutes, output_language, notes_text,
-                progress_callback=_emit_progress,
-            ):
-                summary_heartbeat.set()
-                encoded = base64.b64encode(chunk.encode('utf-8')).decode('ascii')
-                sys.stdout.write(f"CHUNK:{encoded}\n")
-                sys.stdout.flush()
-                streamed_chunks.append(chunk)
-        except Exception as e:
-            _stream_error = e
-        finally:
-            summary_heartbeat.set()
-
-        # Surface a summarization failure (e.g. a long-meeting map-reduce that
-        # overflows context) as STREAM_ERROR so the renderer shows the same
-        # "try a smaller model" recommendation it shows for reprocess — instead
-        # of a generic processing failure with no guidance.
-        if _stream_error is not None:
-            logger.error(f"Summarization failed: {_stream_error}")
-            err_msg = str(_stream_error).replace('\n', ' ').replace('\r', ' ')
-            print(f"STREAM_ERROR:{err_msg}", flush=True)
-            sys.exit(1)
-
-        streamed_md = _apply_chinese_variant(''.join(streamed_chunks)) or ''
+        notes_stale = False
+        if early is not None and is_live_transcript:
+            # The batch pass was unusable and fell back to the same live
+            # transcript the early summary was made from: that summary already
+            # covers it, so don't summarise the same text twice.
+            streamed_md = early['streamed_md']
+        else:
+            # An early note is already on screen: refine its summary silently
+            # (no CHUNK stream replacing what the user is reading).
+            streamed_md, _stream_error = _stream_summary_markdown(
+                recorder.summarizer, text_for_summary, duration_minutes,
+                output_language, notes_text, emit_chunks=early is None,
+            )
+            if early is not None and (_stream_error is not None or not streamed_md.strip()):
+                # Keep the early (live-transcript) summary rather than fail a
+                # meeting that already has notes; flag it stale so the note
+                # offers "Generate notes" against the refined transcript.
+                logger.warning(f"Refine summary failed, keeping the early summary: {_stream_error or 'empty result'}")
+                streamed_md = early['streamed_md']
+                notes_stale = True
+            elif _stream_error is not None:
+                # Surface a summarization failure (e.g. a long-meeting map-reduce
+                # that overflows context) as STREAM_ERROR so the renderer shows
+                # the same "try a smaller model" recommendation it shows for
+                # reprocess — instead of a generic processing failure.
+                logger.error(f"Summarization failed: {_stream_error}")
+                err_msg = str(_stream_error).replace('\n', ' ').replace('\r', ' ')
+                print(f"STREAM_ERROR:{err_msg}", flush=True)
+                sys.exit(1)
 
         print("STREAM_COMPLETE", flush=True)
 
-        # Step 3: Generate title
+        # Step 3: Generate title (an early note already generated one)
         session_name = name
-        if _AUTO_NAMED_PATTERN.match(name):
+        if early is not None:
+            session_name = early['session_name']
+            # The early note was on screen for the whole refine pass: keep a
+            # rename the user made there instead of restoring the early title.
+            try:
+                on_disk = _parse_meeting_markdown(placeholder_note)['session_info'].get('name')
+                if on_disk:
+                    session_name = on_disk
+            except Exception as e:
+                logger.debug(f"Could not re-read the early note's title: {e}")
+        # Still auto-named only when there was no early note, or its title
+        # generation failed and the user hasn't renamed it since.
+        if _AUTO_NAMED_PATTERN.match(session_name):
             try:
                 generated_title = recorder.summarizer.generate_title(
                     streamed_md, transcript_text, language=output_language
@@ -1629,6 +1796,8 @@ def process_streaming(audio_file, name, notes, live_transcript, append_to):
         # transcript came from the live capture, not a batch transcription.
         if is_live_transcript:
             md_meta['is_live_transcript'] = True
+        if notes_stale:
+            md_meta['notes_stale'] = True
         md_lines = _render_frontmatter(md_meta)
         md_lines.append('')
         md_lines.append(streamed_md)
@@ -3283,6 +3452,11 @@ def _parse_meeting_markdown(md_path):
     # the flag so the detail view shows a quiet "finishing up" affordance.
     if meta.get('processing'):
         session_info['processing'] = True
+    # An early note (instant transcript): notes written from the live
+    # transcript while the batch pass refines transcript + notes. Readable and
+    # chat-able; the detail view shows a small "Refining transcript" marker.
+    if meta.get('refining'):
+        session_info['refining'] = True
 
     return {
         'session_info': session_info,
