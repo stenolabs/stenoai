@@ -564,7 +564,7 @@ export function Home({ mode }: HomeProps) {
                 {heroSubParts
                   ? heroSubParts.map((part, i) => (
                       <React.Fragment key={i}>
-                        {i > 0 && <ShortcutKeys accelerator={hotkeyAccel} className="mx-0.5 inline-flex items-center gap-1 whitespace-nowrap align-[1px]" />}
+                        {i > 0 && <ShortcutKeys accelerator={hotkeyAccel} className="mx-0.5 inline-flex items-center gap-0.5 whitespace-nowrap align-[1px]" />}
                         {part}
                       </React.Fragment>
                     ))
