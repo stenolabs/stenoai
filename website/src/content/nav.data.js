@@ -4,7 +4,7 @@
 // faq on /enterprise/ (pages/enterprise/index.astro), and IndustryPage.astro on the sector pages (only sections that page renders are listed).
 // Images live in /images/nav/ (illustrative scenes, no insignia); `img` is the file name without extension.
 
-import { government, defense, lawEnforcement } from "./industries.data.js";
+import { government, defense, lawEnforcement, enterpriseHero } from "./industries.data.js";
 
 // `video` on an overview card (sector menus) plays the page's hero take in place of the still.
 export const MEGA = {
@@ -73,7 +73,7 @@ export const MEGA = {
     key: "ent",
     kicker: "Enterprise · Large and private companies",
     title: "Meeting notes your organisation controls.",
-    overview: { label: "Enterprise overview", img: "airgap" },
+    overview: { label: "Enterprise overview", img: "airgap", video: enterpriseHero },
     items: [
       { id: "rooms", icon: "list-checks", label: "Where it is used", line: "Six rooms, from the board to the client", img: "le-standards" },
       { id: "adds", icon: "layers", label: "What Enterprise adds", line: "Community and Enterprise side by side", img: "le-review" },

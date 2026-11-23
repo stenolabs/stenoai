@@ -3,7 +3,7 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
 import { Nav } from '../../sections/Nav';
 import Footer from '../../sections/Footer.astro';
 import CTAFooter from '../../sections/CTAFooter.astro';
-import { CTA_BRIEFING } from '../../content/industries.data';
+import { CTA_BRIEFING, enterpriseHero } from '../../content/industries.data';
 import { ArrowUpRight, ArrowRight, Check } from 'lucide-react';
 import '../../sector.css';
 import '../../scroll.css';
@@ -13,12 +13,10 @@ import '../../enterprise-page.css';
 const title = 'StenoAI for Enterprise — Meeting Notes Your Organisation Controls';
 const description = 'Private meeting notes for large companies and private companies. Record and transcribe on the device, set the AI route yourself and keep shared notes in your own storage. Open source.';
 
-// Hero picture slot, same shape as the sector pages. Until an agreed take exists heroVideo stays null and the still is shown.
-// To use a take: heroVideo = { src: '/video/hero-enterprise.mp4', poster: '/images/enterprise/hero-enterprise.webp', position: '50% 50%' }.
+// Hero picture slot: the same take as the sector pages use (src, poster, position), defined in industries.data.js and shared with the menu card.
 const hero = {
-  image: '/images/enterprise/hero-enterprise.webp',
-  alt: 'An empty boardroom in the evening: a long dark table, six empty chairs, one open laptop with a dim screen and papers lying face down in the light of a low lamp',
-  heroVideo: null,
+  alt: 'An empty boardroom in the evening: a long dark table, six empty chairs, one open laptop and papers lying face down in the light of a low lamp',
+  heroVideo: enterpriseHero,
 };
 
 const readers = [
@@ -97,7 +95,7 @@ const flowAlt = 'Diagram. Endpoints record, and transcribe by default, on each l
   <script is:inline>
     (function (d, c) { d.dataset.ss = matchMedia('(prefers-reduced-motion: reduce)').matches || (c && c.saveData) ? 'still' : 'on'; })(document.documentElement, navigator.connection);
   </script>
-  <link slot="head" rel="preload" as="image" href={hero.heroVideo?.poster ?? hero.image} fetchpriority="high" />
+  <link slot="head" rel="preload" as="image" href={hero.heroVideo.poster} fetchpriority="high" />
   <Nav client:load />
   <main id="main-content" class="mission-site sector-page">
     <section class="mission-wrap industry-hero">
@@ -111,14 +109,10 @@ const flowAlt = 'Diagram. Endpoints record, and transcribe by default, on each l
         </div>
         <div class="industry-hero-chips"><span>Your device or your infrastructure</span><span>No meeting bot</span><span>Open source</span></div>
       </div>
-      <div class="industry-hero-media" role={hero.heroVideo ? 'img' : undefined} aria-label={hero.heroVideo ? hero.alt : undefined}>
-        {hero.heroVideo ? (
-          <video class="industry-hero-image" muted playsinline preload="none" poster={hero.heroVideo.poster} aria-hidden="true" tabindex="-1" disablepictureinpicture disableremoteplayback data-hero-take style={hero.heroVideo.position ? `object-position: ${hero.heroVideo.position}` : undefined}>
-            <source src={hero.heroVideo.src} type="video/mp4" />
-          </video>
-        ) : (
-          <img class="industry-hero-image" src={hero.image} alt={hero.alt} width="1664" height="936" fetchpriority="high" />
-        )}
+      <div class="industry-hero-media" role="img" aria-label={hero.alt}>
+        <video class="industry-hero-image" muted playsinline preload="none" poster={hero.heroVideo.poster} aria-hidden="true" tabindex="-1" disablepictureinpicture disableremoteplayback data-hero-take style={hero.heroVideo.position ? `object-position: ${hero.heroVideo.position}` : undefined}>
+          <source src={hero.heroVideo.src} type="video/mp4" />
+        </video>
         <span class="mega-tag" aria-hidden="true"><span class="mission-status-dot"></span> Illustrative scene</span>
       </div>
     </section>
@@ -296,7 +290,7 @@ const flowAlt = 'Diagram. Endpoints record, and transcribe by default, on each l
 </script>
 
 <script>
-  // Hero take (only when a heroVideo is set): same behaviour as IndustryPage.astro. Plays once when in view, holds at 4.9 s, never loops.
+  // Hero take: same behaviour as IndustryPage.astro. Plays once when in view, holds at 4.9 s (this take is 2.4 s long, so it ends on its held last frame), never loops.
   // Poster only under reduced motion, data saver, or if the browser blocks play(). Nothing is fetched before play().
   const take = document.querySelector<HTMLVideoElement>('[data-hero-take]');
   const calm = matchMedia('(prefers-reduced-motion: reduce)').matches || !!navigator.connection?.saveData;
@@ -306,6 +300,7 @@ const flowAlt = 'Diagram. Endpoints record, and transcribe by default, on each l
     const stop = () => { done = true; take.pause(); };
     const watch = () => take.requestVideoFrameCallback?.((_, m) => (m.mediaTime >= HOLD ? stop() : watch()));
     take.addEventListener('play', watch);
+    take.addEventListener('ended', () => { done = true; }); // this take is shorter than HOLD: once it has ended it stays on its last frame
     take.addEventListener('timeupdate', () => { if (take.currentTime >= HOLD) stop(); });
     new IntersectionObserver((entries) => {
       if (entries[entries.length - 1].isIntersecting) { if (!done) take.play().catch(() => {}); }
