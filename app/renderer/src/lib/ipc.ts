@@ -1475,6 +1475,11 @@ export interface StenoaiBridge {
       Result<Record<string, never>>
     >;
     deleteReport: RequestFn<[summaryFile: string, reportId: string], Result<Record<string, never>>>;
+    /** Rewrite one report's body; `frontmatter` is the block shown as properties ('' for none). */
+    updateReport: RequestFn<
+      [summaryFile: string, reportId: string, frontmatter: string, body: string],
+      Result<{ content: string }>
+    >;
   };
 
   meetingTransfer: {

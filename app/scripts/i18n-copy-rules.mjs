@@ -81,6 +81,7 @@ export const I18N_GATE_RULE_IDS = [
 export const KNOWN_NON_COPY_ATTRIBUTES = [
   'className', // structure
   'descriptionId', // aria wiring, an id
+  'messageId', // aria wiring, the id of the element holding the message
   'aria-labelledby', // references element ids; the referenced elements carry the copy
   'name', // form field / entity name
   'folderName', // user-entered data

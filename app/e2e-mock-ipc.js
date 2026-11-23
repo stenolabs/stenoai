@@ -235,6 +235,11 @@ const SEED_FRONTMATTER_REPORT = {
 // Mutable so the stateful set-active-report mock below persists the pill
 // switch across the invalidate → get-meeting refetch, like the real sidecar.
 let seedActiveReport = null;
+// Inline report edits (update-report), keyed by report id, so the refetch that
+// follows a save shows the edited body like the real sidecar would.
+const seedReportContent = {};
+const withReportEdits = (report) =>
+  seedReportContent[report.id] !== undefined ? { ...report, content: seedReportContent[report.id] } : report;
 
 const seededMeeting = () => {
   const meeting = process.env.STENOAI_E2E_SEED_DIARISED_EXPORT === '1'
@@ -247,10 +252,10 @@ const seededMeeting = () => {
       }
     : SEED_MEETING;
   if (process.env.STENOAI_E2E_SEED_REPORT === 'frontmatter') {
-    return { ...meeting, reports: [SEED_FRONTMATTER_REPORT], active_report: seedActiveReport };
+    return { ...meeting, reports: [withReportEdits(SEED_FRONTMATTER_REPORT)], active_report: seedActiveReport };
   }
   return process.env.STENOAI_E2E_SEED_REPORT === '1'
-    ? { ...meeting, reports: [SEED_REPORT], active_report: seedActiveReport }
+    ? { ...meeting, reports: [withReportEdits(SEED_REPORT)], active_report: seedActiveReport }
     : meeting;
 };
 
@@ -439,6 +444,7 @@ function install({ ipcMain }) {
   // the renderer's world, so monkey-patching window.stenoai.meetings.update in
   // page.evaluate silently no-ops instead of recording anything.
   global.__stenoaiE2eUpdateMeetingCalls = [];
+  global.__stenoaiE2eUpdateReportCalls = [];
 
   // Every reprocess-meeting call, same recording trick and the same reason. A
   // spec that has to prove a rebuild did NOT start cannot assert on the UI
@@ -1241,6 +1247,19 @@ function install({ ipcMain }) {
     // Mirror the real handler just enough for the copy-notes-report T1: persist
     // the switch so the refetch that follows the mutation doesn't reset the
     // pill. 'standard' clears it, like src/reports.py set_active.
+    // Inline report editing. Runs the real pure transform (report-body.js), so
+    // a T1 sees the same accept/refuse decisions main makes; every call is
+    // recorded on global.__stenoaiE2eUpdateReportCalls like update-meeting.
+    'update-report': async (_event, summaryFile, reportId, frontmatter, body) => {
+      global.__stenoaiE2eUpdateReportCalls.push({ summaryFile, reportId, frontmatter, body });
+      const { updateReportInSidecar } = require('./report-body');
+      const reports = [SEED_REPORT, SEED_FRONTMATTER_REPORT].map(withReportEdits);
+      const result = updateReportInSidecar({ reports }, reportId, frontmatter, body);
+      if (!result.ok) return { success: false, error: result.error };
+      seedReportContent[reportId] = result.content;
+      return { success: true, content: result.content };
+    },
+
     'set-active-report': async (_event, _summaryFile, reportId) => {
       seedActiveReport = !reportId || reportId === 'standard' ? null : reportId;
       return { success: true };
@@ -1387,7 +1406,7 @@ function install({ ipcMain }) {
           edited_fields: [...new Set([...existing, ...changed])],
         };
       }
-      return { success: true, message: 'ok' };
+      return { success: true, message: 'ok', edited_fields: changed };
     },
 
     // Mirror the real export-transcript handler's seam: with STENOAI_E2E_EXPORT_PATH
