@@ -21,7 +21,7 @@ async function foreground(app: ElectronApplication) {
   });
 }
 
-test("an acknowledged release leaves Settings interactive and can be reopened", async ({ launchApp }) => {
+test("an acknowledged release leaves Settings interactive and can be reopened", async ({ launchApp }, testInfo) => {
   const { app, page } = await launchApp({
     mockIpc: true,
     env: { ...env, STENOAI_E2E_OPEN_EXTERNAL: "1" },
@@ -37,6 +37,9 @@ test("an acknowledged release leaves Settings interactive and can be reopened", 
   await expect(page.getByRole("dialog", { name: title })).toHaveCount(0);
   await page.getByRole("button", { name: "View highlights" }).click();
   await expect(page.getByRole("dialog", { name: title })).toBeVisible();
+  // Every highlight carries a generated cover picture.
+  await expect(page.getByRole("dialog", { name: title }).locator(".cookbook-cover")).toHaveCount(5);
+  await page.screenshot({ path: testInfo.outputPath("whats-new.png") });
   await page.getByRole("button", { name: "Full release notes" }).click();
   await expect(page.getByRole("dialog", { name: title })).toHaveCount(0);
   await expect.poll(() => app.evaluate(

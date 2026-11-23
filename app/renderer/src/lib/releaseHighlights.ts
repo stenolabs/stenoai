@@ -3,17 +3,20 @@ import { version } from '../../../package.json';
 // Release preparation updates this list alongside the public changelog.
 // The renderer build binds the content to package.json's version.
 export const RELEASE_VERSION = version;
-type ReleaseHighlight = {
+export type ReleaseHighlight = {
   id: string;
   title: string;
   description: string;
   action: string;
   route: string;
   visual?: 'agents' | 'chart';
+  /** The icon on the highlight's generated cover (components/WhatsNew.tsx). */
+  icon?: 'edit' | 'language' | 'speakers' | 'calendar' | 'record' | 'connect' | 'recipes' | 'chart' | 'sparkles';
 };
 export const RELEASE_HIGHLIGHTS: readonly ReleaseHighlight[] = [
   {
     id: 'note-editing',
+    icon: 'edit',
     title: 'Edit a generated note',
     description:
       'Change generated sections in a saved note. The original model output stays available.',
@@ -22,6 +25,7 @@ export const RELEASE_HIGHLIGHTS: readonly ReleaseHighlight[] = [
   },
   {
     id: 'hebrew-model',
+    icon: 'language',
     title: 'Transcribe Hebrew',
     description:
       'With the Whisper engine, download the optional on-device Hebrew model in AI settings.',
@@ -30,6 +34,7 @@ export const RELEASE_HIGHLIGHTS: readonly ReleaseHighlight[] = [
   },
   {
     id: 'speaker-engine',
+    icon: 'speakers',
     title: 'Choose speaker detection',
     description:
       'On macOS, keep Sortformer or select optional Nemotron 3 in AI settings.',
@@ -38,6 +43,7 @@ export const RELEASE_HIGHLIGHTS: readonly ReleaseHighlight[] = [
   },
   {
     id: 'open-meetings',
+    icon: 'calendar',
     title: 'Open meetings on time',
     description:
       'With a calendar connected, Steno can open the meeting link shortly before it starts, or ask first.',
@@ -46,6 +52,7 @@ export const RELEASE_HIGHLIGHTS: readonly ReleaseHighlight[] = [
   },
   {
     id: 'auto-record',
+    icon: 'record',
     title: 'Record detected meetings',
     description:
       'Turn on Auto-record, and Steno starts recording a detected meeting without waiting for a tap.',
