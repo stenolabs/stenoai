@@ -166,7 +166,7 @@ export interface ChatRequest {
 /** A read tool a chat-agent turn ran ("Searched Linear…"). */
 export interface ChatToolStep {
   id: string;
-  source: 'steno' | 'connection' | 'context';
+  source: 'steno' | 'connection' | 'context' | 'notice';
   connection: string;
   tool: string;
   title: string | null;

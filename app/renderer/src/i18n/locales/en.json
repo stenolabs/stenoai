@@ -1065,5 +1065,8 @@
   "chat.trace.readLive": "Read the live transcript",
   "chat.trace.thinkingFor": "Thinking · {{seconds}}s",
   "recipes.noMatch": "No matching recipes. Press Esc to type a message.",
-  "cookbooks.intro.carousel": "carousel"
+  "cookbooks.intro.carousel": "carousel",
+  "chat.trace.toolsUnavailable": "{{model}} can't use your connected apps ({{apps}}), so this is a plain answer. Switch to Qwen 3.5 9B or a cloud model to let chat take actions.",
+  "chat.trace.thisModel": "This model",
+  "chat.trace.openAiSettings": "Open AI settings"
 }

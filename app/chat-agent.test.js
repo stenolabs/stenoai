@@ -257,3 +257,12 @@ test('streamed text is emitted as it arrives and later steps start a new paragra
   assert.deepEqual(events, ['Let me ', 'check.', '\n\nFound ', 'two.']);
   assert.equal(out.text, 'Let me check.\n\nFound two.');
 });
+
+test('a tools-unavailable notice only for action-like questions with connected apps', () => {
+  const { toolsUnavailableStep } = require('./chat-agent');
+  const names = ['Notion', 'Linear'];
+  assert.equal(toolsUnavailableStep({ question: 'create a notion page called ruzin', connectionNames: names, model: 'gemma4:e2b' }).tool, 'tools-unavailable');
+  assert.ok(toolsUnavailableStep({ question: 'what is in linear for me?', connectionNames: names }));
+  assert.equal(toolsUnavailableStep({ question: 'summarise my week', connectionNames: names }), null);
+  assert.equal(toolsUnavailableStep({ question: 'create a page', connectionNames: [] }), null);
+});

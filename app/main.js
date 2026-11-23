@@ -3956,7 +3956,7 @@ ipcMain.on('chat-context-stream', async (event, queryId, request) => {
     };
     // With an enabled actions connection and a tool-capable model, chat runs
     // as an agent (chat-agent.js); otherwise exactly as before.
-    const agentTools = await prepareChatAgentTools(payload);
+    const agentTools = await prepareChatAgentTools(payload, send);
     if (cancelled || sender.isDestroyed()) { cleanup(); return; }
     if (agentTools) runChatAgent({ queryId, payload, tools: agentTools, entry, send, cleanup, runPlain });
     else runPlain();
@@ -3971,10 +3971,20 @@ const chatAgent = require('./chat-agent');
 const CHAT_AGENT_ERROR = 'Unable to answer. Check your AI provider and try again.';
 
 /** The tools for this chat turn, or null to keep plain chat. */
-async function prepareChatAgentTools(payload) {
+async function prepareChatAgentTools(payload, send = () => {}) {
   try {
     const cfg = readConfigFile(configJsonPath());
-    if (!chatAgent.toolCallingSupport(cfg)) return null;
+    if (!chatAgent.toolCallingSupport(cfg)) {
+      // Plain chat, but say so when the user evidently wanted an app action.
+      const tools = await getMcpActionsService().chatToolset({ simpleOnly: true }).catch(() => []);
+      const step = chatAgent.toolsUnavailableStep({
+        question: payload.question,
+        connectionNames: tools.map((t) => t.connectionName),
+        model: typeof cfg.model === 'string' ? cfg.model : '',
+      });
+      if (step) send('query-tool-step', { step });
+      return null;
+    }
     const connectionTools = await getMcpActionsService().chatToolset({ simpleOnly: chatAgent.prefersSimpleActions(cfg) });
     if (!connectionTools.length) return null;
     return chatAgent.buildAgentTools({ connectionTools, steno: payload.scope !== 'general' });

@@ -54,3 +54,15 @@ test('leaving a conversation mid-answer keeps the answer: it streams on return a
   await page.evaluate((h) => { window.location.hash = h; }, conversation);
   await expect(page.getByText('Answer that outlives the page DONE')).toBeVisible();
 });
+
+test('a model that cannot use tools says so, with a way to switch model', async ({ launchApp }) => {
+  const { page } = await launchApp({ mockIpc: true, env: { STENOAI_E2E_CHAT_NOTICE: '1', STENOAI_E2E_CHAT_REPLY: 'Plain answer.' } });
+  await page.evaluate(() => { window.location.hash = '#/chat'; });
+  const input = page.getByRole('textbox', { name: 'Ask about your notes' });
+  await input.fill('create a notion page called ruzin');
+  await input.press('Enter');
+  const notice = page.getByTestId('chat-tools-notice').first();
+  await expect(notice).toContainText("Gemma 4 E2B can't use your connected apps (Notion)");
+  await notice.getByRole('button', { name: 'Open AI settings' }).click();
+  await expect(page).toHaveURL(/#\/settings\?tab=ai/);
+});

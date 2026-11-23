@@ -727,5 +727,8 @@
   "chat.trace.readLive": "已讀取即時逐字稿",
   "chat.trace.thinkingFor": "思考中 · {{seconds}} 秒",
   "recipes.noMatch": "沒有符合的食譜。按 Esc 以輸入訊息。",
-  "cookbooks.intro.carousel": "輪播"
+  "cookbooks.intro.carousel": "輪播",
+  "chat.trace.toolsUnavailable": "{{model}} 無法使用您連接的應用程式（{{apps}}），因此這是一般回答。請改用 Qwen 3.5 9B 或雲端模型，讓聊天可以執行動作。",
+  "chat.trace.thisModel": "此模型",
+  "chat.trace.openAiSettings": "開啟 AI 設定"
 }

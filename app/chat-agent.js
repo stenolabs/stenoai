@@ -60,6 +60,24 @@ function toolCallingSupport(cfg) {
  * the wrong tool or invent nested arguments from a large vendor catalogue.
  * Cloud models keep the raw tools as well.
  */
+// Words that ask chat to do something in another app, rather than answer.
+const ACTION_INTENT = /\b(create|add|make|send|post|update|file|log|draft|schedule|assign|book|move|ticket|issue|page|task)\b/i;
+
+/**
+ * When the configured model can't use tools but the user has connected apps
+ * and the question looks like an action ("create a Notion page…"), a trace
+ * step telling them to switch model; null otherwise, so ordinary questions
+ * aren't nagged. Carries the model id and app names only.
+ */
+function toolsUnavailableStep({ question, connectionNames = [], model = '' }) {
+  const names = [...new Set(connectionNames.filter(Boolean))];
+  if (!names.length) return null;
+  const q = String(question || '').toLowerCase();
+  const namesApp = names.some((n) => q.includes(String(n).toLowerCase().split(/\s+/)[0]));
+  if (!ACTION_INTENT.test(q) && !namesApp) return null;
+  return { id: 'notice-tools', source: 'notice', connection: names.join(', '), tool: 'tools-unavailable', title: model || null };
+}
+
 function prefersSimpleActions(cfg) {
   const provider = (cfg && typeof cfg === 'object' && cfg.ai_provider) || 'local';
   return provider === 'local' || provider === 'remote';
@@ -282,6 +300,7 @@ module.exports = {
   AgentCancelled,
   toolCallingSupport,
   prefersSimpleActions,
+  toolsUnavailableStep,
   buildAgentTools,
   runAgentTurn,
   runBackendJson,

@@ -1,5 +1,7 @@
 import * as React from 'react';
-import { Check, ExternalLink, FileText, Search } from 'lucide-react';
+import { Check, ExternalLink, FileText, Info, Search } from 'lucide-react';
+import { shortModelName } from '@/lib/chat';
+import { navigate } from '@/lib/router';
 import { ActionCardView } from '@/components/actions/ActionCardView';
 import { ActionValidationFailure } from '@/hooks/useActions';
 import { actionPhrase, headlineValue } from '@/lib/actionCopy';
@@ -42,7 +44,30 @@ export function actionRecords(cards: ActionCard[] | undefined): ChatActionRecord
   return cards.map((c) => ({ id: c.id, sentence: actionSentence(c), status: c.status, link: c.result?.link ?? null }));
 }
 
+/** "Gemma 4 E2B can't use your connected apps…" with a way to switch model. */
+function NoticeLine({ step }: { step: ChatToolStep }) {
+  const model = step.title ? shortModelName(step.title) : t('chat.trace.thisModel');
+  return (
+    <p
+      className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg px-3 py-2 text-[12.5px]"
+      style={{ background: 'var(--surface-sunken)', color: 'var(--fg-2)' }}
+      data-testid="chat-tools-notice"
+    >
+      <Info aria-hidden className="size-3.5 shrink-0" />
+      <span>{t('chat.trace.toolsUnavailable', { model, apps: step.connection })}</span>
+      <button
+        type="button"
+        className="font-medium underline underline-offset-2 hover:text-[color:var(--fg-1)]"
+        onClick={() => navigate('/settings?tab=ai')}
+      >
+        {t('chat.trace.openAiSettings')}
+      </button>
+    </p>
+  );
+}
+
 function StepLine({ step }: { step: ChatToolStep }) {
+  if (step.source === 'notice') return <NoticeLine step={step} />;
   const label = stepLabel(step);
   if (!label) return null;
   const Icon = step.source === 'context' ? FileText : Search;
