@@ -254,11 +254,12 @@ export function Chat() {
   return (
     <MeetingsShell activeSummaryFile={null}>
       <div className="mx-auto flex w-full max-w-[640px] flex-col min-h-[calc(100vh-64px)] px-2">
-        <div className="h-[22vh] min-h-[120px] flex-shrink-0" />
+        <div className="h-[14vh] min-h-[72px] flex-shrink-0" />
 
         <div className="w-full">
+          <Mascot resting={isFocused || input !== ''} />
           <h1
-          className="mb-4 text-center"
+          className="mb-8 text-center"
           style={{
             fontFamily: 'var(--font-serif)',
             fontSize: 36,
@@ -275,7 +276,6 @@ export function Chat() {
             t('chat.home.greeting.anonymous')
           )}
         </h1>
-        <Mascot resting={isFocused || input !== ''} />
 
         {!providerReady && !orgScopeActive && provider.isFetched && <ProviderRequiredBanner />}
         {submitError && (

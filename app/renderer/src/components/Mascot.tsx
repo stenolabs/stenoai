@@ -116,7 +116,7 @@ export function Mascot({ resting = false }: { resting?: boolean }) {
   }, [still]);
 
   return (
-    <div aria-hidden="true" data-testid="chat-mascot" className="mb-6 flex justify-center">
+    <div aria-hidden="true" data-testid="chat-mascot" className="mb-5 flex justify-center">
       <div className={still ? 'steno-mascot' : 'steno-mascot steno-mascot-float'}>
         <Sprite rows={FRAMES[frame]} />
       </div>
