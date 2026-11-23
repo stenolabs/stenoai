@@ -7,9 +7,9 @@ import ScrollSeq from '../components/ScrollSeq.astro';
 // summarisation/chat model moves. Keep "never ours" true — StenoAI runs
 // no server that receives meeting content in any of these modes.
 const modes = [
-  { media: 'device', frames: 73, sw: 960, sh: 600, start: '.98', end: '.58', index: '01', icon: Laptop, name: 'On the device', body: 'Capture, transcription, summaries and questions all run on the laptop. After setup it works offline and on air-gapped networks.', tags: 'Local mode · Air-gap ready' },
-  { media: 'infra', frames: 61, sw: 800, sh: 500, start: '.93', end: '.55', index: '02', icon: Server, name: 'On your infrastructure', body: 'Point summaries at a model server on your own network, such as Ollama or any OpenAI-compatible endpoint you host. Transcription stays on the device unless you also point it at your own speech endpoint.', tags: 'Self-hosted model · Custom endpoint' },
-  { media: 'cloud', frames: 73, sw: 960, sh: 600, start: '.88', end: '.52', index: '03', icon: Cloud, name: 'In your cloud tenancy', body: 'Use your organisation’s own cloud account, such as AWS Bedrock or your OpenAI or Anthropic agreement, or route through your organisation’s gateway so desktops never hold provider keys.', tags: 'Bedrock · Organisation gateway' },
+  { media: 'device', frames: 61, sw: 1152, sh: 720, start: '.98', end: '.58', index: '01', icon: Laptop, name: 'On the device', body: 'Capture, transcription, summaries and questions all run on the laptop. After setup it works offline and on air-gapped networks.', tags: 'Local mode · Air-gap ready' },
+  { media: 'infra', frames: 49, sw: 960, sh: 600, start: '.93', end: '.55', index: '02', icon: Server, name: 'On your infrastructure', body: 'Point summaries at a model server on your own network, such as Ollama or any OpenAI-compatible endpoint you host. Transcription stays on the device unless you also point it at your own speech endpoint.', tags: 'Self-hosted model · Custom endpoint' },
+  { media: 'cloud', frames: 61, sw: 1152, sh: 720, start: '.88', end: '.52', index: '03', icon: Cloud, name: 'In your cloud tenancy', body: 'Use your organisation’s own cloud account, such as AWS Bedrock or your OpenAI or Anthropic agreement, or route through your organisation’s gateway so desktops never hold provider keys.', tags: 'Bedrock · Organisation gateway' },
 ];
 const localModels = [
   { name: 'Gemma 4 E2B', size: '2B' }, { name: 'Gemma 4 E4B', size: '4B' }, { name: 'Llama 3.2', size: '3B' },

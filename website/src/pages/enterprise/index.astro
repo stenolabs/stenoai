@@ -140,7 +140,7 @@ const flowAlt = 'Diagram. Endpoints record, and transcribe by default, on each l
           {readers.map((r, i) => (
             <div>
               <div class="ent-obj">
-                <ScrollLight name={i ? 'house' : 'tower'} zones={i ? houseZones : towerZones} zones-phone={i ? JSON.stringify(houseZonesPhone) : undefined} w="1280" h="720" fit="cover" flow-start=".9" flow-end=".5" />
+                <ScrollLight name={i ? 'house' : 'tower'} zones={i ? houseZones : towerZones} zones-phone={i ? JSON.stringify(houseZonesPhone) : undefined} w="1600" h="900" fit="cover" flow-start=".9" flow-end=".5" />
               </div>
               <h3><Check size={15} strokeWidth={2.2} aria-hidden="true" />{r.h}</h3>
               <p>{r.b}</p>
@@ -181,7 +181,7 @@ const flowAlt = 'Diagram. Endpoints record, and transcribe by default, on each l
         <div class="mission-section-heading ent-adds-head">
           <h2 id="adds-heading">What Enterprise<br />adds.</h2>
           <p>Community is the free app on a laptop. Enterprise connects the same app to your organisation’s own systems.</p>
-          <div class="ent-card-fig" aria-hidden="true"><img src="/scroll/ent/card2-start-d.webp" srcset="/scroll/ent/card2-start-p.webp 640w, /scroll/ent/card2-start-d.webp 960w" sizes="(max-width: 767px) 100vw, 420px" alt="" width="960" height="540" loading="lazy" decoding="async" /><ScrollSeq src="/scroll/ent-card-d" src-phone="/scroll/ent-card-p" frames="64" start=".92" centre=".55" /></div>
+          <div class="ent-card-fig" aria-hidden="true"><img src="/scroll/ent/card2-start-d.webp" srcset="/scroll/ent/card2-start-p.webp 640w, /scroll/ent/card2-start-d.webp 960w" sizes="(max-width: 767px) 100vw, 420px" alt="" width="960" height="540" loading="lazy" decoding="async" /><ScrollSeq src="/scroll/ent-card-d" src-phone="/scroll/ent-card-p" frames="48" start=".92" centre=".55" /></div>
         </div>
         <table class="ent-compare">
           <thead><tr><th scope="col"><span class="sr-only">Feature</span></th><th scope="col">Community</th><th scope="col">Enterprise</th></tr></thead>
@@ -269,7 +269,7 @@ const flowAlt = 'Diagram. Endpoints record, and transcribe by default, on each l
           <h2 id="rollout-heading">From briefing<br />to deployment.</h2>
           <p>When your organisation is ready, we take you through four steps, from the first briefing to the rollout.</p>
         </div>
-        <div class="ent-fleet" aria-hidden="true"><picture><source media="(max-width: 767px)" srcset="/scroll/ent/ent-fleet-still-p.webp" /><img src="/scroll/ent/ent-fleet-still-d.webp" alt="" width="1000" height="516" loading="lazy" decoding="async" /></picture><ScrollSeq src="/scroll/ent-fleet-d" src-phone="/scroll/ent-fleet-p" frames="72" start=".92" centre=".55" lit="0,.2,.48,.74" lit-phone="0,.25,.5,.75" lit-items=".sector-timeline > li" /></div>
+        <div class="ent-fleet" aria-hidden="true"><picture><source media="(max-width: 767px)" srcset="/scroll/ent/ent-fleet-still-p.webp" /><img src="/scroll/ent/ent-fleet-still-d.webp" alt="" width="1664" height="859" loading="lazy" decoding="async" /></picture><ScrollSeq src="/scroll/ent-fleet-d" src-phone="/scroll/ent-fleet-p" frames="42" start=".92" centre=".55" lit="0,.2,.48,.74" lit-phone="0,.25,.5,.75" lit-items=".sector-timeline > li" /></div>
         <ol class="sector-timeline">
           {steps.map((s, i) => (
             <li>

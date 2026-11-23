@@ -10,7 +10,7 @@ const { film, start = ".95", end = ".6", near } = Astro.props; // progress 0: bo
 <div class="teaser">
   <div class="teaser-box">
     <noscript><img class="teaser-still" src={`/scroll/film-${film.key}-still.webp`} alt="" width="534" height="985" /></noscript>
-    <ScrollSeq class="seq-plain" src={`/scroll/film-${film.key}-d`} src-phone={`/scroll/film-${film.key}-p`} frames="73" start={start} end={end} near={near} target={`#tm-${film.key}`} rest=".8" />
+    <ScrollSeq class="seq-plain" src={`/scroll/film-${film.key}-d`} src-phone={`/scroll/film-${film.key}-p`} frames="61" start={start} end={end} near={near} target={`#tm-${film.key}`} rest=".8" />
     <i class="teaser-mark" id={`tm-${film.key}`} aria-hidden="true"></i>
     <button type="button" class="teaser-open" data-film-open={film.slug} tabindex="-1" aria-hidden="true"><span class="teaser-ring"><Play size={22} fill="currentColor" aria-hidden="true" /></span></button>
   </div>
