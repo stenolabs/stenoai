@@ -1047,5 +1047,12 @@
   "cookbooks.intro.recipeTitle": "What's a recipe?",
   "cookbooks.intro.recipeBody": "A recipe is a saved prompt you run in chat: a weekly recap, a follow-up email, a decision log. Type / in any chat to use one, or make your own.",
   "cookbooks.intro.seeRecipes": "See recipes",
-  "cookbooks.intro.showSlide": "Show “{{name}}”"
+  "cookbooks.intro.showSlide": "Show “{{name}}”",
+  "chat.chart.loading": "Loading chart…",
+  "chat.chart.viewData": "View data",
+  "chat.chart.copyImage": "Copy as image",
+  "chat.chart.copyData": "Copy data",
+  "chat.chart.copied": "Copied",
+  "chat.chart.copyFailed": "Couldn’t copy",
+  "chat.chart.other": "Other"
 }
