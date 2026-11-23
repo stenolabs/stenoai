@@ -46,6 +46,7 @@ export function headlineValue(args: Record<string, unknown>): string | null {
 // Most important first. A field matches the first rank whose pattern fits.
 const RANKS = [
   /^(title|name)$/i,
+  /^(to|recipients?)$/i, // an email draft: who it goes to comes before what it says
   /^(summary|subject)$/i,
   /^(description|body|content|text|message)$/i,
   /^(assignee|assignee_?id|owner)$/i,

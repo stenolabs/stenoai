@@ -57,6 +57,14 @@ function registerMcpActionsIpc({ ipcMain, getService, validateMeetingFilePath, l
     return { connection: await getService().addCustom({ name, url, auth, headerName, token }) };
   }));
 
+  // A command on this computer (stdio MCP server). The service validates it
+  // and asks for a native confirmation before anything is saved or run.
+  ipcMain.handle('actions-add-local', wrap('actions-add-local', async (input) => {
+    if (!input || typeof input !== 'object') throw new ActionError('invalid-input', 'Fill in the command');
+    const { name, command, args, env } = input;
+    return { connection: await getService().addLocal({ name, command, args, env }) };
+  }));
+
   ipcMain.handle('actions-connect-connector', wrap('actions-connect-connector', async (connectorId) => ({
     connection: await getService().connectConnector(requireId(connectorId)),
   })));

@@ -277,5 +277,64 @@ class SuggestTests(unittest.TestCase):
         self.assertEqual(s.suggest(MEETING, TOOLS, lambda p: reply)[0]["tool"], "create_issue")
 
 
+EMAIL_TOOL = {
+    "connection_id": "builtin-email",
+    "connection_name": "Email",
+    "tool": "draft_email",
+    "title": "Draft email",
+    "description": "Open a draft email in the user's mail app.",
+    "simple": True,
+    "kind": "email",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "to": {"type": "array", "items": {"type": "string"}},
+            "cc": {"type": "array", "items": {"type": "string"}},
+            "subject": {"type": "string"},
+            "body": {"type": "string"},
+        },
+        "required": ["subject", "body"],
+        "additionalProperties": False,
+    },
+}
+EMAIL_MEETING = {
+    "session_info": {"name": "Acme renewal"},
+    "summary": "Renewal agreed. Dana (dana@acme.co) wants the pricing sheet.",
+    "action_items": ["Send Dana the pricing sheet and a recap"],
+}
+
+
+class EmailDraftTests(unittest.TestCase):
+    def test_prompt_explains_the_draft_only_when_offered(self):
+        with_email = s.build_prompt(EMAIL_MEETING, TOOLS + [EMAIL_TOOL])
+        self.assertIn('Tool "draft_email" drafts an email', with_email)
+        self.assertIn("Never invent or guess an address", with_email)
+        self.assertNotIn("draft_email", s.build_prompt(EMAIL_MEETING, TOOLS))
+
+    def test_keeps_only_recipients_written_in_the_note(self):
+        reply = json.dumps({"actions": [{
+            "connection_id": "builtin-email", "tool": "draft_email", "action_item": 1,
+            "arguments": {"to": ["dana@acme.co", "ceo@acme.co", "you@example.com"], "cc": ["x@y.io"], "subject": "Pricing", "body": "Hi Dana"},
+        }]})
+        [p] = s.parse_response(reply, TOOLS + [EMAIL_TOOL], meeting=EMAIL_MEETING)
+        self.assertEqual(p["arguments"], {"to": ["dana@acme.co"], "subject": "Pricing", "body": "Hi Dana"})
+
+    def test_no_known_address_leaves_to_empty(self):
+        reply = json.dumps({"actions": [{
+            "connection_id": "builtin-email", "tool": "draft_email", "action_item": 1,
+            "arguments": {"to": ["team@acme.co"], "subject": "Recap", "body": "Hi all"},
+        }]})
+        [p] = s.parse_response(reply, [EMAIL_TOOL], meeting=MEETING)
+        self.assertNotIn("to", p["arguments"])
+
+    def test_an_invented_address_anywhere_drops_the_proposal(self):
+        reply = json.dumps({"actions": [
+            {"connection_id": "builtin-email", "tool": "draft_email", "action_item": 1,
+             "arguments": {"subject": "Recap", "body": "Questions to sales@acme.co"}},
+            {"connection_id": "c1", "tool": "create_issue", "action_item": 1, "arguments": {"title": "Ping bob@corp.io"}},
+        ]})
+        self.assertEqual(s.parse_response(reply, TOOLS + [EMAIL_TOOL], meeting=EMAIL_MEETING), [])
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -5,6 +5,7 @@ import {
   type ActionConnectorId,
   type ActionValidationError,
   type AddCustomEndpointInput,
+  type AddLocalServerInput,
 } from '@/lib/ipc';
 import { ResultError, unwrap } from '@/lib/result';
 
@@ -47,6 +48,12 @@ function useOverviewMutation<A extends unknown[], R>(fn: (...args: A) => Promise
 export function useAddCustomEndpoint() {
   return useOverviewMutation(async (input: AddCustomEndpointInput) =>
     unwrap(await ipc().actions.addCustom(input))
+  );
+}
+
+export function useAddLocalServer() {
+  return useOverviewMutation(async (input: AddLocalServerInput) =>
+    unwrap(await ipc().actions.addLocal(input))
   );
 }
 

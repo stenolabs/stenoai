@@ -395,6 +395,7 @@ const stenoai = {
   actions: {
     list: () => invoke('actions-list'),
     addCustom: (input) => invoke('actions-add-custom', input),
+    addLocal: (input) => invoke('actions-add-local', input),
     connectConnector: (connectorId) => invoke('actions-connect-connector', connectorId),
     authorize: (id) => invoke('actions-authorize', id),
     cancelAuthorize: () => invoke('actions-cancel-authorize'),

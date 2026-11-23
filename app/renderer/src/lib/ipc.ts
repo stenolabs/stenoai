@@ -967,7 +967,13 @@ export interface ActionConnection {
   url: string;
   origin: string | null;
   locality: ActionLocality;
-  kind: ActionConnectorId | 'custom';
+  kind: ActionConnectorId | 'custom' | 'local' | 'email';
+  /** http: a URL endpoint; stdio: a command on this computer; builtin: Email drafts. */
+  transport?: 'http' | 'stdio' | 'builtin';
+  builtin?: boolean;
+  /** stdio only: the command line, and the names of its environment variables. */
+  command?: string;
+  envKeys?: string[];
   auth: ActionAuth;
   headerName: string | null;
   enabled: boolean;
@@ -988,6 +994,9 @@ export interface ActionsPolicy {
   actionsEnabled: boolean;
   managed: boolean;
   endpointAllowlist: string[] | null;
+  /** Local command servers; off by default once an org restricts endpoints. */
+  localCommandsAllowed?: boolean;
+  emailDraftsAllowed?: boolean;
   reason: string | null;
 }
 export interface ActionsOverview {
@@ -996,6 +1005,13 @@ export interface ActionsOverview {
   autoSuggest: boolean;
   policy: ActionsPolicy;
   secureStorage: boolean;
+}
+/** A command on this computer, run as an MCP server over stdio. */
+export interface AddLocalServerInput {
+  name: string;
+  command: string;
+  args: string[];
+  env: Record<string, string>;
 }
 export interface AddCustomEndpointInput {
   name: string;
@@ -1016,6 +1032,8 @@ export interface ActionCard {
   connectionAvailable: boolean;
   origin: string | null;
   locality: ActionLocality | null;
+  /** The connection's kind: a connector id, 'custom', 'local' (a command) or 'email' (built-in drafts). */
+  connectionKind?: ActionConnection['kind'] | null;
   tool: string;
   toolTitle: string | null;
   toolDescription: string | null;
@@ -1032,7 +1050,7 @@ export interface ActionCard {
   validationErrors: ActionValidationError[];
   status: ActionCardStatus;
   /** detail: the endpoint's own failure message, trimmed and redacted. */
-  result?: { status: string; link: string | null; text: string; detail?: string };
+  result?: { status: string; link: string | null; text: string; detail?: string; clipboard?: boolean };
   createdAt: number;
   updatedAt: number;
   approvedAt?: number;
@@ -1750,6 +1768,7 @@ export interface StenoaiBridge {
   actions: {
     list: RequestFn<[], Result<ActionsOverview>>;
     addCustom: RequestFn<[input: AddCustomEndpointInput], Result<{ connection: ActionConnection }>>;
+    addLocal: RequestFn<[input: AddLocalServerInput], Result<{ connection: ActionConnection }>>;
     connectConnector: RequestFn<[connectorId: ActionConnectorId], Result<{ connection: ActionConnection }>>;
     authorize: RequestFn<[id: string], Result<{ connection: ActionConnection }>>;
     cancelAuthorize: RequestFn<[], Result<{ cancelled: boolean }>>;

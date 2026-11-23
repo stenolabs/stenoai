@@ -276,7 +276,7 @@ test('remove deletes the connection and its secret', async () => {
   const svc = service();
   const c = await svc.addCustom({ name: 'x', url: mock.url, auth: 'bearer', token: 't' });
   assert.equal(svc.remove(c.id), true);
-  assert.equal((await svc.list()).connections.length, 0);
+  assert.equal((await svc.list()).connections.filter((x) => !x.builtin).length, 0);
   assert.equal(svc._stores.secrets.load(`conn:${c.id}`, mock.base), null);
 });
 
@@ -362,7 +362,7 @@ test('chat agent: read tools run, writes become cards approved through the same 
   const svc = service();
   const c = await svc.addCustom({ name: 'Tracker', url: mock.url, auth: 'none' });
   const toolset = await svc.chatToolset();
-  assert.deepEqual(toolset.map((t) => [t.tool, t.readOnly]), [['search_issues', true], ['create_issue', false]]);
+  assert.deepEqual(toolset.filter((t) => t.connectionId === c.id).map((t) => [t.tool, t.readOnly]), [['search_issues', true], ['create_issue', false]]);
 
   const read = await svc.callReadTool(c.id, 'search_issues', { query: 'x' });
   assert.equal(read.isError, false);
@@ -407,7 +407,7 @@ test('simple actions: a Notion connection is offered create_page, and Approve se
   await svc.refreshTools(c.id);
 
   const { cards } = await svc.suggest(summary);
-  assert.deepEqual(catalogue.map((t) => [t.tool, t.simple]), [['create_page', true]], 'only the simple action, never the raw tools');
+  assert.deepEqual(catalogue.filter((t) => t.connection_id === c.id).map((t) => [t.tool, t.simple]), [['create_page', true]], 'only the simple action, never the raw tools');
   assert.equal(JSON.stringify(catalogue).includes('notion-delete-pages'), false);
   const [card] = cards;
   assert.equal(card.tool, 'notion-create-pages');
@@ -425,9 +425,9 @@ test('simple actions: a Notion connection is offered create_page, and Approve se
 
   // Chat: a small local model gets create_page only; a cloud model also the raw tools.
   const small = await svc.chatToolset({ simpleOnly: true });
-  assert.deepEqual(small.map((t) => t.tool), ['create_page']);
+  assert.deepEqual(small.map((t) => t.tool), ['create_page', 'draft_email']);
   const big = await svc.chatToolset();
-  assert.deepEqual(big.map((t) => t.tool), ['create_page', 'notion-create-pages', 'notion-search']);
+  assert.deepEqual(big.map((t) => t.tool), ['create_page', 'notion-create-pages', 'notion-search', 'draft_email']);
   const { card: chatCard } = await svc.proposeChatAction('chat-x', { connectionId: c.id, tool: 'create_page', simple: 'create_page', arguments: { title: 'From chat' } });
   assert.equal(chatCard.tool, 'notion-create-pages');
   const ran = await svc.approve('chat-x', chatCard.id, { title: 'From chat' });

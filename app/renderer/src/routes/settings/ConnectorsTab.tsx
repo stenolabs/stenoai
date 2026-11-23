@@ -20,7 +20,8 @@ export function ConnectorsTab() {
   const setAutoSuggest = useSetAutoSuggest();
   const data = overview.data;
   const disabled = data?.policy ? !data.policy.actionsEnabled : false;
-  const connections = data?.connections ?? [];
+  // Email drafts are built in: turned on or off on Connect, nothing to manage here.
+  const connections = (data?.connections ?? []).filter((c) => !c.builtin);
 
   return (
     <section data-settings-tab="connectors" className="pt-4">

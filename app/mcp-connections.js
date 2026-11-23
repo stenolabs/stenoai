@@ -8,8 +8,11 @@
  *
  * What is stored: id, name, URL, kind (a connector id or "custom"), auth type,
  * a custom header NAME, the enable toggle, the account label and the last
- * tools/list. What is never stored here: any token, secret or OAuth client
- * secret (mcp-secret-store.js).
+ * tools/list. A local command server (transport "stdio", kind "local") stores
+ * its command, arguments and the NAMES of its environment variables; the
+ * values are secrets. The on/off state of built-in actions (the Email
+ * drafts) lives under `builtins`. What is never stored here: any token,
+ * secret, environment value or OAuth client secret (mcp-secret-store.js).
  */
 
 const crypto = require('node:crypto');
@@ -64,6 +67,40 @@ function normalizeHeaderName(name) {
   return n;
 }
 
+const MAX_COMMAND = 1024;
+const MAX_ARGS = 64;
+const MAX_ARG = 4096;
+const MAX_ENV = 32;
+const MAX_ENV_VALUE = 8192;
+const ENV_NAME_RE = /^[A-Za-z_][A-Za-z0-9_]{0,127}$/;
+
+/**
+ * Validate a local command server: { command, args, env }. Throws an Error
+ * with code 'invalid-command' | 'invalid-args' | 'invalid-env'.
+ */
+function normalizeLocalCommand({ command, args, env } = {}) {
+  const fail = (code) => {
+    const e = new Error(code);
+    e.code = code;
+    throw e;
+  };
+  const cmd = typeof command === 'string' ? command.trim() : '';
+  if (!cmd || cmd.length > MAX_COMMAND || /[\u0000-\u001f\u007f]/.test(cmd)) fail('invalid-command');
+  const list = args === undefined || args === null ? [] : args;
+  if (!Array.isArray(list) || list.length > MAX_ARGS) fail('invalid-args');
+  for (const a of list) {
+    if (typeof a !== 'string' || a.length > MAX_ARG || /[\0\r\n]/.test(a)) fail('invalid-args');
+  }
+  const vars = env === undefined || env === null ? {} : env;
+  if (typeof vars !== 'object' || Array.isArray(vars) || Object.keys(vars).length > MAX_ENV) fail('invalid-env');
+  const outEnv = {};
+  for (const [k, v] of Object.entries(vars)) {
+    if (!ENV_NAME_RE.test(k) || typeof v !== 'string' || v.length > MAX_ENV_VALUE || v.includes('\0')) fail('invalid-env');
+    outEnv[k] = v;
+  }
+  return { command: cmd, args: list.slice(), env: outEnv };
+}
+
 function cleanName(name, fallback) {
   const n = typeof name === 'string' ? name.replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, 80) : '';
   return n || fallback;
@@ -77,10 +114,11 @@ function createConnectionsStore({ file, fs = nodeFs, path = nodePath, now = () =
       return {
         version: VERSION,
         autoSuggest: data.autoSuggest !== false,
+        builtins: data.builtins && typeof data.builtins === 'object' && !Array.isArray(data.builtins) ? data.builtins : {},
         connections: Array.isArray(data.connections) ? data.connections.filter((c) => c && typeof c.id === 'string') : [],
       };
     } catch (_) {
-      return { version: VERSION, autoSuggest: true, connections: [] };
+      return { version: VERSION, autoSuggest: true, builtins: {}, connections: [] };
     }
   }
 
@@ -114,6 +152,34 @@ function createConnectionsStore({ file, fs = nodeFs, path = nodePath, now = () =
       kind: typeof input.kind === 'string' ? input.kind : 'custom',
       auth: input.auth,
       ...(headerName ? { headerName } : {}),
+      enabled: true,
+      createdAt: now(),
+      account: null,
+      tools: [],
+      toolsFetchedAt: null,
+      status: 'ok',
+    };
+    data.connections.push(connection);
+    write(data);
+    return connection;
+  }
+
+  /** Add a local command server. `envKeys`: the variable names (values are secrets). */
+  function addLocal(input) {
+    const data = read();
+    if (data.connections.length >= MAX_CONNECTIONS) throw new Error('Too many connections');
+    const { command, args } = normalizeLocalCommand({ command: input.command, args: input.args });
+    const envKeys = Array.isArray(input.envKeys) ? input.envKeys.filter((k) => ENV_NAME_RE.test(k)).slice(0, MAX_ENV) : [];
+    const connection = {
+      id: crypto.randomUUID(),
+      name: cleanName(input.name, path.basename(command) || command),
+      url: null,
+      transport: 'stdio',
+      command,
+      args,
+      envKeys,
+      kind: 'local',
+      auth: 'none',
       enabled: true,
       createdAt: now(),
       account: null,
@@ -160,7 +226,21 @@ function createConnectionsStore({ file, fs = nodeFs, path = nodePath, now = () =
     return data.autoSuggest;
   }
 
-  return { list, get, add, update, remove, getAutoSuggest, setAutoSuggest, file };
+  /** Whether a built-in action ("email") is on; on unless the user turned it off. */
+  function getBuiltinEnabled(name) {
+    return read().builtins?.[name]?.enabled !== false;
+  }
+
+  function setBuiltinEnabled(name, value) {
+    const data = read();
+    data.builtins = { ...data.builtins, [name]: { enabled: value === true } };
+    write(data);
+    return value === true;
+  }
+
+  return { list, get, add, addLocal, update, remove, getAutoSuggest, setAutoSuggest, getBuiltinEnabled, setBuiltinEnabled, file };
 }
 
-module.exports = { createConnectionsStore, normalizeEndpointUrl, normalizeHeaderName, isPrivateHost, AUTH_TYPES };
+module.exports = {
+  createConnectionsStore, normalizeEndpointUrl, normalizeHeaderName, normalizeLocalCommand, isPrivateHost, AUTH_TYPES, ENV_NAME_RE,
+};

@@ -6,7 +6,9 @@
  *
  *   connections  mcp-connections.js (config) + mcp-secret-store.js (secrets)
  *   auth         bearer / custom header token, or OAuth 2.1 (mcp-oauth.js)
- *   transport    Streamable HTTP (mcp-remote-client.js)
+ *   transport    Streamable HTTP (mcp-remote-client.js); a command on this
+ *                computer over stdio (mcp-stdio-client.js); or the built-in
+ *                Email drafts, which open a mailto: draft (mcp-email.js)
  *   suggestions  the configured summariser provider, via the Python CLI
  *                `suggest-actions` (src/action_suggest.py), given ONLY the
  *                note's summary and action items plus the enabled tools
@@ -18,9 +20,13 @@
  *   - approve() sends exactly the arguments it is given, after validating
  *     them against the tool's schema, to a tool the enabled connection
  *     actually listed. Dismiss sends nothing.
- *   - The org adapter's policy (actions disabled / endpoint allowlist) is
- *     checked before every network call, not only when the UI renders.
+ *   - The org adapter's policy (actions disabled / endpoint allowlist /
+ *     local commands / email drafts) is checked before every call, not only
+ *     when the UI renders.
  *   - Tokens never reach logs, errors, the renderer or a child process.
+ *   - A local command runs only as the user saved it, after a native
+ *     confirmation in the main process (confirmLocalCommand); suggestions
+ *     and chat choose a tool and its arguments, never what is executed.
  *
  * Electron-free: everything with side effects is injected, so the whole flow
  * runs under node --test against the mock MCP server (mcp-actions.test.js).
@@ -32,14 +38,16 @@ const nodePath = require('node:path');
 
 const oauth = require('./mcp-oauth');
 const remote = require('./mcp-remote-client');
-const { createConnectionsStore, normalizeEndpointUrl, normalizeHeaderName } = require('./mcp-connections');
+const { createConnectionsStore, normalizeEndpointUrl, normalizeHeaderName, normalizeLocalCommand } = require('./mcp-connections');
+const email = require('./mcp-email');
+const { createStdioPool } = require('./mcp-stdio-client');
 const { createSecretStore } = require('./mcp-secret-store');
 const { createAuditLog } = require('./mcp-audit-log');
 const { connectorById, publicCatalogue } = require('./mcp-connectors');
 const { validateArguments, compactSchema } = require('./mcp-schema');
 const { startLoopback: defaultStartLoopback } = require('./mcp-oauth-loopback');
 const { redactCredentials } = require('./diagnostics-filter');
-const { checkProposal, placeholderArguments } = require('./mcp-proposals');
+const { checkProposal, placeholderArguments, noteText } = require('./mcp-proposals');
 const simpleActions = require('./mcp-simple-actions');
 
 const MAX_PROPOSALS = 5;
@@ -85,16 +93,63 @@ function allowedByList(url, allowlist) {
   });
 }
 
+/** 'http' (a URL endpoint), 'stdio' (a command on this computer) or 'builtin' (Email drafts). */
+function transportOf(c) {
+  if (c?.transport === 'stdio' || c?.transport === 'builtin') return c.transport;
+  return 'http';
+}
+
+/** Where a connection runs: a local command and Email drafts never leave this computer. */
+function localityOf(c) {
+  if (transportOf(c) !== 'http') return 'device';
+  return normalizeEndpointUrl(c.url)?.locality || 'internet';
+}
+
+/** The URL origin of an HTTP endpoint; null for a local command or Email drafts. */
+function connectionOrigin(c) {
+  if (transportOf(c) !== 'http') return null;
+  return normalizeEndpointUrl(c.url)?.origin || null;
+}
+
+/** For logs and the audit line: an origin, never a command line or an address. */
+function logLabel(c) {
+  const transport = transportOf(c);
+  if (transport === 'stdio') return 'local server';
+  if (transport === 'builtin') return c.kind;
+  return connectionOrigin(c) || 'endpoint';
+}
+
+/**
+ * Whether the org policy allows this connection: the endpoint allowlist for
+ * URLs; for a local command, localCommandsAllowed (off by default once an org
+ * restricts endpoints); for Email drafts, emailDraftsAllowed.
+ */
+function connectionAllowed(c, policy) {
+  const transport = transportOf(c);
+  if (transport === 'builtin') return policy.emailDraftsAllowed !== false;
+  if (transport === 'stdio') return policy.localCommandsAllowed !== false;
+  return allowedByList(c.url, policy.endpointAllowlist);
+}
+
+/** How a local command reads in the UI: the command and its arguments, bounded. */
+function commandLine(c) {
+  const text = [c.command, ...(Array.isArray(c.args) ? c.args : [])].map((a) => (/\s/.test(a) ? JSON.stringify(a) : a)).join(' ');
+  return text.length > 300 ? `${text.slice(0, 299)}…` : text;
+}
+
 /** Public view of a connection for the renderer: no secrets, a locality, the policy verdict. */
 function publicConnection(c, policy) {
-  const endpoint = normalizeEndpointUrl(c.url);
+  const transport = transportOf(c);
   return {
     id: c.id,
     name: c.name,
-    url: c.url,
-    origin: endpoint ? endpoint.origin : null,
-    locality: endpoint ? endpoint.locality : 'internet',
+    url: c.url || '',
+    origin: connectionOrigin(c),
+    locality: localityOf(c),
     kind: c.kind,
+    transport,
+    builtin: transport === 'builtin',
+    ...(transport === 'stdio' ? { command: commandLine(c), envKeys: Array.isArray(c.envKeys) ? c.envKeys : [] } : {}),
     auth: c.auth,
     headerName: c.headerName || null,
     enabled: c.enabled === true,
@@ -102,9 +157,11 @@ function publicConnection(c, policy) {
     status: c.status || 'ok',
     tools: (c.tools || []).map((t) => ({ name: t.name, title: t.title || null, description: t.description || '', readOnly: t.readOnly === true })),
     toolsFetchedAt: c.toolsFetchedAt || null,
-    blockedByPolicy: !allowedByList(c.url, policy.endpointAllowlist),
+    blockedByPolicy: !connectionAllowed(c, policy),
   };
 }
+
+const LOCAL_ERROR_CODES = new Set(['command-not-found', 'local-timeout', 'local-exited', 'local-failed']);
 
 function createActionsService({
   userDataDir,
@@ -123,8 +180,17 @@ function createActionsService({
   fs = nodeFs,
   path = nodePath,
   oauthTimeoutMs,
+  // Email drafts: open a mailto: URL (validated again by the caller) and
+  // put a long body on the clipboard.
+  openMailto = async () => { throw new Error('openMailto not configured'); },
+  writeClipboard = null,
+  // Local command servers: a native confirmation of exactly what will run,
+  // before it is saved. Absent means local commands cannot be added.
+  confirmLocalCommand = null,
+  stdioPool = null,
 }) {
   const connections = createConnectionsStore({ file: path.join(userDataDir, 'mcp-connections.json'), fs, path, now });
+  const local = stdioPool || createStdioPool({ clientInfo, log });
   const secrets = createSecretStore({ dir: path.join(userDataDir, 'mcp-credentials'), safeStorage, fs, path });
   const audit = createAuditLog({ file: path.join(userDataDir, 'mcp-actions-audit.jsonl'), fs, path, now: () => new Date(now()) });
   const cardsDir = path.join(userDataDir, 'mcp-actions');
@@ -145,25 +211,103 @@ function createActionsService({
   async function policy() {
     try {
       const p = await getPolicy();
+      const endpointAllowlist = Array.isArray(p?.endpointAllowlist) ? p.endpointAllowlist : null;
       return {
         actionsEnabled: p?.actionsEnabled !== false,
-        endpointAllowlist: Array.isArray(p?.endpointAllowlist) ? p.endpointAllowlist : null,
+        endpointAllowlist,
+        // An org that restricts endpoints has not allowed arbitrary local
+        // programs either, unless it says so.
+        localCommandsAllowed: p?.localCommandsAllowed === true || (p?.localCommandsAllowed !== false && !endpointAllowlist),
+        emailDraftsAllowed: p?.emailDraftsAllowed !== false,
         managed: p?.managed === true,
         reason: p?.reason || null,
       };
     } catch (_) {
       // getPolicy is expected to fail closed itself; this is the backstop.
-      return { actionsEnabled: false, endpointAllowlist: [], managed: true, reason: 'policy-unavailable' };
+      return {
+        actionsEnabled: false, endpointAllowlist: [], localCommandsAllowed: false, emailDraftsAllowed: false, managed: true, reason: 'policy-unavailable',
+      };
     }
   }
 
-  async function assertAllowed(url) {
+  function notAllowedError(connection) {
+    const transport = transportOf(connection);
+    if (transport === 'stdio') return new ActionError('local-not-allowed', 'Your organisation does not allow local commands');
+    if (transport === 'builtin') return new ActionError('email-not-allowed', 'Your organisation has turned off email drafts');
+    return new ActionError('endpoint-not-allowed', 'Your organisation does not allow this endpoint');
+  }
+
+  /** Policy check before any call. `target`: a connection, or a URL about to be added. */
+  async function assertAllowed(target) {
     const p = await policy();
     if (!p.actionsEnabled) throw new ActionError('disabled-by-org', 'Your organisation has turned off actions');
-    if (url && !allowedByList(url, p.endpointAllowlist)) {
-      throw new ActionError('endpoint-not-allowed', 'Your organisation does not allow this endpoint');
-    }
+    if (!target) return p;
+    const connection = typeof target === 'string' ? { url: target } : target;
+    if (!connectionAllowed(connection, p)) throw notAllowedError(connection);
     return p;
+  }
+
+  // ── built-in Email drafts ─────────────────────────────────────────────
+  // Not stored as a connection: always present, on unless the user (or the
+  // org) turned it off. It has one tool, draft_email, run locally on Approve.
+  function emailConnection() {
+    return {
+      id: email.EMAIL_CONNECTION_ID,
+      name: 'Email',
+      url: null,
+      transport: 'builtin',
+      kind: email.EMAIL_KIND,
+      auth: 'none',
+      enabled: connections.getBuiltinEnabled(email.EMAIL_KIND),
+      status: 'ok',
+      account: null,
+      tools: [email.EMAIL_TOOL],
+      toolsFetchedAt: 1,
+    };
+  }
+
+  function getConnection(id) {
+    return id === email.EMAIL_CONNECTION_ID ? emailConnection() : connections.get(id);
+  }
+
+  function allConnections() {
+    return [...connections.list(), emailConnection()];
+  }
+
+  // ── local command servers ─────────────────────────────────────────────
+  const localSecretOrigin = (connection) => `local:${connection.id}`;
+
+  function stdioSpec(connection) {
+    const saved = secrets.load(secretKey(connection.id), localSecretOrigin(connection));
+    const env = saved && saved.type === 'env' && saved.env && typeof saved.env === 'object' ? saved.env : {};
+    if ((connection.envKeys || []).some((k) => typeof env[k] !== 'string')) {
+      throw new ActionError('needs-auth', 'The environment variables for this command are missing');
+    }
+    return { id: connection.id, command: connection.command, args: connection.args || [], env };
+  }
+
+  /** tools/list on any transport. */
+  async function listToolsOf(connection) {
+    const transport = transportOf(connection);
+    if (transport === 'builtin') return connection.tools;
+    if (transport === 'stdio') return local.listTools(stdioSpec(connection));
+    return remote.listTools(clientOptions(connection));
+  }
+
+  /** One tool call on any transport: { isError, link, text, clipboard? }. */
+  async function callToolOf(connection, name, args) {
+    const transport = transportOf(connection);
+    if (transport === 'builtin') {
+      if (name !== email.EMAIL_TOOL_NAME) throw new ActionError('tool-unavailable', 'Unknown action');
+      try {
+        return await email.runDraftEmail(args, { openMailto, writeClipboard });
+      } catch (e) {
+        if (e instanceof email.EmailDraftError) throw new ActionError('invalid-arguments', 'Check the email addresses');
+        throw new ActionError('mail-app-failed', 'Could not open your mail app');
+      }
+    }
+    if (transport === 'stdio') return local.callTool(stdioSpec(connection), name, args);
+    return remote.callTool(clientOptions(connection), name, args);
   }
 
   // ── auth ──────────────────────────────────────────────────────────────
@@ -243,6 +387,7 @@ function createActionsService({
       return 'needs-auth';
     }
     if (e instanceof ActionError) return e.code;
+    if (typeof e?.code === 'string' && LOCAL_ERROR_CODES.has(e.code)) return e.code;
     return 'error';
   }
 
@@ -250,29 +395,76 @@ function createActionsService({
   async function list() {
     const p = await policy();
     return {
-      connections: connections.list().map((c) => publicConnection(c, p)),
+      connections: allConnections().map((c) => publicConnection(c, p)),
       connectors: publicCatalogue(),
       autoSuggest: connections.getAutoSuggest(),
-      policy: { actionsEnabled: p.actionsEnabled, managed: p.managed, endpointAllowlist: p.endpointAllowlist, reason: p.reason },
+      policy: {
+        actionsEnabled: p.actionsEnabled,
+        managed: p.managed,
+        endpointAllowlist: p.endpointAllowlist,
+        localCommandsAllowed: p.localCommandsAllowed,
+        emailDraftsAllowed: p.emailDraftsAllowed,
+        reason: p.reason,
+      },
       secureStorage: secrets.available(),
     };
   }
 
   async function refreshTools(id) {
-    const connection = connections.get(id);
+    const connection = getConnection(id);
     if (!connection) throw new ActionError('not-found', 'Connection not found');
-    await assertAllowed(connection.url);
+    if (transportOf(connection) === 'builtin') return publicConnection(connection, await policy());
+    await assertAllowed(connection);
     try {
-      const tools = await remote.listTools(clientOptions(connection));
+      const tools = await listToolsOf(connection);
       connections.update(id, { tools, toolsFetchedAt: now(), status: 'ok', lastError: null });
-      log(`[actions] ${originOf(connection.url)} listed ${tools.length} tools`);
+      log(`[actions] ${logLabel(connection)} listed ${tools.length} tools`);
     } catch (e) {
       const status = classifyError(e);
       connections.update(id, { status: status === 'needs-auth' ? 'needs-auth' : 'error', lastError: status });
-      log(`[actions] ${originOf(connection.url)} tools/list failed (${status})`);
-      throw new ActionError(status, status === 'needs-auth' ? 'Sign in again to use this connection' : 'Could not reach this endpoint');
+      log(`[actions] ${logLabel(connection)} tools/list failed (${status})`);
+      const message = status === 'needs-auth' ? 'Sign in again to use this connection'
+        : transportOf(connection) === 'stdio' ? 'Could not start this command' : 'Could not reach this endpoint';
+      throw new ActionError(status, message);
     }
     return publicConnection(connections.get(id), await policy());
+  }
+
+  /**
+   * Add a command that runs on this computer as an MCP server over stdio.
+   * The user confirms exactly what will run in a native dialog first; the
+   * environment values are stored encrypted, like tokens.
+   */
+  async function addLocal({ name, command, args, env } = {}) {
+    let spec;
+    try {
+      spec = normalizeLocalCommand({ command, args, env });
+    } catch (e) {
+      throw new ActionError(e.code || 'invalid-command', 'Check the command');
+    }
+    const p = await assertAllowed();
+    if (!p.localCommandsAllowed) throw new ActionError('local-not-allowed', 'Your organisation does not allow local commands');
+    const envKeys = Object.keys(spec.env);
+    if (envKeys.length && !secrets.available()) throw new ActionError('secure-storage', 'Could not store the variables securely');
+    if (typeof confirmLocalCommand !== 'function') throw new ActionError('local-not-allowed', 'Local commands are not available');
+    const confirmed = await confirmLocalCommand({ name: typeof name === 'string' ? name : '', command: spec.command, args: spec.args, envKeys });
+    if (confirmed !== true) throw new ActionError('not-confirmed', 'Not added');
+    const connection = connections.addLocal({ name, command: spec.command, args: spec.args, envKeys });
+    if (envKeys.length) {
+      try {
+        secrets.save(secretKey(connection.id), localSecretOrigin(connection), { type: 'env', env: spec.env });
+      } catch (_) {
+        connections.remove(connection.id);
+        throw new ActionError('secure-storage', 'Could not store the variables securely');
+      }
+    }
+    log('[actions] local server added');
+    try {
+      return await refreshTools(connection.id);
+    } catch (_) {
+      // Kept, so the user can see the problem and retry or remove it.
+      return publicConnection(connections.get(connection.id), await policy());
+    }
   }
 
   /** Add a custom endpoint (bearer / header / none) and list its tools. */
@@ -418,15 +610,27 @@ function createActionsService({
   }
 
   async function setEnabled(id, enabled) {
+    if (id === email.EMAIL_CONNECTION_ID) {
+      connections.setBuiltinEnabled(email.EMAIL_KIND, enabled === true);
+      return publicConnection(emailConnection(), await policy());
+    }
     const c = connections.update(id, { enabled: enabled === true });
     if (!c) throw new ActionError('not-found', 'Connection not found');
+    if (!c.enabled && transportOf(c) === 'stdio') local.stop(id);
     return publicConnection(c, await policy());
   }
 
   function remove(id) {
+    if (id === email.EMAIL_CONNECTION_ID) throw new ActionError('invalid-state', 'Turn Email drafts off instead');
     tokenManagers.delete(id);
+    local.stop(id);
     secrets.remove(secretKey(id));
     return connections.remove(id);
+  }
+
+  /** App quit: stop every local server now. */
+  function shutdown() {
+    local.stopAll({ sync: true });
   }
 
   function setAutoSuggest(value) {
@@ -457,7 +661,7 @@ function createActionsService({
   }
 
   function enrichCard(card, p) {
-    const connection = connections.get(card.connectionId);
+    const connection = getConnection(card.connectionId);
     const tool = connection?.tools?.find((t) => t.name === card.tool) || null;
     // A simple action's card edits the flat fields; card.tool is the vendor
     // tool it translates to, and sendTemplate is how (see mcp-simple-actions.js).
@@ -465,9 +669,10 @@ function createActionsService({
     return {
       ...card,
       connectionName: connection?.name || card.connectionName,
-      connectionAvailable: Boolean(connection && connection.enabled && tool && allowedByList(connection.url, p.endpointAllowlist)),
-      origin: connection ? originOf(connection.url) : null,
-      locality: connection ? normalizeEndpointUrl(connection.url)?.locality || 'internet' : null,
+      connectionAvailable: Boolean(connection && connection.enabled && tool && connectionAllowed(connection, p)),
+      connectionKind: connection?.kind || null,
+      origin: connection ? connectionOrigin(connection) : null,
+      locality: connection ? localityOf(connection) : null,
       inputSchema: simple ? simple.schema : tool?.inputSchema || null,
       toolTitle: simple ? simple.title : tool?.title || null,
       toolDescription: simple ? simple.description || null : tool?.description || null,
@@ -481,8 +686,8 @@ function createActionsService({
   }
 
   function usableConnections(p) {
-    return connections.list().filter((c) => c.enabled && c.status !== 'needs-auth'
-      && allowedByList(c.url, p.endpointAllowlist) && (c.tools || []).length > 0);
+    return allConnections().filter((c) => c.enabled && c.status !== 'needs-auth'
+      && connectionAllowed(c, p) && (c.tools || []).length > 0);
   }
 
   /**
@@ -558,6 +763,15 @@ function createActionsService({
         }
         continue;
       }
+      if (transportOf(c) === 'builtin') {
+        // Flat by design, so src/action_suggest.py always keeps it (like a
+        // simple action); `kind` tells it to ground the recipients.
+        out.push({
+          connection_id: c.id, connection_name: c.name, tool: email.EMAIL_TOOL.name, title: email.EMAIL_TOOL.title,
+          description: email.EMAIL_TOOL.description, input_schema: email.EMAIL_TOOL.inputSchema, simple: true, kind: c.kind,
+        });
+        continue;
+      }
       for (const t of c.tools) {
         if (t.readOnly || t.destructive) continue;
         out.push({
@@ -593,6 +807,9 @@ function createActionsService({
       if (auto) return { skipped: true, cards: [] };
       throw new ActionError('no-connections', 'Connect a tool first');
     }
+    // After each note, only when the user connected something: the built-in
+    // Email drafts alone never start a model run nobody asked for.
+    if (auto && !usableConnections(p).some((c) => transportOf(c) !== 'builtin')) return { skipped: true, cards: [] };
     const catalogue = await suggestCatalogue(p);
 
     const tmpDir = path.join(userDataDir, 'tmp');
@@ -616,19 +833,21 @@ function createActionsService({
     // action items): what a proposal must cite and draw identifiers from.
     const note = result.note && typeof result.note === 'object' ? result.note : null;
     const fresh = [];
-    const dropped = { uncited: 0, placeholder: 0, 'ungrounded-id': 0 };
+    const dropped = { uncited: 0, placeholder: 0, 'ungrounded-id': 0, 'ungrounded-email': 0 };
     for (const proposal of proposals) {
       // src/action_suggest.py already repaired names; this is the backstop.
       const sameConnection = catalogue.filter((t) => t.connection_id === proposal.connection_id).map((t) => t.tool);
       const toolName = simpleActions.resolveToolName(proposal.tool, sameConnection);
       const entry = toolName ? byKey.get(`${proposal.connection_id}\u0000${toolName}`) : null;
       if (!entry || !proposal.arguments || typeof proposal.arguments !== 'object' || Array.isArray(proposal.arguments)) continue;
-      const connection = connections.get(entry.connection_id);
+      const connection = getConnection(entry.connection_id);
       const simple = entry.simpleAction || null;
       const tool = connection.tools.find((t) => t.name === (simple ? simple.vendorTool : entry.tool));
       if (!tool) continue;
       const schema = simple ? simple.schema : tool.inputSchema;
-      const args = simple ? simpleActions.coerceArguments(schema, proposal.arguments) : proposal.arguments;
+      let args = simple ? simpleActions.coerceArguments(schema, proposal.arguments) : proposal.arguments;
+      // A draft keeps only recipients written in the note; the user fills in the rest.
+      if (transportOf(connection) === 'builtin') args = email.groundRecipients(simpleActions.coerceArguments(schema, args), noteText(note)).args;
       const check = checkProposal({ ...proposal, arguments: args }, schema, note);
       if (!check.ok) {
         dropped[check.reason] += 1;
@@ -654,7 +873,7 @@ function createActionsService({
     writeCards(summaryPath, cards);
     const droppedTotal = Object.values(dropped).reduce((a, b) => a + b, 0);
     log(`[actions] suggested ${fresh.length} action(s) from ${proposals.length} proposal(s)`
-      + (droppedTotal ? `; dropped ${droppedTotal} (uncited ${dropped.uncited}, placeholder ${dropped.placeholder}, invented id ${dropped['ungrounded-id']})` : ''));
+      + (droppedTotal ? `; dropped ${droppedTotal} (uncited ${dropped.uncited}, placeholder ${dropped.placeholder}, invented id ${dropped['ungrounded-id']}, invented email ${dropped['ungrounded-email']})` : ''));
     return { skipped: false, cards: cards.map((c) => enrichCard(c, p)) };
   }
 
@@ -684,9 +903,9 @@ function createActionsService({
     if (!card) throw new ActionError('not-found', 'Action not found');
     if (card.status !== 'proposed' && card.status !== 'failed') throw new ActionError('invalid-state', 'This action has already run');
     if (running.has(cardId)) throw new ActionError('invalid-state', 'This action is already running');
-    const connection = connections.get(card.connectionId);
+    const connection = getConnection(card.connectionId);
     if (!connection || !connection.enabled) throw new ActionError('connection-unavailable', 'The connection for this action is off or removed');
-    await assertAllowed(connection.url);
+    await assertAllowed(connection);
     const tool = (connection.tools || []).find((t) => t.name === card.tool);
     if (!tool) throw new ActionError('tool-unavailable', 'The endpoint no longer offers this tool');
     const simple = card.simple && typeof card.simple === 'object' ? card.simple : null;
@@ -706,13 +925,13 @@ function createActionsService({
     updateCard(summaryPath, cardId, { status: 'running', arguments: args, validationErrors: [] });
     let outcome;
     try {
-      const res = await remote.callTool(clientOptions(connection), tool.name, callArgs);
+      const res = await callToolOf(connection, tool.name, callArgs);
       outcome = res.isError
         ? { status: 'failed', result: { status: 'tool-error', link: res.link, text: res.text, detail: failureDetail(res.text) } }
-        : { status: 'done', result: { status: 'ok', link: res.link, text: res.text } };
+        : { status: 'done', result: { status: 'ok', link: res.link, text: res.text, ...(res.clipboard ? { clipboard: true } : {}) } };
     } catch (e) {
       const status = classifyError(e);
-      if (status === 'needs-auth') connections.update(connection.id, { status: 'needs-auth' });
+      if (status === 'needs-auth' && transportOf(connection) === 'http') connections.update(connection.id, { status: 'needs-auth' });
       outcome = { status: 'failed', result: { status, link: null, text: '', detail: status === 'needs-auth' ? '' : failureDetail(e?.message) } };
     } finally {
       running.delete(cardId);
@@ -720,14 +939,14 @@ function createActionsService({
     audit.append({
       connectionId: connection.id,
       connectionName: connection.name,
-      origin: originOf(connection.url),
+      origin: connectionOrigin(connection) || logLabel(connection),
       tool: tool.name,
       arguments: callArgs,
       status: outcome.result.status,
       link: outcome.result.link,
       noteId: path.basename(cardsFile(summaryPath), '.json'),
     });
-    log(`[actions] ${originOf(connection.url)} ${tool.name} -> ${outcome.result.status}`);
+    log(`[actions] ${logLabel(connection)} ${tool.name} -> ${outcome.result.status}`);
     updateCard(summaryPath, cardId, { ...outcome, approvedAt: now() });
     return (await getCards(summaryPath)).find((c) => c.id === cardId);
   }
@@ -785,7 +1004,7 @@ function createActionsService({
   }
 
   function chatTool(connectionId, toolName) {
-    const connection = connections.get(connectionId);
+    const connection = getConnection(connectionId);
     if (!connection || !connection.enabled) throw new ActionError('connection-unavailable', 'The connection is off or removed');
     const tool = (connection.tools || []).find((t) => t.name === toolName);
     if (!tool || tool.destructive) throw new ActionError('tool-unavailable', 'The endpoint does not offer this tool');
@@ -796,17 +1015,17 @@ function createActionsService({
   async function callReadTool(connectionId, toolName, args) {
     const { connection, tool } = chatTool(connectionId, toolName);
     if (!tool.readOnly) throw new ActionError('not-read-only', 'This tool needs approval');
-    await assertAllowed(connection.url);
+    await assertAllowed(connection);
     const errors = validateArguments(tool.inputSchema, args);
     if (errors.length) return { isError: true, text: `Invalid arguments: ${errors.map((e) => `${e.path} ${e.message}`).join('; ')}` };
     try {
-      const res = await remote.callTool(clientOptions(connection), tool.name, args);
-      log(`[actions] chat read ${originOf(connection.url)} ${tool.name} -> ${res.isError ? 'tool-error' : 'ok'}`);
+      const res = await callToolOf(connection, tool.name, args);
+      log(`[actions] chat read ${logLabel(connection)} ${tool.name} -> ${res.isError ? 'tool-error' : 'ok'}`);
       return { isError: res.isError, text: res.text };
     } catch (e) {
       const status = classifyError(e);
-      if (status === 'needs-auth') connections.update(connection.id, { status: 'needs-auth' });
-      log(`[actions] chat read ${originOf(connection.url)} ${tool.name} -> ${status}`);
+      if (status === 'needs-auth' && transportOf(connection) === 'http') connections.update(connection.id, { status: 'needs-auth' });
+      log(`[actions] chat read ${logLabel(connection)} ${tool.name} -> ${status}`);
       return { isError: true, text: status === 'needs-auth' ? 'The connection needs the user to sign in again.' : 'The tool could not be reached.' };
     }
   }
@@ -824,7 +1043,7 @@ function createActionsService({
     let simple = null;
     if (typeof simpleId === 'string' && simpleId) {
       // Looked up again here rather than trusted from the caller.
-      connection = connections.get(connectionId);
+      connection = getConnection(connectionId);
       if (!connection || !connection.enabled) throw new ActionError('connection-unavailable', 'The connection is off or removed');
       simple = (await simpleActionsOf(connection)).find((a) => a.id === simpleId) || null;
       tool = simple ? (connection.tools || []).find((t) => t.name === simple.vendorTool) : null;
@@ -833,10 +1052,21 @@ function createActionsService({
       ({ connection, tool } = chatTool(connectionId, toolName));
       if (tool.readOnly) throw new ActionError('invalid-state', 'Read-only tools do not need approval');
     }
-    if (!allowedByList(connection.url, p.endpointAllowlist)) throw new ActionError('endpoint-not-allowed', 'Your organisation does not allow this endpoint');
+    if (!connectionAllowed(connection, p)) throw notAllowedError(connection);
     const schema = simple ? simple.schema : tool.inputSchema;
     const raw = args && typeof args === 'object' && !Array.isArray(args) ? args : {};
-    const safeArgs = simple ? simpleActions.coerceArguments(schema, raw) : raw;
+    let safeArgs = simple ? simpleActions.coerceArguments(schema, raw) : raw;
+    if (transportOf(connection) === 'builtin') {
+      // The user may have typed the addresses in chat; drop only example
+      // or malformed ones, which the card would refuse anyway.
+      safeArgs = simpleActions.coerceArguments(schema, safeArgs);
+      for (const key of ['to', 'cc']) {
+        if (!Object.hasOwn(safeArgs, key)) continue;
+        const list = (Array.isArray(safeArgs[key]) ? safeArgs[key] : [safeArgs[key]]).filter((v) => typeof v === 'string' && !email.isPlaceholderEmail(v));
+        safeArgs = { ...safeArgs, [key]: list.map((v) => v.trim()) };
+        if (!list.length) delete safeArgs[key];
+      }
+    }
     const missing = placeholderArguments(schema, safeArgs);
     if (missing.length) return { rejected: 'placeholder', missing };
     const card = {
@@ -857,11 +1087,11 @@ function createActionsService({
   }
 
   return {
-    list, addCustom, connectConnector, authorize, cancelAuthorize, refreshTools, setEnabled, remove, setAutoSuggest,
+    list, addCustom, addLocal, shutdown, connectConnector, authorize, cancelAuthorize, refreshTools, setEnabled, remove, setAutoSuggest,
     getCards, suggest, approve, dismiss, recent, hasUsableConnections,
     chatToolset, callReadTool, proposeChatAction,
     // exposed for tests
-    _stores: { connections, secrets, audit, cardsFile },
+    _stores: { connections, secrets, audit, cardsFile, local },
   };
 }
 
@@ -911,4 +1141,4 @@ function authorizeFailureCode(kind, err) {
   return null;
 }
 
-module.exports = { createActionsService, ActionError, allowedByList, publicConnection, authorizeFailureCode, redactProviderText, failureDetail };
+module.exports = { createActionsService, ActionError, allowedByList, publicConnection, connectionAllowed, authorizeFailureCode, redactProviderText, failureDetail };

@@ -106,3 +106,29 @@ function CursorGlyph() {
     </svg>
   );
 }
+
+/** A lucide icon in ink on the same tile: Steno's own actions (Email drafts, a local command). */
+export function IconGlyph({
+  icon: Icon,
+  size = 36,
+}: {
+  icon: React.ComponentType<{ className?: string; 'aria-hidden'?: boolean }>;
+  size?: number;
+}) {
+  return (
+    <span
+      aria-hidden
+      data-glyph="icon"
+      className="flex shrink-0 items-center justify-center rounded-lg border"
+      style={{
+        width: size,
+        height: size,
+        background: 'var(--surface-raised)',
+        borderColor: 'var(--border-subtle)',
+        color: 'var(--fg-1)',
+      }}
+    >
+      <Icon aria-hidden className={size >= 32 ? 'size-[18px]' : 'size-[14px]'} />
+    </span>
+  );
+}

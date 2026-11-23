@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, shell, systemPreferences, globalShortcut, Tray, Menu, nativeImage, powerMonitor, net, session } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, systemPreferences, globalShortcut, Tray, Menu, nativeImage, powerMonitor, net, session, clipboard } = require('electron');
 
 // safeStorage is accessed lazily via getSafeStorage(), NOT destructured from the
 // require above. On macOS, merely retrieving the safeStorage binding at load
@@ -2656,6 +2656,9 @@ if (!gotSingleInstanceLock) {
   app.on('will-quit', async () => {
     globalShortcut.unregisterAll();
     destroyTray();
+    // Local MCP servers (Connect -> Custom MCP server -> Command on this
+    // computer): kill each process tree so none outlives the app.
+    try { if (mcpActionsService) mcpActionsService.shutdown(); } catch (_) {}
     // Kill Ollama on quit. The process may have been started by Electron or
     // the Python backend — both write the PID to ollama.pid in _internal/.
     // killProcessTree tears down ollama's child runner subprocesses too, so
@@ -9217,7 +9220,9 @@ registerStenoMcpIpc({
 // Org control hook: a signed-in org's adapter /policy may carry
 //   mcp_actions_enabled: false          -> the feature is off for everyone
 //   mcp_endpoint_allowlist: [url, ...]  -> only these origins / URL prefixes
-// Both are re-checked before every network call. With a session but no
+//   mcp_local_commands_enabled: bool    -> local stdio servers (default: on, off with an allowlist)
+//   mcp_email_drafts_enabled: false     -> no built-in Email drafts
+// All are re-checked before every call. With a session but no
 // reachable policy, the last good policy (24 h) applies, else actions are
 // off: an org that may have disabled them is never assumed to allow them.
 const ACTIONS_POLICY_TTL_MS = 60 * 1000;
@@ -9235,13 +9240,17 @@ async function getActionsPolicy() {
     const value = {
       actionsEnabled: p?.mcp_actions_enabled !== false,
       endpointAllowlist: Array.isArray(p?.mcp_endpoint_allowlist) ? p.mcp_endpoint_allowlist.filter((e) => typeof e === 'string') : null,
+      // Local command servers: allowed unless the org says no; with an
+      // endpoint allowlist they are off unless it says yes (mcp-actions.js).
+      ...(typeof p?.mcp_local_commands_enabled === 'boolean' ? { localCommandsAllowed: p.mcp_local_commands_enabled } : {}),
+      emailDraftsAllowed: p?.mcp_email_drafts_enabled !== false,
       managed: true,
     };
     actionsPolicyCache = { at: nowMs, value };
     return value;
   } catch (_) {
     if (actionsPolicyCache && nowMs - actionsPolicyCache.at < ACTIONS_POLICY_STALE_MS) return actionsPolicyCache.value;
-    return { actionsEnabled: false, endpointAllowlist: [], managed: true, reason: 'policy-unavailable' };
+    return { actionsEnabled: false, endpointAllowlist: [], localCommandsAllowed: false, emailDraftsAllowed: false, managed: true, reason: 'policy-unavailable' };
   }
 }
 
@@ -9289,8 +9298,41 @@ function getMcpActionsService() {
       sendDebugLog(message);
     },
     clientInfo: { name: 'Steno', version: app.getVersion() },
+    // Email drafts: only a mailto: URL built by mcp-email.js ever reaches the
+    // OS from here; the renderer never supplies it.
+    openMailto: async (url) => {
+      const parsed = new URL(url);
+      if (parsed.protocol !== 'mailto:' || /[\r\n]/.test(url)) throw new Error('not a mail link');
+      await shell.openExternal(url);
+    },
+    writeClipboard: async (text) => clipboard.writeText(String(text)),
+    confirmLocalCommand,
   });
   return mcpActionsService;
+}
+
+// A local MCP server runs a program with the user's permissions, so adding
+// one is confirmed in a native dialog the renderer cannot draw or click: a
+// compromised page cannot turn "add server" into running a program.
+async function confirmLocalCommand({ name, command, args, envKeys }) {
+  if (IS_E2E && process.env.STENOAI_E2E_CONFIRM_LOCAL_COMMAND === '1') return true;
+  const quote = (a) => (/\s/.test(a) ? JSON.stringify(a) : a);
+  const line = [command, ...args].map(quote).join(' ');
+  const shown = line.length > 600 ? `${line.slice(0, 599)}…` : line;
+  const options = {
+    type: 'warning',
+    buttons: ['Cancel', 'Run on this computer'],
+    defaultId: 0,
+    cancelId: 0,
+    noLink: true,
+    message: name ? `Add "${name}" as a local MCP server?` : 'Add a local MCP server?',
+    detail: `Steno will run this program on this computer, with your permissions, whenever it lists or uses its tools:\n\n${shown}`
+      + `${envKeys.length ? `\n\nEnvironment variables: ${envKeys.join(', ')}` : ''}\n\nOnly add programs you trust.`,
+  };
+  const { response } = mainWindow && !mainWindow.isDestroyed()
+    ? await dialog.showMessageBox(mainWindow, options)
+    : await dialog.showMessageBox(options);
+  return response === 1;
 }
 
 registerMcpActionsIpc({

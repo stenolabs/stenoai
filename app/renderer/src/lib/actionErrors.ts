@@ -9,6 +9,26 @@ export function actionErrorMessage(error: unknown): string {
       return t('actions.error.disabledByOrg');
     case 'endpoint-not-allowed':
       return t('actions.error.endpointNotAllowed');
+    case 'local-not-allowed':
+      return t('actions.error.localNotAllowed');
+    case 'email-not-allowed':
+      return t('actions.error.emailNotAllowed');
+    case 'invalid-command':
+    case 'invalid-args':
+      return t('actions.error.invalidCommand');
+    case 'invalid-env':
+      return t('actions.error.invalidEnv');
+    case 'command-not-found':
+      return t('actions.error.commandNotFound');
+    case 'local-timeout':
+      return t('actions.error.localTimeout');
+    case 'local-exited':
+    case 'local-failed':
+      return t('actions.error.localFailed');
+    case 'not-confirmed':
+      return t('actions.error.notConfirmed');
+    case 'mail-app-failed':
+      return t('actions.error.mailAppFailed');
     case 'invalid-url':
       return t('actions.error.invalidUrl');
     case 'invalid-token':
