@@ -30,7 +30,10 @@ export function RecipeMenu({
 
   return (
     <div role="menu" aria-label={t('chat.home.skills')}>
-      <div className="px-2 pb-1 pt-0.5 text-[11px] font-medium" style={{ color: 'var(--fg-muted)' }}>
+      <div
+        className="px-2 pb-1 pt-0.5 text-[11px] font-medium"
+        style={{ color: 'var(--fg-muted)' }}
+      >
         {t('chat.home.skills')}
       </div>
       <div ref={listRef} className="scrollbar-clean flex max-h-[300px] flex-col overflow-y-auto">
@@ -64,7 +67,10 @@ export function RecipeMenu({
           </button>
         ))}
       </div>
-      <div className="mt-1 px-1 pb-0.5 pt-1" style={{ borderTop: '1px solid var(--border-subtle)' }}>
+      <div
+        className="mt-1 px-1 pb-0.5 pt-1"
+        style={{ borderTop: '1px solid var(--border-subtle)' }}
+      >
         <button
           type="button"
           onClick={() => navigate('/cookbooks?tab=recipes')}

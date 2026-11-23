@@ -81,11 +81,6 @@ export function ActionConnectionCard({
         {t('actions.separator')}
         {localityLabel(c.locality)}
       </p>
-      {c.locality === 'internet' && (
-        <p className="mt-1 text-[12px] leading-relaxed" style={{ color: 'var(--fg-muted)' }}>
-          {t('actions.leavesDevice')}
-        </p>
-      )}
       {preview.length > 0 && (
         <ul
           className="mt-2 flex flex-wrap gap-1.5"

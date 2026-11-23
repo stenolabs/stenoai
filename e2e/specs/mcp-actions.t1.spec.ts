@@ -52,8 +52,13 @@ test('Connect: connector cards, add a custom endpoint, toggle and disconnect', a
     { name: 'Team n8n', url: 'https://n8n.example.com/mcp/steno', auth: 'bearer', token: '<set>' },
   ]);
 
+  // Connections are managed in Settings → Connectors, reached from Connect.
+  await page.getByRole('button', { name: 'Manage connections in Settings' }).click();
+  await expect(page.getByRole('heading', { name: 'Your connections' })).toBeVisible();
   const card = page.getByRole('region', { name: 'Team n8n', exact: true });
-  await expect(card.getByText('2 actions available')).toBeVisible();
+  // Brief status: count · locality, without the long data-leaves note.
+  await expect(card.getByText('2 actions available · Runs on this computer')).toBeVisible();
+  await expect(card.getByText('so that data leaves your device')).toHaveCount(0);
   const tools = card.getByRole('list', { name: 'Actions offered by Team n8n' });
   await expect(tools.getByText('Create issue')).toBeVisible();
   await expect(tools.getByText('Search issues')).toHaveCount(0); // read-only tools are not actions
@@ -62,6 +67,10 @@ test('Connect: connector cards, add a custom endpoint, toggle and disconnect', a
   await toggle.click();
   await expect(toggle).not.toBeChecked();
   await expect(page.getByRole('switch', { name: 'Suggest actions after each note' })).toBeChecked();
+  await page.screenshot({ path: testInfo.outputPath('settings-connectors.png'), fullPage: true });
+  await page.evaluate(() => {
+    window.location.hash = '#/connect';
+  });
   await page.screenshot({ path: testInfo.outputPath('connect-actions.png'), fullPage: true });
 
   // A vendor connector (OAuth is mocked) shows as connected with its account.
@@ -80,6 +89,9 @@ test('Connect: connector cards, add a custom endpoint, toggle and disconnect', a
     'This Atlassian account has no Jira or Confluence site. Sign in with your work account, or ask your admin to allow Rovo MCP.',
   );
 
+  await page.evaluate(() => {
+    window.location.hash = '#/settings?tab=connectors';
+  });
   await card.getByRole('button', { name: 'Disconnect' }).click();
   await page.getByRole('dialog').getByRole('button', { name: 'Disconnect' }).click();
   await expect(page.getByRole('region', { name: 'Team n8n', exact: true })).toHaveCount(0);
@@ -135,9 +147,9 @@ test('Note: approve sends the edited arguments, dismiss sends nothing', async ({
   expect(approved).toHaveLength(1);
   expect(approved[0]!.args).toEqual({ title: 'Prep release notes for v0.9.0', priority: 'high' });
 
-  // The audit entry shows on the Connect page.
+  // The audit entry shows in Settings → Connectors.
   await page.evaluate(() => {
-    window.location.hash = '#/connect';
+    window.location.hash = '#/settings?tab=connectors';
   });
   const recent = page.getByRole('list', { name: 'Recent actions' });
   await expect(recent.getByText('create_issue')).toBeVisible();

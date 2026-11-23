@@ -20,7 +20,11 @@ test('local provider shows the Ollama model, not a stale cloud model', async ({ 
 
   const label = page.locator(indicator).first();
   await expect(label).toBeVisible();
-  await expect(label).toHaveText('Ollama · gemma4:e2b-it-qat');
+  // A short name in the composer; the provider and full id in its tooltip.
+  await expect(label).toHaveText('Gemma 4 E2B');
+  await label.hover();
+  await expect(page.getByRole('tooltip')).toContainText('Ollama · gemma4:e2b-it-qat');
+  await expect(page.getByRole('tooltip')).toContainText('May omit older notes');
   // Must NOT leak the stored cloud default (the #198 regression).
   await expect(label).not.toContainText('openai');
   await expect(label).not.toContainText('gpt-4o');
@@ -40,7 +44,9 @@ test('cloud provider shows "<provider> · <model>"', async ({ launchApp }) => {
   });
 
   const label = page.locator(indicator).first();
-  await expect(label).toHaveText('openai · gpt-4o');
+  await expect(label).toHaveText('gpt-4o');
+  await label.hover();
+  await expect(page.getByRole('tooltip')).toContainText('openai · gpt-4o');
 });
 
 test('remote provider shows "Remote Ollama · <model>"', async ({ launchApp }) => {
@@ -55,7 +61,9 @@ test('remote provider shows "Remote Ollama · <model>"', async ({ launchApp }) =
   });
 
   const label = page.locator(indicator).first();
-  await expect(label).toHaveText('Remote Ollama · gemma4:e2b-it-qat');
+  await expect(label).toHaveText('Gemma 4 E2B');
+  await label.hover();
+  await expect(page.getByRole('tooltip')).toContainText('Remote Ollama · gemma4:e2b-it-qat');
 });
 
 test('org/adapter provider shows "Organisation", never a cloud model id', async ({ launchApp }) => {

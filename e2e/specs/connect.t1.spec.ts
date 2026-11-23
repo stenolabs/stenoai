@@ -2,7 +2,8 @@ import { test, expect } from '../fixtures/electron';
 
 /**
  * T1 — the Connect page, renderer-only with mock IPC: the sidebar entry, the
- * sections (Coding agents, AI apps, What assistants can see, Actions), MCP as
+ * sections (Coding agents, AI apps, Actions, Sync; what assistants can see is
+ * in Settings → Connectors), MCP as
  * the primary coding-agent connection with the Steno skill install sheet
  * (formerly the Agents page) second, the launcher-based MCP install sheets,
  * the Connected / Skill installed / Last used states, the old /agents
@@ -168,11 +169,14 @@ test('Connect: AI apps install over MCP and scope controls save', async ({ launc
   );
   await page.keyboard.press('Escape');
 
-  // Scope is its own section after both kinds of connection and governs every MCP one.
+  // Scope lives in Settings → Connectors and governs every MCP connection.
+  await expect(page.getByRole('region', { name: 'What assistants can see' })).toHaveCount(0);
+  await page.evaluate(() => {
+    window.location.hash = '#/settings?tab=connectors';
+  });
   const scope = page.getByRole('region', { name: 'What assistants can see' });
   await expect(scope.getByRole('heading', { name: 'What assistants can see' })).toBeVisible();
   await expect(scope.getByText('These apply to every MCP connection, for coding agents and AI apps.', { exact: false })).toBeVisible();
-  await expect(apps.getByRole('heading', { name: 'What assistants can see' })).toHaveCount(0);
   const allMeetings = page.getByRole('switch', { name: 'All meetings' });
   await expect(allMeetings).toBeChecked();
   await allMeetings.click();
@@ -185,12 +189,15 @@ test('Connect: AI apps install over MCP and scope controls save', async ({ launc
   await expect.poll(() => settingsOf(app)).toEqual({ folderAllowlist: ['f-eng'], excludeTranscripts: false });
   await page.getByRole('switch', { name: 'Notes only' }).click();
   await expect.poll(() => settingsOf(app)).toEqual({ folderAllowlist: ['f-eng'], excludeTranscripts: true });
-  await page.screenshot({ path: testInfo.outputPath('connect.png'), fullPage: true });
+  await page.screenshot({ path: testInfo.outputPath('settings-scope.png'), fullPage: true });
   await allMeetings.click();
   await expect.poll(() => settingsOf(app)).toEqual({ folderAllowlist: null, excludeTranscripts: true });
   await expect(spaces).toHaveCount(0);
 
   // Actions section (covered in depth by mcp-actions.t1), with Slack's mark.
+  await page.evaluate(() => {
+    window.location.hash = '#/connect';
+  });
   const actions = page.getByRole('region', { name: 'Actions', exact: true });
   await expect(actions.getByText('Connect your tools and Steno will suggest follow-ups')).toBeVisible();
   await expect(actions.getByRole('region', { name: 'Custom endpoint', exact: true })).toBeVisible();

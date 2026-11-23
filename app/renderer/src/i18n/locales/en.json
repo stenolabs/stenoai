@@ -232,7 +232,7 @@
   "chat.home.greeting.suffix": ", ask anything",
   "chat.home.greeting.anonymous": "Ask anything",
   "chat.home.providerRequiredPlaceholder": "Set up an AI provider in Settings to ask across notes",
-  "chat.home.localScopeHint": "· may omit older notes",
+  "chat.home.localScopeHint": "May omit older notes",
   "chat.home.send": "Send",
   "chat.home.skills": "Recipes",
   "chat.home.recents": "Recents",
@@ -1038,5 +1038,10 @@
   "recipes.dialog.save": "Save recipe",
   "recipes.dialog.delete": "Delete",
   "recipes.deleteConfirm.title": "Delete recipe \"{{name}}\"?",
-  "recipes.deleteConfirm.description": "This permanently deletes the recipe. Chats that used it are not affected."
+  "recipes.deleteConfirm.description": "This permanently deletes the recipe. Chats that used it are not affected.",
+  "settings.nav.connectors": "Connectors",
+  "settings.connectors.connectionsIntro": "Apps Steno can send approved actions to.",
+  "settings.connectors.empty": "No connections yet.",
+  "settings.connectors.openConnect": "Open Connect",
+  "connect.actions.manageConnections": "Manage connections in Settings"
 }

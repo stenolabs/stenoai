@@ -26,7 +26,7 @@ export function useRecipes(): Recipe[] {
       ...[...(mine.data ?? [])].sort((a, b) => b.updatedAt - a.updatedAt).map(toRecipe),
       ...BUILTIN_RECIPES,
     ],
-    [mine.data],
+    [mine.data]
   );
 }
 

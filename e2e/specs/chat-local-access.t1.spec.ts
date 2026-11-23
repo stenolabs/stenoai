@@ -21,7 +21,8 @@ test('local provider enables chat and discloses the recent-notes scope', async (
 
   // Accessible label is stable while the visible suggestion changes.
   await expect(page.getByRole('textbox', { name: COMPOSER_LABEL })).toBeEnabled();
-  // And the local-scope disclosure is shown.
+  // And the local-scope disclosure is in the model indicator's tooltip.
+  await page.getByTestId('chat-model-indicator').first().hover();
   await expect(page.locator(hint).first()).toBeVisible();
 });
 

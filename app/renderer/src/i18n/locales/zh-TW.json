@@ -222,7 +222,7 @@
   "chat.home.greeting.suffix": "，有什麼想問的嗎",
   "chat.home.greeting.anonymous": "有什麼想問的嗎",
   "chat.home.providerRequiredPlaceholder": "請先在「設定」中設定 AI 供應商，才能跨筆記提問",
-  "chat.home.localScopeHint": "· 可能省略較舊的筆記",
+  "chat.home.localScopeHint": "可能省略較舊的筆記",
   "chat.home.send": "傳送",
   "chat.home.skills": "食譜",
   "chat.home.recents": "最近對話",
@@ -707,5 +707,10 @@
   "recipes.dialog.save": "儲存食譜",
   "recipes.dialog.delete": "刪除",
   "recipes.deleteConfirm.title": "刪除食譜「{{name}}」？",
-  "recipes.deleteConfirm.description": "這會永久刪除此食譜，使用過它的聊天不受影響。"
+  "recipes.deleteConfirm.description": "這會永久刪除此食譜，使用過它的聊天不受影響。",
+  "settings.nav.connectors": "連接器",
+  "settings.connectors.connectionsIntro": "Steno 可傳送已核准動作的應用程式。",
+  "settings.connectors.empty": "尚無連線。",
+  "settings.connectors.openConnect": "開啟連接",
+  "connect.actions.manageConnections": "在設定中管理連線"
 }

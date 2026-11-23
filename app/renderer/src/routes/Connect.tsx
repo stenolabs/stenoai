@@ -3,14 +3,14 @@ import { t } from '@/i18n';
 import { ActionsSection } from './connect/ActionsSection';
 import { AiAppsSection } from './connect/AiAppsSection';
 import { CodingAgentsSection } from './connect/CodingAgentsSection';
-import { ScopeSection } from './connect/ScopeSection';
 import { SyncSection } from './connect/SyncSection';
 
 /**
  * Connect: turn meetings into actions in the apps you work in, bring them to
  * AI apps through the bundled read-only Steno MCP server (app/steno-mcp) and
  * to coding agents through the Steno skill (or MCP), and the scope controls
- * every MCP connection obeys, then one-way note sync (Obsidian).
+ * then one-way note sync (Obsidian). Managing what is connected (connections,
+ * what assistants can see, recent actions) lives in Settings → Connectors.
  */
 export function Connect() {
   return (
@@ -30,7 +30,6 @@ export function Connect() {
         </div>
         <CodingAgentsSection />
         <AiAppsSection />
-        <ScopeSection />
         <ActionsSection />
         <SyncSection />
       </div>

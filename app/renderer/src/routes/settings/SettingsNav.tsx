@@ -1,6 +1,7 @@
 import {
   ArrowLeft,
   Building2,
+  Cable,
   Code2,
   Info,
   Settings2,
@@ -21,6 +22,7 @@ export type SettingsTabId =
   | 'ai'
   | 'people'
   | 'organisation'
+  | 'connectors'
   | 'advanced'
   | 'developer'
   | 'about';
@@ -74,6 +76,13 @@ const NAV_GROUPS: NavGroup[] = [
         },
         icon: Building2,
       },
+      {
+        id: 'connectors',
+        get label() {
+          return t('settings.nav.connectors');
+        },
+        icon: Cable,
+      },
     ],
   },
   {
@@ -119,6 +128,8 @@ export function settingsTabLabel(id: SettingsTabId): string {
       return t('settings.nav.people');
     case 'organisation':
       return t('settings.nav.organisation');
+    case 'connectors':
+      return t('settings.nav.connectors');
     case 'advanced':
       return t('settings.nav.advanced');
     case 'developer':

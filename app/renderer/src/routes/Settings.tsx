@@ -8,6 +8,7 @@ import { SettingsNav, settingsTabLabel, type SettingsTabId } from './settings/Se
 import { GeneralTab } from './settings/GeneralTab';
 import { AiTab } from './settings/AiTab';
 import { PeopleTab } from './settings/PeopleTab';
+import { ConnectorsTab } from './settings/ConnectorsTab';
 import { OrganisationTab } from './settings/OrganisationTab';
 import { AdvancedTab } from './settings/AdvancedTab';
 import { DeveloperTab } from './settings/DeveloperTab';
@@ -41,6 +42,7 @@ const DEEP_LINK_IDS = [
   'ai',
   'people',
   'organisation',
+  'connectors',
   'advanced',
   'developer',
   'about',
@@ -203,6 +205,7 @@ export function Settings() {
             {tab === 'ai' && <AiTab />}
             {tab === 'people' && <PeopleTab />}
             {tab === 'organisation' && <OrganisationTab />}
+            {tab === 'connectors' && <ConnectorsTab />}
             {tab === 'advanced' && <AdvancedTab />}
             {tab === 'developer' && <DeveloperTab />}
             {tab === 'about' && <AboutTab />}

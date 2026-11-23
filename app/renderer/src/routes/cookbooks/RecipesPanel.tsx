@@ -35,7 +35,7 @@ export function RecipesPanel({
   const mine = useUserRecipes();
   const own = React.useMemo(
     () => [...(mine.data ?? [])].sort((a, b) => b.updatedAt - a.updatedAt),
-    [mine.data],
+    [mine.data]
   );
 
   return (
@@ -61,7 +61,10 @@ export function RecipesPanel({
             type="button"
             onClick={() => onEdit({})}
             className="flex min-h-[112px] flex-col items-center justify-center gap-1.5 rounded-xl border border-dashed p-4 text-[13px] transition-colors hover:bg-[color:var(--surface-hover)]"
-            style={{ borderColor: 'var(--border-strong, var(--border-subtle))', color: 'var(--fg-2)' }}
+            style={{
+              borderColor: 'var(--border-strong, var(--border-subtle))',
+              color: 'var(--fg-2)',
+            }}
           >
             <Plus className="size-4" aria-hidden />
             {t('recipes.create')}
@@ -80,12 +83,22 @@ export function RecipesPanel({
         </div>
       </section>
 
-      {editing && <RecipeDialog key={editing.id ?? 'new'} editing={editing} onClose={() => onEdit(null)} />}
+      {editing && (
+        <RecipeDialog key={editing.id ?? 'new'} editing={editing} onClose={() => onEdit(null)} />
+      )}
     </div>
   );
 }
 
-function RecipeCard({ recipe, color, onEdit }: { recipe: Recipe; color: string; onEdit?: () => void }) {
+function RecipeCard({
+  recipe,
+  color,
+  onEdit,
+}: {
+  recipe: Recipe;
+  color: string;
+  onEdit?: () => void;
+}) {
   return (
     <section
       aria-label={recipe.label}
@@ -96,7 +109,10 @@ function RecipeCard({ recipe, color, onEdit }: { recipe: Recipe; color: string; 
         <PresetGlyph color={color} size={22} />
         <h3 className="min-w-0 truncate text-[14px] font-medium">{recipe.label}</h3>
       </div>
-      <p className="mt-1.5 line-clamp-2 flex-1 text-[12.5px] leading-snug" style={{ color: 'var(--fg-2)' }}>
+      <p
+        className="mt-1.5 line-clamp-2 flex-1 text-[12.5px] leading-snug"
+        style={{ color: 'var(--fg-2)' }}
+      >
         {recipe.description || recipe.prompt}
       </p>
       <div className="mt-3 flex items-center gap-1.5">
@@ -141,7 +157,12 @@ function RecipeDialog({ editing, onClose }: { editing: Partial<UserRecipe>; onCl
   const submit = async () => {
     setError('');
     try {
-      await save.mutateAsync({ ...(editing.id ? { id: editing.id } : {}), name, description, prompt });
+      await save.mutateAsync({
+        ...(editing.id ? { id: editing.id } : {}),
+        name,
+        description,
+        prompt,
+      });
       onClose();
     } catch {
       setError(t('recipes.saveError'));
@@ -153,7 +174,9 @@ function RecipeDialog({ editing, onClose }: { editing: Partial<UserRecipe>; onCl
       <Dialog open onOpenChange={(v) => !v && !busy && onClose()}>
         <DialogContent className="max-w-[560px]">
           <DialogHeader>
-            <DialogTitle>{editing.id ? t('recipes.dialog.editTitle') : t('recipes.dialog.newTitle')}</DialogTitle>
+            <DialogTitle>
+              {editing.id ? t('recipes.dialog.editTitle') : t('recipes.dialog.newTitle')}
+            </DialogTitle>
             <DialogDescription>{t('recipes.dialog.intro')}</DialogDescription>
           </DialogHeader>
           <form
@@ -164,7 +187,11 @@ function RecipeDialog({ editing, onClose }: { editing: Partial<UserRecipe>; onCl
             }}
           >
             <div>
-              <label htmlFor={`${ids}-name`} className={fieldLabel} style={{ color: 'var(--fg-2)' }}>
+              <label
+                htmlFor={`${ids}-name`}
+                className={fieldLabel}
+                style={{ color: 'var(--fg-2)' }}
+              >
                 {t('recipes.dialog.name')}
               </label>
               <Input
@@ -177,7 +204,11 @@ function RecipeDialog({ editing, onClose }: { editing: Partial<UserRecipe>; onCl
               />
             </div>
             <div>
-              <label htmlFor={`${ids}-description`} className={fieldLabel} style={{ color: 'var(--fg-2)' }}>
+              <label
+                htmlFor={`${ids}-description`}
+                className={fieldLabel}
+                style={{ color: 'var(--fg-2)' }}
+              >
                 {t('recipes.dialog.description')}
               </label>
               <Input
@@ -189,7 +220,11 @@ function RecipeDialog({ editing, onClose }: { editing: Partial<UserRecipe>; onCl
               />
             </div>
             <div>
-              <label htmlFor={`${ids}-prompt`} className={fieldLabel} style={{ color: 'var(--fg-2)' }}>
+              <label
+                htmlFor={`${ids}-prompt`}
+                className={fieldLabel}
+                style={{ color: 'var(--fg-2)' }}
+              >
                 {t('recipes.dialog.prompt')}
               </label>
               <textarea
@@ -202,13 +237,22 @@ function RecipeDialog({ editing, onClose }: { editing: Partial<UserRecipe>; onCl
                 className="w-full resize-y rounded-md border border-border bg-transparent px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--accent-primary)]"
               />
             </div>
-            <div role="status" className="min-h-[18px] text-[12.5px]" style={{ color: 'var(--danger)' }}>
+            <div
+              role="status"
+              className="min-h-[18px] text-[12.5px]"
+              style={{ color: 'var(--danger)' }}
+            >
               {error}
             </div>
             <DialogFooter className="sm:justify-between">
               <div>
                 {editing.id && (
-                  <Button type="button" variant="ghost" disabled={busy} onClick={() => setConfirmDelete(true)}>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    disabled={busy}
+                    onClick={() => setConfirmDelete(true)}
+                  >
                     {t('recipes.dialog.delete')}
                   </Button>
                 )}

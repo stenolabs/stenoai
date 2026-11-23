@@ -1,17 +1,14 @@
 import * as React from 'react';
 import { Check, Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Switch } from '@/components/ui/switch';
-import { useActionsOverview, useConnectConnector, useSetAutoSuggest } from '@/hooks/useActions';
+import { useActionsOverview, useConnectConnector } from '@/hooks/useActions';
 import { actionErrorMessage } from '@/lib/actionErrors';
 import { ipc, type ActionConnector, type ActionConnectorId } from '@/lib/ipc';
-import { SettingRow } from '@/routes/settings/primitives';
+import { navigate } from '@/lib/router';
 import { t } from '@/i18n';
-import { ActionConnectionCard } from './ActionConnectionCard';
 import { AddEndpointDialog } from './AddEndpointDialog';
 import { BrandGlyph, ConnectGlyph } from './ConnectGlyph';
 import type { BrandSlug, MulticolorBrandSlug } from './brandLogos';
-import { RecentActions } from './RecentActions';
 
 function connectorCopy(id: ActionConnectorId): {
   name: string;
@@ -78,7 +75,6 @@ const CUSTOM_BRANDS: BrandSlug[] = ['n8n', 'zapier', 'make'];
 export function ActionsSection() {
   const overview = useActionsOverview();
   const connect = useConnectConnector();
-  const setAutoSuggest = useSetAutoSuggest();
   const [addOpen, setAddOpen] = React.useState(false);
   const [addKey, setAddKey] = React.useState(0);
   const [pendingConnector, setPendingConnector] = React.useState<ActionConnectorId | null>(null);
@@ -246,33 +242,16 @@ export function ActionsSection() {
       )}
 
       {connections.length > 0 && (
-        <div className="mt-6">
-          <h3 className="text-[13px] font-medium" style={{ color: 'var(--fg-2)' }}>
-            {t('connect.actions.connectionsHeading')}
-          </h3>
-          <ul className="mt-2 flex flex-col gap-3">
-            {connections.map((c) => (
-              <li key={c.id}>
-                <ActionConnectionCard connection={c} disabled={disabled} />
-              </li>
-            ))}
-          </ul>
-          <SettingRow
-            label={t('connect.actions.autoSuggest.label')}
-            description={t('connect.actions.autoSuggest.description')}
-            noBorder
+        <p className="mt-4 text-[12.5px]" style={{ color: 'var(--fg-2)' }}>
+          <button
+            type="button"
+            className="underline underline-offset-2 hover:text-[color:var(--fg-1)]"
+            onClick={() => navigate('/settings?tab=connectors')}
           >
-            <Switch
-              checked={data?.autoSuggest ?? true}
-              disabled={disabled}
-              aria-label={t('connect.actions.autoSuggest.label')}
-              onCheckedChange={(v) => setAutoSuggest.mutate([v])}
-            />
-          </SettingRow>
-        </div>
+            {t('connect.actions.manageConnections')}
+          </button>
+        </p>
       )}
-
-      <RecentActions />
 
       <AddEndpointDialog key={addKey} open={addOpen} onOpenChange={setAddOpen} />
     </section>

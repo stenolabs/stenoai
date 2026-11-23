@@ -15,6 +15,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover';
+import { ModelIndicator } from '@/components/ModelIndicator';
 import { RecipeMenu } from '@/components/RecipeMenu';
 import { useRecipes } from '@/hooks/useRecipes';
 import {
@@ -37,7 +38,6 @@ import {
   bucketKey,
   deriveSessionName,
   toBucketLabel,
-  formatActiveModel,
   chatProviderReady,
 } from '@/lib/chat';
 import { consumePendingNewChat } from '@/routes/Chat';
@@ -70,8 +70,6 @@ export function ChatConversation({ sessionId }: ChatConversationProps) {
   const inputRef = React.useRef<HTMLInputElement>(null);
   const scrollRef = React.useRef<HTMLDivElement>(null);
 
-  const isLocalEngine =
-    provider.data?.ai_provider === 'local' || provider.data?.ai_provider === 'remote';
   // Shared cloud/local/remote readiness; local/remote answer over a
   // context-capped, most-recent slice (see hint).
   const providerReady = chatProviderReady(provider.data);
@@ -502,22 +500,7 @@ export function ChatConversation({ sessionId }: ChatConversationProps) {
                   setSubmitError(t('chat.saveError'));
                 });
               }} disabled={isStreaming || !session} />
-              <span
-                data-testid="chat-model-indicator"
-                className="text-[12px]"
-                style={{ color: 'var(--fg-muted)' }}
-              >
-                {formatActiveModel(provider.data)}
-              </span>
-              {isLocalEngine && (
-                <span
-                  data-testid="chat-local-scope-hint"
-                  className="text-[12px]"
-                  style={{ color: 'var(--fg-muted)' }}
-                >
-                  · may omit older notes
-                </span>
-              )}
+              <ModelIndicator provider={provider.data} />
             </div>
             <div className="flex items-center gap-1">
               {isStreaming ? (

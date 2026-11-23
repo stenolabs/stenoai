@@ -88,7 +88,12 @@ export function SyncSection() {
             )}
           </div>
           <div className="flex shrink-0 gap-2">
-            <Button variant="outline" size="sm" className="h-[30px] px-3 text-[13px]" onClick={chooseFolder}>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-[30px] px-3 text-[13px]"
+              onClick={chooseFolder}
+            >
               {t('connect.obsidian.vaultFolder.choose')}
             </Button>
             {path && (

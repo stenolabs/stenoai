@@ -21,8 +21,9 @@ import { useGlobalStreaming } from '@/hooks/useStreamingQuery';
 import { useAiProvider } from '@/hooks/useAi';
 import { useUserName } from '@/hooks/useSettings';
 import { useOrgSession } from '@/hooks/useOrg';
-import { GLOBAL_SCOPE, bucketKey, deriveSessionName, toBucketLabel, formatActiveModel, chatProviderReady } from '@/lib/chat';
+import { GLOBAL_SCOPE, bucketKey, deriveSessionName, toBucketLabel, chatProviderReady } from '@/lib/chat';
 import { BUILTIN_RECIPES, PresetGlyph, PRESET_COLORS, type Recipe } from '@/lib/recipes';
+import { ModelIndicator } from '@/components/ModelIndicator';
 import { RecipeMenu } from '@/components/RecipeMenu';
 import { useRecipes } from '@/hooks/useRecipes';
 import { getRouteParam, navigate, useRoute } from '@/lib/router';
@@ -133,8 +134,6 @@ export function Chat() {
   const inputRef = React.useRef<HTMLInputElement>(null);
 
   const isAdapter = provider.data?.ai_provider === 'adapter';
-  const isLocalEngine =
-    provider.data?.ai_provider === 'local' || provider.data?.ai_provider === 'remote';
   // Cloud/local/remote readiness is the shared core (chatProviderReady); adapter
   // adds an active-org-session requirement here (a signed-out adapter user would
   // otherwise get an opaque submit failure). Local/remote answer over a
@@ -357,27 +356,7 @@ export function Chat() {
           <div className="flex items-center justify-between gap-2 px-2 pb-1">
             <div className="flex items-center gap-1">
               <FolderScopePicker value={scopeFolderId} onChange={setScopeFolderId} />
-              <span
-                data-testid="chat-model-indicator"
-                className="text-[12px]"
-                style={{ color: 'var(--fg-muted)' }}
-              >
-                {formatActiveModel(provider.data)}
-              </span>
-              {isLocalEngine && (
-                // Local/remote windows are smaller than cloud, so the backend
-                // caps the corpus to the most-recent notes when it's over budget.
-                // "may omit" (not "omits") since a small library fits entirely.
-                // TODO: tie to the actual per-response cap (CHAT_SCOPE_CAPPED,
-                // descoped from WS3) so the hint only shows when truncation ran.
-                <span
-                  data-testid="chat-local-scope-hint"
-                  className="text-[12px]"
-                  style={{ color: 'var(--fg-muted)' }}
-                >
-                  {t('chat.home.localScopeHint')}
-                </span>
-              )}
+              <ModelIndicator provider={provider.data} />
             </div>
             <div className="flex items-center gap-1">
               <button
