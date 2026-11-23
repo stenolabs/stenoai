@@ -200,7 +200,7 @@ test('Connect: AI apps install over MCP and scope controls save', async ({ launc
   });
   const actions = page.getByRole('region', { name: 'Actions', exact: true });
   await expect(actions.getByText('Connect your tools and Steno will suggest follow-ups')).toBeVisible();
-  await expect(actions.getByRole('region', { name: 'Custom endpoint', exact: true })).toBeVisible();
+  await expect(actions.getByRole('region', { name: 'Custom MCP server', exact: true })).toBeVisible();
   await expect(actions.getByRole('region', { name: 'Slack', exact: true }).locator('path[fill="#E01E5A"]')).toHaveCount(1);
 });
 

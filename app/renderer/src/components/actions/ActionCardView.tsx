@@ -16,6 +16,8 @@ import { actionPhrase, headlineValue, inlineFieldKeys } from '@/lib/actionCopy';
 import { fillTemplate } from '@/lib/actionTemplate';
 import { ActionValidationFailure } from '@/hooks/useActions';
 import { ipc, type ActionCard, type ActionLocality, type ActionValidationError } from '@/lib/ipc';
+import { BrandGlyph } from '@/routes/connect/ConnectGlyph';
+import { brandForOrigin } from '@/routes/connect/brandLogos';
 import { t } from '@/i18n';
 
 /** One short line on where Approve sends this. */
@@ -188,7 +190,8 @@ export function ActionCardView({
       className={compact ? 'rounded-xl border p-3' : 'rounded-xl border p-4'}
       style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-raised)' }}
     >
-      <header className="flex items-start gap-3">
+      <header className={finished ? 'flex items-center gap-3' : 'flex items-start gap-3'}>
+        <AppMark origin={card.origin} name={card.connectionName} />
         <h4 className="min-w-0 flex-1 text-[14px] leading-snug">
           <span className="font-medium">
             {t('actions.card.sentence', { action: phrase, connection: card.connectionName })}
@@ -201,45 +204,37 @@ export function ActionCardView({
         </h4>
         {finished && (
           <span
-            className="inline-flex shrink-0 items-center gap-1 text-[12.5px]"
+            className="inline-flex shrink-0 items-center gap-2 text-[12.5px]"
             style={{ color: 'var(--fg-2)' }}
           >
             <Check aria-hidden className="size-3.5" />
             {t('actions.card.done')}
+            {card.result?.link && (
+              <button
+                type="button"
+                className="inline-flex items-center gap-1 underline underline-offset-2 hover:text-[color:var(--fg-1)]"
+                onClick={() => void ipc().shell.openExternal(card.result!.link!)}
+              >
+                <ExternalLink aria-hidden className="size-3" />
+                {t('actions.card.open')}
+              </button>
+            )}
           </span>
         )}
       </header>
-      {card.actionItem && (
+      {/* A finished action is one line; where it came from only matters before approving. */}
+      {!finished && card.actionItem && (
         <p className="mt-1 text-[12.5px] leading-relaxed" style={{ color: 'var(--fg-muted)' }}>
           {t('actions.card.from', { item: card.actionItem })}
         </p>
       )}
-      {card.reason && (
+      {!finished && card.reason && (
         <p className="mt-1 text-[13px] leading-relaxed" style={{ color: 'var(--fg-2)' }}>
           {card.reason}
         </p>
       )}
 
-      {finished ? (
-        <div
-          className="mt-3 flex flex-wrap items-center gap-3 text-[12.5px]"
-          style={{ color: 'var(--fg-2)' }}
-        >
-          {card.result?.link ? (
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-[28px] px-3 text-[12.5px]"
-              onClick={() => void ipc().shell.openExternal(card.result!.link!)}
-            >
-              <ExternalLink aria-hidden />
-              {t('actions.card.open')}
-            </Button>
-          ) : (
-            <span>{t('actions.card.sent')}</span>
-          )}
-        </div>
-      ) : (
+      {finished ? null : (
         <>
           {!rawMode && inlineFields.length > 0 && (
             <div className="mt-3 flex flex-col gap-2.5">
@@ -388,5 +383,21 @@ export function ActionCardView({
         </>
       )}
     </article>
+  );
+}
+
+/** The app an action goes to, as its logo (or initials for a custom server). */
+function AppMark({ origin, name }: { origin: string | null | undefined; name: string }) {
+  const brand = brandForOrigin(origin);
+  if (brand) return <BrandGlyph brand={brand} size={28} />;
+  const initials = name.trim().split(/\s+/).slice(0, 2).map((w) => w[0]?.toUpperCase() ?? '').join('');
+  return (
+    <span
+      aria-hidden
+      className="flex size-7 shrink-0 items-center justify-center rounded-lg border text-[11px] font-medium"
+      style={{ background: 'var(--surface-raised)', borderColor: 'var(--border-subtle)' }}
+    >
+      {initials || '•'}
+    </span>
   );
 }

@@ -107,3 +107,26 @@ export const MULTICOLOR_LOGOS: Record<
     ],
   },
 };
+
+/** The brand behind an action endpoint, from its origin; null for an unknown server. */
+export function brandForOrigin(origin: string | null | undefined): BrandSlug | MulticolorBrandSlug | null {
+  let host = '';
+  try {
+    host = origin ? new URL(origin).hostname.toLowerCase() : '';
+  } catch {
+    return null;
+  }
+  const rules: [RegExp, BrandSlug | MulticolorBrandSlug][] = [
+    [/(^|\.)linear\.app$/, 'linear'],
+    [/(^|\.)notion\.(com|so)$/, 'notion'],
+    [/(^|\.)atlassian\.(com|net)$/, 'jira'],
+    [/(^|\.)hubspot\.com$/, 'hubspot'],
+    [/(^|\.)asana\.com$/, 'asana'],
+    [/(^|\.)slack\.com$/, 'slack'],
+    [/(^|\.)zapier\.com$/, 'zapier'],
+    [/(^|\.)make\.com$/, 'make'],
+    [/(^|\.)n8n\.(io|cloud)$|n8n/, 'n8n'],
+  ];
+  for (const [re, brand] of rules) if (re.test(host)) return brand;
+  return null;
+}

@@ -37,9 +37,9 @@ test('Connect: connector cards, add a custom endpoint, toggle and disconnect', a
   }
 
   // Add a custom endpoint (n8n, bearer token).
-  await page.getByRole('region', { name: 'Custom endpoint', exact: true }).getByRole('button', { name: 'Add' }).click();
+  await page.getByRole('region', { name: 'Custom MCP server', exact: true }).getByRole('button', { name: 'Add' }).click();
   const dialog = page.getByRole('dialog');
-  await expect(dialog.getByRole('heading', { name: 'Add an endpoint' })).toBeVisible();
+  await expect(dialog.getByRole('heading', { name: 'Add an MCP server' })).toBeVisible();
   const connect = dialog.getByRole('button', { name: 'Connect', exact: true });
   await expect(connect).toBeDisabled();
   await dialog.getByLabel('Name').fill('Team n8n');
@@ -146,6 +146,9 @@ test('Note: approve sends the edited arguments, dismiss sends nothing', async ({
   await issue.getByRole('button', { name: 'Approve' }).click();
   await expect(issue.getByText('Done')).toBeVisible();
   await expect(issue.getByRole('button', { name: 'Open' })).toBeVisible();
+  // A finished action is one line: no "From:" or reason, no form.
+  await expect(issue.getByText('From: Bob to prep the release notes')).toHaveCount(0);
+  await expect(issue.getByRole('button', { name: 'Approve' })).toHaveCount(0);
   const approved = await approvedOf(app);
   expect(approved).toHaveLength(1);
   expect(approved[0]!.args).toEqual({ title: 'Prep release notes for v0.9.0', priority: 'high' });
@@ -188,7 +191,7 @@ test('Org policy off: no connect buttons, a notice instead', async ({ launchApp 
     window.location.hash = '#/connect';
   });
   await expect(page.getByText('Your organisation has turned off actions.')).toBeVisible();
-  await expect(page.getByRole('region', { name: 'Custom endpoint', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('region', { name: 'Custom MCP server', exact: true })).toHaveCount(0);
 });
 
 test('Note: a Notion page card reads as a sentence, payload behind the disclosure', async ({ launchApp }, testInfo) => {
@@ -202,6 +205,9 @@ test('Note: a Notion page card reads as a sentence, payload behind the disclosur
   const card = page.getByTestId('suggested-actions').getByRole('article', { name: 'Create page via Notion' });
   await expect(card.getByRole('heading', { name: 'Create page in Notion · Website content cleanup' })).toBeVisible();
   await expect(card.getByText("From: Create a Notion page called 'Website content cleanup'", { exact: false })).toBeVisible();
+  // The app's own logo leads the card (Notion's mark).
+  await expect(card.locator('svg path').first()).toBeVisible();
+  await expect(card.locator('header > span[aria-hidden] svg')).toHaveCount(1);
   await expect(card.getByLabel('Title (required)')).toHaveValue('Website content cleanup');
   await expect(card.getByLabel('Content')).toBeVisible();
   await expect(card.getByLabel('Parent page')).toHaveCount(0);
