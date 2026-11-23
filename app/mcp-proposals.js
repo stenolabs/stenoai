@@ -12,6 +12,9 @@
  *     parent, ...) is only allowed when its value appears verbatim in the
  *     note: the model must never invent an id.
  *
+ *   - Any email address in the arguments must appear in the note (a draft's
+ *     recipients are filtered to those first, see mcp-email.js).
+ *
  * Pure functions; mcp-actions.js applies them in suggest().
  */
 
@@ -83,6 +86,26 @@ function ungroundedIdentifiers(schema, args, noteText) {
   });
 }
 
+const EMAIL_IN_TEXT_RE = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g;
+
+/**
+ * Email addresses anywhere in the arguments that the note does not contain
+ * (ignoring case): a model must never invent a recipient or a contact.
+ */
+function ungroundedEmails(args, noteText) {
+  const text = String(noteText || '').toLowerCase();
+  const found = [];
+  const walk = (v, depth) => {
+    if (depth > 6) return;
+    if (typeof v === 'string') {
+      for (const m of v.match(EMAIL_IN_TEXT_RE) || []) if (!text.includes(m.toLowerCase())) found.push(m);
+    } else if (Array.isArray(v)) v.forEach((x) => walk(x, depth + 1));
+    else if (v && typeof v === 'object') Object.values(v).forEach((x) => walk(x, depth + 1));
+  };
+  walk(args, 0);
+  return found;
+}
+
 /** The action item a proposal cites (1-based number or exact text), or null. */
 function citedActionItem(proposal, actionItems) {
   const items = Array.isArray(actionItems) ? actionItems.filter((i) => typeof i === 'string' && i.trim()) : [];
@@ -115,6 +138,7 @@ function checkProposal(proposal, schema, note) {
   if (!actionItem) return { ok: false, reason: 'uncited' };
   if (placeholderArguments(schema, proposal.arguments).length) return { ok: false, reason: 'placeholder' };
   if (ungroundedIdentifiers(schema, proposal.arguments, noteText(note)).length) return { ok: false, reason: 'ungrounded-id' };
+  if (ungroundedEmails(proposal.arguments, noteText(note)).length) return { ok: false, reason: 'ungrounded-email' };
   return { ok: true, actionItem };
 }
 
@@ -124,6 +148,7 @@ module.exports = {
   isIdentifierParam,
   placeholderArguments,
   ungroundedIdentifiers,
+  ungroundedEmails,
   citedActionItem,
   noteText,
   checkProposal,

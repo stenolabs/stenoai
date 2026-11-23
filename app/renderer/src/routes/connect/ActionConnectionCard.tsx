@@ -44,7 +44,9 @@ export function ActionConnectionCard({
     : c.status === 'needs-auth'
       ? t('connect.actions.connection.needsAuth')
       : c.status === 'error'
-        ? t('connect.actions.connection.unreachable')
+        ? c.transport === 'stdio'
+          ? t('connect.actions.connection.notStarted')
+          : t('connect.actions.connection.unreachable')
         : actionTools.length === 0
           ? t('connect.actions.connection.noTools')
           : actionTools.length === 1
@@ -60,13 +62,23 @@ export function ActionConnectionCard({
       <div className="flex items-start gap-3">
         <div className="min-w-0 flex-1">
           <h4 className="truncate text-[14px] font-medium">{c.name}</h4>
-          <p className="mt-0.5 truncate text-[12px]" style={{ color: 'var(--fg-muted)' }}>
-            {c.account
-              ? t('connect.actions.connection.account', {
-                  account: c.account,
-                  origin: c.origin ?? '',
-                })
-              : c.origin}
+          <p
+            className={
+              c.transport === 'stdio'
+                ? 'mt-0.5 truncate font-mono text-[11.5px]'
+                : 'mt-0.5 truncate text-[12px]'
+            }
+            style={{ color: 'var(--fg-muted)' }}
+            title={c.transport === 'stdio' ? c.command : undefined}
+          >
+            {c.transport === 'stdio'
+              ? c.command
+              : c.account
+                ? t('connect.actions.connection.account', {
+                    account: c.account,
+                    origin: c.origin ?? '',
+                  })
+                : c.origin}
           </p>
         </div>
         <Switch

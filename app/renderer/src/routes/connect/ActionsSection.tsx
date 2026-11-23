@@ -1,13 +1,18 @@
 import * as React from 'react';
-import { Check, Plus } from 'lucide-react';
+import { Check, Mail, Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { useActionsOverview, useConnectConnector } from '@/hooks/useActions';
+import { Switch } from '@/components/ui/switch';
+import {
+  useActionsOverview,
+  useConnectConnector,
+  useSetConnectionEnabled,
+} from '@/hooks/useActions';
 import { actionErrorMessage } from '@/lib/actionErrors';
 import { ipc, type ActionConnector, type ActionConnectorId } from '@/lib/ipc';
 import { navigate } from '@/lib/router';
 import { t } from '@/i18n';
 import { AddEndpointDialog } from './AddEndpointDialog';
-import { BrandGlyph, ConnectGlyph } from './ConnectGlyph';
+import { BrandGlyph, ConnectGlyph, IconGlyph } from './ConnectGlyph';
 import type { BrandSlug, MulticolorBrandSlug } from './brandLogos';
 
 function connectorCopy(id: ActionConnectorId): {
@@ -79,13 +84,20 @@ export function ActionsSection() {
   const [addKey, setAddKey] = React.useState(0);
   const [pendingConnector, setPendingConnector] = React.useState<ActionConnectorId | null>(null);
   // A failed sign-in shows on the card that started it.
-  const [connectError, setConnectError] = React.useState<{ id: ActionConnectorId; message: string } | null>(null);
+  const [connectError, setConnectError] = React.useState<{
+    id: ActionConnectorId;
+    message: string;
+  } | null>(null);
 
   const data = overview.data;
   const policy = data?.policy;
   const disabled = policy ? !policy.actionsEnabled : false;
-  const connections = data?.connections ?? [];
+  const allConnections = data?.connections ?? [];
+  // The built-in Email drafts are a card of their own, not a connection to manage.
+  const emailDrafts = allConnections.find((c) => c.kind === 'email' && c.builtin) ?? null;
+  const connections = allConnections.filter((c) => !c.builtin);
   const connectors = data?.connectors ?? [];
+  const setEnabled = useSetConnectionEnabled();
 
   const startConnector = (c: ActionConnector) => {
     setConnectError(null);
@@ -132,6 +144,26 @@ export function ActionsSection() {
 
       {!disabled && (
         <div className="mt-4 grid gap-3 sm:grid-cols-2">
+          {emailDrafts && !emailDrafts.blockedByPolicy && (
+            <section
+              aria-label={t('connect.actions.email.name')}
+              className="flex min-w-0 items-start gap-3 rounded-xl border p-4"
+              style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-raised)' }}
+            >
+              <IconGlyph icon={Mail} />
+              <div className="min-w-0 flex-1">
+                <h3 className="text-[14px] font-medium">{t('connect.actions.email.name')}</h3>
+                <p className="mt-0.5 text-[12.5px] leading-snug" style={{ color: 'var(--fg-2)' }}>
+                  {t('connect.actions.email.description')}
+                </p>
+              </div>
+              <Switch
+                checked={emailDrafts.enabled}
+                aria-label={t('connect.actions.email.enableAria')}
+                onCheckedChange={(v) => setEnabled.mutate([emailDrafts.id, v])}
+              />
+            </section>
+          )}
           {connectors.map((c) => {
             const copy = connectorCopy(c.id);
             const connected = connections.some((x) => x.kind === c.id && x.status === 'ok');
@@ -253,7 +285,12 @@ export function ActionsSection() {
         </p>
       )}
 
-      <AddEndpointDialog key={addKey} open={addOpen} onOpenChange={setAddOpen} />
+      <AddEndpointDialog
+        key={addKey}
+        open={addOpen}
+        onOpenChange={setAddOpen}
+        allowLocal={policy?.localCommandsAllowed !== false}
+      />
     </section>
   );
 }

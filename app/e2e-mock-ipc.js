@@ -759,9 +759,43 @@ function install({ ipcMain }) {
       },
     ];
   }
+  // The built-in Email drafts (app/mcp-email.js): always listed, on by default.
+  const emailTool = require('./mcp-email');
+  const emailConnection = {
+    id: emailTool.EMAIL_CONNECTION_ID,
+    name: 'Email',
+    url: '',
+    origin: null,
+    locality: 'device',
+    kind: 'email',
+    transport: 'builtin',
+    builtin: true,
+    auth: 'none',
+    headerName: null,
+    enabled: true,
+    account: null,
+    status: 'ok',
+    tools: [{ name: 'draft_email', title: 'Draft email', description: '', readOnly: false }],
+    toolsFetchedAt: 1,
+    blockedByPolicy: false,
+  };
+  global.__actionsAddedLocal = [];
+  // A suggested follow-up email on the note, as the real service would make it.
+  if (process.env.STENOAI_E2E_SEED_ACTIONS === 'email') {
+    actionsState.cards = [{
+      ...mockCard(emailConnection, 'draft_email', {
+        to: ['dana@acme.co'],
+        subject: 'Follow-up: release plan',
+        body: 'Hi Dana,\n\nThanks for today. We ship Friday & Bob preps the notes.\n\nBest',
+      }, 'Recap the decisions for Dana', 'Alice to tell the team we ship Friday'),
+      connectionKind: 'email',
+      toolTitle: 'Draft email',
+      inputSchema: emailTool.EMAIL_TOOL.inputSchema,
+    }];
+  }
   const actionsOverview = () => ({
     success: true,
-    connections: actionsState.connections,
+    connections: [...actionsState.connections, emailConnection],
     connectors: ACTION_CONNECTORS,
     autoSuggest: actionsState.autoSuggest,
     policy: { actionsEnabled: process.env.STENOAI_E2E_ACTIONS_DISABLED !== '1', managed: process.env.STENOAI_E2E_ACTIONS_DISABLED === '1', endpointAllowlist: null, reason: null },
@@ -772,6 +806,16 @@ function install({ ipcMain }) {
     'actions-add-custom': async (_event, input) => {
       global.__actionsAdded.push({ ...input, token: input.token ? '<set>' : undefined });
       const connection = mockConnection({ name: input.name || 'Endpoint', url: input.url, auth: input.auth, headerName: input.headerName || null });
+      actionsState.connections.push(connection);
+      return { success: true, connection };
+    },
+    'actions-add-local': async (_event, input) => {
+      // Env values never come back to a spec: only their names.
+      global.__actionsAddedLocal.push({ ...input, env: Object.keys(input.env || {}) });
+      const connection = mockConnection({
+        name: input.name || input.command, url: '', origin: null, locality: 'device', kind: 'local', transport: 'stdio',
+        auth: 'none', command: [input.command, ...(input.args || [])].join(' '), envKeys: Object.keys(input.env || {}),
+      });
       actionsState.connections.push(connection);
       return { success: true, connection };
     },
@@ -789,6 +833,10 @@ function install({ ipcMain }) {
     'actions-cancel-authorize': async () => ({ success: true, cancelled: false }),
     'actions-refresh-tools': async (_event, id) => ({ success: true, connection: actionsState.connections.find((c) => c.id === id) }),
     'actions-set-enabled': async (_event, id, enabled) => {
+      if (id === emailConnection.id) {
+        emailConnection.enabled = enabled;
+        return { success: true, connection: emailConnection };
+      }
       const c = actionsState.connections.find((x) => x.id === id);
       c.enabled = enabled;
       return { success: true, connection: c };
@@ -804,7 +852,9 @@ function install({ ipcMain }) {
     'actions-get-cards': async () => ({
       success: true,
       cards: actionsState.cards,
-      available: actionsState.connections.some((c) => c.enabled),
+      // Email drafts alone make every note offer actions in the real app; the
+      // mock keeps other specs' notes quiet unless a spec seeds actions.
+      available: actionsState.connections.some((c) => c.enabled) || (process.env.STENOAI_E2E_SEED_ACTIONS === 'email' && emailConnection.enabled),
     }),
     'actions-suggest': async () => {
       if (!actionsState.cards.some((c) => c.status === 'proposed')) seedActionCards();
@@ -813,6 +863,19 @@ function install({ ipcMain }) {
     'actions-approve': async (_event, _summaryFile, cardId, args) => {
       global.__actionsApproved.push({ cardId, args });
       const card = actionsState.cards.find((c) => c.id === cardId);
+      if (card.connectionKind === 'email') {
+        // The real mailto builder and the real shell.openExternal (a spec stubs it).
+        try {
+          const res = await emailTool.runDraftEmail(args, {
+            openMailto: (url) => require('electron').shell.openExternal(url),
+            writeClipboard: async (text) => require('electron').clipboard.writeText(text),
+          });
+          Object.assign(card, { status: 'done', arguments: args, result: { status: 'ok', link: null, text: res.text, ...(res.clipboard ? { clipboard: true } : {}) } });
+          return { success: true, card };
+        } catch (_) {
+          return { success: false, error_code: 'invalid-arguments', error: 'Check the email addresses', validationErrors: [] };
+        }
+      }
       // A spec sets global.__actionsFailDetail to make the endpoint reject
       // the call with that (already redacted) message.
       if (typeof global.__actionsFailDetail === 'string') {

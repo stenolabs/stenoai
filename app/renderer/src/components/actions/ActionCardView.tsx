@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { Check, ExternalLink } from 'lucide-react';
+import { Check, ExternalLink, Mail, SquareTerminal } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
@@ -16,12 +16,17 @@ import { actionPhrase, headlineValue, inlineFieldKeys } from '@/lib/actionCopy';
 import { fillTemplate } from '@/lib/actionTemplate';
 import { ActionValidationFailure } from '@/hooks/useActions';
 import { ipc, type ActionCard, type ActionLocality, type ActionValidationError } from '@/lib/ipc';
-import { BrandGlyph } from '@/routes/connect/ConnectGlyph';
+import { BrandGlyph, IconGlyph } from '@/routes/connect/ConnectGlyph';
 import { brandForOrigin } from '@/routes/connect/brandLogos';
 import { t } from '@/i18n';
 
 /** One short line on where Approve sends this. */
-function localityNote(locality: ActionLocality | null, connection: string): string {
+function localityNote(
+  locality: ActionLocality | null,
+  connection: string,
+  kind: ActionCard['connectionKind']
+): string {
+  if (kind === 'email') return t('actions.card.sendsTo.email');
   if (locality === 'device') return t('actions.card.sendsTo.device', { connection });
   if (locality === 'network') return t('actions.card.sendsTo.network', { connection });
   return t('actions.card.sendsTo.internet', { connection });
@@ -140,10 +145,16 @@ export function ActionCardView({
     () => (fields ? inlineFieldKeys(fields, card.arguments, simple ? 4 : 3) : []),
     [fields, card.arguments, simple]
   );
+  // Email drafts read "Draft email · Subject": the mail app is not a place to put it "in".
+  const isEmail = card.connectionKind === 'email';
   const inlineFields = fields ? fields.filter((f) => inlineKeys.includes(f.key)) : [];
+  // A draft reads top to bottom like an email: To, Subject, Message.
+  if (isEmail) inlineFields.sort((a, b) => inlineKeys.indexOf(a.key) - inlineKeys.indexOf(b.key));
   // Errors on fields that are not shown inline are listed in the disclosure.
   const hiddenErrors = errors.filter(
-    (e) => rawMode || !inlineFields.some((f) => e.path === `$.${f.key}` || e.path.startsWith(`$.${f.key}[`))
+    (e) =>
+      rawMode ||
+      !inlineFields.some((f) => e.path === `$.${f.key}` || e.path.startsWith(`$.${f.key}[`))
   );
   // A problem in a field that is not shown inline keeps the disclosure open.
   const payloadOpen = showPayload || hiddenErrors.length > 0;
@@ -191,15 +202,15 @@ export function ActionCardView({
       style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-raised)' }}
     >
       <header className={finished ? 'flex items-center gap-3' : 'flex items-start gap-3'}>
-        <AppMark origin={card.origin} name={card.connectionName} />
+        <AppMark origin={card.origin} name={card.connectionName} kind={card.connectionKind} />
         <h4 className="min-w-0 flex-1 text-[14px] leading-snug">
           <span className="font-medium">
-            {t('actions.card.sentence', { action: phrase, connection: card.connectionName })}
+            {isEmail
+              ? phrase
+              : t('actions.card.sentence', { action: phrase, connection: card.connectionName })}
           </span>
           {subject && (
-            <span style={{ color: 'var(--fg-2)' }}>
-              {t('actions.card.subject', { subject })}
-            </span>
+            <span style={{ color: 'var(--fg-2)' }}>{t('actions.card.subject', { subject })}</span>
           )}
         </h4>
         {finished && (
@@ -208,7 +219,11 @@ export function ActionCardView({
             style={{ color: 'var(--fg-2)' }}
           >
             <Check aria-hidden className="size-3.5" />
-            {t('actions.card.done')}
+            {isEmail
+              ? card.result?.clipboard
+                ? t('actions.card.draftOpenedClipboard')
+                : t('actions.card.draftOpened')
+              : t('actions.card.done')}
             {card.result?.link && (
               <button
                 type="button"
@@ -246,7 +261,9 @@ export function ActionCardView({
                 return (
                   <div
                     key={f.key}
-                    className={f.kind === 'boolean' ? 'flex items-center justify-between gap-3' : ''}
+                    className={
+                      f.kind === 'boolean' ? 'flex items-center justify-between gap-3' : ''
+                    }
                   >
                     <label
                       htmlFor={id}
@@ -262,7 +279,11 @@ export function ActionCardView({
                       onChange={(v) => setFormState((s) => ({ ...s, [f.key]: v }))}
                     />
                     {fieldErrors.map((e) => (
-                      <p key={e.message} className="mt-1 text-[12px]" style={{ color: 'var(--fg-1)' }}>
+                      <p
+                        key={e.message}
+                        className="mt-1 text-[12px]"
+                        style={{ color: 'var(--fg-1)' }}
+                      >
                         {t('actions.card.fieldError', { field: f.label, message: e.message })}
                       </p>
                     ))}
@@ -302,8 +323,15 @@ export function ActionCardView({
               </pre>
             )}
             {hiddenErrors.map((e) => (
-              <p key={`${e.path}-${e.message}`} className="mt-1 text-[12px]" style={{ color: 'var(--fg-1)' }}>
-                {t('actions.card.fieldError', { field: e.path.replace(/^\$\.?/, ''), message: e.message })}
+              <p
+                key={`${e.path}-${e.message}`}
+                className="mt-1 text-[12px]"
+                style={{ color: 'var(--fg-1)' }}
+              >
+                {t('actions.card.fieldError', {
+                  field: e.path.replace(/^\$\.?/, ''),
+                  message: e.message,
+                })}
               </p>
             ))}
             <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1">
@@ -374,7 +402,7 @@ export function ActionCardView({
               {t('actions.card.dismiss')}
             </Button>
             <span className="ml-auto text-[12px]" style={{ color: 'var(--fg-muted)' }}>
-              {localityNote(card.locality, card.connectionName)}
+              {localityNote(card.locality, card.connectionName, card.connectionKind)}
             </span>
           </div>
           <div role="status" className="mt-1 text-[12.5px]" style={{ color: 'var(--fg-2)' }}>
@@ -387,10 +415,25 @@ export function ActionCardView({
 }
 
 /** The app an action goes to, as its logo (or initials for a custom server). */
-function AppMark({ origin, name }: { origin: string | null | undefined; name: string }) {
+function AppMark({
+  origin,
+  name,
+  kind,
+}: {
+  origin: string | null | undefined;
+  name: string;
+  kind?: ActionCard['connectionKind'];
+}) {
+  if (kind === 'email') return <IconGlyph icon={Mail} size={28} />;
+  if (kind === 'local') return <IconGlyph icon={SquareTerminal} size={28} />;
   const brand = brandForOrigin(origin);
   if (brand) return <BrandGlyph brand={brand} size={28} />;
-  const initials = name.trim().split(/\s+/).slice(0, 2).map((w) => w[0]?.toUpperCase() ?? '').join('');
+  const initials = name
+    .trim()
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((w) => w[0]?.toUpperCase() ?? '')
+    .join('');
   return (
     <span
       aria-hidden
