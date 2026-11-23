@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { ExternalLink, Waypoints } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -12,7 +13,9 @@ import { OpenAiIcon } from '@/components/ui/openai-icon';
 import { AnthropicIcon } from '@/components/ui/anthropic-icon';
 import { AwsIcon } from '@/components/ui/aws-icon';
 import { t } from '@/i18n';
-import type { CloudProvider } from '@/lib/ipc';
+import { ipc, type CloudProvider } from '@/lib/ipc';
+import { isGuidedProvider, KEY_PAGE_URL } from '@/lib/cloudKeys';
+import { describeModel, modelTierLabel as tierLabel, RECOMMENDED_CLOUD_MODELS } from '@/lib/modelNames';
 import {
   useAiProvider,
   useSetBedrockInferenceProfile,
@@ -31,7 +34,30 @@ const CLOUD_SERVICE_ICON: Record<CloudProvider, React.ReactNode> = {
   anthropic: <AnthropicIcon size={12} />,
   bedrock: <AwsIcon size={12} />,
   custom: null,
+  openrouter: <Waypoints size={12} aria-hidden="true" />,
 };
+
+const PROVIDER_NAME: Record<'openai' | 'anthropic' | 'openrouter', string> = {
+  openai: 'OpenAI',
+  anthropic: 'Anthropic',
+  openrouter: 'OpenRouter',
+};
+
+/** One picker row: the friendly name, with the tier and raw id underneath. */
+function ModelOption({ id }: { id: string }) {
+  const { name, tier } = describeModel(id);
+  const friendly = name !== id;
+  return (
+    <SelectItem
+      value={id}
+      description={
+        tier ? (friendly ? `${tierLabel(tier)} · ${id}` : tierLabel(tier)) : friendly ? id : undefined
+      }
+    >
+      {name}
+    </SelectItem>
+  );
+}
 
 export function CloudProviderConfig() {
   const provider = useAiProvider();
@@ -101,12 +127,17 @@ export function CloudProviderConfig() {
   // Bedrock surfaces a curated list of Claude model ids from the backend, so
   // the dropdown is populated immediately — no need to Test connection first.
   // Other providers still gate the dropdown on a successful list-models call.
+  // Recommended picks (friendly names + a Fast / Balanced / Best hint) are
+  // available straight away for the common providers; a successful test adds
+  // whatever else the key can reach. Custom endpoints still need a test.
+  const fetchedModels =
+    modelListFor === cloudProvider && testConnection.isSuccess
+      ? testConnection.data?.models ?? []
+      : [];
   const availableModels =
     cloudProvider === 'bedrock'
       ? bedrockModels
-      : modelListFor === cloudProvider && testConnection.isSuccess
-        ? testConnection.data?.models ?? []
-        : [];
+      : Array.from(new Set([...RECOMMENDED_CLOUD_MODELS[cloudProvider], ...fetchedModels]));
   const showModelDropdown = availableModels.length > 0 && !customModelMode;
   // Persist the selected model immediately on change (Select doesn't fire
   // onBlur, so the previous "save on blur" pattern would lose the choice).
@@ -135,7 +166,7 @@ export function CloudProviderConfig() {
           value={cloudProvider}
           onValueChange={(v) => setCloudProvider.mutate(v as CloudProvider)}
         >
-          <SelectTrigger className={COMPACT_INPUT}>
+          <SelectTrigger className={COMPACT_INPUT} data-testid="cloud-service-select">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -149,6 +180,12 @@ export function CloudProviderConfig() {
               <span className="inline-flex items-center gap-1.5">
                 {CLOUD_SERVICE_ICON.anthropic}
                 {t('settings.ai.cloud.serviceAnthropic')}
+              </span>
+            </SelectItem>
+            <SelectItem value="openrouter">
+              <span className="inline-flex items-center gap-1.5">
+                {CLOUD_SERVICE_ICON.openrouter}
+                {t('settings.ai.cloud.serviceOpenRouter')}
               </span>
             </SelectItem>
             <SelectItem value="bedrock">
@@ -232,11 +269,24 @@ export function CloudProviderConfig() {
                 ? t('settings.ai.cloud.bedrockKeyPlaceholder')
                 : cloudProvider === 'anthropic'
                   ? t('settings.ai.cloud.anthropicKeyPlaceholder')
-                  : t('settings.ai.cloud.openaiKeyPlaceholder')
+                  : cloudProvider === 'openrouter'
+                    ? t('settings.ai.cloud.openrouterKeyPlaceholder')
+                    : t('settings.ai.cloud.openaiKeyPlaceholder')
           }
           onBlur={() => apiKey && setCloudKey.mutate(apiKey)}
           className={COMPACT_INPUT}
         />
+        {isGuidedProvider(cloudProvider) && (
+          <button
+            type="button"
+            onClick={() => void ipc().shell.openExternal(KEY_PAGE_URL[cloudProvider])}
+            className="mt-1 inline-flex items-center gap-1 text-[11.5px] underline-offset-2 hover:underline"
+            style={{ color: 'var(--fg-2)' }}
+          >
+            {t('settings.ai.cloud.getKey', { provider: PROVIDER_NAME[cloudProvider] })}
+            <ExternalLink className="size-3" aria-hidden="true" />
+          </button>
+        )}
       </div>
       <div>
         <label
@@ -247,20 +297,16 @@ export function CloudProviderConfig() {
         </label>
         {showModelDropdown ? (
           <Select value={model} onValueChange={onModelSelect}>
-            <SelectTrigger className={COMPACT_INPUT}>
+            <SelectTrigger className={COMPACT_INPUT} data-testid="cloud-model-select">
               <SelectValue placeholder={t('settings.ai.cloud.modelPlaceholder')} />
             </SelectTrigger>
             <SelectContent>
               {/* If the persisted model isn't in the fetched list (e.g. a
                   user-typed custom name from before), still show it so the
                   Trigger doesn't render blank. */}
-              {!availableModels.includes(model) && model && (
-                <SelectItem value={model}>{model}</SelectItem>
-              )}
+              {!availableModels.includes(model) && model && <ModelOption id={model} />}
               {availableModels.map((m) => (
-                <SelectItem key={m} value={m}>
-                  {m}
-                </SelectItem>
+                <ModelOption key={m} id={m} />
               ))}
               <SelectItem value="__custom__">{t('settings.ai.cloud.customModel')}</SelectItem>
             </SelectContent>
@@ -275,7 +321,9 @@ export function CloudProviderConfig() {
                   ? t('settings.ai.cloud.bedrockModelPlaceholder')
                   : cloudProvider === 'anthropic'
                     ? t('settings.ai.cloud.anthropicModelPlaceholder')
-                    : t('settings.ai.cloud.openaiModelPlaceholder')
+                    : cloudProvider === 'openrouter'
+                      ? t('settings.ai.cloud.openrouterModelPlaceholder')
+                      : t('settings.ai.cloud.openaiModelPlaceholder')
               }
               onBlur={() => model && setCloudModel.mutate(model)}
               className={COMPACT_INPUT}

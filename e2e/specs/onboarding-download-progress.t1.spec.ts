@@ -1,4 +1,13 @@
 import { test, expect } from '../fixtures/electron';
+import type { Page } from '@playwright/test';
+
+/** Onboarding is stepped: You -> How Steno thinks -> Getting ready. Leave the
+ *  first screen (which starts the background downloads), then keep the
+ *  default Local engine and begin. */
+async function beginSetup(page: Page) {
+  await page.getByRole('button', { name: 'Continue', exact: true }).click();
+  await page.getByRole('button', { name: 'Begin setup' }).click();
+}
 
 /**
  * T1 - renderer-only, mock IPC, no backend. Regression guard for #354: the
@@ -33,7 +42,7 @@ test('summarization step renders a real progress bar + percent from setup-ollama
     window.location.hash = '#/setup';
   });
 
-  await page.getByRole('button', { name: 'Begin setup' }).click();
+  await beginSetup(page);
 
   const ollamaStep = page.locator('[data-setup-step="ollama"]');
   await expect(ollamaStep).toHaveAttribute('data-setup-status', 'running');
@@ -62,7 +71,7 @@ test('transcription step renders an indeterminate "preparing" bar (no fabricated
     window.location.hash = '#/setup';
   });
 
-  await page.getByRole('button', { name: 'Begin setup' }).click();
+  await beginSetup(page);
 
   const transcriptionStep = page.locator('[data-setup-step="transcription"]');
   await expect(transcriptionStep).toHaveAttribute('data-setup-status', 'running');
@@ -104,7 +113,7 @@ test('optional speaker model failure does not block the rest of onboarding', asy
     window.location.hash = '#/setup';
   });
   await page.getByRole('switch', { name: 'Separate individual speakers' }).click();
-  await page.getByRole('button', { name: 'Begin setup' }).click();
+  await beginSetup(page);
 
   const speakerStep = page.locator('[data-setup-step="speakers"]');
   await expect(speakerStep).toHaveAttribute('data-setup-status', 'failed');
@@ -128,7 +137,7 @@ test('speaker models are opt-in: onboarding skips them unless the switch is on',
     window.location.hash = '#/setup';
   });
   await expect(page.getByRole('switch', { name: 'Separate individual speakers' })).not.toBeChecked();
-  await page.getByRole('button', { name: 'Begin setup' }).click();
+  await beginSetup(page);
 
   await expect(page.getByRole('button', { name: 'Continue to app' })).toBeVisible();
   await expect(page.locator('[data-setup-step="speakers"]')).toHaveCount(0);
@@ -166,7 +175,7 @@ test('opted-in speaker download shows a real percent bar', async ({ launchApp })
     window.location.hash = '#/setup';
   });
   await page.getByRole('switch', { name: 'Separate individual speakers' }).click();
-  await page.getByRole('button', { name: 'Begin setup' }).click();
+  await beginSetup(page);
 
   const speakerStep = page.locator('[data-setup-step="speakers"]');
   await expect(speakerStep).toHaveAttribute('data-setup-status', 'running');
@@ -195,7 +204,7 @@ test('Parakeet shows a real percent once the backend reports byte totals', async
   await page.evaluate(() => {
     window.location.hash = '#/setup';
   });
-  await page.getByRole('button', { name: 'Begin setup' }).click();
+  await beginSetup(page);
 
   const step = page.locator('[data-setup-step="transcription"]');
   await expect(step).toHaveAttribute('data-setup-status', 'running');
@@ -245,7 +254,7 @@ test('speaker model setup is absent on non-macOS', async ({ launchApp }) => {
   await page.evaluate(() => {
     window.location.hash = '#/setup';
   });
-  await page.getByRole('button', { name: 'Begin setup' }).click();
+  await beginSetup(page);
 
   await expect(page.locator('[data-setup-step="speakers"]')).toHaveCount(0);
   await expect(page.locator('[data-setup-step="ollama"]')).toHaveAttribute(
@@ -278,7 +287,7 @@ for (const [platform, size] of [['darwin', '~2.5 GB'], ['win32', '~670 MB']] as 
       STENOAI_E2E_SETUP_PROGRESS: '1', STENOAI_E2E_RENDERER_PLATFORM: platform,
     } });
     await page.evaluate(() => { window.location.hash = '#/setup'; });
-    await page.getByRole('button', { name: 'Begin setup' }).click();
+    await beginSetup(page);
     await expect(page.locator('[data-setup-step="transcription"]')).toContainText(`Downloading Parakeet TDT v3 (${size})...`);
   });
 }

@@ -371,7 +371,7 @@ export type MicPermissionStatus =
   | 'unknown';
 
 export type AiProvider = 'local' | 'remote' | 'cloud' | 'adapter';
-export type CloudProvider = 'openai' | 'anthropic' | 'bedrock' | 'custom';
+export type CloudProvider = 'openai' | 'anthropic' | 'bedrock' | 'custom' | 'openrouter';
 
 // ---------- response envelopes ----------
 export type AppVersionResponse = Result<{ version: string; name: string }>;
@@ -1776,7 +1776,8 @@ export interface StenoaiBridge {
     setCloudModel: RequestFn<[m: string], Result<Record<string, never>>>;
     setBedrockRegion: RequestFn<[region: string], Result<Record<string, never>>>;
     setBedrockInferenceProfile: RequestFn<[profile: string], Result<Record<string, never>>>;
-    testCloudApi: RequestFn<[], Result<{ models?: string[] }>>;
+    /** `warning: 'no_credit'`: the key works but its spending limit is used up (OpenRouter). */
+    testCloudApi: RequestFn<[], Result<{ models?: string[]; warning?: 'no_credit' }>>;
   };
 
   calendar: {

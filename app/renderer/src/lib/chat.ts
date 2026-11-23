@@ -52,7 +52,11 @@ export function formatActiveModel(p: ActiveModelFields | undefined): string {
   // render "Ollama · undefined" for a frame.
   switch (p.ai_provider) {
     case 'cloud':
-      return [p.cloud_provider, p.cloud_model].filter(Boolean).join(' · ') || 'Cloud';
+      return (
+        [p.cloud_provider === 'openrouter' ? 'OpenRouter' : p.cloud_provider, p.cloud_model]
+          .filter(Boolean)
+          .join(' · ') || 'Cloud'
+      );
     case 'remote':
       return p.model ? `Remote Ollama · ${p.model}` : 'Remote Ollama';
     case 'adapter':
@@ -101,6 +105,11 @@ export function shortActiveModel(p: ActiveModelFields | undefined): string {
   if (!p) return 'Auto';
   switch (p.ai_provider) {
     case 'cloud':
+      // OpenRouter ids carry a vendor path (google/gemini-2.5-flash); show the
+      // short vendor-free id so the composer chip stays compact.
+      if (p.cloud_provider === 'openrouter' && p.cloud_model) {
+        return p.cloud_model.split('/').pop() || p.cloud_model;
+      }
       return p.cloud_model || p.cloud_provider || 'Cloud';
     case 'adapter':
       return 'Organisation';
