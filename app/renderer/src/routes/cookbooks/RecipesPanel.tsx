@@ -46,7 +46,18 @@ export function RecipesPanel({
         {t('recipes.intro')}
       </p>
 
-      <section aria-labelledby="recipes-mine-heading" className="mt-8">
+      <section aria-labelledby="recipes-builtin-heading" className="mt-8">
+        <h2 id="recipes-builtin-heading" className="text-[15px] font-medium">
+          {t('recipes.builtin.heading')}
+        </h2>
+        <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {BUILTIN_RECIPES.map((r, idx) => (
+            <RecipeCard key={r.id} recipe={r} index={idx + 2} />
+          ))}
+        </div>
+      </section>
+
+      <section aria-labelledby="recipes-mine-heading" className="mt-10">
         <h2 id="recipes-mine-heading" className="text-[15px] font-medium">
           {t('recipes.mine.heading')}
         </h2>
@@ -66,17 +77,6 @@ export function RecipesPanel({
             <Plus className="size-4" aria-hidden />
             {t('recipes.create')}
           </button>
-        </div>
-      </section>
-
-      <section aria-labelledby="recipes-builtin-heading" className="mt-10">
-        <h2 id="recipes-builtin-heading" className="text-[15px] font-medium">
-          {t('recipes.builtin.heading')}
-        </h2>
-        <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {BUILTIN_RECIPES.map((r, idx) => (
-            <RecipeCard key={r.id} recipe={r} index={idx + 2} />
-          ))}
         </div>
       </section>
 

@@ -716,5 +716,9 @@
   "cookbooks.intro.recipeTitle": "什麼是食譜？",
   "cookbooks.intro.recipeBody": "食譜是您在聊天中執行的已儲存提示：每週回顧、後續信件、決策紀錄。在任何聊天中輸入 / 即可使用，或自行建立。",
   "cookbooks.intro.seeRecipes": "查看食譜",
-  "cookbooks.intro.showSlide": "顯示「{{name}}」"
+  "cookbooks.intro.showSlide": "顯示「{{name}}」",
+  "cookbooks.createMenu.cookbook": "新增食譜集",
+  "cookbooks.createMenu.cookbookHint": "會議筆記的格式",
+  "cookbooks.createMenu.recipe": "新增食譜",
+  "cookbooks.createMenu.recipeHint": "在聊天中執行的已儲存提示"
 }

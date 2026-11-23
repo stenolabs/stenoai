@@ -1,6 +1,7 @@
 import * as React from 'react';
 import {
   ArrowUpRight,
+  BookOpen,
   Check,
   ChevronLeft,
   ChevronRight,
@@ -9,11 +10,13 @@ import {
   ListFilter,
   Plus,
   Search,
+  Slash,
   X,
 } from 'lucide-react';
 import { MeetingsShell } from '@/components/MeetingsShell';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import {
   Select,
   SelectContent,
@@ -168,13 +171,13 @@ export function Cookbooks() {
                   {t('cookbooks.subtitle')}
                 </p>
               </div>
-              <Button
-                onClick={() => (tab === 'recipes' ? setEditingRecipe({}) : open({}))}
-                className={cn('h-9 rounded-full pl-4 pr-3.5', FOCUS_RING)}
-              >
-                {t('cookbooks.create')}
-                <Plus />
-              </Button>
+              <CreateMenu
+                onCookbook={() => open({})}
+                onRecipe={() => {
+                  setTab('recipes');
+                  setEditingRecipe({});
+                }}
+              />
             </header>
 
             {introOpen && (
@@ -382,6 +385,51 @@ function Toolbar({
         })}
       </div>
     </div>
+  );
+}
+
+/** Create: a small menu choosing a cookbook (a note format) or a recipe (a chat prompt). */
+function CreateMenu({ onCookbook, onRecipe }: { onCookbook: () => void; onRecipe: () => void }) {
+  const [menuOpen, setMenuOpen] = React.useState(false);
+  const items = [
+    { key: 'cookbook', label: t('cookbooks.createMenu.cookbook'), hint: t('cookbooks.createMenu.cookbookHint'), Icon: BookOpen, onPick: onCookbook },
+    { key: 'recipe', label: t('cookbooks.createMenu.recipe'), hint: t('cookbooks.createMenu.recipeHint'), Icon: Slash, onPick: onRecipe },
+  ];
+  return (
+    <Popover open={menuOpen} onOpenChange={setMenuOpen}>
+      <PopoverTrigger asChild>
+        <Button className={cn('h-9 rounded-full pl-4 pr-3.5', FOCUS_RING)} aria-haspopup="menu">
+          {t('cookbooks.create')}
+          <Plus />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent align="end" sideOffset={8} className="w-[260px] p-1">
+        <div role="menu" aria-label={t('cookbooks.create')}>
+          {items.map(({ key, label, hint, Icon, onPick }) => (
+            <button
+              key={key}
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                setMenuOpen(false);
+                onPick();
+              }}
+              className="flex w-full items-start gap-2.5 rounded-md px-2.5 py-2 text-left transition-colors hover:bg-[color:var(--surface-hover)]"
+            >
+              <Icon aria-hidden className="mt-0.5 size-4 shrink-0" style={{ color: 'var(--fg-2)' }} />
+              <span className="min-w-0">
+                <span className="block text-[13px] font-medium" style={{ color: 'var(--fg-1)' }}>
+                  {label}
+                </span>
+                <span className="block text-[12px]" style={{ color: 'var(--fg-2)' }}>
+                  {hint}
+                </span>
+              </span>
+            </button>
+          ))}
+        </div>
+      </PopoverContent>
+    </Popover>
   );
 }
 

@@ -7,7 +7,7 @@ import { test, expect } from '../fixtures/electron';
 test('the dragonfly sits under the greeting and settles while typing', async ({ launchApp }, testInfo) => {
   const { page } = await launchApp({ mockIpc: true });
   await page.evaluate(() => { window.location.hash = '#/chat'; });
-  const mascot = page.getByTestId('chat-mascot').locator('pre');
+  const mascot = page.getByTestId('chat-mascot').locator('.steno-mascot');
   await expect(mascot).toBeVisible();
   await expect(mascot).toHaveClass(/steno-mascot-float/);
   await page.screenshot({ path: testInfo.outputPath('chat-mascot.png') });

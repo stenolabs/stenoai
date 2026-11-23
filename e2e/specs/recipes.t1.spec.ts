@@ -25,8 +25,13 @@ test('Recipes: create one on Cookbooks, run it, and pick it from / in chat', asy
   // Built-ins run but are not editable.
   await expect(builtin.getByRole('button', { name: /^Edit / })).toHaveCount(0);
 
-  // The page's Create button makes a recipe while the Recipes tab is open.
-  await page.getByRole('button', { name: 'Create' }).click();
+  // Built-ins come first, then your own.
+  const order = await page.locator('h2').allTextContents();
+  expect(order.indexOf('Built-in')).toBeLessThan(order.indexOf('My recipes'));
+  // Create offers a cookbook or a recipe.
+  await page.getByRole('button', { name: 'Create', exact: true }).click();
+  await expect(page.getByRole('menuitem', { name: /^New cookbook/ })).toBeVisible();
+  await page.getByRole('menuitem', { name: /^New recipe/ }).click();
   const dialog = page.getByRole('dialog', { name: 'New recipe' });
   await dialog.getByLabel('Name').fill('Standup digest');
   await dialog.getByLabel('Prompt').fill('Summarise this week\'s standups: blockers first.');

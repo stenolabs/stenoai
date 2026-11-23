@@ -1047,5 +1047,9 @@
   "cookbooks.intro.recipeTitle": "What's a recipe?",
   "cookbooks.intro.recipeBody": "A recipe is a saved prompt you run in chat: a weekly recap, a follow-up email, a decision log. Type / in any chat to use one, or make your own.",
   "cookbooks.intro.seeRecipes": "See recipes",
-  "cookbooks.intro.showSlide": "Show “{{name}}”"
+  "cookbooks.intro.showSlide": "Show “{{name}}”",
+  "cookbooks.createMenu.cookbook": "New cookbook",
+  "cookbooks.createMenu.cookbookHint": "A note format for your meetings",
+  "cookbooks.createMenu.recipe": "New recipe",
+  "cookbooks.createMenu.recipeHint": "A saved prompt you run in chat"
 }

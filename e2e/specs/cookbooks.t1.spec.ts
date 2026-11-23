@@ -128,6 +128,7 @@ test("Cookbook cards open the cookbook editor; Create opens it blank", async ({
   expect(calls).toEqual(expect.arrayContaining(["set-default-template", "delete-template"]));
 
   await page.getByRole("button", { name: "Create", exact: true }).click();
+  await page.getByRole("menuitem", { name: /^New cookbook/ }).click();
   await expect(page.getByRole("heading", { name: "New cookbook" })).toBeVisible();
   await expect(page.getByPlaceholder(/Weekly Sync/)).toHaveValue("");
 });
