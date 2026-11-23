@@ -940,3 +940,25 @@
   0%, 100% { transform: translateY(0); }
   50% { transform: translateY(-5px); }
 }
+.steno-snow { position: absolute; inset: -18px -40px -8px -40px; pointer-events: none; overflow: hidden; }
+.steno-snow-flake {
+  position: absolute;
+  top: -8px;
+  background: var(--snow, #B4D6EA);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--fg-1) 10%, transparent);
+  opacity: 0;
+  animation-name: steno-snow-fall;
+  animation-timing-function: steps(24, end);
+  animation-iteration-count: infinite;
+}
+.dark .steno-snow-flake, [data-theme="dark"] .steno-snow-flake { --snow: #EAF4FA; box-shadow: none; }
+@keyframes steno-snow-fall {
+  0% { transform: translate(0, 0); opacity: 0; }
+  10% { opacity: 0.9; }
+  50% { transform: translate(6px, 70px); }
+  90% { opacity: 0.9; }
+  100% { transform: translate(-2px, 140px); opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .steno-snow { display: none; }
+}

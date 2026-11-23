@@ -102,7 +102,7 @@ function Sprite({ rows }: { rows: string[] }) {
   );
 }
 
-export function Mascot({ resting = false }: { resting?: boolean }) {
+export function Mascot({ resting = false, snow = true }: { resting?: boolean; snow?: boolean }) {
   const [frame, setFrame] = React.useState(0);
   const still = resting || prefersReducedMotion();
 
@@ -117,9 +117,50 @@ export function Mascot({ resting = false }: { resting?: boolean }) {
 
   return (
     <div aria-hidden="true" data-testid="chat-mascot" className="mb-5 flex justify-center">
-      <div className={still ? 'steno-mascot' : 'steno-mascot steno-mascot-float'}>
-        <Sprite rows={FRAMES[frame]} />
+      <div className="relative">
+        {snow && <Snow />}
+        <div className={still ? 'steno-mascot' : 'steno-mascot steno-mascot-float'}>
+          <Sprite rows={FRAMES[frame]} />
+        </div>
       </div>
+    </div>
+  );
+}
+
+// Pixel snow for the Christmas release: square flakes in the sprite's own
+// pixel size, drifting down around the dragonfly. CSS only; still (and
+// hidden) under reduced motion.
+const FLAKES = [
+  { x: -46, delay: 0, dur: 5.2, size: 1 },
+  { x: -28, delay: 1.6, dur: 6.4, size: 1 },
+  { x: -8, delay: 3.1, dur: 5.6, size: 1 },
+  { x: 12, delay: 0.8, dur: 6.0, size: 1 },
+  { x: 30, delay: 2.4, dur: 5.0, size: 1 },
+  { x: 52, delay: 4.0, dur: 6.8, size: 1 },
+  { x: 72, delay: 1.2, dur: 5.8, size: 1 },
+  { x: 92, delay: 3.6, dur: 6.2, size: 1 },
+  { x: 110, delay: 0.4, dur: 5.4, size: 1 },
+  { x: 130, delay: 2.8, dur: 6.6, size: 1 },
+  { x: 150, delay: 4.6, dur: 5.9, size: 1 },
+  { x: 166, delay: 1.9, dur: 6.1, size: 1 },
+];
+
+function Snow() {
+  return (
+    <div className="steno-snow" aria-hidden="true">
+      {FLAKES.map((f, i) => (
+        <span
+          key={i}
+          className="steno-snow-flake"
+          style={{
+            left: f.x,
+            width: PIXEL * f.size,
+            height: PIXEL * f.size,
+            animationDelay: `${f.delay}s`,
+            animationDuration: `${f.dur}s`,
+          }}
+        />
+      ))}
     </div>
   );
 }
