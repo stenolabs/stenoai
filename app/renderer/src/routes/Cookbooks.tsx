@@ -162,7 +162,7 @@ export function Cookbooks() {
             <header className="flex flex-wrap items-end justify-between gap-4">
               <div>
                 <h1
-                  className="m-0 text-[44px] leading-[1.05] tracking-[-0.025em]"
+                  className="m-0 -ml-[2px] text-[44px] leading-[1.05] tracking-[-0.025em]"
                   style={{ fontFamily: 'var(--font-serif)' }}
                 >
                   {t('cookbooks.title')}
