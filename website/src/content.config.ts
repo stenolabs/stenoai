@@ -103,6 +103,9 @@ const industries = defineCollection({
     postures: z.array(z.object({ name: z.string(), title: z.string(), body: z.string(), steps: z.array(z.string()), holds: z.string() })).optional(),
     // Lines the product is explicitly not presented as crossing.
     notFor: z.array(z.object({ h: z.string(), b: z.string() })).optional(),
+    heroVideo: z.object({ src: z.string(), poster: z.string(), position: z.string().optional() }).optional(),
+    loop: z.object({ src: z.string(), poster: z.string(), heading: z.string(), body: z.string() }).optional(),
+    film: z.object({ src: z.string(), poster: z.string(), title: z.string() }).optional(),
     faqs: z.array(faqSchema),
   }),
 })

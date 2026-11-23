@@ -35,6 +35,20 @@ function isCurrent(href, path) {
 function MegaPanel({ href, m, open, loaded, onEnter, onLeave }) {
   const [layer, setLayer] = useState(0);
   useEffect(() => { if (!open) setLayer(0); }, [open]);
+  // Sector overview take: restarts on open, plays once and holds its last frame, pauses on close or while another
+  // layer is shown, and resumes when layer 0 returns unless it has finished. Poster only under reduced motion.
+  const video = useRef(null);
+  const wasOpen = useRef(false);
+  useEffect(() => {
+    const v = video.current;
+    if (v && !window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      if (open && layer === 0) {
+        if (!wasOpen.current) v.currentTime = 0;
+        if (!v.ended) v.play().catch(() => {});
+      } else v.pause();
+    }
+    wasOpen.current = open;
+  }, [open, layer, loaded]);
   const base = m.base ?? href;
   const layers = [m.overview, ...m.items];
   const tab = open ? 0 : -1;
@@ -44,7 +58,12 @@ function MegaPanel({ href, m, open, loaded, onEnter, onLeave }) {
         <a className="mega-feat" href={href} tabIndex={tab}>
           {layers.map((it, k) => (
             <figure className={`mega-layer${k === layer ? " is-on" : ""}`} key={k}>
-              {loaded && <img src={`/images/nav/${it.img}.webp`} alt="" width="800" height="533" decoding="async" />}
+              {!loaded ? null : k === 0 && m.overview.video ? (
+                <video ref={video} muted playsInline preload="none" poster={m.overview.video.poster} aria-hidden="true" tabIndex={-1}
+                  disablePictureInPicture disableRemotePlayback style={m.overview.video.position ? { objectPosition: m.overview.video.position } : undefined}>
+                  <source src={m.overview.video.src} type="video/mp4" />
+                </video>
+              ) : <img src={`/images/nav/${it.img}.webp`} alt="" width="800" height="533" decoding="async" />}
               <figcaption>
                 <span className="mega-fk">{k === 0 ? m.kicker : `${pad(k)} · ${it.label}`}</span>
                 <span className="mega-ft">{k === 0 ? m.title : it.line}</span>
@@ -102,6 +121,7 @@ export function Nav() {
   const nav = useRef(null);
   const linkRefs = useRef({});
   const closeTimer = useRef(0);
+  const restoringFocus = useRef(false); // Escape returns focus to the link without reopening its menu
 
   useEffect(() => {
     setPath(window.location.pathname);
@@ -137,7 +157,9 @@ export function Nav() {
       if (event.key === "Escape") {
         const href = mega;
         setMega(null);
+        restoringFocus.current = true;
         linkRefs.current[href]?.focus();
+        restoringFocus.current = false;
       }
     };
     document.addEventListener("keydown", onKey);
@@ -167,6 +189,7 @@ export function Nav() {
   const desktop = () => window.matchMedia("(min-width: 1100px)").matches;
   const cancelClose = () => clearTimeout(closeTimer.current);
   const openMega = (href) => {
+    if (restoringFocus.current) return;
     cancelClose();
     moveBar(href);
     if (!desktop() || !MEGA[href]) { setMega(null); return; }

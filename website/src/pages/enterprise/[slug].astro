@@ -42,5 +42,6 @@ const breadcrumbJsonLd = {
   canonical={canonical}
   structuredData={[faqJsonLd, breadcrumbJsonLd]}
 >
+  {data.heroVideo && <link slot="head" rel="preload" as="image" href={data.heroVideo.poster} fetchpriority="high" />}
   <IndustryPage data={data} />
 </BaseLayout>
