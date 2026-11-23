@@ -9,7 +9,6 @@ import { ALL, COMPLIANCE_BODY, CTA_BRIEFING, BREACHES_VERIFIED, SECTOR_VERIFIED 
 import FilmTeaser from "./FilmTeaser.astro";
 import FilmDialog from "./FilmDialog.astro";
 import { films } from "../content/films.js";
-import "../scroll.css";
 import "../sector.css";
 import LightRoom from "./LightRoom.astro";
 import TakeStill from "./TakeStill.astro";
@@ -23,7 +22,7 @@ const film = films.find((f) => f.slug === data.slug);
 // Defence scroll-motion preview (D1 terrain route, D2 mast, D3 posture stills, D4 doors). Other sectors are untouched.
 const mo = data.slug === "defense";
 // Deployment posture takes: Defence uses its own on-device laptop sequence (deploy-device-def-*); infra and cloud match the home page "Where it runs" cards, same timings.
-const postureSeq = [{ k: "device-def", frames: 73, start: ".98", end: ".58" }, { k: "infra", frames: 61, start: ".93", end: ".55" }, { k: "cloud", frames: 73, start: ".88", end: ".52" }];
+const postureSeq = [{ k: "device-def", frames: 73, sw: 960, sh: 600, start: ".98", end: ".58" }, { k: "infra", frames: 61, sw: 800, sh: 500, start: ".93", end: ".55" }, { k: "cloud", frames: 73, sw: 960, sh: 600, start: ".88", end: ".52" }];
 const others = ALL.filter((c) => c.slug !== data.slug);
 // Government and law enforcement wrap the use-cases in a light-room stage; other sectors keep the plain markup (defence has its own Stage).
 const GW = data.motion?.corridor ? "div" : Fragment;
@@ -85,12 +84,12 @@ const num = (id) => String(order.indexOf(id) + 1).padStart(2, "0");
             <noscript><a class="mission-button mission-button-light sector-film-button" href={film.src}>Watch the film <span class="film-length-inline">{film.length}</span></a></noscript>
             <button type="button" class="mission-button mission-button-light sector-film-button" data-film-open={film.slug} aria-haspopup="dialog">Watch the film <span class="film-length-inline">{film.length}</span></button>
           </div>
-          <FilmTeaser film={film} />
+          <FilmTeaser film={film} near="0px" />
         </div>
       </div>
     </section>
+    <FilmDialog />
   )}
-  <FilmDialog />
 
   {data.loop && (
     <section id="app" class="mission-section sector-section sector-loop" aria-labelledby="app-heading">
@@ -106,7 +105,7 @@ const num = (id) => String(order.indexOf(id) + 1).padStart(2, "0");
             <video class="sector-loop-video" muted loop playsinline preload="none" poster={data.loop.poster} aria-label="Illustrative product demo" disablepictureinpicture disableremoteplayback data-loop>
               <source src={data.loop.src} type="video/mp4" />
             </video>
-            <button type="button" class="mission-text-link sector-loop-toggle" hidden data-loop-toggle>Pause</button>
+            <button type="button" class="mission-text-link sector-loop-toggle" data-pending data-loop-toggle aria-label="Pause illustrative product demo">Pause</button>
           </div>
         </div>
       </div>
@@ -260,7 +259,7 @@ const num = (id) => String(order.indexOf(id) + 1).padStart(2, "0");
             <article class="sector-posture">
               {mo && (() => { const m = postureSeq[i]; return (
                 <div class="def-posture-media" aria-hidden="true">
-                  <noscript><img class="def-posture-still" src={`/scroll/deploy-${m.k}-still.webp`} alt="" width="960" height="600" /></noscript>
+                  <noscript><img class="def-posture-still" src={`/scroll/deploy-${m.k}-still.webp`} alt="" width={m.sw} height={m.sh} /></noscript>
                   <ScrollSeq class="def-seq" src={`/scroll/deploy-${m.k}-d`} src-phone={`/scroll/deploy-${m.k}-p`} frames={m.frames} start={m.start} end={m.end} target={`#dpm-${m.k}`} />
                   <i class="def-posture-mark" id={`dpm-${m.k}`}></i>
                 </div>); })()}
@@ -322,7 +321,7 @@ const num = (id) => String(order.indexOf(id) + 1).padStart(2, "0");
       <div class="sector-related-grid">
         {others.map((c) => (
           <a class="sector-related-card" href={`/enterprise/${c.slug}/`}>
-            <img src={`/images/enterprise/${c.image}.webp`} alt="" width="1200" height="800" decoding="async" />
+            <img src={`/images/enterprise/${c.image}.webp`} alt="" width="1200" height="800" loading="lazy" decoding="async" />
             <div>
               <p class="mission-eyebrow">{c.eyebrow}</p>
               <h3>{c.name} <ArrowUpRight size={20} aria-hidden="true" /></h3>
@@ -340,11 +339,15 @@ const num = (id) => String(order.indexOf(id) + 1).padStart(2, "0");
 <Footer />
 
 <script>
-  import "../scripts/scroll-seq.js";
-  // Scroll motion: only the players this page uses are fetched.
-  if (document.querySelector('[data-light-room]')) import("../scripts/scroll-rooms.js");
-  if (document.querySelector('[data-le]')) import("../scripts/scroll-le.js");
-  if (document.querySelector('[data-def-terrain], [data-def-mast]')) import("../scripts/scroll-def.js");
+  const boot = () => {
+    import("../scripts/scroll-seq.js");
+    // Scroll motion: only the players this page uses are fetched.
+    if (document.querySelector('[data-light-room]')) import("../scripts/scroll-rooms.js");
+    if (document.querySelector('[data-le]')) import("../scripts/scroll-le.js");
+    if (document.querySelector('[data-def-terrain], [data-def-mast]')) import("../scripts/scroll-def.js");
+  };
+  if (document.readyState === 'complete') boot();
+  else addEventListener('load', boot, { once: true });
 </script>
 
 <script>
@@ -369,11 +372,15 @@ const num = (id) => String(order.indexOf(id) + 1).padStart(2, "0");
   const toggle = document.querySelector<HTMLButtonElement>('[data-loop-toggle]');
   if (loop && toggle) {
     let held = quiet; // user (or reduced motion, data saver) holds it paused
-    const sync = () => { toggle.textContent = loop.paused ? 'Play' : 'Pause'; };
+    const sync = () => {
+      const p = loop.paused;
+      toggle.textContent = p ? 'Play' : 'Pause';
+      toggle.setAttribute('aria-label', p ? 'Play illustrative product demo' : 'Pause illustrative product demo');
+    };
     loop.addEventListener('play', sync);
     loop.addEventListener('pause', sync);
     sync();
-    toggle.hidden = false;
+    toggle.removeAttribute('data-pending');
     toggle.addEventListener('click', () => {
       held = !loop.paused;
       if (held) loop.pause(); else loop.play().catch(() => {});

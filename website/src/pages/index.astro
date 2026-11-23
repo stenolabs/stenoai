@@ -14,7 +14,6 @@ import MissionFAQ from "../sections/MissionFAQ.astro";
 import CTAFooter from "../sections/CTAFooter.astro";
 import Footer from "../sections/Footer.astro";
 import ScrollSeq from "../components/ScrollSeq.astro";
-import "../scroll.css";
 
 const title = "StenoAI — Private Meeting Notes for Government, Defence & Law Enforcement";
 const description =
@@ -22,6 +21,8 @@ const description =
 ---
 
 <BaseLayout title={title} description={description} canonical="https://stenoai.co/">
+  <link slot="head" rel="preload" as="image" href="/images/enterprise/hero-film-m.webp" media="(max-width: 767px)" fetchpriority="high" />
+  <link slot="head" rel="preload" as="image" href="/images/enterprise/hero-film.webp" media="(min-width: 768px)" fetchpriority="high" />
   <!-- Scroll-driven footage: "on", or "still" for reduced motion and data saver; absent without JavaScript, which keeps the plain page. -->
   <script is:inline>
     (function (d, c) { d.dataset.ss = matchMedia('(prefers-reduced-motion: reduce)').matches || (c && c.saveData) ? 'still' : 'on'; })(document.documentElement, navigator.connection);
@@ -47,6 +48,10 @@ const description =
 </BaseLayout>
 
 <script>
-  import "../scripts/scroll-seq.js";
-  import "../scripts/scroll-records.js";
+  const boot = () => {
+    import("../scripts/scroll-seq.js");
+    import("../scripts/scroll-records.js");
+  };
+  if (document.readyState === 'complete') boot();
+  else addEventListener('load', boot, { once: true });
 </script>

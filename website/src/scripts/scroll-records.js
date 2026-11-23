@@ -42,14 +42,14 @@ function layout(c) {
   c.drawn = '';
 }
 // gen changes on every load and unload: a result from an earlier one (other mode, or unloaded since) is ignored.
-const fetchImg = (c, gen, src, set, key = 'gen') => { const im = new Image(); im.src = src; im.decode().then(() => { if (gen !== c[key]) return; set(im); c.drawn = ''; schedule(); }, () => {}); }; // decode() keeps the large atlas off the main thread
+const fetchImg = (c, gen, src, set, key = 'gen', onErr) => { const im = new Image(); im.src = src; im.decode().then(() => { if (gen !== c[key]) return; set(im); c.drawn = ''; schedule(); }, () => { if (gen === c[key]) onErr?.(); }); }; // decode() keeps the large atlas off the main thread
 const loadAtlas = (c, gen) => { if (!still() && !c.atlas) fetchImg(c, gen, `/scroll/rec/${c.key}-${c.mode}.webp`, (im) => { c.atlas = im; }); };
 // The poster (a few KB) is fetched as soon as the section is within 2 viewports, right away and not in an idle slot: it is what replaces the card photo,
 // and three cards that enter together must not be swapped one after another. Atlases come later (within 1.5 viewports, staggered, in idle time).
 function loadPoster(c) {
   if (c.poster || c.pReq) return;
   c.pReq = true; c.pm = c.mode = mode(); const gen = c.pgen;
-  fetchImg(c, gen, `/scroll/rec/${c.key}-poster-${c.pm}.webp`, (im) => { c.poster = im; c.pReq = false; c.a.classList.add('rec-ready'); }, 'pgen'); // the photo goes only now
+  fetchImg(c, gen, `/scroll/rec/${c.key}-poster-${c.pm}.webp`, (im) => { c.poster = im; c.pReq = false; c.a.classList.add('rec-ready'); }, 'pgen', () => { c.pReq = false; }); // the photo goes only now
 }
 function load(c) {
   c.loaded = true; c.mode = mode(); const gen = ++c.gen;
@@ -138,6 +138,7 @@ cards.forEach((c) => {
 addEventListener('scroll', () => { act = performance.now(); schedule(); }, { passive: true });
 const remode = () => { cards.forEach((c) => { layout(c); if ((c.loaded || c.poster) && mode() !== c.pm) { unload(c); unloadPoster(c); if (c.inView) load(c); else loadPoster(c); } }); schedule(); };
 addEventListener('resize', remode);
+addEventListener('pageshow', (e) => { if (e.persisted) remode(); });
 SMALL.addEventListener('change', remode);
 // Reduced motion changed: take effect at once (motion allowed again fetches the atlas, a still draws the open case).
 REDUCED.addEventListener('change', () => { cards.forEach((c) => { c.drawn = ''; if (c.loaded) loadAtlas(c, c.gen); }); schedule(); });

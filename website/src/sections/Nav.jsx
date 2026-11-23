@@ -41,7 +41,7 @@ function MegaPanel({ href, m, open, loaded, onEnter, onLeave }) {
   const wasOpen = useRef(false);
   useEffect(() => {
     const v = video.current;
-    if (v && !window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    if (v && !window.matchMedia("(prefers-reduced-motion: reduce)").matches && !navigator.connection?.saveData) {
       if (open && layer === 0) {
         if (!wasOpen.current) v.currentTime = 0;
         if (!v.ended) v.play().catch(() => {});
@@ -49,6 +49,7 @@ function MegaPanel({ href, m, open, loaded, onEnter, onLeave }) {
     }
     wasOpen.current = open;
   }, [open, layer, loaded]);
+  if (!loaded) return <div id={`mega-${m.key}`} className="mega-panel" />;
   const base = m.base ?? href;
   const layers = [m.overview, ...m.items];
   const tab = open ? 0 : -1;
@@ -59,7 +60,7 @@ function MegaPanel({ href, m, open, loaded, onEnter, onLeave }) {
           {layers.map((it, k) => (
             <figure className={`mega-layer${k === layer ? " is-on" : ""}`} key={k}>
               {!loaded ? null : k === 0 && m.overview.video ? (
-                <video ref={video} muted loop={m.overview.video.loop || undefined} playsInline preload="none" poster={m.overview.video.poster} aria-hidden="true" tabIndex={-1}
+                <video ref={video} muted playsInline preload="none" poster={m.overview.video.poster} aria-hidden="true" tabIndex={-1}
                   disablePictureInPicture disableRemotePlayback style={m.overview.video.position ? { objectPosition: m.overview.video.position } : undefined}>
                   <source src={m.overview.video.src} type="video/mp4" />
                 </video>

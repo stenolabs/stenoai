@@ -1,0 +1,36 @@
+/* The films: three dark teasers that play by scroll (components/FilmTeaser.astro); a click opens the film in a native dialog (components/FilmDialog.astro).
+   The frames are cropped to the screen plus a 40-px margin of the 534-px source (screen = 85% of the box), so the box is 117.6% of its column and starts 8.8% to the left: the screen's own edge lines up with the text under it. */
+.films-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 300px)); justify-content: space-between; gap: 40px; }
+.film { min-width: 0; }
+.teaser { position: relative; }
+.teaser-box { position: relative; width: 117.6%; margin-left: -8.81%; aspect-ratio: 534 / 985; }
+/* Phones: the teaser box is at most 56% of the screen height and sits inside the page column (it was 117.6% of the column, which spilled over both edges at 390 px). */
+@media (max-width: 767px) { .teaser-box { width: min(100%, calc(56vh * 534 / 985)); width: min(100%, calc(56svh * 534 / 985)); margin-left: auto; margin-right: auto; } }
+.teaser-still { display: block; width: 100%; height: 100%; mix-blend-mode: screen; }
+.teaser-open { position: absolute; inset: 0; padding: 0; border: 0; background: none; cursor: pointer; display: grid; place-items: center; align-content: start; }
+.teaser-mark { position: absolute; left: 0; top: 48.9%; width: 1px; height: 1px; pointer-events: none; }
+.teaser-ring { position: absolute; left: 50%; top: 48.9%; width: 64px; height: 64px; margin: -32px 0 0 -32px; border-radius: 50%; display: grid; place-items: center; color: #fff; border: 1px solid #ffffff73; background: #121311d9; opacity: 0; transform: scale(.92); transition: opacity .5s, transform .5s, border-color .18s, background .18s; }
+.teaser-ring svg { margin-left: 3px; }
+html:not([data-ss]) .teaser-open, html:not([data-ss]) button.film-watch, html:not([data-ss]) button.sector-film-button { display: none; }
+html[data-ss=still] .teaser-ring, .teaser.is-rest .teaser-ring { opacity: 1; transform: none; }
+.teaser-open:hover .teaser-ring, .film:has(.film-watch:hover) .teaser-ring, .film:has(.film-watch:focus-visible) .teaser-ring, .sector-film-grid:has(.sector-film-button:hover) .teaser-ring, .sector-film-grid:has(.sector-film-button:focus-visible) .teaser-ring { border-color: #fff; background: #566D48; }
+.film-caption { display: grid; gap: 4px; padding-top: 14px; }
+.film-caption .mission-eyebrow { color: var(--fg-2); white-space: nowrap; }
+.film-caption .mission-text-link { justify-self: start; white-space: nowrap; min-height: 44px; background: none; border: 0; padding: 0; color: inherit; font-family: inherit; cursor: pointer; }
+.film-caption .film-watch { color: #fff; }
+.film-caption .film-watch:focus-visible, .film-close:focus-visible, .sector-film-button:focus-visible { outline: 2px solid #9DB88D; outline-offset: 3px; }
+.film-length { color: var(--fg-muted); }
+.film-length::before { content: '·'; margin-right: 10px; }
+html.film-open { overflow: hidden; }
+.film-dialog { position: fixed; inset: 0; margin: auto; padding: 0; border: 0; background: #000; overflow: visible; height: min(84vh, calc(94vw * 16 / 9)); height: min(84svh, calc(94vw * 16 / 9)); aspect-ratio: 9 / 16; max-width: 94vw; max-height: 84vh; max-height: 84svh; color: #fff; }
+.film-dialog::backdrop { background: rgba(10, 11, 9, .84); }
+.film-dialog video::cue { font-size: 78%; line-height: 1.25; background: rgba(10, 11, 9, .78); }
+.film-dialog video { display: block; width: 100%; height: 100%; object-fit: contain; background: #000; }
+.film-close { position: absolute; top: 10px; right: 10px; width: 44px; height: 44px; display: grid; place-items: center; border: 1px solid #ffffff40; background: #121311d9; color: #fff; cursor: pointer; transition: background .18s; }
+.film-close:hover { background: #566D48; }
+@media (prefers-reduced-motion: reduce) { .teaser-ring, .film-close { transition: none; } }
+@media (max-width: 767px) {
+  .films-grid { display: flex; gap: 16px; margin-inline: -20px; padding-inline: 20px; overflow-x: auto; scroll-snap-type: x mandatory; scroll-padding-inline: 20px; overscroll-behavior-x: contain; scrollbar-width: none; }
+  .films-grid::-webkit-scrollbar { display: none; }
+  .film { flex: 0 0 66%; max-width: none; scroll-snap-align: start; }
+}

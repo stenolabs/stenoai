@@ -8,12 +8,10 @@ import ScrollLight from '../../components/ScrollLight.astro';
 import ScrollSeq from '../../components/ScrollSeq.astro';
 import { CTA_BRIEFING, enterpriseHero } from '../../content/industries.data';
 import { ArrowUpRight, ArrowRight, Check } from 'lucide-react';
-import '../../sector.css';
-import '../../scroll.css';
-import '../../page-cable.css';
+import '../../sector-base.css';
 import '../../enterprise-page.css';
 
-// Every line below has a source in NOTES.md. Policy: src/content/README.md (no certifications, no customers, no numbers, no prices).
+// Policy: src/content/README.md (no certifications, no customers, no numbers, no prices).
 const title = 'StenoAI for Enterprise — Meeting Notes Your Organisation Controls';
 const description = 'Private meeting notes for large companies and private companies. Record and transcribe on the device, set the AI route yourself and keep shared notes in your own storage. Open source.';
 
@@ -23,11 +21,11 @@ const hero = {
   heroVideo: enterpriseHero,
 };
 
-// Light zones: rectangles as fractions of the still (x, y, w, h). Measured from the stills in motion-studio/preproduction/keyframes/web-ent-*.png.
+// Light zones: rectangles as fractions of the still (x, y, w, h).
 const roomCol = [[.29, .239], [.532, .223], [.758, .226]], roomRow = [[.218, .313], [.563, .253]];
-const roomZones = [[0,0],[1,0],[2,0],[0,1],[1,1],[2,1]].map(([c, r], i) => ({ r: [roomCol[c][0], roomRow[r][0], roomCol[c][1], roomRow[r][1]], a: +(.05 + i * .14).toFixed(3), b: +(.17 + i * .14).toFixed(3), d: +(.05 + (i + 1) * .14).toFixed(3), f: .1 }));
+const roomZones = [[0,0],[1,0],[2,0],[0,1],[1,1],[2,1]].map(([c, r], i) => ({ r: [roomCol[c][0], roomRow[r][0], roomCol[c][1], roomRow[r][1]], a: i ? +(.05 + i * .14).toFixed(3) : -.05, b: i ? +(.17 + i * .14).toFixed(3) : 0, d: +(.05 + (i + 1) * .14).toFixed(3), f: .1 }));
 const floorBands = [[90,142],[153,205],[215,268],[277,330],[340,392],[403,455],[465,518],[527,580],[589,642],[651,704],[713,765],[775,836]]; // top to bottom, px of 941
-const towerZones = floorBands.map(([y0, y1], k) => { const j = 11 - k; return { r: [.41, y0 / 941, .182, (y1 - y0) / 941], a: +(.06 + j * .07).toFixed(3), b: +(.16 + j * .07).toFixed(3), f: .06 }; });
+const towerZones = floorBands.map(([y0, y1], k) => { const j = 11 - k; return { r: [.41, +(y0 / 941).toFixed(4), .182, +((y1 - y0) / 941).toFixed(4)], a: +(.06 + j * .07).toFixed(3), b: +(.16 + j * .07).toFixed(3), f: .06 }; });
 const houseZones = [{ r: [.562, .555, .074, .16], a: .08, b: .4, f: .1 }, { r: [.389, .548, .078, .24], a: .52, b: .82, f: .08 }]; // window, then the door line
 const houseZonesPhone = [{ r: [.368, .555, .074, .16], a: .08, b: .4, f: .1 }, { r: [.533, .548, .078, .24], a: .52, b: .82, f: .08 }]; // the phone picture is mirrored
 
@@ -55,7 +53,6 @@ const rows = [
   { h: 'The app', c: 'Free. MIT licence. No usage restrictions.', e: 'The same MIT-licensed app. Your security team can read and build the source.' },
 ];
 
-// Owner confirmed 23 Nov 2026 (StenoAI Deployment Deck, slides 3, 4, 12-15, 35-38). Not in the public repo: see NOTES.
 const deployment = [
   { h: 'Single sign-on', b: 'SAML 2.0 or OpenID Connect, with your own MFA.' },
   { h: 'Provisioning', b: 'SCIM 2.0, so joiners and leavers follow your process.' },
@@ -75,14 +72,14 @@ const steps = [
 
 const egress = [
   { what: 'Meeting content', when: 'Never in local mode. Otherwise only to your adapter, your storage bucket or the model endpoint you choose.' },
-  { what: 'Update checks', when: 'Version check only. No meeting content.' },
-  { what: 'Usage analytics', when: 'Anonymous and switchable off in Settings. No meeting content.' },
+  { what: 'Update checks', when: 'Checks GitHub for a new version and, on macOS, downloads it. No meeting content.' },
+  { what: 'Usage analytics', when: 'Anonymous, on until you switch it off in Settings. No meeting content.' },
   { what: 'Model downloads', when: 'During setup, or when you choose a new model.' },
 ];
 
 const faqs = [
   { q: 'Is any meeting content sent to StenoAI’s servers?', a: 'No. StenoAI runs no server that receives meeting content. In local mode, recordings, transcripts and summaries stay as files on the device. If your organisation signs people in to an adapter, content goes only to the places it sets up: your adapter, your storage bucket and your model endpoint.' },
-  { q: 'What does leave the device?', a: 'Update checks send the version only. Anonymous usage analytics can be switched off in Settings. Model downloads happen during setup, or when you choose a new model. None of these carry meeting content.' },
+  { q: 'What does leave the device?', a: 'Update checks check GitHub for a new version and, on macOS, download it. Usage analytics are anonymous, on until you switch it off in Settings. Model downloads happen during setup, or when you choose a new model. None of these carry meeting content.' },
   { q: 'Can we run it on our own infrastructure?', a: 'Yes. Recording always happens on the device, and transcription runs there by default. Summaries and questions can run on the device, on a model server on your own network, in your own cloud account such as AWS Bedrock, or through your organisation’s adapter.' },
   { q: 'Can our security team review the software?', a: 'Yes. StenoAI is open source under the MIT licence. Your team can read the source, review the dependencies and build it in your own environment.' },
   { q: 'Can IT deploy it to managed Macs?', a: 'Yes. The macOS app is signed. IT can deploy it through MDM, such as Jamf, by distributing the .app bundle. The Windows version is in alpha and is not signed yet.' },
@@ -121,11 +118,14 @@ const flowAlt = 'Diagram. Endpoints record, and transcribe by default, on each l
         </div>
         <div class="industry-hero-chips"><span>Your device or your infrastructure</span><span>No meeting bot</span><span>Open source</span></div>
       </div>
-      <div class="industry-hero-media" role="img" aria-label={hero.alt}>
-        <video class="industry-hero-image" muted loop playsinline preload="none" poster={hero.heroVideo.poster} aria-hidden="true" tabindex="-1" disablepictureinpicture disableremoteplayback data-hero-take style={hero.heroVideo.position ? `object-position: ${hero.heroVideo.position}` : undefined}>
-          <source src={hero.heroVideo.src} type="video/mp4" />
-        </video>
-        <span class="mega-tag" aria-hidden="true"><span class="mission-status-dot"></span> Illustrative scene</span>
+      <div class="industry-hero-col">
+        <div class="industry-hero-media" role="img" aria-label={hero.alt}>
+          <video class="industry-hero-image" muted loop playsinline preload="none" poster={hero.heroVideo.poster} aria-hidden="true" tabindex="-1" disablepictureinpicture disableremoteplayback data-hero-take style={hero.heroVideo.position ? `object-position: ${hero.heroVideo.position}` : undefined}>
+            <source src={hero.heroVideo.src} type="video/mp4" />
+          </video>
+          <span class="mega-tag" aria-hidden="true"><span class="mission-status-dot"></span> Illustrative scene</span>
+        </div>
+        <button type="button" class="mission-text-link sector-loop-toggle" data-pending data-hero-toggle aria-label="Pause illustrative scene">Pause</button>
       </div>
     </section>
 
@@ -140,7 +140,7 @@ const flowAlt = 'Diagram. Endpoints record, and transcribe by default, on each l
           {readers.map((r, i) => (
             <div>
               <div class="ent-obj">
-                <ScrollLight name={i ? 'house' : 'tower'} zones={i ? houseZones : towerZones} zones-phone={JSON.stringify(i ? houseZonesPhone : towerZones)} w="1280" h="720" fit="cover" flow-start=".9" flow-end=".5" />
+                <ScrollLight name={i ? 'house' : 'tower'} zones={i ? houseZones : towerZones} zones-phone={i ? JSON.stringify(houseZonesPhone) : undefined} w="1280" h="720" fit="cover" flow-start=".9" flow-end=".5" />
               </div>
               <h3><Check size={15} strokeWidth={2.2} aria-hidden="true" />{r.h}</h3>
               <p>{r.b}</p>
@@ -151,7 +151,7 @@ const flowAlt = 'Diagram. Endpoints record, and transcribe by default, on each l
     </section>
 
     <section id="rooms" class="mission-section sector-section has-stage" aria-labelledby="rooms-heading">
-      <Stage on class="stage-rooms">
+      <Stage on ownFit class="stage-rooms">
       <div class="mission-wrap stage-text">
         <div class="mission-section-top"><p class="mission-eyebrow">02 / Where it is used</p><span class="mission-eyebrow">Illustrative settings · {rooms.length}</span></div>
         <div class="mission-section-heading">
@@ -218,9 +218,9 @@ const flowAlt = 'Diagram. Endpoints record, and transcribe by default, on each l
           <div class="mission-boundary-top"><span class="mission-eyebrow">Your boundary</span><span class="mission-eyebrow">Content goes only where you point it <span class="mission-status-dot"></span></span></div>
           <div class="ent-flow" data-flow>
             <svg class="dk" viewBox="0 0 1200 510" role="img" aria-label={flowAlt}>
-              <image data-obj data-a="0.02" data-b="0.1" href="/scroll/ent/deploy-device-end-b-d.webp" x="60" y="5" width="200" height="120" preserveAspectRatio="xMidYMid meet" />
-              <image data-obj data-a="0.28" data-b="0.36" href="/scroll/ent/deploy-infra-end-d.webp" x="480" y="5" width="200" height="120" preserveAspectRatio="xMidYMid meet" />
-              <image data-obj data-a="0.6" data-b="0.68" href="/scroll/ent/deploy-cloud-end-d.webp" x="920" y="5" width="200" height="120" preserveAspectRatio="xMidYMid meet" />
+              <image data-obj data-a="0.02" data-b="0.1" data-href="/scroll/ent/deploy-device-end-b-d.webp" x="60" y="5" width="200" height="120" preserveAspectRatio="xMidYMid meet" />
+              <image data-obj data-a="0.28" data-b="0.36" data-href="/scroll/ent/deploy-infra-end-d.webp" x="480" y="5" width="200" height="120" preserveAspectRatio="xMidYMid meet" />
+              <image data-obj data-a="0.6" data-b="0.68" data-href="/scroll/ent/deploy-cloud-end-d.webp" x="920" y="5" width="200" height="120" preserveAspectRatio="xMidYMid meet" />
               <g transform="translate(0,130)">
               <g data-fade data-a="0.7" data-b="0.9"><rect class="dash" x="400" y="20" width="780" height="340" /><text class="tm" x="424" y="48">Your tenancy</text></g>
               <rect data-draw data-a="0" data-b="0.14" x="20" y="120" width="280" height="140" />
@@ -310,47 +310,113 @@ const flowAlt = 'Diagram. Endpoints record, and transcribe by default, on each l
 </BaseLayout>
 
 <script>
-  import '../../scripts/scroll-light.js';
-  import '../../scripts/scroll-seq.js';
-  import '../../scripts/page-cable.js';
+  const boot = () => {
+    import('../../scripts/scroll-light.js');
+    import('../../scripts/scroll-seq.js');
+    import('../../scripts/page-cable.js');
+  };
+  if (document.readyState === 'complete') boot();
+  else addEventListener('load', boot, { once: true });
 </script>
 
 <script>
   // Hero take: seamless 8 s loop while in view; pauses when scrolled out of view.
+  // The Pause/Play toggle is the WCAG 2.2.2 pause control, matching the sector app demos.
   // Poster only under reduced motion, data saver, or if the browser blocks play(). Nothing is fetched before play().
-  const take = document.querySelector<HTMLVideoElement>('[data-hero-take]');
+  const take = document.querySelector('[data-hero-take]');
+  const toggle = document.querySelector('[data-hero-toggle]');
   const calm = matchMedia('(prefers-reduced-motion: reduce)').matches || !!navigator.connection?.saveData;
-  if (take && !calm && 'IntersectionObserver' in window) {
-    new IntersectionObserver((entries) => {
-      if (entries[entries.length - 1].isIntersecting) take.play().catch(() => {});
-      else take.pause();
-    }, { threshold: 0.25 }).observe(take);
+  if (take && toggle) {
+    let held = calm;
+    const sync = () => {
+      const p = take.paused;
+      toggle.textContent = p ? 'Play' : 'Pause';
+      toggle.setAttribute('aria-label', p ? 'Play illustrative scene' : 'Pause illustrative scene');
+    };
+    take.addEventListener('play', sync);
+    take.addEventListener('pause', sync);
+    sync();
+    toggle.removeAttribute('data-pending');
+    toggle.addEventListener('click', () => {
+      held = !take.paused;
+      if (held) take.pause(); else take.play().catch(() => {});
+    });
+    if ('IntersectionObserver' in window) {
+      const observe = () => {
+        new IntersectionObserver((entries) => {
+          if (entries[entries.length - 1].isIntersecting && !held) take.play().catch(() => {});
+          else take.pause();
+        }, { threshold: 0.25 }).observe(take);
+      };
+      if (document.readyState === 'complete') observe();
+      else addEventListener('load', observe, { once: true });
+    }
   }
 </script>
 
 <script>
   // Where everything lives: the diagram is drawn by scrolling. Each line and box has a start and end (data-a, data-b) on the figure's
   // progress, so scrolling back undoes it. Reduced motion and data saver leave the finished diagram as it is; so does no JavaScript.
-  const quiet = matchMedia('(prefers-reduced-motion: reduce)').matches || !!navigator.connection?.saveData;
-  const fig = document.querySelector<HTMLElement>('[data-flow]');
-  if (fig && !quiet) {
+  // Desktop diagram images are only attached when the figure is within 1.5 viewports and visible (not on phones or under data saver).
+  const rmq = matchMedia('(prefers-reduced-motion: reduce)');
+  const saveData = !!navigator.connection?.saveData;
+  const isQuiet = () => rmq.matches || saveData;
+  const fig = document.querySelector('[data-flow]');
+  if (fig) {
     const clamp = (x) => Math.max(0, Math.min(1, x));
-    fig.querySelectorAll<SVGGeometryElement>('[data-draw]').forEach((el) => { el.setAttribute('pathLength', '1'); el.style.strokeDasharray = '1'; });
-    let raf = 0;
+    let inView = false, raf = 0, imgsLoaded = false;
+    const loadImgs = () => {
+      if (imgsLoaded || saveData) return;
+      const dk = fig.querySelector('svg.dk');
+      if (!dk || !dk.getClientRects().length) return;
+      imgsLoaded = true;
+      dk.querySelectorAll('image[data-href]').forEach((im) => {
+        if (im.dataset.href) im.setAttribute('href', im.dataset.href);
+      });
+    };
+    const prepDraw = () => {
+      fig.querySelectorAll('[data-draw]').forEach((el) => {
+        el.setAttribute('pathLength', '1');
+        el.style.strokeDasharray = '1';
+      });
+    };
+    const showAll = () => {
+      fig.querySelectorAll('[data-a]').forEach((el) => {
+        if ('draw' in el.dataset) el.style.strokeDashoffset = '0';
+        else el.style.opacity = '1';
+      });
+    };
     const update = () => {
       raf = 0;
+      if (isQuiet()) { showAll(); return; }
       const svg = [...fig.querySelectorAll('svg')].find((s) => s.getClientRects().length);
       if (!svg) return;
       const r = svg.getBoundingClientRect(), vh = innerHeight;
       const p = clamp((vh * 0.85 - r.top) / (r.height * 0.85));
-      svg.querySelectorAll<SVGElement>('[data-a]').forEach((el) => {
-        const t = clamp((p - +el.dataset.a) / (+el.dataset.b - +el.dataset.a));
-        if ('draw' in el.dataset) el.style.strokeDashoffset = String(1 - t); else el.style.opacity = String(t);
+      svg.querySelectorAll('[data-a]').forEach((el) => {
+        const a = Number(el.dataset.a), b = Number(el.dataset.b);
+        const t = clamp((p - a) / (b - a));
+        if ('draw' in el.dataset) el.style.strokeDashoffset = String(1 - t);
+        else el.style.opacity = String(t);
       });
     };
-    const queue = () => { if (!raf) raf = requestAnimationFrame(update); };
+    const queue = () => { if (inView && !raf) raf = requestAnimationFrame(update); };
+    if ('IntersectionObserver' in window) {
+      new IntersectionObserver((es) => {
+        if (es[es.length - 1].isIntersecting) loadImgs();
+      }, { rootMargin: '150% 0px' }).observe(fig);
+      new IntersectionObserver((es) => {
+        inView = es[es.length - 1].isIntersecting;
+        if (inView) { loadImgs(); update(); }
+      }, { rootMargin: '20% 0px' }).observe(fig);
+    } else {
+      inView = true;
+      loadImgs();
+    }
+    if (!isQuiet()) { prepDraw(); update(); }
     addEventListener('scroll', queue, { passive: true });
-    addEventListener('resize', queue);
-    update();
+    addEventListener('resize', () => { loadImgs(); if (inView) queue(); }, { passive: true });
+    addEventListener('pageshow', (e) => { if (e.persisted) update(); });
+    rmq.addEventListener('change', () => { if (!isQuiet()) prepDraw(); update(); });
   }
 </script>

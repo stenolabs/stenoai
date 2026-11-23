@@ -4,8 +4,9 @@
 // Progress 0 when the box top is at 95% of the viewport, 1 when its centre (the marker) is at 55%; scrolling up plays it back.
 import "../scroll-rooms.css";
 import ScrollSeq from "./ScrollSeq.astro";
-const { src, phone, ratio, width = 1100, take, class: cls } = Astro.props;
-const [w, h] = ratio.split("/").map((n) => parseInt(n, 10));
+const { src, phone, ratio, width = 1100, stillW, stillH, take, class: cls } = Astro.props;
+const [rw, rh] = ratio.split("/").map((n) => parseInt(n, 10));
+const w = stillW ?? rw, h = stillH ?? rh;
 ---
 <div class:list={["take-still", { "take-seq": !!take }, cls]} aria-hidden="true" style={`aspect-ratio:${ratio};--tw:${width}px`}>
   <picture class="take-fallback"><source media="(max-width: 767px)" srcset={phone} /><img src={src} width={w} height={h} alt="" loading="lazy" decoding="async" /></picture>

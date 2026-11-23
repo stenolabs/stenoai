@@ -11,25 +11,16 @@ html[data-ss] .def-pic { display: block; position: relative; pointer-events: non
 /* D1 flow layout (phones, tablets in portrait, short screens, text that does not fit, reduced motion): the model sits above the cards. */
 @media (max-width: 767px) { html[data-ss] .def-terrain { width: calc(100% + 40px); margin: 0 -20px 20px; aspect-ratio: 390 / 280; } }
 
-/* D1 stage fit is decided by the stage itself (Stage ownFit, scroll-env.js): a stage that does not fit gets data-nofit on itself, nothing else on the page changes.
-   The rules below do not rely on the page-wide html[data-nofit]. */
-html[data-ss=on] div.stage.stage-uses[data-nofit] { height: auto; }
-html[data-ss=on] .stage.stage-uses[data-nofit] .stage-panel { position: static; height: auto; overflow: visible; }
-html[data-ss=on] .stage.stage-uses[data-nofit] .stage-text { height: auto; display: block; padding-top: 0; }
-/* Tablets (768 to 1023 px) keep the flow layout even where the generic stage pins: list and model do not fit side by side. */
-@media (min-width: 768px) and (max-width: 1023px) {
-  html[data-ss=on] div.stage.stage-uses { height: auto; }
-  html[data-ss=on] .stage.stage-uses .stage-panel { position: static; height: auto; overflow: visible; }
-  html[data-ss=on] .stage.stage-uses .stage-text { height: auto; display: block; padding-top: 0; }
-}
+/* D1 stage fit is decided by the stage itself (Stage ownFit, scroll-env.js): a stage that does not fit gets data-nofit on itself, nothing else on the page changes. */
+.stage-uses.is-measuring * { transition: none !important; }
 .stage-uses .stage-text { position: relative; }
 
 /* D1 pinned stage (laptops): the model large on the right, the eight cards as a list on the left. 240 svh in all. */
 @media (min-width: 1024px) and (min-height: 720px) {
-  html[data-ss=on] #use-cases:has(.stage-uses:not([data-nofit])) { padding-top: 0; }
-  html[data-ss=on] .stage.stage-uses:not([data-nofit]) { position: relative; height: calc(100vh + 140vh); height: calc(100svh + 140svh); }
+  html[data-ss=on] #use-cases:has(.stage-uses:not([data-nofit])) { padding-top: 0; scroll-margin-top: -125px; }
+  html[data-ss=on] .stage-uses:not([data-nofit]) { position: relative; height: calc(100vh + 140vh); height: calc(100svh + 140svh); }
   html[data-ss=on] .stage-uses:not([data-nofit]) .stage-panel { position: sticky; top: 0; height: 100vh; height: 100svh; overflow: hidden; background: #121311; }
-  html[data-ss=on] .stage-uses:not([data-nofit]) .stage-text { height: 100%; display: grid; grid-template-columns: minmax(0, .78fr) minmax(0, 1.22fr); grid-template-rows: auto auto 1fr; column-gap: 56px; align-content: start; justify-content: stretch; padding-top: 84px; box-sizing: border-box; }
+  html[data-ss=on] .stage-uses:not([data-nofit]) .stage-text { height: 100%; display: grid; grid-template-columns: minmax(0, .78fr) minmax(0, 1.22fr); grid-template-rows: auto auto 1fr; column-gap: 56px; align-content: start; justify-content: stretch; padding-top: 96px; box-sizing: border-box; }
   html[data-ss=on] .stage-uses:not([data-nofit]) .mission-section-top { grid-column: 1 / -1; margin-bottom: 24px; padding-bottom: 20px; }
   html[data-ss=on] .stage-uses:not([data-nofit]) .mission-section-heading { grid-column: 1 / -1; margin-bottom: 26px; }
   html[data-ss=on] .stage-uses:not([data-nofit]) .def-terrain { grid-column: 2; grid-row: 3; width: 100%; margin: 0; align-self: center; }
@@ -52,10 +43,10 @@ html[data-ss=on] .stage.stage-uses[data-nofit] .stage-text { height: auto; displ
 @media (min-width: 1024px) and (max-width: 1279px) and (min-height: 720px) { html[data-ss=on] .stage-uses:not([data-nofit]) .stage-text { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); column-gap: 40px; } }
 /* Laptops 720 to 899 px tall: tighter spacing only (type styles unchanged) so the whole list fits the panel. */
 @media (min-width: 1024px) and (min-height: 720px) and (max-height: 899px) {
-  html[data-ss=on] .stage-uses:not([data-nofit]) .stage-text { padding-top: 76px; }
-  html[data-ss=on] .stage-uses:not([data-nofit]) .mission-section-top { margin-bottom: 10px; padding-bottom: 12px; }
-  html[data-ss=on] .stage-uses:not([data-nofit]) .mission-section-heading { margin-bottom: 8px; }
-  html[data-ss=on] .stage-uses:not([data-nofit]) .sector-case { padding: 7px 0; }
+  html[data-ss=on] .stage-uses:not([data-nofit]) .stage-text { padding-top: 92px; }
+  html[data-ss=on] .stage-uses:not([data-nofit]) .mission-section-top { margin-bottom: 8px; padding-bottom: 10px; }
+  html[data-ss=on] .stage-uses:not([data-nofit]) .mission-section-heading { margin-bottom: 6px; }
+  html[data-ss=on] .stage-uses:not([data-nofit]) .sector-case { padding: 5px 0; }
   html[data-ss=on] .stage-uses:not([data-nofit]) .sector-case.is-lit .sector-tag { margin-top: 4px; padding-top: 3px; padding-bottom: 3px; }
   html[data-ss=on] .stage-uses:not([data-nofit]) .sector-case.is-lit .sector-case-outcome { margin-top: 3px; }
   html[data-ss=on] .stage-uses:not([data-nofit]) .sector-case.is-lit .sector-case-for { margin-top: 4px; }
@@ -69,9 +60,8 @@ html[data-ss=on] .stage.stage-uses[data-nofit] .stage-text { height: auto; displ
 /* D3: deployment posture takes (the home page "Where it runs" frame sets, scroll-driven), at full brightness above each posture.
    The frames are black where there is no object, so screen over the section colour leaves it untouched: no box. */
 .def-posture-media { position: relative; width: 100%; aspect-ratio: 960 / 600; margin: 0 0 8px; }
-.sector-posture:first-child .def-posture-media { width: calc(100% - 28px); } /* the first column has no left padding: same width as the others, left edge on the column text */
+.sector-posture:first-child .def-posture-media { width: calc(100% - 29px); } /* the first column has no left padding or border: same width as the others, left edge on the column text */
 .def-posture-still { display: block; width: 100%; height: 100%; mix-blend-mode: screen; }
-html[data-ss] .def-posture-still { display: none; }
 .def-seq, html[data-ss] .def-seq { mix-blend-mode: screen;
   -webkit-mask-image: linear-gradient(to right, transparent, #000 2.5%, #000 97.5%, transparent), linear-gradient(to bottom, transparent, #000 2.5%, #000 97.5%, transparent); -webkit-mask-composite: source-in;
   mask-image: linear-gradient(to right, transparent, #000 2.5%, #000 97.5%, transparent), linear-gradient(to bottom, transparent, #000 2.5%, #000 97.5%, transparent); mask-composite: intersect; }

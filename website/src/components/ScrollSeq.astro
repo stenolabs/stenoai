@@ -2,6 +2,6 @@
 // One scroll-driven frame sequence (see scripts/scroll-seq.js). Decorative: hidden from assistive tech, no pointer events.
 // Props become data-* attributes: <ScrollSeq src="/scroll/x-d" src-phone="/scroll/x-p" frames="97" start=".9" end=".45" />
 const { class: cls, ...props } = Astro.props;
-const data = Object.fromEntries(Object.entries(props).map(([k, v]) => [`data-${k}`, v]));
+const data = Object.fromEntries(Object.entries(props).filter(([, v]) => v !== undefined).map(([k, v]) => [`data-${k}`, v]));
 ---
 <div data-scroll-seq class={cls} aria-hidden="true" {...data}><canvas></canvas></div>

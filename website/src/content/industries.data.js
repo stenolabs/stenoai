@@ -44,7 +44,7 @@ const CTA_MAILTO =
   "mailto:chantelle@stenoai.co?subject=StenoAI%20demo%20request&body=Hi%20StenoAI%20team%2C%0A%0AWe%27d%20like%20to%20see%20a%20demo.%0A%0AOrganisation%3A%20%0ATeam%20size%3A%20%0AUse%20case%3A%20%0A%0AThanks%2C";
 
 // Hero take of the /enterprise/ page and its menu card (the page is not in the industries collection).
-export const enterpriseHero = { src: "/video/hero-enterprise.mp4", poster: "/images/enterprise/hero-enterprise-poster.webp", position: "46% 50%", loop: true };
+export const enterpriseHero = { src: "/video/hero-enterprise.mp4", poster: "/images/enterprise/hero-enterprise-poster.webp", position: "46% 50%" };
 
 export const government = {
   slug: "government",
@@ -388,8 +388,8 @@ Object.assign(lawEnforcement, {
 Object.assign(government, {
   motion: {
     corridor: { base: "/scroll/gov/rooms", ratio: "1592 / 672", windows: [[0.01131, 0.0, 0.27638, 0.52976], [0.2701, 0.0, 0.24121, 0.52976], [0.49372, 0.0, 0.24309, 0.52976], [0.71922, 0.0, 0.26759, 0.52976], [0.01131, 0.4881, 0.27638, 0.50446], [0.2701, 0.4881, 0.24121, 0.50446], [0.49372, 0.4881, 0.24309, 0.50446], [0.71922, 0.4881, 0.26759, 0.50446]] },
-    papers: { src: "/scroll/gov/papers-start-d.webp", phone: "/scroll/gov/papers-start-p.webp", ratio: "1000 / 417", width: 960, take: { key: "papers", d: "/scroll/gov/take-papers-d", p: "/scroll/gov/take-papers-p", frames: 61 } },
-    drawer: { src: "/scroll/gov/drawer-start-d.webp", phone: "/scroll/gov/drawer-start-p.webp", ratio: "600 / 560", width: 720, take: { key: "drawer", d: "/scroll/gov/take-drawer-d", p: "/scroll/gov/take-drawer-p", frames: 61 } },
+    papers: { src: "/scroll/gov/papers-start-d.webp", phone: "/scroll/gov/papers-start-p.webp", ratio: "1000 / 417", stillW: 1272, stillH: 530, width: 960, take: { key: "papers", d: "/scroll/gov/take-papers-d", p: "/scroll/gov/take-papers-p", frames: 61 } },
+    drawer: { src: "/scroll/gov/drawer-start-d.webp", phone: "/scroll/gov/drawer-start-p.webp", ratio: "600 / 560", stillW: 570, stillH: 490, width: 720, take: { key: "drawer", d: "/scroll/gov/take-drawer-d", p: "/scroll/gov/take-drawer-p", frames: 61 } },
     doors: true,
   },
 });
@@ -398,9 +398,9 @@ Object.assign(government, {
 // the log book row (policy) and the doors stage (closing banner). recorder and book are played by scripts/scroll-le.js.
 Object.assign(lawEnforcement, {
   motion: {
-    corridor: { base: "/scroll/le/rooms", ratio: "1672 / 800", windows: [[0.0622, 0.12, 0.21651, 0.365], [0.28708, 0.12, 0.20933, 0.365], [0.50598, 0.12, 0.21053, 0.365], [0.72488, 0.12, 0.21531, 0.365], [0.0622, 0.4975, 0.21651, 0.3425], [0.28708, 0.4975, 0.20933, 0.3425], [0.50598, 0.4975, 0.21053, 0.3425], [0.72488, 0.4975, 0.21531, 0.3425]] },
+    corridor: { base: "/scroll/le/rooms", ratio: "1672 / 800", blend: true, windows: [[0.0622, 0.12, 0.21651, 0.365], [0.28708, 0.12, 0.20933, 0.365], [0.50598, 0.12, 0.21053, 0.365], [0.72488, 0.12, 0.21531, 0.365], [0.0622, 0.4975, 0.21651, 0.3425], [0.28708, 0.4975, 0.20933, 0.3425], [0.50598, 0.4975, 0.21053, 0.3425], [0.72488, 0.4975, 0.21531, 0.3425]] },
     // The archive box take (lid lowers, green seam), played by scroll in its own box like the other takes; the start still is the picture without JavaScript.
-    drawer: { src: "/scroll/le/drawer-start-d.webp", phone: "/scroll/le/drawer-start-p.webp", ratio: "920 / 690", width: 720, take: { key: "archive", d: "/scroll/le/take-d", p: "/scroll/le/take-p", frames: 67 } },
+    drawer: { src: "/scroll/le/drawer-start-d.webp", phone: "/scroll/le/drawer-start-p.webp", ratio: "920 / 690", stillW: 720, stillH: 540, width: 720, take: { key: "archive", d: "/scroll/le/take-d", p: "/scroll/le/take-p", frames: 67 } },
     recorder: true,
     book: true,
     doors: true,

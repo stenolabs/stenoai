@@ -1,21 +1,28 @@
-// The page cable (Enterprise and home): a thin grey network cable runs down the left gutter from the top of the page (home: from the trust strip's top
-// edge), makes one real-radius bend and runs horizontally into the empty band between the hero and the first section, where its plug sits in a socket
-// on a low wall plate. While that band moves from 72% to 38% of the screen height the plug slides out and lies free with a small droop; the cable then
-// draws up out of view. Scrolling up plugs it back in. Everything is built here (no markup without JavaScript). It is absolutely positioned in the
+// The page cable (Enterprise): a thin grey network cable runs down the left gutter from the top of the page, makes one real-radius bend
+// and runs horizontally into the empty band between the hero and the first section, where its plug sits in a socket on a low wall plate.
+// While that band moves from 72% to 38% of the screen height the plug slides out and lies free with a small droop; the cable then draws up
+// out of view. Scrolling up plugs it back in. Everything is built here (no markup without JavaScript). It is absolutely positioned in the
 // document (it scrolls natively); one rAF loop moves a few transforms and opacities and stops when settled.
+import cableCss from '../page-cable.css?inline';
+if (!document.getElementById('pc-css')) {
+  const s = document.createElement('style');
+  s.id = 'pc-css';
+  s.textContent = cableCss;
+  document.head.append(s);
+}
 const REDUCED = matchMedia('(prefers-reduced-motion: reduce)');
 const main = document.querySelector('main');
 const first = main?.querySelector('.mission-section-top')?.closest('section'); // the first section after the hero
 if (main && first && !navigator.connection?.saveData) {
-  // Asset pixels (build_assets3.py): plug 380x79 lying right (cable axis row 42.36, tip x 374.7, 21px lead), side-view socket 250x200 (housing lip x 1.78, housing centre row 99.8; the plug's boot shoulder is at x 242.3),
-  // cable tile 48x534 (44px cable), wall clip 86x96 (cable axis x 43).
-  const A = { plugLen: 380, plugH: 79, axis: 42.36, tip: 374.7, lead: 21, sockW: 250, sockH: 200, lip: 1.78, row: 99.82, shoulder: 242.3, tileW: 48, tileH: 534, clipH: 96, clipW: 86, clipAxis: 43 };
+  // Asset pixels: plug 380x79 lying right (cable axis row 42.36, tip x 374.7, 21px lead), side-view socket 250x200 (housing lip x 1.78, housing centre row 99.8; the plug's boot shoulder is at x 242.3),
+  // wall clip 86x96 (cable axis x 43).
+  const A = { plugLen: 380, plugH: 79, axis: 42.36, tip: 374.7, lead: 21, sockW: 250, sockH: 200, lip: 1.78, row: 99.82, shoulder: 242.3, clipH: 96, clipW: 86, clipAxis: 43 };
   const clamp = (x, a = 0, b = 1) => Math.max(a, Math.min(b, x));
   const smooth = (x, a, b) => { const t = clamp((x - a) / (b - a)); return t * t * (3 - 2 * t); };
   const ease = (t) => (t < .5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2);
   const PL = 90, VTAU = 110, FADE = 400, STEP = 1.2;
-    const root = document.createElement('div'); root.className = 'pc'; root.setAttribute('aria-hidden', 'true'); document.body.append(root);
-  let G = null, dir = 1, vs = 0, raf = 0, last = 0, lastY = 0, tScroll = -1e9, qd = 0, pp = {};
+  const root = document.createElement('div'); root.className = 'pc'; root.setAttribute('aria-hidden', 'true'); document.body.append(root);
+  let G = null, dir = 1, vs = 0, raf = 0, last = 0, lastY = 0, tScroll = -1e9, qd = 0, pp = {}, far = false;
   const px = (v) => `${Math.round(v * 100) / 100}px`;
   const el = (cls, tag = 'div', css = '', src) => { const e = document.createElement(tag); e.className = cls; if (css) e.style.cssText = css; if (src) { e.src = src; e.alt = ''; e.decoding = 'async'; } return e; };
   const abs = (e) => { const r = e.getBoundingClientRect(); return { t: r.top + scrollY, b: r.bottom + scrollY, l: r.left, r: r.right }; };
@@ -69,6 +76,9 @@ if (main && first && !navigator.connection?.saveData) {
   }
   const at = (s) => { const P = G.pts; let lo = 0, hi = P.length - 1; while (lo < hi) { const m = (lo + hi) >> 1; if (P[m].s < s) lo = m + 1; else hi = m; } return P[lo]; };
 
+  let anchor = first; while (anchor.parentElement && anchor.parentElement !== main) anchor = anchor.parentElement;
+  let prev = anchor.previousElementSibling; while (prev && prev.tagName === 'SCRIPT') prev = prev.previousElementSibling;
+
   function measure() {
     qd = 0;
     const vh = innerHeight, phone = innerWidth < 768, tablet = !phone && innerWidth < 1100;
@@ -76,10 +86,11 @@ if (main && first && !navigator.connection?.saveData) {
     const L = abs(wrap).l, gut = phone ? 20 : Math.min(L, 56);
     const kp = (phone ? 120 : tablet ? 160 : 220) / A.plugLen, cw = phone ? 6.6 : tablet ? 8.8 : 12, kc = cw / 44, R = phone ? 36 : tablet ? 44 : 60;
     const cx = Math.round(phone ? 10 : L - gut / 2);
-    let anchor = first; while (anchor.parentElement && anchor.parentElement !== main) anchor = anchor.parentElement; let prev = anchor.previousElementSibling; while (prev && prev.tagName === 'SCRIPT') prev = prev.previousElementSibling;
-    const home = !!main.querySelector(':scope > section.mission-hero'), yStart = Math.round(home && prev ? abs(prev).t : abs(main).t); // home: the trust strip's top edge (the hero's lower edge)
+    const yStart = Math.round(abs(main).t);
     const bandTop = prev ? contentBottom(prev) : yStart, eye = first.querySelector('.mission-section-top'), bandBot = abs(eye).t, line = abs(first).t, yb = Math.round(line > bandTop + 30 && line < bandBot - 30 ? line : (bandTop + bandBot) / 2); // the cable meets the plate on the band's tone-change line
-    // No clear band (the home voice footage fills it): no cable on that page rather than a crowded one.
+    const mKey = `${innerWidth}:${vh}:${Math.round(L)}:${yStart}:${yb}:${Math.round(bandTop)}:${Math.round(bandBot)}`;
+    if (G && G.mKey === mKey) return;
+    // No clear band: no cable rather than a crowded one.
     if ([...main.querySelectorAll('[data-scroll-seq]')].some((e) => { const r = abs(e); return r.t < bandBot && r.b > bandTop && getComputedStyle(e).display !== 'none'; })) { G = null; root.replaceChildren(); return; }
     const plateH = A.sockH * kp, run = phone ? 80 : tablet ? 112 : 150;
     const clearSlide = (A.tip - A.shoulder + A.lip - 1) * kp + 3; // pull distance needed for the plug tip to clear the housing's left lip
@@ -88,7 +99,7 @@ if (main && first && !navigator.connection?.saveData) {
     const xb = cx + R, xPlug = xb + run, plateL = xPlug + A.shoulder * kp - A.lip * kp, plateR = plateL + A.sockW * kp; // the housing's lip sits at the boot's shoulder when plugged in
     const yClip = yStart + Math.round((yb - R - yStart) * .55);
     const sStart = yb - .72 * vh, U = .34 * vh;
-    G = { vh, phone, tablet, L, gut, kp, cw, kc, R, cx, yStart, yb, bandTop, bandBot, plateH, slide, clearSlide, maxDroop, leadMax, xb, xPlug, plateL, plateR, yClip, sStart, U, D: yb - yStart + 90, pts: [], bKey: '' };
+    G = { mKey, vh, phone, tablet, kp, cw, R, cx, yStart, yb, slide, clearSlide, maxDroop, leadMax, xb, xPlug, yClip, sStart, U, pts: [], bKey: '' };
     G.pts = buildPath();
     const W = Math.ceil(plateR + 6), Hh = Math.ceil(yb + Math.max(plateH / 2, maxDroop + (A.plugH - A.axis) * kp) + 8 - yStart);
     root.style.cssText = `top:${yStart}px;width:${W}px;height:${Hh}px`;
@@ -109,9 +120,9 @@ if (main && first && !navigator.connection?.saveData) {
     root.append(el('pc-plate', 'img', `left:${px(plateL)};top:${px(yb - yStart - A.row * kp)};width:${px(A.sockW * kp)}`, '/page-cable/sock.webp'));
     const dpr = Math.min(devicePixelRatio || 1, 2);
     bc.width = Math.round(bw * dpr); bc.height = Math.round(bh * dpr);
-    Object.assign(G, { asm, bc, plug, glow, sc, win, run, yv, bw, bh });
+    Object.assign(G, { asm, bc, plug, glow, sc, yv, bw, bh });
     sweep(sc, G.pts.filter((p) => p.part === 'v').concat([{ x: cx, y: yv, a: Math.PI / 2 }, { x: cx, y: yv + 4, a: Math.PI / 2 }]), 0, yStart, vw, vh2, false);
-    pp = {}; render(true);
+    pp = {}; far = false; render(true);
   }
   const set = (k, e, prop, v) => { if (pp[k] !== v) { e.style[prop] = v; pp[k] = v; } };
   function render(force) {
@@ -155,14 +166,27 @@ if (main && first && !navigator.connection?.saveData) {
     if (Math.abs(vs) < .01 && Math.abs(v) < .01 && now - tScroll > FADE + 50) { vs = 0; raf = 0; render(); return; } // settled: the loop stops
     raf = requestAnimationFrame(tick);
   }
-  const onScroll = () => { tScroll = performance.now(); if (REDUCED.matches || raf || !G) return; last = tScroll; lastY = scrollY; raf = requestAnimationFrame(tick); };
+  const onScroll = () => {
+    if (REDUCED.matches || !G) return;
+    if (scrollY > G.yb + G.vh) {
+      if (!far) { far = true; vs = 0; render(); }
+      return;
+    }
+    far = false;
+    tScroll = performance.now();
+    if (raf) return;
+    last = tScroll; lastY = scrollY;
+    raf = requestAnimationFrame(tick);
+  };
   const queue = () => { if (!qd) qd = requestAnimationFrame(measure); };
   addEventListener('scroll', onScroll, { passive: true });
   addEventListener('resize', queue, { passive: true });
   addEventListener('orientationchange', queue);
   addEventListener('pageshow', (e) => { if (e.persisted) { lastY = scrollY; queue(); } });
   REDUCED.addEventListener('change', () => render(true));
-  new ResizeObserver(queue).observe(document.body);
+  const ro = new ResizeObserver(queue);
+  ro.observe(first);
+  if (prev) ro.observe(prev);
   document.fonts?.ready.then(queue);
   addEventListener('load', queue);
   lastY = scrollY; queue();

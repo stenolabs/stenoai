@@ -10,16 +10,20 @@
 // aligned to the real element data-target (the frame's x,y,w); otherwise it fills the element.
 // data-dim (+ data-dim-pad): soft holes in the picture behind text. data-lit + data-lit-items: step highlight by progress.
 // data-light="a,b": --lit (0..1) on the section's h2 between progress a and b.
-import { PHONE, FLOW, REDUCED, clamp, still, syncMode, whenNear } from './scroll-env.js';
+import { PHONE, FLOW, REDUCED, MAXPX, clamp, decodeBlob, still, syncMode, whenNear } from './scroll-env.js';
 
 const TAU = 65; // ms; 95% settled in about 200 ms
-const MAXPX = 12e6; // canvas pixels per element, well under the 16.7 MP iOS limit
 // Several sets can be near at once (films and deploy are about a screen apart): bitmaps are decoded one at a time across all sets, off the main thread,
 // and sets start fetching 450 ms apart, so a slow phone or a 4x-throttled laptop never gets one long task.
 let lock = Promise.resolve();
 const serial = (fn) => { const p = lock.then(fn, fn); lock = p.then(() => {}, () => {}); return p; };
 let nextAt = 0;
-const stagger = (fn, now_ = false) => { if (now_) return fn(); const now = performance.now(); nextAt = Math.max(nextAt, now) + 450; setTimeout(fn, nextAt - now - 450); };
+const stagger = (fn, now_ = false) => {
+  if (now_) { fn(); return 0; }
+  const now = performance.now();
+  nextAt = Math.max(nextAt, now) + 450;
+  return setTimeout(fn, nextAt - now - 450);
+};
 
 function init(el) {
   const canvas = el.querySelector('canvas'), ctx = canvas.getContext('2d');
@@ -28,17 +32,21 @@ function init(el) {
   const A = (k) => (FLOW.matches && el.dataset[k + 'Phone'] !== undefined ? el.dataset[k + 'Phone'] : el.dataset[k]);
   const dir = () => (PHONE.matches ? el.dataset.srcPhone : el.dataset.src);
   const url = (i) => `${dir()}/${String(i).padStart(4, '0')}.webp`;
-  let blobs = [], bmps = new Map(), pending = new Set(), loadedKey = '', started = false, visible = false;
+  let blobs = [], bmps = new Map(), pending = new Set(), loadedKey = '', started = false, visible = false, near = false, stTimer = 0;
   let cur = 0, target = 0, raf = 0, last = 0, drawn = -1, rects = [];
-  const M = { x0: 0, pin: false, sTop: 0, sH: 0, top: 0, end: 0, vh: 1, w: 0, h: 0, dpr: 1, s: 0, ox: 0, oy: 0 };
+  const M = { x0: 0, pin: false, sTop: 0, sH: 0, pH: 1, top: 0, end: 0, vh: 1, w: 0, h: 0, dpr: 1, s: 0, ox: 0, oy: 0 };
 
   function measure() {
     const sy = scrollY, r = el.getBoundingClientRect(), tgt = A('target'), an = A('anchor')?.split(',').map(Number);
     const t = tgt && tgt !== 'bottom' ? document.querySelector(tgt) : null, tr = t?.getBoundingClientRect();
     M.vh = innerHeight; M.top = r.top + sy; M.w = r.width; M.h = r.height;
     M.end = tr ? tr.top + sy : tgt === 'bottom' ? M.top + r.height : M.top;
-    M.pin = !!stage && !FLOW.matches && document.documentElement.dataset.ss === 'on';
-    if (M.pin) { const q = stage.getBoundingClientRect(); M.sTop = q.top + sy; M.sH = q.height; }
+    M.pin = !!stage && !FLOW.matches && !stage.hasAttribute('data-nofit') && document.documentElement.dataset.ss === 'on';
+    if (M.pin) {
+      const q = stage.getBoundingClientRect();
+      M.sTop = q.top + sy; M.sH = q.height;
+      M.pH = stage.firstElementChild?.offsetHeight || innerHeight;
+    }
     if (an && tr) { M.s = tr.width / an[2]; M.ox = tr.left - r.left - an[0] * M.s; M.oy = tr.top - r.top - an[1] * M.s; } else M.s = 0;
     const ra = A('regionAfter') && sec.querySelector(A('regionAfter'))?.getBoundingClientRect(); // region starts after this element (inside the section)
     M.x0 = Math.max(+A('region') * r.width, ra ? ra.right - r.left + 24 : 0);
@@ -66,7 +74,7 @@ function init(el) {
     ctx.globalCompositeOperation = 'source-over';
   }
   function progress() {
-    if (M.pin) return clamp((scrollY - M.sTop) / (M.sH - M.vh));
+    if (M.pin) return clamp((scrollY - M.sTop) / Math.max(1, M.sH - M.pH));
     const s0 = M.top - +A('start') * M.vh, s1 = A('centre') ? M.top + M.h / 2 - +A('centre') * M.vh : M.end - +A('end') * M.vh; // data-centre: finished when the picture's centre is at that fraction of the viewport
     return clamp((scrollY - s0) / (s1 - s0));
   }
@@ -75,7 +83,7 @@ function init(el) {
     if (bmps.has(i) || !blobs[i]) return;
     const k = loadedKey;
     const blob = blobs[i];
-    const b = await serial(() => (typeof createImageBitmap === 'function' ? createImageBitmap(blob) : new Promise((res) => { const im = new Image(); im.onload = () => res(im); im.src = URL.createObjectURL(blob); })));
+    const b = await serial(() => decodeBlob(blob));
     if (k !== loadedKey || (!visible && !still())) { b.close?.(); return; } // stale, or arrived while off screen (the settled still is kept)
     bmps.set(i, b);
   }
@@ -132,6 +140,15 @@ function init(el) {
   }
   function settle() { measure(); target = still() ? 1 : progress(); cur = target; paint(true); }
   function remeasure() { measure(); if (visible && loadedKey) { target = still() ? 1 : progress(); if (!raf) { cur = target; paint(true); } } }
+  function scheduleLoad() {
+    if (stTimer || loadedKey) return;
+    stTimer = stagger(() => {
+      stTimer = 0;
+      if (!near && !visible && !still()) return;
+      measure();
+      load().then(() => visible && settle());
+    }, visible);
+  }
 
   // Step highlight (cable; in flow layout it follows the list's own travel) and "Keep control." light (doors) follow the settled progress.
   const items = el.dataset.lit ? [...sec.querySelectorAll(el.dataset.litItems)] : [], lit = el.dataset.lit?.split(',').map(Number);
@@ -145,21 +162,26 @@ function init(el) {
   }
   if (items.length) {
     const list = items[0].parentElement, T = el.dataset.litPhone.split(',').map(Number);
+    let listVisible = false;
+    new IntersectionObserver((es) => { listVisible = es[es.length - 1].isIntersecting; }, { rootMargin: '20% 0px' }).observe(list);
     addEventListener('scroll', () => {
-      if (!FLOW.matches || document.documentElement.dataset.ss !== 'on') return;
+      if (!listVisible || !FLOW.matches || document.documentElement.dataset.ss !== 'on') return;
       const r = list.getBoundingClientRect(), s0 = r.top - 0.9 * innerHeight, e0 = r.bottom - 0.45 * innerHeight;
       setLit(clamp(-s0 / (e0 - s0)), T);
     }, { passive: true });
   }
   if (items.length) setLit(0, lit);
 
-  whenNear(el, () => stagger(() => { started = true; measure(); load().then(() => visible && settle()); }, visible)); // on screen already (anchor jump): no wait
+  whenNear(el, () => { started = true; scheduleLoad(); }, el.dataset.near || '150% 0px');
   // More than 2 viewports away: the encoded frames are dropped too (fetched again from the cache on return).
   new IntersectionObserver((es) => {
-    const near = es[es.length - 1].isIntersecting;
+    near = es[es.length - 1].isIntersecting;
     if (!started || still()) return;
-    if (near && !loadedKey) stagger(() => load().then(() => visible && settle()), visible);
-    else if (!near && loadedKey) { release(); blobs = []; loadedKey = ''; }
+    if (near && !loadedKey) scheduleLoad();
+    else if (!near) {
+      if (stTimer) { clearTimeout(stTimer); stTimer = 0; }
+      if (loadedKey) { release(); blobs = []; loadedKey = ''; }
+    }
   }, { rootMargin: '200% 0px' }).observe(el);
   new IntersectionObserver((es) => {
     visible = es[es.length - 1].isIntersecting;
@@ -167,10 +189,11 @@ function init(el) {
   }, { rootMargin: '20% 0px' }).observe(el);
   addEventListener('scroll', onScroll, { passive: true });
   addEventListener('resize', remeasure, { passive: true });
+  addEventListener('pageshow', (e) => { if (e.persisted) remeasure(); });
   new ResizeObserver(remeasure).observe(document.documentElement);
-  PHONE.addEventListener('change', () => { if (started) load().then(() => visible && settle()); });
+  PHONE.addEventListener('change', () => { if (started && (near || visible || still())) load().then(() => visible && settle()); });
   FLOW.addEventListener('change', remeasure);
-  REDUCED.addEventListener('change', () => { loadedKey = ''; if (started) load().then(() => visible && settle()); });
+  REDUCED.addEventListener('change', () => { loadedKey = ''; if (started && (near || visible || still())) load().then(() => visible && settle()); });
   document.addEventListener('visibilitychange', () => { if (!document.hidden) remeasure(); });
   document.fonts?.ready.then(remeasure);
 }

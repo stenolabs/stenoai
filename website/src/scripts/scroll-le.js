@@ -3,7 +3,7 @@
 //   book      policy: the log book closes (frame atlas reused from the home page record cards, scripts/scroll-records.js)
 // Scroll drives it both ways with a short ease; the loop stops when settled. Reduced motion and data saver: one settled still, no frame data.
 // Nothing is fetched before the row is within 1.5 viewports, and the decoded pictures are released beyond 3 viewports.
-import { PHONE, REDUCED, clamp, still, syncMode, whenNear } from './scroll-env.js';
+import { PHONE, REDUCED, MAXPX, clamp, decodeBlob, still, syncMode, whenNear } from './scroll-env.js';
 
 const TAU = 90; // ms; follow is settled in about 270 ms
 const REC = { cx: 0.34, cy: 0.425, top: 0.2, span: 0.62, ky: 0.5 }; // the recorder's centre, the part of the picture shown, and the squash of the lit ellipse
@@ -12,6 +12,7 @@ const BOOK = { sy: 0.725, sx0: 0.1206, sx1: 0.8735, d: { N: 48, cols: 8, fw: 562
 const ss = (x) => x * x * (3 - 2 * x);
 const bgOf = (el) => { for (let e = el; e; e = e.parentElement) { const c = getComputedStyle(e).backgroundColor, m = c.match(/[\d.]+/g); if (m && (m.length < 4 || +m[3] > 0.9)) return `rgb(${m[0]},${m[1]},${m[2]})`; } return '#121311'; };
 const mk = (w, h) => { const c = document.createElement('canvas'); c.width = w; c.height = h; return c; };
+const dropCanvas = (c) => { if (c) { c.width = 0; c.height = 0; } };
 function feather(ctx, w, h, f) { // edges fade to transparent
   ctx.globalCompositeOperation = 'destination-out';
   const fx = w * f, fy = h * f;
@@ -26,14 +27,27 @@ function grade(src, bg, f) {
   x.fillStyle = bg; x.fillRect(0, 0, c.width, c.height); x.globalCompositeOperation = 'lighten'; x.drawImage(src, 0, 0); x.globalCompositeOperation = 'source-over';
   feather(x, c.width, c.height, f); return c;
 }
-const load = async (url) => { const r = await fetch(url); if (!r.ok) throw new Error(url); return createImageBitmap(await r.blob()); };
+const load = async (url) => { const r = await fetch(url); if (!r.ok) throw new Error(url); return decodeBlob(await r.blob()); };
 
 function init(el) {
   const kind = el.dataset.le, sec = el.closest('section'), canvas = el.querySelector('canvas'), ctx = canvas.getContext('2d');
-  let imgs = null, mode = '', started = false, visible = false, cur = 0, target = 0, raf = 0, last = 0, W = 0, H = 0, dpr = 1, bg = '#121311', drawn = '', comp, mask;
+  let imgs = null, mode = '', started = false, visible = false, cur = 0, target = 0, raf = 0, last = 0, W = 0, H = 0, dpr = 1, bg = '#121311', drawn = '', comp = null, mask = null;
+
+  function releaseAll() {
+    if (imgs) {
+      imgs.atlas?.close?.();
+      dropCanvas(imgs.frame);
+      dropCanvas(imgs.dark);
+      dropCanvas(imgs.lit);
+      imgs = null;
+    }
+    dropCanvas(comp); dropCanvas(mask);
+    comp = mask = null;
+    drawn = '';
+  }
 
   function size() {
-    const r = el.getBoundingClientRect(); W = r.width; H = r.height; dpr = Math.min(devicePixelRatio || 1, 2, Math.sqrt(12e6 / Math.max(1, W * H)));
+    const r = el.getBoundingClientRect(); W = r.width; H = r.height; dpr = Math.min(devicePixelRatio || 1, 2, Math.sqrt(MAXPX / Math.max(1, W * H)));
     const cw = Math.round(W * dpr), ch = Math.round(H * dpr); if (canvas.width !== cw || canvas.height !== ch) { canvas.width = cw; canvas.height = ch; drawn = ''; }
   }
   const progress = () => { const q = el.getBoundingClientRect(), vh = innerHeight; return clamp((vh * 0.92 - q.top) / (vh * 0.5 + q.height)); }; // the row's own travel through the screen
@@ -59,13 +73,13 @@ function init(el) {
       feather(x, fw, fh, 0.05);
       const [dx, dy, dw, dh] = place(fw, fh); ctx.drawImage(f, dx, dy, dw, dh); return;
     }
-    // recorder: the lit shelf; the dim one shows outside a ellipse that shrinks onto the recorder (which stays inside it, so it keeps its full light)
+    // recorder: the lit shelf; the dim one shows outside a wide, gently feathered ellipse that narrows onto the recorder
     const w = imgs.dark.width, h = imgs.dark.height; comp ||= mk(w, h); mask ||= mk(w, h);
     const c = comp.getContext('2d'), m = mask.getContext('2d');
     c.globalCompositeOperation = 'source-over'; c.clearRect(0, 0, w, h); c.drawImage(imgs.lit, 0, 0);
     m.setTransform(1, 0, 0, 1, 0, 0); m.globalCompositeOperation = 'source-over'; m.clearRect(0, 0, w, h);
-    const R = (0.8 - 0.51 * ss(clamp(p))) * w, cx = REC.cx * w, cy = REC.cy * h, g = m.createRadialGradient(0, 0, R * 0.86, 0, 0, R);
-    g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, 'rgba(0,0,0,1)'); m.save(); m.translate(cx, cy); m.scale(1, REC.ky); m.fillStyle = g; m.fillRect(-2 * w, -2 * h / REC.ky, 4 * w, 4 * h / REC.ky); m.restore(); // an ellipse around the recorder
+    const R = (0.8 - 0.51 * ss(clamp(p))) * w, cx = REC.cx * w, cy = REC.cy * h, g = m.createRadialGradient(0, 0, R * 0.42, 0, 0, R * 1.18);
+    g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, 'rgba(0,0,0,1)'); m.save(); m.translate(cx, cy); m.scale(1, REC.ky); m.fillStyle = g; m.fillRect(-2 * w, -2 * h / REC.ky, 4 * w, 4 * h / REC.ky); m.restore();
     m.globalCompositeOperation = 'source-in'; m.drawImage(imgs.dark, 0, 0); c.drawImage(mask, 0, 0);
     const [dx, dy, dw, dh] = place(w, h); ctx.drawImage(comp, dx, dy, dw, dh);
   }
@@ -79,20 +93,34 @@ function init(el) {
   function settle() { size(); target = still() ? settledState() : progress(); cur = target; drawn = ''; draw(cur); }
 
   async function fetchAll() {
-    const k = PHONE.matches ? 'm' : 'd', key = k + (still() ? 's' : ''); if (mode === key) return; mode = key; imgs = null; comp = mask = null;
+    const k = PHONE.matches ? 'm' : 'd', key = k + (still() ? 's' : ''); if (mode === key) return;
+    releaseAll();
+    mode = key;
     bg = bgOf(sec);
     try {
-      if (kind === 'book') { const a = await load(`/scroll/rec/le-${still() ? 'poster-' : ''}${k}.webp`); if (mode !== key) return; imgs = { atlas: a, poster: still() }; } // still: the 5 KB open-case poster, not the atlas
-      else { const got = await Promise.all(['dark', 'lit'].map((n) => load(`/scroll/le/recorder3-${n}-${k}.webp`))); if (mode !== key) return; imgs = {}; ['dark', 'lit'].forEach((n, i) => { imgs[n] = grade(got[i], bg, 0.05); got[i].close?.(); }); }
-    } catch { imgs = null; }
+      if (kind === 'book') {
+        const a = await load(`/scroll/rec/le-${still() ? 'poster-' : ''}${k}.webp`);
+        if (mode !== key) { a.close?.(); return; }
+        imgs = { atlas: a, poster: still() }; // still: the 5 KB open-case poster, not the atlas
+      } else {
+        const got = await Promise.all(['dark', 'lit'].map((n) => load(`/scroll/le/recorder3-${n}-${k}.webp`)));
+        if (mode !== key) { got.forEach((im) => im.close?.()); return; }
+        imgs = {};
+        ['dark', 'lit'].forEach((n, i) => { imgs[n] = grade(got[i], bg, 0.05); got[i].close?.(); });
+      }
+    } catch {
+      releaseAll();
+      mode = '';
+    }
   }
   const start = () => { started = true; fetchAll().then(() => visible && settle()); };
   whenNear(el, start);
   new IntersectionObserver((es) => { visible = es[es.length - 1].isIntersecting; if (visible && started) { if (!imgs) fetchAll().then(settle); else settle(); } }, { rootMargin: '20% 0px' }).observe(el);
-  new IntersectionObserver((es) => { const on = es[es.length - 1].isIntersecting; if (!on && imgs) { imgs.atlas?.close?.(); imgs = null; mode = ''; comp = mask = null; } else if (on && started && !imgs) fetchAll().then(() => visible && settle()); }, { rootMargin: '300% 0px' }).observe(el);
+  new IntersectionObserver((es) => { const on = es[es.length - 1].isIntersecting; if (!on && imgs) { releaseAll(); mode = ''; } else if (on && started && !imgs) fetchAll().then(() => visible && settle()); }, { rootMargin: '300% 0px' }).observe(el);
   const remeasure = () => { if (visible && imgs) { size(); drawn = ''; target = still() ? settledState() : progress(); cur = target; draw(cur); } };
   addEventListener('scroll', onScroll, { passive: true });
   addEventListener('resize', remeasure, { passive: true });
+  addEventListener('pageshow', (e) => { if (e.persisted) remeasure(); });
   new ResizeObserver(remeasure).observe(document.documentElement);
   PHONE.addEventListener('change', () => { if (started) fetchAll().then(() => visible && settle()); });
   REDUCED.addEventListener('change', () => { mode = ''; if (started) fetchAll().then(() => visible && settle()); });

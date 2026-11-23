@@ -40,7 +40,9 @@
   .mission-footer .mission-footer-bottom a { position: relative; }
   .mission-header .mission-utility a::after, .mission-header .mission-brand::after, .mission-footer-brand > a::after,
   .mission-site .mission-hero-bottom > a::after, .mission-site .sector-sources a::after, .mission-site dd > a::after,
-  .mission-footer .mission-footer-bottom a::after { content: ''; position: absolute; left: -6px; right: -6px; top: 50%; height: 40px; transform: translateY(-50%); }
+  .mission-footer .mission-footer-bottom a::after { content: ''; position: absolute; left: -6px; right: -6px; top: 50%; height: 44px; transform: translateY(-50%); }
+  .mission-nav-github { position: relative; }
+  .mission-nav-github::after { content: ''; position: absolute; inset: -1px; }
   .mission-footer li + li { margin-top: 4px; }
   .mission-footer li a { padding-block: 8px; }
 

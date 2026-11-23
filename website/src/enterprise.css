@@ -219,8 +219,11 @@ html { scroll-behavior: smooth; scroll-padding-top: 125px; }
 .mission-deploy-mode { display: flex; flex-direction: column; padding: 30px 30px 0 0; }
 .mission-deploy-mode + .mission-deploy-mode { padding-left: 30px; border-left: 1px solid var(--border-strong); }
 .deploy-media { position: relative; width: 100%; aspect-ratio: 960 / 600; margin: -6px 0 14px; }
+.mission-deploy-mode:first-child .deploy-media { width: calc(100% - 31px); }
 .deploy-still { display: block; width: 100%; height: 100%; mix-blend-mode: screen; }
-html[data-ss] .deploy-still { display: none; }
+.deploy-mark { position: absolute; left: 0; top: 50%; width: 1px; height: 1px; pointer-events: none; }
+.seq-plain, html[data-ss] .seq-plain { mix-blend-mode: screen; /* frames are black where there is no object, so screen over the page leaves the page colour untouched: no box */ -webkit-mask-image: linear-gradient(to right, transparent, #000 2.5%, #000 97.5%, transparent), linear-gradient(to bottom, transparent, #000 2.5%, #000 97.5%, transparent); -webkit-mask-composite: source-in;
+  mask-image: linear-gradient(to right, transparent, #000 2.5%, #000 97.5%, transparent), linear-gradient(to bottom, transparent, #000 2.5%, #000 97.5%, transparent); mask-composite: intersect; }
 .mission-deploy-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 44px; }
 .mission-deploy-mode h3 { font-size: 25px; font-weight: 400; line-height: 1.2; letter-spacing: -.03em; }
 .mission-deploy-mode p { font-size: 14px; line-height: 1.7; color: var(--fg-2); margin-top: 15px; max-width: 42ch; }
@@ -319,11 +322,6 @@ html[data-ss] .deploy-still { display: none; }
 .mission-footer-legal { margin: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 22px; }
 .mission-footer-legal a:hover { color: var(--fg-1); }
 /* Enterprise landing and sector pages share the same visual language. */
-.enterprise-intro { padding: 82px 0 90px; background: var(--mission-dark); color: var(--mission-paper); }
-.enterprise-intro .mission-eyebrow { color: #b9bcb3; margin-bottom: 30px; }
-.enterprise-intro h1 { font: 450 clamp(48px, 6.2vw, 86px)/1.02 var(--font-sans); letter-spacing: -.055em; max-width: 17ch; }
-.enterprise-intro p:not(.mission-eyebrow) { color: #c8cec1; font-size: 17px; line-height: 1.75; max-width: 60ch; margin-top: 28px; }
-.enterprise-intro .mission-actions { margin-top: 30px; }
 .industry-hero { display: grid; grid-template-columns: 1.1fr 1fr; gap: 70px; align-items: center; padding: 70px 0 75px; }
 .industry-hero h1 { font: 450 clamp(40px, 4.3vw, 66px)/1.04 var(--font-sans); letter-spacing: -.05em; }
 .industry-hero .mission-eyebrow { margin-bottom: 23px; }
@@ -354,6 +352,7 @@ html[data-ss] .deploy-still { display: none; }
   .mission-sector-image h3 { font-size: 38px; }
   .mission-deploy-mode { padding-right: 20px; }
   .mission-deploy-mode + .mission-deploy-mode { padding-left: 20px; }
+  .mission-deploy-mode:first-child .deploy-media { width: calc(100% - 21px); }
   .mission-egress { grid-template-columns: 1fr; gap: 20px; }
   .mission-threat-grid { grid-template-columns: 1fr 1fr; }
   .mission-deploy-models { grid-template-columns: 1fr; }
@@ -426,6 +425,7 @@ html[data-ss] .deploy-still { display: none; }
   .mission-sector-tags { font-size: 8px; }
   .mission-deploy-grid { grid-template-columns: 1fr; border-top: 0; }
   .mission-deploy-mode, .mission-deploy-mode + .mission-deploy-mode { padding: 24px 0 28px; border-left: 0; border-top: 1px solid var(--border-strong); }
+  .mission-deploy-mode:first-child .deploy-media { width: 100%; }
   .mission-deploy-top { margin-bottom: 24px; }
   .mission-deploy-mode h3 { font-size: 22px; }
   .mission-editions-grid { grid-template-columns: 1fr; gap: 20px; }
@@ -464,9 +464,6 @@ html[data-ss] .deploy-still { display: none; }
   .mission-footer-bottom { flex-wrap: wrap; font-size: 9px; gap: 16px; }
   .mission-trust-inner { grid-template-columns: 1fr; gap: 20px; padding-block: 28px; }
   .mission-trust ul { justify-content: flex-start; gap: 20px 30px; }
-  .enterprise-intro { padding: 58px 0 60px; }
-  .enterprise-intro h1 { font-size: 49px; }
-  .enterprise-intro p:not(.mission-eyebrow) { font-size: 15px; }
   .industry-hero { grid-template-columns: 1fr; padding-block: 45px; gap: 35px; }
   .industry-hero-image { height: 300px; }
 }
@@ -476,45 +473,6 @@ html[data-ss] .deploy-still { display: none; }
 }
 /* Optical alignment: display-size glyphs carry side bearing, so pull large
    headings left to line up with the eyebrow and body text beneath. */
-.mission-hero h1, .enterprise-intro h1, .mission-cta h2 { margin-left: -.045em; }
-
-/* The films: three dark teasers that play by scroll (components/FilmTeaser.astro); a click opens the film in a native dialog (components/FilmDialog.astro).
-   The frames are cropped to the screen plus a 40-px margin of the 534-px source (screen = 85% of the box), so the box is 117.6% of its column and starts 8.8% to the left: the screen's own edge lines up with the text under it. */
-.films-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 40px; }
-.film { min-width: 0; max-width: 300px; }
-.teaser { position: relative; }
-.teaser-box { position: relative; width: 117.6%; margin-left: -8.81%; aspect-ratio: 534 / 985; }
-/* Phones: the teaser box is at most 56% of the screen height and sits inside the page column (it was 117.6% of the column, which spilled over both edges at 390 px). */
-@media (max-width: 767px) { .teaser-box { width: min(100%, calc(56vh * 534 / 985)); width: min(100%, calc(56svh * 534 / 985)); margin-left: auto; margin-right: auto; } }
-.teaser-still { display: block; width: 100%; height: 100%; mix-blend-mode: screen; }
-html[data-ss] .teaser-still { display: none; }
-.seq-plain, html[data-ss] .seq-plain { mix-blend-mode: screen; /* frames are black where there is no object, so screen over the page leaves the page colour untouched: no box */ -webkit-mask-image: linear-gradient(to right, transparent, #000 2.5%, #000 97.5%, transparent), linear-gradient(to bottom, transparent, #000 2.5%, #000 97.5%, transparent); -webkit-mask-composite: source-in;
-  mask-image: linear-gradient(to right, transparent, #000 2.5%, #000 97.5%, transparent), linear-gradient(to bottom, transparent, #000 2.5%, #000 97.5%, transparent); mask-composite: intersect; }
-.teaser-open { position: absolute; inset: 0; padding: 0; border: 0; background: none; cursor: pointer; display: grid; place-items: center; align-content: start; }
-.teaser-mark, .deploy-mark { position: absolute; left: 0; top: 48.9%; width: 1px; height: 1px; pointer-events: none; }
-.deploy-mark { top: 50%; }
-.teaser-ring { position: absolute; left: 50%; top: 48.9%; width: 64px; height: 64px; margin: -32px 0 0 -32px; border-radius: 50%; display: grid; place-items: center; color: #fff; border: 1px solid #ffffff73; background: #121311d9; opacity: 0; transform: scale(.92); transition: opacity .5s, transform .5s, border-color .18s, background .18s; }
-.teaser-ring svg { margin-left: 3px; }
-html:not([data-ss]) .teaser-open, html:not([data-ss]) button.film-watch, html:not([data-ss]) button.sector-film-button { display: none; }
-html[data-ss=still] .teaser-ring, .teaser.is-rest .teaser-ring { opacity: 1; transform: none; }
-.teaser-open:hover .teaser-ring, .film:has(.film-watch:hover) .teaser-ring, .film:has(.film-watch:focus-visible) .teaser-ring, .sector-film-grid:has(.sector-film-button:hover) .teaser-ring, .sector-film-grid:has(.sector-film-button:focus-visible) .teaser-ring { border-color: #fff; background: #566D48; }
-.film-caption { display: grid; gap: 4px; padding-top: 14px; }
-.film-caption .mission-eyebrow { color: var(--fg-2); white-space: nowrap; }
-.film-caption .mission-text-link { justify-self: start; white-space: nowrap; min-height: 44px; background: none; border: 0; padding: 0; color: inherit; font-family: inherit; cursor: pointer; }
-.film-caption .film-watch { color: #fff; }
-.film-caption .film-watch:focus-visible, .film-close:focus-visible, .sector-film-button:focus-visible { outline: 2px solid #9DB88D; outline-offset: 3px; }
-.film-length { color: var(--fg-muted); }
-.film-length::before { content: '·'; margin-right: 10px; }
-html.film-open { overflow: hidden; scrollbar-gutter: stable; }
-.film-dialog { position: fixed; inset: 0; margin: auto; padding: 0; border: 0; background: #000; overflow: visible; height: min(84vh, calc(94vw * 16 / 9)); aspect-ratio: 9 / 16; max-width: 94vw; max-height: 84vh; color: #fff; }
-.film-dialog::backdrop { background: rgba(10, 11, 9, .84); }
-.film-dialog video::cue { font-size: 78%; line-height: 1.25; background: rgba(10, 11, 9, .78); }
-.film-dialog video { display: block; width: 100%; height: 100%; object-fit: contain; background: #000; }
-.film-close { position: absolute; top: 10px; right: 10px; width: 44px; height: 44px; display: grid; place-items: center; border: 1px solid #ffffff40; background: #121311d9; color: #fff; cursor: pointer; transition: background .18s; }
-.film-close:hover { background: #566D48; }
-@media (prefers-reduced-motion: reduce) { .teaser-ring, .film-close { transition: none; } }
-@media (max-width: 767px) {
-  .films-grid { display: flex; gap: 16px; margin-inline: -20px; padding-inline: 20px; overflow-x: auto; scroll-snap-type: x mandatory; scroll-padding-inline: 20px; overscroll-behavior-x: contain; scrollbar-width: none; }
-  .films-grid::-webkit-scrollbar { display: none; }
-  .film { flex: 0 0 66%; max-width: none; scroll-snap-align: start; }
-}
+.mission-hero h1, .mission-cta h2 { margin-left: -.045em; }
+[data-scroll-seq], .stage-m { display: none; }
+@media (min-width: 912px) and (min-height: 720px), (min-width: 768px) and (max-width: 911px) and (min-height: 800px) { html[data-ss=on]:not([data-nofit]) #security.has-stage { scroll-margin-top: -125px; } }

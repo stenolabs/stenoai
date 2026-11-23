@@ -18,12 +18,13 @@ const PULSES = [
 <section class="mission-hero" aria-labelledby="hero-heading">
   <!-- The app film: the StenoAI window locked in place while real rooms change around it. Landscape on desktop,
        portrait on phones (the window at the top, the copy below). No sound track. -->
-  <video class="mission-hero-image" muted loop playsinline autoplay preload="auto" poster="/images/enterprise/hero-film.webp" disablepictureinpicture disableremoteplayback aria-hidden="true" tabindex="-1" data-hero-film>
+  <video class="mission-hero-image" muted loop playsinline preload="none" disablepictureinpicture disableremoteplayback aria-hidden="true" tabindex="-1" data-hero-film>
     <source src="/video/hero-film-m.mp4" type="video/mp4" media="(max-width: 767px)" />
     <source src="/video/hero-film.mp4" type="video/mp4" />
   </video>
+  <noscript><img class="mission-hero-image" src="/images/enterprise/hero-film.webp" alt="" width="1920" height="1080" /></noscript>
   <script is:inline>
-    (function () { var v = document.querySelector('[data-hero-film]'); if (v && window.matchMedia('(max-width: 767px)').matches) v.poster = '/images/enterprise/hero-film-m.webp'; })();
+    (function () { var v = document.querySelector('[data-hero-film]'); if (v) v.poster = window.matchMedia('(max-width: 767px)').matches ? '/images/enterprise/hero-film-m.webp' : '/images/enterprise/hero-film.webp'; })();
   </script>
   <div class="mission-hero-shade" aria-hidden="true"></div>
   <div class="hero-radar-grid" aria-hidden="true"></div>
@@ -124,14 +125,18 @@ const PULSES = [
   // motion, and pause while scrolled out of view.
   const film = document.querySelector<HTMLVideoElement>('[data-hero-film]');
   if (film) {
-    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-      film.removeAttribute('autoplay');
+    const calm = window.matchMedia('(prefers-reduced-motion: reduce)').matches || !!navigator.connection?.saveData;
+    if (calm) {
       film.pause();
     } else if ('IntersectionObserver' in window) {
-      new IntersectionObserver(([entry]) => {
-        if (entry.isIntersecting) film.play().catch(() => {});
-        else film.pause();
-      }, { threshold: 0.1 }).observe(film);
+      const start = () => {
+        new IntersectionObserver(([entry]) => {
+          if (entry.isIntersecting) film.play().catch(() => {});
+          else film.pause();
+        }, { threshold: 0.1 }).observe(film);
+      };
+      if (document.readyState === 'complete') start();
+      else addEventListener('load', start, { once: true });
     }
   }
 </script>

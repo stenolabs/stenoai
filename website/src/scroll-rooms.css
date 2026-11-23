@@ -5,6 +5,7 @@
   -webkit-mask-composite: source-in;
   mask-image: linear-gradient(to right, transparent 0, #000 6%, #000 94%, transparent 100%), linear-gradient(to bottom, transparent 0, #000 8%, #000 92%, transparent 100%);
   mask-composite: intersect; }
+.light-room-lighten { mix-blend-mode: lighten; }
 @media (max-width: 767px) { .light-room { --dark: var(--dark-p); --lit: var(--lit-p); } }
 .lr-dark, .lr-full, .lr-l { position: absolute; display: none; background-repeat: no-repeat; }
 .lr-dark, .lr-full { inset: 0; background-size: 100% 100%; }
@@ -29,45 +30,44 @@ html[data-ss=on] .light-room.is-near .lr-dark, html[data-ss=on] .light-room.is-n
 .sector-corridor .light-room { width: min(100%, 620px); margin: 0 auto; }
 @media (max-width: 767px) {
   .sector-corridor { width: calc(100% + 40px); margin: 0 -20px 20px; }
-  .sector-corridor .light-room { width: 240px; }
+  .sector-corridor .light-room { width: calc(100% - 40px); }
   html[data-ss=on] .sector-corridor { position: sticky; top: var(--hdr, 72px); z-index: 4; background: #121311; padding-bottom: 6px; }
   html[data-ss=on] .sector-corridor::after { content: ""; position: absolute; left: 0; right: 0; bottom: -18px; height: 18px; pointer-events: none; background: linear-gradient(#121311, rgba(18, 19, 17, 0)); }
 }
 
 /* Laptops and wider that are tall enough for the text: a pinned stage (about 240svh) like the home cable stage. The eight cards become a list on the left (the active one opens),
    the corridor fills the right at full brightness, one door light per card. The cards' text stays in the DOM; mirrored in scripts/scroll-rooms.js (PIN). */
+.cases-stage.is-measuring * { transition: none !important; }
 @media (min-width: 1100px) and (min-height: 860px) {
-  html[data-ss=on] .has-cases-stage { padding: 0; }
-  html[data-ss=on] .cases-stage { position: relative; height: calc(100vh + 140vh); height: calc(100svh + 140svh); }
-  html[data-ss=on] .cases-panel { position: sticky; top: 0; height: 100vh; height: 100svh; overflow: hidden; box-sizing: border-box; padding-top: 96px; background: #121311; }
-  html[data-ss=on] .cases-panel .mission-section-top { margin-bottom: 28px; }
-  html[data-ss=on] .cases-panel .mission-section-heading { margin-bottom: 26px; }
-  html[data-ss=on] .cases-stage .sector-cases-wrap { display: grid; grid-template-columns: minmax(420px, 36fr) minmax(0, 64fr); gap: 48px; align-items: center; }
-  html[data-ss=on] .cases-stage .sector-corridor { grid-column: 2; grid-row: 1; margin: 0; width: 100%; }
-  html[data-ss=on] .cases-stage .sector-corridor .light-room { width: 100%; }
-  /* Rows grow with wrapping titles (min-height); only the active card expands its details in flow, while min-height on the list keeps the corridor steady (CLS 0). */
-  html[data-ss=on] .cases-stage .sector-cases { grid-column: 1; grid-row: 1; display: block; min-height: 502px; align-self: start; }
-  html[data-ss=on] .cases-stage .sector-case, html[data-ss=on] .cases-stage .sector-case:not(:nth-child(4n + 1)) { display: grid; grid-template-columns: 78px minmax(0, 1fr); align-content: start; box-sizing: border-box; min-height: 46px; padding: 12px 0; border-left: 0; border-bottom: 0; opacity: .72; transition: opacity .25s, min-height .28s cubic-bezier(.3, .1, .2, 1) .12s; }
-  html[data-ss=on] .cases-stage .sector-case + .sector-case { border-top: 1px solid var(--border-strong); padding-bottom: 11px; }
-  html[data-ss=on] .cases-stage .sector-case:last-child { border-bottom: 1px solid var(--border-strong); padding-bottom: 10px; }
-  html[data-ss=on] .cases-stage .sector-case > * { grid-column: 2; }
-  html[data-ss=on] .cases-stage .sector-case-top { grid-column: 1; grid-row: 1 / span 5; display: block; align-self: start; padding-top: 4px; line-height: 1; }
-  html[data-ss=on] .cases-stage .sector-case-top .sector-tag { display: none; }
-  html[data-ss=on] .cases-stage .sector-case h3 { margin-top: 0; font-size: 18px; line-height: 22px; }
-  html[data-ss=on] .cases-stage .sector-case-outcome, html[data-ss=on] .cases-stage .sector-case-for, html[data-ss=on] .cases-stage .sector-case-outputs { max-height: 0; margin: 0; padding: 0; overflow: hidden; opacity: 0; pointer-events: none; transition: max-height .28s cubic-bezier(.3, .1, .2, 1) .12s, margin .28s cubic-bezier(.3, .1, .2, 1) .12s, padding .28s cubic-bezier(.3, .1, .2, 1) .12s, opacity .15s; }
-  html[data-ss=on] .cases-stage .sector-case.is-active { opacity: 1; min-height: 180px; transition: opacity .25s, min-height .3s cubic-bezier(.3, .1, .2, 1); }
-  html[data-ss=on] .cases-stage .sector-case.is-active > * { opacity: 1; pointer-events: auto; transition: opacity .25s .25s; }
-  html[data-ss=on] .cases-stage .sector-case.is-active .sector-case-outcome, html[data-ss=on] .cases-stage .sector-case.is-active .sector-case-for, html[data-ss=on] .cases-stage .sector-case.is-active .sector-case-outputs { transition: max-height .3s cubic-bezier(.3, .1, .2, 1), margin .3s cubic-bezier(.3, .1, .2, 1), padding .3s cubic-bezier(.3, .1, .2, 1), opacity .25s .25s; }
-  html[data-ss=on] .cases-stage .sector-case.is-active .sector-case-outcome { max-height: 120px; margin-top: 8px; }
-  html[data-ss=on] .cases-stage .sector-case.is-active .sector-case-for { max-height: 120px; margin-top: 10px; }
-  html[data-ss=on] .cases-stage .sector-case.is-active .sector-case-outputs { max-height: 120px; padding-top: 10px; }
+  html[data-ss=on] .has-cases-stage:has(> .cases-stage:not([data-nofit])) { padding: 0; scroll-margin-top: -125px; }
+  html[data-ss=on] .cases-stage:not([data-nofit]) { position: relative; height: calc(100vh + 140vh); height: calc(100svh + 140svh); }
+  html[data-ss=on] .cases-stage:not([data-nofit]) .cases-panel { position: sticky; top: 0; height: 100vh; height: 100svh; overflow: hidden; box-sizing: border-box; padding-top: 96px; background: #121311; }
+  html[data-ss=on] .cases-stage:not([data-nofit]) .cases-panel .mission-section-top { margin-bottom: 24px; }
+  html[data-ss=on] .cases-stage:not([data-nofit]) .cases-panel .mission-section-heading { margin-bottom: 24px; }
+  html[data-ss=on] .cases-stage:not([data-nofit]) .sector-cases-wrap { display: grid; grid-template-columns: minmax(420px, 36fr) minmax(0, 64fr); gap: 48px; align-items: center; }
+  html[data-ss=on] .cases-stage:not([data-nofit]) .sector-corridor { grid-column: 2; grid-row: 1; margin: 0; width: 100%; }
+  html[data-ss=on] .cases-stage:not([data-nofit]) .sector-corridor .light-room { width: 100%; }
+  /* Every row keeps its closed height and lower rows shift with transform (0 CLS); .sector-cases holds exact room for the tallest open card so the corridor never shifts. */
+  html[data-ss=on] .cases-stage:not([data-nofit]) .sector-cases { grid-column: 1; grid-row: 1; display: block; align-self: start; overflow: hidden; border-bottom: 1px solid var(--border-strong); }
+  html[data-ss=on] .cases-stage:not([data-nofit]) .sector-case, html[data-ss=on] .cases-stage:not([data-nofit]) .sector-case:not(:nth-child(4n + 1)) { display: grid; grid-template-columns: 78px minmax(0, 1fr); align-content: start; box-sizing: border-box; padding: 10px 0; border-left: 0; border-bottom: 0; opacity: .74; transition: opacity .2s ease, transform .22s cubic-bezier(.2, 0, 0, 1); }
+  html[data-ss=on] .cases-stage:not([data-nofit]) .sector-case + .sector-case { border-top: 1px solid var(--border-strong); padding-bottom: 10px; }
+  html[data-ss=on] .cases-stage:not([data-nofit]) .sector-case > * { grid-column: 2; }
+  html[data-ss=on] .cases-stage:not([data-nofit]) .sector-case-top { display: contents; }
+  html[data-ss=on] .cases-stage:not([data-nofit]) .sector-case-top > .mission-small-index { grid-column: 1; grid-row: 1; align-self: baseline; padding-top: 3px; line-height: 1; }
+  html[data-ss=on] .cases-stage:not([data-nofit]) .sector-case-top > .sector-tag { grid-column: 2; grid-row: 2; justify-self: start; margin-top: 8px; padding: 3px 8px; }
+  html[data-ss=on] .cases-stage:not([data-nofit]) .sector-case h3 { grid-column: 2; grid-row: 1; margin-top: 0; font-size: 18px; line-height: 22px; }
+  html[data-ss=on] .cases-stage:not([data-nofit]) .sector-case-outcome { grid-row: 3; margin-top: 8px; }
+  html[data-ss=on] .cases-stage:not([data-nofit]) .sector-case-for { grid-row: 4; margin-top: 8px; }
+  html[data-ss=on] .cases-stage:not([data-nofit]) .sector-case-outputs { grid-row: 5; padding-top: 8px; }
+  html[data-ss=on] .cases-stage:not([data-nofit]) .sector-case:not(.is-active) :is(.sector-tag, .sector-case-outcome, .sector-case-for, .sector-case-outputs) { opacity: 0; pointer-events: none; clip-path: inset(0 0 100% 0); transition: opacity .1s ease; }
+  html[data-ss=on] .cases-stage:not([data-nofit]) .sector-case.is-active { opacity: 1; }
+  html[data-ss=on] .cases-stage:not([data-nofit]) .sector-case.is-active :is(.sector-tag, .sector-case-outcome, .sector-case-for, .sector-case-outputs) { opacity: 1; pointer-events: auto; clip-path: inset(0 0 0 0); transition: opacity .18s ease .04s, clip-path .22s ease; }
+  html[data-ss=on] .cases-stage.is-measuring .sector-case:not(.is-active) :is(.sector-tag, .sector-case-outcome, .sector-case-for, .sector-case-outputs) { max-height: 0; margin: 0; padding: 0; border-width: 0; overflow: hidden; }
 }
 @media (min-width: 1100px) and (min-height: 860px) and (max-height: 899px) {
-  html[data-ss=on] .cases-panel { padding-top: 90px; }
-  html[data-ss=on] .cases-panel .mission-section-top { margin-bottom: 14px; }
-  html[data-ss=on] .cases-panel .mission-section-heading { margin-bottom: 14px; }
-  html[data-ss=on] .cases-stage .sector-cases { min-height: 480px; }
-  html[data-ss=on] .cases-stage .sector-case.is-active { min-height: 46px; }
+  html[data-ss=on] .cases-stage:not([data-nofit]) .cases-panel { padding-top: 92px; }
+  html[data-ss=on] .cases-stage:not([data-nofit]) .cases-panel .mission-section-top { margin-bottom: 14px; }
+  html[data-ss=on] .cases-stage:not([data-nofit]) .cases-panel .mission-section-heading { margin-bottom: 14px; }
 }
 
 /* Takes (papers, drawer): the start still of a later take, beside the heading, in its own clear space at full brightness. */
@@ -76,7 +76,7 @@ html[data-ss=on] .light-room.is-near .lr-dark, html[data-ss=on] .light-room.is-n
   -webkit-mask-composite: source-in;
   mask-image: linear-gradient(to right, transparent 0, #000 8%, #000 92%, transparent 100%), linear-gradient(to bottom, transparent 0, #000 10%, #000 90%, transparent 100%);
   mask-composite: intersect; }
-.take-still img { display: block; width: 100%; height: 100%; }
+.take-still img { display: block; width: 100%; height: 100%; object-fit: contain; }
 .take-still-side { width: 100%; }
 .sector-cloud-right { display: flex; flex-direction: column; gap: 28px; min-width: 0; }
 .sector-heading-take { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-areas: "h pic" "p pic"; align-items: center; row-gap: 22px; }

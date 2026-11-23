@@ -1,11 +1,15 @@
 // Defence page scroll motion (preview): the terrain route (D1), the mast lamp (D2) and the posture stills (D3).
 // Decorative and aria-hidden. Scroll plays, scroll up rewinds, eased follow, the loop stops when settled.
 // html[data-ss] "on" | "still" (reduced motion, data saver) is set before first paint by the inline script and absent without JavaScript.
-import { PHONE, FLOW, clamp, still, syncMode, whenNear } from './scroll-env.js';
+import { PHONE, FLOW, REDUCED, MAXPX, checkFit, clamp, decodeBlob, fitTests, still, syncMode, whenNear } from './scroll-env.js';
 
 const TAU = 65; // ms; 95% settled in about 200 ms
 const ease = (x) => x * x * (3 - 2 * x);
-const load = async (url) => createImageBitmap(await (await fetch(url)).blob());
+const load = async (url) => {
+  const r = await fetch(url);
+  if (!r.ok) throw new Error(String(r.status));
+  return decodeBlob(await r.blob());
+};
 
 // Draws `base`, then `over` through a soft mask that `maskFn(mctx, W, H)` paints in white. cover-fits both with a normalised focus.
 function player(el, draw, busy) {
@@ -14,9 +18,14 @@ function player(el, draw, busy) {
   let imgs = null, W = 0, H = 0, dpr = 1, cur = 0, target = 0, raf = 0, last = 0, visible = false, started = false;
   const size = () => {
     const r = canvas.getBoundingClientRect(); W = r.width; H = r.height;
-    dpr = Math.min(devicePixelRatio || 1, 2);
+    dpr = Math.min(devicePixelRatio || 1, 2, Math.sqrt(MAXPX / Math.max(1, W * H)));
     const cw = Math.round(W * dpr), ch = Math.round(H * dpr);
     if (canvas.width !== cw || canvas.height !== ch) { canvas.width = mask.width = cw; canvas.height = mask.height = ch; }
+  };
+  const release = () => {
+    if (imgs) imgs.forEach((im) => im?.close?.());
+    imgs = null;
+    mask.width = mask.height = 0;
   };
   const paint = () => { if (!imgs || !W) return; ctx.setTransform(dpr, 0, 0, dpr, 0, 0); mctx.setTransform(dpr, 0, 0, dpr, 0, 0); draw({ ctx, mctx, mask, imgs, W, H, p: cur, el }); };
   const tick = (now) => {
@@ -27,7 +36,7 @@ function player(el, draw, busy) {
   };
   const go = (t, snap) => { target = t; if (snap) { cur = t; paint(); } else if (!raf) { last = performance.now(); raf = requestAnimationFrame(tick); } };
   const kick = () => { if (!raf) { last = performance.now(); raf = requestAnimationFrame(tick); } };
-  return { size, paint, go, kick, set imgs(v) { imgs = v; }, get imgs() { return imgs; }, get started() { return started; }, start() { started = true; },
+  return { size, paint, go, kick, release, set imgs(v) { imgs = v; }, get imgs() { return imgs; }, get started() { return started; }, start() { started = true; },
     get visible() { return visible; }, set visible(v) { visible = v; } };
 }
 
@@ -36,8 +45,8 @@ function player(el, draw, busy) {
 // Flow layout (phones, short screens, or text that does not fit): the picture sits above the cards and follows its own travel through the screen.
 function terrain(el) {
   const sec = el.closest('section'), cards = [...sec.querySelectorAll('.sector-case')], route = JSON.parse(el.dataset.route), N = cards.length;
-  const stage = el.closest('.stage'), M = { pin: false, sTop: 0, sH: 0 };
-  let pulse = null; // the active point flares once when its card opens: 0.8 s, then it stops
+  const stage = el.closest('.stage'), M = { pin: false, sTop: 0, sH: 0, pH: 1 };
+  let pulse = null, loading = false, near = false, loadGen = 0; // the active point flares once when its card opens: 0.8 s, then it stops
   const pl = player(el, ({ ctx, mctx, mask, imgs, W, H, p }) => {
     const [dark, lit] = imgs, s = Math.max(W / dark.width, H / dark.height) * 1.2;
     const dw = dark.width * s, dh = dark.height * s, dx = (W - dw) / 2, dy = (H - dh) / 2; // zoomed so the model, not its black surround, fills the box
@@ -66,41 +75,97 @@ function terrain(el) {
     }
     ctx.globalCompositeOperation = 'source-over';
   }, () => pulse !== null);
+
+  if (stage) {
+    fitTests.push({
+      stage,
+      test: () => {
+        if (innerWidth < 1024 || innerHeight < 720) return false;
+        const panel = stage.querySelector('.stage-panel'), list = cards[0]?.parentElement;
+        if (!panel || !list) return true;
+        const prev = cards.map((c) => c.classList.contains('is-lit'));
+        stage.classList.add('is-measuring');
+        let fits = true;
+        const pBot = panel.getBoundingClientRect().bottom + 1;
+        for (let i = 0; i < cards.length; i++) {
+          cards.forEach((c, j) => c.classList.toggle('is-lit', i === j));
+          if (list.getBoundingClientRect().bottom > pBot) { fits = false; break; }
+        }
+        cards.forEach((c, i) => c.classList.toggle('is-lit', prev[i]));
+        stage.classList.remove('is-measuring');
+        return fits;
+      },
+    });
+  }
+
   const measure = () => {
     M.pin = !!stage && getComputedStyle(stage.firstElementChild).position === 'sticky'; // the CSS decides (same test as the stage panel)
-    if (M.pin) { const q = stage.getBoundingClientRect(); M.sTop = q.top + scrollY; M.sH = q.height; }
+    if (M.pin) {
+      const q = stage.getBoundingClientRect();
+      M.sTop = q.top + scrollY; M.sH = q.height;
+      M.pH = stage.firstElementChild?.offsetHeight || innerHeight;
+    }
   };
   const prog = () => {
-    if (M.pin) return (N - 1) * clamp((clamp((scrollY - M.sTop) / (M.sH - innerHeight)) - 0.06) / 0.86); // 6% to settle in, 8% to read the last card
+    if (M.pin) return (N - 1) * clamp((clamp((scrollY - M.sTop) / Math.max(1, M.sH - M.pH)) - 0.06) / 0.86); // 6% to settle in, 8% to read the last card
     const r = el.getBoundingClientRect(); return (N - 1) * clamp((innerHeight * 0.85 - r.top) / (innerHeight * 0.6));
   };
   let shown = -1;
   const open = (p) => { // pinned: the card nearest the route head is open
     const k = M.pin ? Math.round(p) : -1; if (k === shown) return; shown = k;
     cards.forEach((c, i) => c.classList.toggle('is-lit', i === k));
-    if (k >= 0 && !still()) { pulse = { k, t0: performance.now() + 270 }; pl.kick(); } // the pulse waits for the card to open (CSS: the closing card goes first)
+    if (k >= 0 && !still() && pl.imgs) { pulse = { k, t0: performance.now() + 270 }; pl.kick(); } // the pulse waits for the card to open
   };
-  const onScroll = () => { if (pl.visible && !still()) { const t = prog(); open(t); pl.go(t); } };
-  const settle = () => { measure(); pl.size(); const t = still() ? N - 1 : prog(); open(t); pl.go(t, true); };
+  const onScroll = () => { if (pl.visible && !still()) { const t = prog(); open(t); if (pl.imgs) pl.go(t); } };
+  const settle = () => { measure(); const t = still() ? N - 1 : prog(); open(t); if (pl.imgs) { pl.size(); pl.go(t, true); } };
   const url = (n) => `${PHONE.matches ? el.dataset.srcPhone : el.dataset.src}/${n}.webp`;
-  whenNear(el, async () => { pl.start(); pl.imgs = await Promise.all([load(url('terrain-dark')), load(url('terrain-lit'))]); if (pl.visible) settle(); });
-  new IntersectionObserver((es) => { pl.visible = es[es.length - 1].isIntersecting; if (pl.visible && pl.imgs) settle(); }, { rootMargin: '10% 0px' }).observe(stage || el);
+  const fetchImgs = async () => {
+    if (loading || pl.imgs) return;
+    loading = true;
+    const g = ++loadGen;
+    try {
+      const got = await Promise.all([load(url('terrain-dark')), load(url('terrain-lit'))]);
+      if (g !== loadGen) { got.forEach((im) => im?.close?.()); return; }
+      pl.imgs = got;
+      if (pl.visible) settle();
+    } catch { /* cards still pin and open even if decorative terrain image fails */ }
+    finally { loading = false; }
+  };
+
+  whenNear(el, () => { pl.start(); fetchImgs(); });
+  new IntersectionObserver((es) => {
+    near = es[es.length - 1].isIntersecting;
+    if (!pl.started) return;
+    if (!near && pl.imgs) { loadGen++; pl.release(); }
+    else if (near && !pl.imgs) fetchImgs();
+  }, { rootMargin: '250% 0px' }).observe(stage || el);
+  new IntersectionObserver((es) => {
+    pl.visible = es[es.length - 1].isIntersecting;
+    if (pl.visible) {
+      if (pl.imgs) settle();
+      else { measure(); open(still() ? N - 1 : prog()); if (pl.started) fetchImgs(); }
+    }
+  }, { rootMargin: '10% 0px' }).observe(stage || el);
   addEventListener('scroll', onScroll, { passive: true });
-  addEventListener('resize', () => { if (pl.visible && pl.imgs) settle(); }, { passive: true });
-  new ResizeObserver(() => { if (pl.visible && pl.imgs) settle(); }).observe(el);
-  FLOW.addEventListener('change', () => { shown = -2; if (pl.imgs) settle(); });
-  document.addEventListener('visibilitychange', () => { if (!document.hidden && pl.visible && pl.imgs) settle(); });
-  if (!still()) { cards[0].classList.add('is-lit'); shown = 0; }
+  addEventListener('resize', () => { if (pl.visible) settle(); else measure(); }, { passive: true });
+  addEventListener('pageshow', (e) => { if (e.persisted) settle(); });
+  new ResizeObserver(() => { if (pl.visible) settle(); else measure(); }).observe(el);
+  FLOW.addEventListener('change', () => { shown = -2; settle(); });
+  REDUCED.addEventListener('change', () => { shown = -2; settle(); if (pl.started && near && !pl.imgs) fetchImgs(); });
+  document.addEventListener('visibilitychange', () => { if (!document.hidden && pl.visible) settle(); });
+  measure();
+  if (!still() && M.pin) { cards[0].classList.add('is-lit'); shown = 0; }
 }
 
 // ---- D2: the mast lamp goes out, the case keeps its green seam ----
 function mast(el) {
   const m = JSON.parse(el.dataset.region); // [cx, cy, rx, ry] normalised to the image
+  let loading = false, near = false, loadGen = 0;
   const pl = player(el, ({ ctx, mctx, mask, imgs, W, H, p }) => {
     const [a, b] = imgs, s = Math.max(W / a.width, H / a.height) * (W > 600 ? 1.2 : 1), dw = a.width * s, dh = a.height * s;
     const dx = Math.min(0, Math.max(W - dw, W / 2 - 0.46 * dw)), dy = (H - dh) / 2; // the mast and the case fill the box: lamp and seam read at 1440
     ctx.clearRect(0, 0, W, H); ctx.drawImage(a, dx, dy, dw, dh);
-    const t = ease(p); if (t <= 0.001) return;
+    const t = ease(p); if (t <= 0.001 || !b) return;
     const cx = dx + m[0] * dw, cy = dy + m[1] * dh, rx = m[2] * dw, ry = m[3] * dh;
     mctx.globalCompositeOperation = 'source-over'; mctx.clearRect(0, 0, W, H);
     mctx.save(); mctx.translate(cx, cy); mctx.scale(rx, ry);
@@ -111,14 +176,54 @@ function mast(el) {
   });
   const prog = () => { const r = el.getBoundingClientRect(), c = r.top + r.height / 2; return clamp((innerHeight * 0.55 - c) / (innerHeight * 0.2)); }; // lit until the picture's centre is at 55% of the viewport, out by 35%
   const onScroll = () => { if (pl.visible && !still()) pl.go(prog()); };
-  const settle = () => { pl.size(); pl.go(still() ? 0 : prog(), true); }; // reduced motion and data saver: the start still (lamp lit)
+  const settle = () => { if (!pl.imgs) return; pl.size(); pl.go(still() ? 0 : prog(), true); }; // reduced motion and data saver: the start still (lamp lit)
   const url = (n) => `${PHONE.matches ? el.dataset.srcPhone : el.dataset.src}/${n}.webp`;
-  whenNear(el, async () => { pl.start(); pl.imgs = await Promise.all([load(url('mast-start')), load(url('mast-end'))]); if (pl.visible) settle(); });
-  new IntersectionObserver((es) => { pl.visible = es[es.length - 1].isIntersecting; if (pl.visible && pl.imgs) settle(); }, { rootMargin: '10% 0px' }).observe(el);
+  const fetchImgs = async () => {
+    const needBoth = !still();
+    if (loading || (pl.imgs && (!needBoth || pl.imgs[1]))) return;
+    loading = true;
+    const g = ++loadGen;
+    try {
+      if (pl.imgs && !pl.imgs[1] && needBoth) {
+        const endBmp = await load(url('mast-end'));
+        if (g !== loadGen) { endBmp.close?.(); return; }
+        pl.imgs = [pl.imgs[0], endBmp];
+      } else {
+        const got = needBoth
+          ? await Promise.all([load(url('mast-start')), load(url('mast-end'))])
+          : [await load(url('mast-start')), null];
+        if (g !== loadGen) { got.forEach((im) => im?.close?.()); return; }
+        pl.imgs = got;
+      }
+      if (pl.visible) settle();
+    } catch { /* decorative mast image unavailable */ }
+    finally { loading = false; }
+  };
+
+  whenNear(el, () => { pl.start(); fetchImgs(); });
+  new IntersectionObserver((es) => {
+    near = es[es.length - 1].isIntersecting;
+    if (!pl.started) return;
+    if (!near && pl.imgs) { loadGen++; pl.release(); }
+    else if (near && !pl.imgs) fetchImgs();
+  }, { rootMargin: '250% 0px' }).observe(el);
+  new IntersectionObserver((es) => {
+    pl.visible = es[es.length - 1].isIntersecting;
+    if (pl.visible) {
+      if (pl.imgs) settle();
+      else if (pl.started) fetchImgs();
+    }
+  }, { rootMargin: '10% 0px' }).observe(el);
   addEventListener('scroll', onScroll, { passive: true });
+  addEventListener('pageshow', (e) => { if (e.persisted) settle(); });
   new ResizeObserver(() => { if (pl.visible && pl.imgs) settle(); }).observe(el);
+  REDUCED.addEventListener('change', () => {
+    if (!still() && pl.started && (near || pl.visible)) fetchImgs();
+    else settle();
+  });
 }
 
 syncMode();
 document.querySelectorAll('[data-def-terrain]').forEach(terrain);
 document.querySelectorAll('[data-def-mast]').forEach(mast);
+checkFit();

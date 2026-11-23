@@ -3,11 +3,11 @@
 // Decorative: hidden from assistive tech, no pointer events. Without JavaScript the lit still is shown as it is.
 // <LightRoom base="/scroll/gov/corridor" ratio="1664 / 420" windows={[[x, y, w, h], ...]} cards=".sector-case" /> (window boxes are fractions of the picture)
 import "../scroll-rooms.css";
-const { base, ratio, windows, cards, from, ramp, stagger } = Astro.props;
+const { base, ratio, windows, cards, from, ramp, stagger, blend } = Astro.props;
 const url = (n) => `url(${base}-${n}.webp)`;
 const lights = windows.map(([x, y, w, h]) => `--x:${x};--y:${y};--w:${w};--h:${h};--px:${(x / (1 - w)) * 100}%;--py:${(y / (1 - h)) * 100}%`);
 ---
-<div class="light-room" data-light-room data-cards={cards} data-from={from} data-ramp={ramp} data-stagger={stagger}
+<div class:list={["light-room", { "light-room-lighten": !!blend }]} data-light-room data-cards={cards} data-from={from} data-ramp={ramp} data-stagger={stagger}
   data-dark={`${base}-dark-d.webp`} data-lit={`${base}-lit-d.webp`} data-dark-phone={`${base}-dark-p.webp`} data-lit-phone={`${base}-lit-p.webp`}
   style={`aspect-ratio:${ratio};--dark-d:${url("dark-d")};--lit-d:${url("lit-d")};--dark-p:${url("dark-p")};--lit-p:${url("lit-p")}`} aria-hidden="true">
   <span class="lr-dark"></span>
