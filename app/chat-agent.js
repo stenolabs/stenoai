@@ -163,14 +163,22 @@ async function runAgentTurn({ request, tools, step, runRead, proposeWrite, emit 
   for (let i = 0; i < maxSteps; i += 1) {
     if (isCancelled()) throw new AgentCancelled();
     const last = i === maxSteps - 1;
-    const res = await step({ ...request, tools: last ? [] : tools.defs, turns: turns.slice() });
+    // Text streams as the step produces it; a later step's text starts a new
+    // paragraph. A step that streamed nothing still shows its final text.
+    let streamed = false;
+    const onText = (piece) => {
+      if (isCancelled() || typeof piece !== 'string' || !piece) return;
+      const chunk = streamed || !answer ? piece : `\n\n${piece.replace(/^\s+/, '')}`;
+      if (!streamed && !chunk.trim()) return;
+      streamed = true;
+      answer += chunk;
+      emit('text', chunk);
+    };
+    const res = await step({ ...request, tools: last ? [] : tools.defs, turns: turns.slice() }, onText);
     if (isCancelled()) throw new AgentCancelled();
     const text = typeof res?.text === 'string' ? res.text.trim() : '';
     const calls = last ? [] : (Array.isArray(res?.tool_calls) ? res.tool_calls : []);
-    if (text) {
-      emit('text', answer ? `\n\n${text}` : text);
-      answer += answer ? `\n\n${text}` : text;
-    }
+    if (text && !streamed) onText(text);
     if (!calls.length) return { text: answer, steps: i + 1 };
     turns.push({ type: 'assistant', text, tool_calls: calls.map((c) => ({ id: String(c.id), name: String(c.name), arguments: c.arguments && typeof c.arguments === 'object' ? c.arguments : {} })) });
     for (const call of turns[turns.length - 1].tool_calls) {
@@ -206,7 +214,7 @@ async function runAgentTurn({ request, tools, step, runRead, proposeWrite, emit 
  * `<prefix><base64 JSON>` line. Resolves the parsed JSON; rejects with
  * err.code = the `<errorPrefix>` code, or 'failed'.
  */
-function runBackendJson({ spawn, backend, command, env, cwd, payload, prefix, errorPrefix, timeoutMs = 240000, onProc = () => {} }) {
+function runBackendJson({ spawn, backend, command, env, cwd, payload, prefix, errorPrefix, deltaPrefix = null, onDelta = () => {}, timeoutMs = 240000, onProc = () => {} }) {
   return new Promise((resolve, reject) => {
     let done = false;
     let out = '';
@@ -226,8 +234,16 @@ function runBackendJson({ spawn, backend, command, env, cwd, payload, prefix, er
       if (done) return;
       out += d.toString('utf8');
       if (out.length > 4 * 1024 * 1024) return fail('failed');
-      for (const raw of out.split('\n')) {
+      const lines = out.split('\n');
+      out = lines.pop(); // keep a partial last line for the next chunk
+      for (const raw of lines) {
         const line = raw.replace(/\r$/, '');
+        if (deltaPrefix && line.startsWith(deltaPrefix)) {
+          try {
+            onDelta(Buffer.from(line.slice(deltaPrefix.length), 'base64').toString('utf8'));
+          } catch (_) {}
+          continue;
+        }
         if (line.startsWith(prefix)) {
           try {
             const value = JSON.parse(Buffer.from(line.slice(prefix.length), 'base64').toString('utf8'));
@@ -245,7 +261,11 @@ function runBackendJson({ spawn, backend, command, env, cwd, payload, prefix, er
     // Drain without logging: providers may put private context on stderr.
     proc.stderr.on('data', () => {});
     proc.on('error', () => fail('failed'));
-    proc.on('close', () => fail('failed'));
+    proc.on('close', () => {
+      // A last line without a trailing newline still counts.
+      if (!done && out) proc.stdout.emit('data', Buffer.from('\n'));
+      fail('failed');
+    });
     proc.stdin.on('error', () => fail('failed'));
     proc.stdin.end(JSON.stringify(payload));
   });

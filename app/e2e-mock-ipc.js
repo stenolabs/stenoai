@@ -2319,7 +2319,16 @@ function install({ ipcMain }) {
           return;
         }
         if (process.env.STENOAI_E2E_HOLD_CHAT === '1') global.__finishChat = finish;
-        else setTimeout(finish, 20);
+        else if (process.env.STENOAI_E2E_CHAT_STREAM === '1') {
+          // Word by word, holding before the last word until __finishChat.
+          const words = reply.split(/(?<= )/);
+          const send = (c, d) => { if (!event.sender.isDestroyed()) event.sender.send(c, { queryId, ...d }); };
+          words.slice(0, -1).forEach((w, i) => setTimeout(() => send('query-chunk', { chunk: w }), 20 * (i + 1)));
+          global.__finishChat = () => {
+            send('query-chunk', { chunk: words[words.length - 1] });
+            send('query-done', { success: true });
+          };
+        } else setTimeout(finish, 20);
       });
     }
     return originalOn(channel, handler);

@@ -3954,18 +3954,21 @@ function runChatAgent({ queryId, payload, tools, entry, send, cleanup, runPlain 
     for (const p of procs) { try { p.kill(); } catch (_) {} }
     finish(false, 'Answer stopped.');
   };
-  const backend = (command, body, prefix, errorPrefix) => chatAgent.runBackendJson({
-    spawn, backend: getBackendPath(), command, env, cwd: getBackendCwd(), payload: body, prefix, errorPrefix,
+  const backend = (command, body, prefix, errorPrefix, stream = {}) => chatAgent.runBackendJson({
+    spawn, backend: getBackendPath(), command, env, cwd: getBackendCwd(), payload: body, prefix, errorPrefix, ...stream,
     onProc: (p) => { procs.add(p); p.on('close', () => procs.delete(p)); },
   });
   let firstStep = true;
-  const step = async (body) => {
+  const step = async (body, onText) => {
     try {
-      return await backend('chat-agent-step', body, 'CHAT_AGENT:', 'CHAT_AGENT_ERROR:');
+      return await backend('chat-agent-step', body, 'CHAT_AGENT:', 'CHAT_AGENT_ERROR:', {
+        deltaPrefix: 'CHAT_AGENT_DELTA:', onDelta: onText,
+      });
     } catch (e) {
-      // The first call failing (a custom endpoint or model that rejects tools,
-      // a provider hiccup) falls back to plain chat: behave exactly as today.
-      if (firstStep) e.fallback = true;
+      // The first call failing before any text (a custom endpoint or model
+      // that rejects tools, a provider hiccup) falls back to plain chat:
+      // behave exactly as today.
+      if (firstStep && !answered) e.fallback = true;
       throw e;
     } finally {
       firstStep = false;

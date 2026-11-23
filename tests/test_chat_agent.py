@@ -17,7 +17,18 @@ class FakeOpenAI:
 
     def _create(self, **kwargs):
         self.calls.append(kwargs)
-        return _fn(choices=[_fn(message=self.message)])
+        m = self.message
+        chunks = [_fn(choices=[])]  # a usage-only chunk carries no choices
+        if m.content:
+            for piece in (m.content[:2], m.content[2:]):
+                chunks.append(_fn(choices=[_fn(delta=_fn(content=piece, tool_calls=None))]))
+        for i, c in enumerate(m.tool_calls or []):
+            args = c.function.arguments
+            chunks.append(_fn(choices=[_fn(delta=_fn(content=None, tool_calls=[
+                _fn(index=i, id=c.id, function=_fn(name=c.function.name, arguments=args[:3]))]))]))
+            chunks.append(_fn(choices=[_fn(delta=_fn(content=None, tool_calls=[
+                _fn(index=i, id=None, function=_fn(name=None, arguments=args[3:]))]))]))
+        return iter(chunks)
 
 
 class FakeAnthropic:
@@ -28,7 +39,17 @@ class FakeAnthropic:
 
     def _create(self, **kwargs):
         self.calls.append(kwargs)
-        return _fn(content=self.content)
+        events = []
+        for i, block in enumerate(self.content):
+            if block.type == 'text':
+                events.append(_fn(type='content_block_start', index=i, content_block=_fn(type='text')))
+                events.append(_fn(type='content_block_delta', index=i, delta=_fn(type='text_delta', text=block.text)))
+            else:
+                events.append(_fn(type='content_block_start', index=i,
+                                  content_block=_fn(type='tool_use', id=block.id, name=block.name)))
+                events.append(_fn(type='content_block_delta', index=i,
+                                  delta=_fn(type='input_json_delta', partial_json=json.dumps(block.input))))
+        return iter(events)
 
 
 PARTS = {'instructions': 'Be helpful.', 'scope': 'notes', 'context': 'CTX', 'history': '', 'question': 'Make an issue'}
@@ -57,6 +78,35 @@ class ProviderStepTests(unittest.TestCase):
         s = _fn(ai_provider='cloud', cloud_provider='custom', model_name='m', cloud_client=FakeOpenAI(msg))
         out = chat_agent.run_step({'tools': TOOLS, 'turns': []}, s, PARTS)
         self.assertEqual(out, {'text': 'ok', 'tool_calls': []})
+
+    def test_openai_streams_text_as_it_arrives(self):
+        pieces = []
+        s = _fn(ai_provider='cloud', cloud_provider='openai', model_name='m',
+                cloud_client=FakeOpenAI(_fn(content='Hello there', tool_calls=None)))
+        out = chat_agent.run_step({'tools': TOOLS, 'turns': []}, s, PARTS, pieces.append)
+        self.assertEqual(pieces, ['He', 'llo there'])
+        self.assertEqual(out['text'], 'Hello there')
+
+    def test_anthropic_streams_text_and_assembles_tool_input(self):
+        pieces = []
+        client = FakeAnthropic([_fn(type='text', text='On it.'),
+                                _fn(type='tool_use', id='t1', name='linear__create_issue', input={'title': 'C'})])
+        s = _fn(ai_provider='cloud', cloud_provider='anthropic', model_name='m', anthropic_client=client)
+        out = chat_agent.run_step({'tools': TOOLS, 'turns': []}, s, PARTS, pieces.append)
+        self.assertEqual(pieces, ['On it.'])
+        self.assertEqual(out['tool_calls'], [{'id': 't1', 'name': 'linear__create_issue', 'arguments': {'title': 'C'}}])
+        self.assertTrue(client.calls[0]['stream'])
+
+    def test_ollama_streams_text_and_collects_tool_calls(self):
+        pieces = []
+        chunks = [{'message': {'content': 'Lo'}}, {'message': {'content': 'oking'}},
+                  {'message': {'content': '', 'tool_calls': [{'function': {'name': 'linear__create_issue', 'arguments': {'title': 'D'}}}]}}]
+        s = _fn(ai_provider='remote', remote_url='http://x', model_name='m',
+                _ollama_options=lambda: {}, _chat_stream_no_think=lambda client, **kw: iter(chunks))
+        out = chat_agent.run_step({'tools': TOOLS, 'turns': []}, s, PARTS, pieces.append)
+        self.assertEqual(pieces, ['Lo', 'oking'])
+        self.assertEqual(out['text'], 'Looking')
+        self.assertEqual(out['tool_calls'][0]['arguments'], {'title': 'D'})
 
     def test_anthropic_groups_results_into_a_user_turn(self):
         client = FakeAnthropic([_fn(type='text', text='Done: ABC-1')])

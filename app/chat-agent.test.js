@@ -210,3 +210,50 @@ test('runBackendJson parses the answer line and surfaces error codes', async () 
     (e) => e.code === 'tools-unsupported',
   );
 });
+
+test('runBackendJson forwards streamed text before the answer line, across split chunks', async () => {
+  const b64 = (s) => Buffer.from(s).toString('base64');
+  const answer = `CHAT_AGENT:${b64(JSON.stringify({ text: 'Hello world', tool_calls: [] }))}`;
+  // The first delta line arrives split over two stdout chunks.
+  const first = `CHAT_AGENT_DELTA:${b64('Hello')}`;
+  const split = fakeSpawn([first.slice(0, 10)]);
+  const spawn = (cmd, args) => {
+    const proc = split.spawn(cmd, args);
+    const end = proc.stdin.end;
+    proc.stdin.end = (s) => {
+      proc.stdout.emit('data', Buffer.from(first.slice(0, 10)));
+      proc.stdout.emit('data', Buffer.from(`${first.slice(10)}\nCHAT_AGENT_DELTA:${b64(' world')}\n${answer}\n`));
+      end(s);
+    };
+    return proc;
+  };
+  const pieces = [];
+  const value = await runBackendJson({
+    spawn, backend: 'b', command: 'chat-agent-step', payload: {}, prefix: 'CHAT_AGENT:', errorPrefix: 'CHAT_AGENT_ERROR:',
+    deltaPrefix: 'CHAT_AGENT_DELTA:', onDelta: (p) => pieces.push(p),
+  });
+  assert.deepEqual(pieces, ['Hello', ' world']);
+  assert.equal(value.text, 'Hello world');
+});
+
+test('streamed text is emitted as it arrives and later steps start a new paragraph', async () => {
+  const events = [];
+  const script = [
+    { deltas: ['Let me ', 'check.'], res: { text: 'Let me check.', tool_calls: [{ id: '1', name: 'linear__search_issues', arguments: {} }] } },
+    { deltas: ['Found ', 'two.'], res: { text: 'Found two.', tool_calls: [] } },
+  ];
+  const out = await runAgentTurn({
+    request: REQUEST,
+    tools: buildAgentTools({ connectionTools: CONNECTION_TOOLS, steno: false }),
+    step: async (_payload, onText) => {
+      const next = script.shift();
+      for (const d of next.deltas) onText(d);
+      return next.res;
+    },
+    runRead: async () => ({ text: '[]' }),
+    proposeWrite: async () => ({ status: 'declined' }),
+    emit: (kind, data) => { if (kind === 'text') events.push(data); },
+  });
+  assert.deepEqual(events, ['Let me ', 'check.', '\n\nFound ', 'two.']);
+  assert.equal(out.text, 'Let me check.\n\nFound two.');
+});

@@ -12,7 +12,8 @@ Protocol (stdin JSON, bounded):
       tools: [{name, description, parameters}],
       turns: [{type: "assistant", text, tool_calls: [{id, name, arguments}]},
               {type: "tool_result", id, name, content}] }
-stdout: ``CHAT_AGENT:<base64 JSON {text, tool_calls}>`` or
+stdout: zero or more ``CHAT_AGENT_DELTA:<base64 text>`` lines as the answer
+streams, then ``CHAT_AGENT:<base64 JSON {text, tool_calls}>`` or
 ``CHAT_AGENT_ERROR:<code>`` (``tools-unsupported`` | ``failed``).
 
 Also the Steno read tools (search_meetings / get_note) the loop offers next to
@@ -94,10 +95,20 @@ def _result_text(turn):
 
 
 # ── provider adapters ──────────────────────────────────────────────────────
-# Each takes (summarizer, system, question, turns, tools) and returns
-# {"text": str, "tool_calls": [{"id", "name", "arguments"}]}.
+# Each takes (summarizer, system, question, turns, tools, on_text) and returns
+# {"text": str, "tool_calls": [{"id", "name", "arguments"}]}. OpenAI,
+# Anthropic and Ollama stream, passing each text fragment to on_text as it
+# arrives; Bedrock answers in one piece.
 
-def _openai_step(s, system, question, turns, tools):
+
+def _json_args(raw):
+    try:
+        args = json.loads(raw or '{}')
+    except ValueError:
+        return {}
+    return args if isinstance(args, dict) else {}
+
+def _openai_step(s, system, question, turns, tools, on_text):
     messages = [{'role': 'system', 'content': system}, {'role': 'user', 'content': question}]
     for turn in turns:
         if turn['type'] == 'assistant':
@@ -110,25 +121,36 @@ def _openai_step(s, system, question, turns, tools):
             messages.append(msg)
         else:
             messages.append({'role': 'tool', 'tool_call_id': turn['id'], 'content': _result_text(turn)})
-    kwargs = {'model': s.model_name, 'messages': messages, 'timeout': 180}
+    kwargs = {'model': s.model_name, 'messages': messages, 'timeout': 180, 'stream': True}
     if tools:
         kwargs['tools'] = [{'type': 'function', 'function': {
             'name': t['name'], 'description': t.get('description', ''), 'parameters': t.get('parameters') or {'type': 'object'},
         }} for t in tools]
-    response = s.cloud_client.chat.completions.create(**kwargs)
-    message = response.choices[0].message
     from src.summarizer import _openai_content_text
-    calls = []
-    for c in message.tool_calls or []:
-        try:
-            args = json.loads(c.function.arguments or '{}')
-        except ValueError:
-            args = {}
-        calls.append({'id': c.id, 'name': c.function.name, 'arguments': args if isinstance(args, dict) else {}})
-    return {'text': _openai_content_text(message.content).strip(), 'tool_calls': calls}
+    text, calls = [], {}
+    for chunk in s.cloud_client.chat.completions.create(**kwargs):
+        if not getattr(chunk, 'choices', None):
+            continue
+        delta = chunk.choices[0].delta
+        content = getattr(delta, 'content', None)
+        piece = content if isinstance(content, str) else _openai_content_text(content) if content else ''
+        if piece:
+            text.append(piece)
+            on_text(piece)
+        for c in getattr(delta, 'tool_calls', None) or []:
+            slot = calls.setdefault(getattr(c, 'index', 0) or 0, {'id': '', 'name': '', 'arguments': ''})
+            if getattr(c, 'id', None):
+                slot['id'] = c.id
+            fn = getattr(c, 'function', None)
+            if fn is not None:
+                slot['name'] += getattr(fn, 'name', None) or ''
+                slot['arguments'] += getattr(fn, 'arguments', None) or ''
+    return {'text': ''.join(text).strip(), 'tool_calls': [
+        {'id': c['id'] or f'call_{uuid.uuid4().hex[:12]}', 'name': c['name'], 'arguments': _json_args(c['arguments'])}
+        for _, c in sorted(calls.items())]}
 
 
-def _anthropic_step(s, system, question, turns, tools):
+def _anthropic_step(s, system, question, turns, tools, on_text):
     messages = [{'role': 'user', 'content': question}]
     pending_results = []
     for turn in turns:
@@ -146,21 +168,31 @@ def _anthropic_step(s, system, question, turns, tools):
             pending_results.append({'type': 'tool_result', 'tool_use_id': turn['id'], 'content': _result_text(turn)})
     if pending_results:
         messages.append({'role': 'user', 'content': pending_results})
-    kwargs = {'model': s.model_name, 'max_tokens': 2048, 'system': system, 'messages': messages, 'timeout': 180}
+    kwargs = {'model': s.model_name, 'max_tokens': 2048, 'system': system, 'messages': messages,
+              'timeout': 180, 'stream': True}
     if tools:
         kwargs['tools'] = [{'name': t['name'], 'description': t.get('description', ''),
                             'input_schema': t.get('parameters') or {'type': 'object'}} for t in tools]
-    response = s.anthropic_client.messages.create(**kwargs)
-    text, calls = [], []
-    for block in response.content or []:
-        if getattr(block, 'type', None) == 'text':
-            text.append(block.text)
-        elif getattr(block, 'type', None) == 'tool_use':
-            calls.append({'id': block.id, 'name': block.name, 'arguments': block.input if isinstance(block.input, dict) else {}})
-    return {'text': ''.join(text).strip(), 'tool_calls': calls}
+    text, blocks = [], {}
+    for event in s.anthropic_client.messages.create(**kwargs):
+        kind = getattr(event, 'type', None)
+        if kind == 'content_block_start':
+            block = event.content_block
+            if getattr(block, 'type', None) == 'tool_use':
+                blocks[event.index] = {'id': block.id, 'name': block.name, 'arguments': ''}
+        elif kind == 'content_block_delta':
+            delta = event.delta
+            if getattr(delta, 'type', None) == 'text_delta' and delta.text:
+                text.append(delta.text)
+                on_text(delta.text)
+            elif getattr(delta, 'type', None) == 'input_json_delta' and event.index in blocks:
+                blocks[event.index]['arguments'] += delta.partial_json or ''
+    return {'text': ''.join(text).strip(), 'tool_calls': [
+        {'id': b['id'], 'name': b['name'], 'arguments': _json_args(b['arguments'])}
+        for _, b in sorted(blocks.items())]}
 
 
-def _bedrock_step(s, system, question, turns, tools):
+def _bedrock_step(s, system, question, turns, tools, on_text):
     import urllib.request
     from src.summarizer import bedrock_converse_url
     messages = [{'role': 'user', 'content': [{'text': question}]}]
@@ -201,10 +233,13 @@ def _bedrock_step(s, system, question, turns, tools):
             args = use.get('input')
             calls.append({'id': str(use.get('toolUseId') or uuid.uuid4()), 'name': str(use.get('name')),
                           'arguments': args if isinstance(args, dict) else {}})
-    return {'text': ''.join(text).strip(), 'tool_calls': calls}
+    answer = ''.join(text).strip()
+    if answer:
+        on_text(answer)
+    return {'text': answer, 'tool_calls': calls}
 
 
-def _ollama_step(s, system, question, turns, tools):
+def _ollama_step(s, system, question, turns, tools, on_text):
     import ollama
     messages = [{'role': 'system', 'content': system}, {'role': 'user', 'content': question}]
     names = {}
@@ -230,24 +265,24 @@ def _ollama_step(s, system, question, turns, tools):
         kwargs['tools'] = [{'type': 'function', 'function': {
             'name': t['name'], 'description': t.get('description', ''), 'parameters': t.get('parameters') or {'type': 'object'},
         }} for t in tools]
-    response = s._chat_no_think(client, **kwargs)
-    message = response['message'] if isinstance(response, dict) else response.message
-
     def get(o, k):
         return o.get(k) if isinstance(o, dict) else getattr(o, k, None)
 
-    calls = []
-    for c in get(message, 'tool_calls') or []:
-        fn = get(c, 'function')
-        args = get(fn, 'arguments')
-        if isinstance(args, str):
-            try:
-                args = json.loads(args)
-            except ValueError:
-                args = {}
-        calls.append({'id': f'call_{uuid.uuid4().hex[:12]}', 'name': str(get(fn, 'name')),
-                      'arguments': dict(args) if isinstance(args, dict) else {}})
-    return {'text': str(get(message, 'content') or '').strip(), 'tool_calls': calls}
+    text, calls = [], []
+    for chunk in s._chat_stream_no_think(client, **kwargs):
+        message = get(chunk, 'message') or {}
+        piece = get(message, 'content') or ''
+        if piece:
+            text.append(piece)
+            on_text(piece)
+        for c in get(message, 'tool_calls') or []:
+            fn = get(c, 'function')
+            args = get(fn, 'arguments')
+            if isinstance(args, str):
+                args = _json_args(args)
+            calls.append({'id': f'call_{uuid.uuid4().hex[:12]}', 'name': str(get(fn, 'name')),
+                          'arguments': dict(args) if isinstance(args, dict) else {}})
+    return {'text': ''.join(text).strip(), 'tool_calls': calls}
 
 
 def provider_step(summarizer):
@@ -261,11 +296,11 @@ def provider_step(summarizer):
     raise ToolsUnsupported(provider)
 
 
-def run_step(data, summarizer, parts):
+def run_step(data, summarizer, parts, on_text=lambda _text: None):
     """One model call. Returns {text, tool_calls} with calls limited to the offered tools."""
     tools = data.get('tools') or []
     step = provider_step(summarizer)
-    result = step(summarizer, system_prompt(parts, bool(tools)), parts['question'], data.get('turns') or [], tools)
+    result = step(summarizer, system_prompt(parts, bool(tools)), parts['question'], data.get('turns') or [], tools, on_text)
     offered = {t['name'] for t in tools}
     result['tool_calls'] = [c for c in result.get('tool_calls', []) if c.get('name') in offered][:8]
     return result
@@ -284,7 +319,10 @@ def run_chat_agent_step(load_note, load_corpus, resolve_language=None, make_summ
             from src.summarizer import OllamaSummarizer
             make_summarizer = OllamaSummarizer
         parts = build_prompt_parts(data, get_config(), load_note, load_corpus, resolve_language)
-        result = run_step(data, make_summarizer(), parts)
+        def on_text(piece):
+            print(f"CHAT_AGENT_DELTA:{base64.b64encode(piece.encode('utf-8')).decode('ascii')}", flush=True)
+
+        result = run_step(data, make_summarizer(), parts, on_text)
         encoded = base64.b64encode(json.dumps(result).encode('utf-8')).decode('ascii')
         print(f'CHAT_AGENT:{encoded}', flush=True)
     except ToolsUnsupported:
