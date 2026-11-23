@@ -37,6 +37,7 @@ test('tool calling is offered only to providers and models that can do it', () =
   assert.equal(toolCallingSupport({ ai_provider: 'cloud', cloud_provider: 'bedrock' }), true);
   assert.equal(toolCallingSupport({ ai_provider: 'cloud' }), true); // openai default
   assert.equal(toolCallingSupport({ ai_provider: 'cloud', cloud_provider: 'custom' }), true);
+  assert.equal(toolCallingSupport({ ai_provider: 'cloud', cloud_provider: 'openrouter' }), true);
   assert.equal(toolCallingSupport({ ai_provider: 'local', model: 'qwen3.5:9b' }), true);
   assert.equal(toolCallingSupport({ ai_provider: 'remote', model: 'gpt-oss:20b' }), true);
   assert.equal(toolCallingSupport({ ai_provider: 'local', model: 'gemma4:e2b-it-qat' }), false);

@@ -28,7 +28,7 @@ const MAX_TOOL_NAME = 64;
 
 /**
  * Whether the configured provider/model is trusted with tool calls. Cloud
- * OpenAI, Anthropic, Bedrock and custom OpenAI-compatible endpoints: yes (a
+ * OpenAI, Anthropic, Bedrock, OpenRouter and custom OpenAI-compatible endpoints: yes (a
  * custom endpoint that rejects tools falls back to plain chat). Local or
  * remote Ollama: only models known to call tools reliably. The org adapter's
  * chat endpoint does not pass tools through, so it keeps plain chat.
@@ -45,7 +45,7 @@ function toolCallingSupport(cfg) {
   const c = cfg && typeof cfg === 'object' ? cfg : {};
   const provider = c.ai_provider || 'local';
   if (provider === 'cloud') {
-    return ['openai', 'anthropic', 'bedrock', 'custom'].includes(c.cloud_provider || 'openai');
+    return ['openai', 'anthropic', 'bedrock', 'custom', 'openrouter'].includes(c.cloud_provider || 'openai');
   }
   if (provider === 'local' || provider === 'remote') {
     const model = typeof c.model === 'string' ? c.model : '';
