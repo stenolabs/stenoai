@@ -11,9 +11,11 @@ export function ShortcutKeys({
 }) {
   const caps = acceleratorCaps(accelerator);
   return (
-    <span className={className ?? 'inline-flex items-center gap-1 align-middle'}>
+    <span className={className ?? 'inline-flex items-center gap-1 whitespace-nowrap align-middle'}>
       {caps.map((k, i) => (
-        <KbdKey key={`${k}-${i}`}>{k}</KbdKey>
+        <KbdKey key={`${k}-${i}`} className="font-sans text-[11.5px]">
+          {k}
+        </KbdKey>
       ))}
     </span>
   );

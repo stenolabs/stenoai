@@ -558,13 +558,13 @@ export function Home({ mode }: HomeProps) {
                 </div>
               </div>
               <p
-                className="max-w-[52ch] text-sm leading-[1.55]"
+                className="max-w-[64ch] text-sm leading-[1.7]"
                 style={{ color: 'var(--fg-2)' }}
               >
                 {heroSubParts
                   ? heroSubParts.map((part, i) => (
                       <React.Fragment key={i}>
-                        {i > 0 && <ShortcutKeys accelerator={hotkeyAccel} className="mx-0.5 inline-flex items-center gap-1 align-[1px]" />}
+                        {i > 0 && <ShortcutKeys accelerator={hotkeyAccel} className="mx-0.5 inline-flex items-center gap-1 whitespace-nowrap align-[1px]" />}
                         {part}
                       </React.Fragment>
                     ))
