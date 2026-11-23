@@ -140,6 +140,7 @@ export function ChatConversation({ sessionId }: ChatConversationProps) {
 
   const activeStream = activeStreamId ? streaming.streams[activeStreamId] : null;
   const isStreaming = activeStream?.status === 'streaming';
+  const slash = useSlashMenu({ recipes, input, setInput, enabled: ready && !isStreaming });
 
   // ChatTurnPersister saves the answer when it finishes, even if this page is gone.
 
@@ -261,8 +262,6 @@ export function ChatConversation({ sessionId }: ChatConversationProps) {
       </MeetingsShell>
     );
   }
-
-  const slash = useSlashMenu({ recipes, input, setInput, enabled: ready && !isStreaming });
 
   return (
     // bleed: skip AppShell's centered scroll wrapper (which has pb-36 baked
