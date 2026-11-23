@@ -58,6 +58,21 @@ test('Recipes: create one on Cookbooks, run it, and pick it from / in chat', asy
   await menu.getByRole('menuitem', { name: /Decision log/ }).click();
   await expect(input).toHaveValue(/^List the decisions made across my recent meetings/);
 
+  // Typing after the slash filters; Enter picks the highlighted recipe.
+  await input.fill('');
+  await input.pressSequentially('/follow');
+  await expect(menu.getByRole('menuitem')).toHaveCount(1);
+  await expect(menu.getByRole('menuitem').first()).toContainText('Draft the follow-up');
+  await input.press('Enter');
+  await expect(input).toHaveValue(/^Draft a short follow-up email/);
+  // No match says so; Escape closes the menu and keeps the text.
+  await input.fill('');
+  await input.pressSequentially('/zzz');
+  await expect(menu.getByText('No matching recipes', { exact: false })).toBeVisible();
+  await input.press('Escape');
+  await expect(menu).toHaveCount(0);
+  await expect(input).toHaveValue('/zzz');
+
   // Manage recipes goes back to the Recipes tab; edit, then delete.
   await input.fill('');
   await input.press('/');

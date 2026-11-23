@@ -162,9 +162,6 @@
   "undoDelete.undo": "復原",
   "undoDelete.dismissAria": "關閉並永久刪除",
   "chat.presets.composerLabel": "詢問您的筆記",
-  "chat.presets.chartNotes.label": "筆記圖表",
-  "chat.presets.chartNotes.prompt": "根據我近期的筆記，製作各場會議待辦事項數量的長條圖，並說明納入了哪些筆記、缺少了哪些資訊。",
-  "chat.presets.chartNotes.description": "用圖表呈現會議筆記中的數字",
   "chat.presets.recentTodos.label": "列出近期的待辦事項",
   "chat.presets.recentTodos.prompt": "請列出我上週所有的行動清單與待辦事項。",
   "chat.presets.recentTodos.description": "從近期的會議筆記中擷取待辦清單",
@@ -727,5 +724,6 @@
   "chat.trace.readMeeting": "已讀取「{{title}}」",
   "chat.trace.readThisMeeting": "已讀取此會議",
   "chat.trace.readLive": "已讀取即時逐字稿",
-  "chat.trace.thinkingFor": "思考中 · {{seconds}} 秒"
+  "chat.trace.thinkingFor": "思考中 · {{seconds}} 秒",
+  "recipes.noMatch": "沒有符合的食譜。按 Esc 以輸入訊息。"
 }

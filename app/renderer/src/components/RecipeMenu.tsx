@@ -37,6 +37,11 @@ export function RecipeMenu({
         {t('chat.home.skills')}
       </div>
       <div ref={listRef} className="scrollbar-clean flex max-h-[300px] flex-col overflow-y-auto">
+        {recipes.length === 0 && (
+          <p className="px-2 py-1.5 text-[12.5px]" style={{ color: 'var(--fg-muted)' }}>
+            {t('recipes.noMatch')}
+          </p>
+        )}
         {recipes.map((r, idx) => (
           <button
             key={r.id}

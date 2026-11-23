@@ -172,9 +172,6 @@
   "undoDelete.undo": "Undo",
   "undoDelete.dismissAria": "Dismiss and delete permanently",
   "chat.presets.composerLabel": "Ask about your notes",
-  "chat.presets.chartNotes.label": "Chart my notes",
-  "chat.presets.chartNotes.prompt": "Create a bar chart of action item counts by meeting from my recent notes. Explain which notes are included and any missing information.",
-  "chat.presets.chartNotes.description": "Visualizes numbers supported by your meeting notes",
   "chat.presets.recentTodos.label": "List recent todos",
   "chat.presets.recentTodos.prompt": "List my action items from the last week.",
   "chat.presets.recentTodos.description": "Pulls outstanding to-dos from recent meeting notes",
@@ -1065,5 +1062,6 @@
   "chat.trace.readMeeting": "Read “{{title}}”",
   "chat.trace.readThisMeeting": "Read this meeting",
   "chat.trace.readLive": "Read the live transcript",
-  "chat.trace.thinkingFor": "Thinking · {{seconds}}s"
+  "chat.trace.thinkingFor": "Thinking · {{seconds}}s",
+  "recipes.noMatch": "No matching recipes. Press Esc to type a message."
 }

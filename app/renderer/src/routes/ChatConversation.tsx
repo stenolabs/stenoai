@@ -18,6 +18,7 @@ import {
 import { ModelIndicator } from '@/components/ModelIndicator';
 import { RecipeMenu } from '@/components/RecipeMenu';
 import { useRecipes } from '@/hooks/useRecipes';
+import { useSlashMenu } from '@/hooks/useSlashMenu';
 import {
   useAllChatSessions,
   useChatSessions,
@@ -59,7 +60,6 @@ export function ChatConversation({ sessionId }: ChatConversationProps) {
   const [input, setInput] = React.useState('');
   const [activeStreamId, setActiveStreamId] = React.useState<string | null>(null);
   const [historyOpen, setHistoryOpen] = React.useState(false);
-  const [presetsOpen, setPresetsOpen] = React.useState(false);
   const recipes = useRecipes();
   // Folder scope persists for the lifetime of the conversation page mount.
   // The entry page's scope is handed off via consumePendingNewChat; later
@@ -276,6 +276,8 @@ export function ChatConversation({ sessionId }: ChatConversationProps) {
     );
   }
 
+  const slash = useSlashMenu({ recipes, input, setInput, enabled: ready && !isStreaming });
+
   return (
     // bleed: skip AppShell's centered scroll wrapper (which has pb-36 baked
     // in) so we can own the layout — flex column with a scrolling message
@@ -460,7 +462,7 @@ export function ChatConversation({ sessionId }: ChatConversationProps) {
               {submitError}
             </div>
           )}
-          <Popover open={presetsOpen} onOpenChange={setPresetsOpen}>
+          <Popover open={slash.open} onOpenChange={(next) => !next && slash.close()}>
             <PopoverAnchor asChild>
           <form
             onSubmit={onSubmit}
@@ -476,14 +478,9 @@ export function ChatConversation({ sessionId }: ChatConversationProps) {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => {
-              // Same '/' shortcut as the entry page — opens the preset
-              // picker when the input is empty so a literal slash typed
-              // mid-sentence doesn't surprise the user.
-              if (e.key === '/' && input === '' && ready && !isStreaming) {
-                e.preventDefault();
-                setPresetsOpen(true);
-                return;
-              }
+              // Same '/' recipe menu as the entry page: a leading slash opens
+              // it and the text after it filters; a slash mid-sentence is text.
+              if (slash.onKeyDown(e)) return;
               if (e.key === 'Enter' && !e.shiftKey && !isStreaming) {
                 e.preventDefault();
                 void submit(input);
@@ -541,10 +538,11 @@ export function ChatConversation({ sessionId }: ChatConversationProps) {
               onOpenAutoFocus={(e) => e.preventDefault()}
             >
               <RecipeMenu
-                recipes={recipes}
+                recipes={slash.filtered}
+                selectedIndex={slash.selected}
+                onHover={slash.setSelected}
                 onPick={(r) => {
-                  setInput(r.prompt);
-                  setPresetsOpen(false);
+                  slash.pick(r);
                   inputRef.current?.focus();
                 }}
               />

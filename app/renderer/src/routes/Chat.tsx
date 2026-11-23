@@ -27,6 +27,7 @@ import { Mascot } from '@/components/Mascot';
 import { ModelIndicator } from '@/components/ModelIndicator';
 import { RecipeMenu } from '@/components/RecipeMenu';
 import { useRecipes } from '@/hooks/useRecipes';
+import { useSlashMenu } from '@/hooks/useSlashMenu';
 import { getRouteParam, navigate, useRoute } from '@/lib/router';
 import { t } from '@/i18n';
 
@@ -123,10 +124,8 @@ export function Chat() {
 
   const recipes = useRecipes();
   const [input, setInput] = React.useState('');
-  const [presetsOpen, setPresetsOpen] = React.useState(false);
   const [isFocused, setIsFocused] = React.useState(false);
   const [suggestedIndex, setSuggestedIndex] = React.useState(0);
-  const [selectedPresetIndex, setSelectedPresetIndex] = React.useState(0);
   // Scope: null = ask across every note. Folder ID limits the corpus
   // server-side. Default null so first-time users get the broadest
   // possible answer.
@@ -240,9 +239,10 @@ export function Chat() {
     navigate('/chat');
   }, [recipeToFill]);
 
-  const onPickPreset = (prompt: string) => {
-    setInput(prompt);
-    setPresetsOpen(false);
+  const slash = useSlashMenu({ recipes, input, setInput, enabled: ready });
+  const presetsOpen = slash.open;
+  const onPickPreset = (recipe: Recipe) => {
+    slash.pick(recipe);
     inputRef.current?.focus();
   };
 
@@ -292,7 +292,7 @@ export function Chat() {
           </div>
         )}
 
-        <Popover open={presetsOpen} onOpenChange={setPresetsOpen}>
+        <Popover open={presetsOpen} onOpenChange={(next) => !next && slash.close()}>
           <PopoverAnchor asChild>
             <form
               onSubmit={onSubmit}
@@ -310,38 +310,12 @@ export function Chat() {
                   value={input}
                   onFocus={() => setIsFocused(true)}
                   onBlur={() => setIsFocused(false)}
-                  onChange={(e) => {
-                    setInput(e.target.value);
-                    if (e.target.value !== '') setPresetsOpen(false);
-                  }}
+                  onChange={(e) => setInput(e.target.value)}
                   onKeyDown={(e) => {
-                    if (presetsOpen) {
-                      if (e.key === 'ArrowDown') {
-                        e.preventDefault();
-                        setSelectedPresetIndex((prev) => (prev + 1) % recipes.length);
-                        return;
-                      }
-                      if (e.key === 'ArrowUp') {
-                        e.preventDefault();
-                        setSelectedPresetIndex((prev) => (prev - 1 + recipes.length) % recipes.length);
-                        return;
-                      }
-                      if (e.key === 'Enter' && input === '') {
-                        e.preventDefault();
-                        onPickPreset(recipes[selectedPresetIndex].prompt);
-                        return;
-                      }
-                    }
+                    if (slash.onKeyDown(e)) return;
                     if (e.key === 'Tab' && input === '' && ready) {
                       e.preventDefault();
                       setInput(BUILTIN_RECIPES[suggestedIndex].prompt);
-                      setPresetsOpen(false);
-                      return;
-                    }
-                    if (e.key === '/' && input === '' && ready) {
-                      e.preventDefault();
-                      setSelectedPresetIndex(0);
-                      setPresetsOpen(true);
                       return;
                     }
                     if (e.key === 'Enter' && !e.shiftKey) {
@@ -383,10 +357,10 @@ export function Chat() {
             onOpenAutoFocus={(e) => e.preventDefault()}
           >
             <RecipeMenu
-              recipes={recipes}
-              selectedIndex={selectedPresetIndex}
-              onHover={setSelectedPresetIndex}
-              onPick={(r: Recipe) => onPickPreset(r.prompt)}
+              recipes={slash.filtered}
+              selectedIndex={slash.selected}
+              onHover={slash.setSelected}
+              onPick={onPickPreset}
             />
           </PopoverContent>
         </Popover>

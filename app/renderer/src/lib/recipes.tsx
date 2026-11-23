@@ -17,19 +17,6 @@ export interface Recipe {
 
 export const BUILTIN_RECIPES: Recipe[] = [
   {
-    id: 'chart-notes',
-    builtin: true,
-    get label() {
-      return t('chat.presets.chartNotes.label');
-    },
-    get prompt() {
-      return t('chat.presets.chartNotes.prompt');
-    },
-    get description() {
-      return t('chat.presets.chartNotes.description');
-    },
-  },
-  {
     id: 'recent-todos',
     builtin: true,
     get label() {

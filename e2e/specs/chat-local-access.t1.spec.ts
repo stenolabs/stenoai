@@ -32,13 +32,13 @@ test('chat suggestion and native placeholder never overlap', async ({ launchApp 
   await page.evaluate(() => { window.location.hash = '#/chat'; });
 
   const input = page.getByRole('textbox', { name: COMPOSER_LABEL });
-  const suggestion = page.getByText('Chart my notes', { exact: true });
+  const suggestion = page.getByText('List recent todos', { exact: true });
   await expect(suggestion).toBeVisible();
   await expect(input).toHaveAttribute('placeholder', '');
 
   await input.focus();
   await expect(suggestion).toHaveCount(0);
-  await expect(input).toHaveAttribute('placeholder', '/ Chart my notes');
+  await expect(input).toHaveAttribute('placeholder', '/ List recent todos');
 
   await input.fill('What did we decide?');
   await expect(input).toHaveAttribute('placeholder', '');
