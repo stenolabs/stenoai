@@ -726,5 +726,6 @@
   "chat.trace.readThisMeeting": "已讀取此會議",
   "chat.trace.readLive": "已讀取即時逐字稿",
   "chat.trace.thinkingFor": "思考中 · {{seconds}} 秒",
-  "recipes.noMatch": "沒有符合的食譜。按 Esc 以輸入訊息。"
+  "recipes.noMatch": "沒有符合的食譜。按 Esc 以輸入訊息。",
+  "cookbooks.intro.carousel": "輪播"
 }

@@ -1064,5 +1064,6 @@
   "chat.trace.readThisMeeting": "Read this meeting",
   "chat.trace.readLive": "Read the live transcript",
   "chat.trace.thinkingFor": "Thinking · {{seconds}}s",
-  "recipes.noMatch": "No matching recipes. Press Esc to type a message."
+  "recipes.noMatch": "No matching recipes. Press Esc to type a message.",
+  "cookbooks.intro.carousel": "carousel"
 }

@@ -487,7 +487,7 @@ function IntroCard({
   return (
     <section
       aria-labelledby={slides[index].id}
-      aria-roledescription="carousel"
+      aria-roledescription={t('cookbooks.intro.carousel')}
       className="relative mt-8 overflow-hidden rounded-[18px]"
       style={{ border: '1px solid var(--border-subtle)', background: 'var(--surface-raised)', boxShadow: 'var(--shadow-sm)' }}
       onMouseEnter={() => setPaused(true)}
