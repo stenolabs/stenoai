@@ -24,7 +24,10 @@ function ChartCodeBlock({ node, children, ...props }: React.ComponentProps<'pre'
       {children}
     </pre>
   );
-  if (language !== 'steno-chart' || code?.type !== 'element') return fallback;
+  // Small models often fence the chart JSON as ```json (or with no language)
+  // instead of ```steno-chart. Accept those too: parseChatChart's strict
+  // validation still decides, so ordinary JSON stays a code block.
+  if (!CHART_FENCES.has((language ?? '').toLowerCase()) || code?.type !== 'element') return fallback;
 
   // CommonMark also produces a code node for an unfinished streaming fence.
   // Inspect the source span so charts only render once the fence is closed.
@@ -32,7 +35,7 @@ function ChartCodeBlock({ node, children, ...props }: React.ComponentProps<'pre'
   const end = node?.position?.end.offset;
   if (start === undefined || end === undefined) return fallback;
   const lines = source.slice(start, end).trimEnd().split(/\r?\n/);
-  const opening = lines[0].trimStart().match(/^(`{3,}|~{3,})steno-chart\s*$/)?.[1];
+  const opening = lines[0].trimStart().match(/^(`{3,}|~{3,})(?:steno-chart|json|chart)?\s*$/i)?.[1];
   const closing = lines[lines.length - 1].trim().match(/^(`{3,}|~{3,})$/)?.[1];
   if (!opening || !closing || opening[0] !== closing[0] || closing.length < opening.length)
     return fallback;
@@ -47,6 +50,8 @@ function ChartCodeBlock({ node, children, ...props }: React.ComponentProps<'pre'
     </ChartErrorBoundary>
   );
 }
+
+const CHART_FENCES = new Set(['steno-chart', 'json', 'chart', '']);
 
 const markdownComponents = { pre: ChartCodeBlock };
 

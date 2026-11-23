@@ -77,7 +77,7 @@ describe('chat chart boundary', () => {
     expect(renderToStaticMarkup(renderMarkdown('```steno-chart\n{"bad":true}\n```'))).toContain(
       '<pre'
     );
-    expect(renderToStaticMarkup(renderMarkdown('```json\n' + source + '\n```'))).toContain(
+    expect(renderToStaticMarkup(renderMarkdown('```json\n{"bad":true}\n```'))).toContain(
       'data-lang="json"'
     );
   });
@@ -99,6 +99,15 @@ describe('chat chart boundary', () => {
     );
     expect(html).toContain('Loading chart');
     expect(html).not.toContain('<pre');
+  });
+  test('a chart fenced as json or with no language still renders; other JSON stays code', () => {
+    for (const fence of ['```json\n', '```\n', '```JSON\n']) {
+      const html = renderToStaticMarkup(renderMarkdown(fence + JSON.stringify(spec) + '\n```'));
+      expect(html).toContain('Loading chart');
+    }
+    const plain = renderToStaticMarkup(renderMarkdown('```json\n{"name":"steno","version":1}\n```'));
+    expect(plain).toContain('<pre');
+    expect(plain).not.toContain('Loading chart');
   });
 });
 
