@@ -73,7 +73,7 @@ def build_prompt(data, config, load_note, load_corpus, resolve_language=None):
              if config.get_ai_provider() in ('local', 'remote') else 100_000)
     question = data['question'].strip()
     remaining = max(0, total - len(question) - 1200)
-    history = []
+    history: list[str] = []
     history_budget = min(12_000, remaining // 3)
     for turn in reversed(data.get('history', [])):
         line = f"{turn['role'].upper()}: {turn['content']}"
