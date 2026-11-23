@@ -12,7 +12,10 @@ Steno runs a local pipeline on every recording:
 1. **Record** -- always captures microphone audio, with system audio (both sides of a call) as an optional add-on toggle
 2. **Transcribe** -- runs a local speech-to-text engine to produce a verbatim transcript with speaker labels when system audio is on. Steno ships two engines: Parakeet (the default, which also shows a live transcript while you record) and Whisper (an optional alternate you can switch to in Settings)
 3. **Summarize** -- passes the transcript to a small language model running via [Ollama](https://ollama.com) on your Mac to produce structured notes: summary, key topics, and action items
-4. **Query** -- ask natural-language questions against any saved note from the inline ask bar
+4. **Ask** -- chat with one meeting or your whole library, run saved [recipes](/features/cookbooks), and draw charts
+5. **Act** -- approve suggested follow-ups in [connected apps](/connect/actions) such as Linear, Notion, Jira and Confluence, or draft an email
+
+You can also let AI apps and coding agents such as Claude, Cursor, Claude Code and Codex read your meetings. See [Connect](/connect/overview).
 
 Recording, transcription, and summarization all run offline. Steno does not send meeting content to any external server unless you explicitly configure a non-local backend (a cloud model such as OpenAI, Anthropic, AWS Bedrock, or a custom OpenAI-compatible endpoint, or a remote Ollama / organization adapter) as an optional alternative to the local model.
 

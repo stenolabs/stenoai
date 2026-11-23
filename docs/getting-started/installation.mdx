@@ -26,19 +26,45 @@ description: "Download and install Steno on macOS. The setup takes about five mi
     If macOS blocks the app entirely, go to **System Settings → Privacy & Security** and click **Open Anyway** next to the Steno entry.
   </Step>
 
-  <Step title="Download models">
-    On first launch, Steno will prompt you to download the default models:
-
-    - Transcription: Parakeet (~572MB)
-    - Summarization: Gemma 4 E2B (~6.5GB)
-
-    Both downloads happen inside the app. This requires an internet connection and takes a few minutes depending on your connection. After this, Steno runs entirely offline.
-  </Step>
-
-  <Step title="Grant microphone access">
-    When you start your first recording, macOS will prompt for microphone permission. Click **Allow**. To record system audio (both sides of a call), follow the [system audio setup](/features/recording) guide.
+  <Step title="Complete setup">
+    Steno opens a short setup that downloads its models and asks for microphone access. See [First-launch setup](#first-launch-setup) below.
   </Step>
 </Steps>
+
+## First-launch setup
+
+Setup has three short steps, then you're ready to record.
+
+<Steps>
+  <Step title="You">
+    - **What should we call you?**: optional, used for greetings. It stays on this computer.
+    - **Separate individual speakers** (macOS only): optional. Labels each voice on a call as Speaker 2, Speaker 3 and so on. It downloads about 250 MB; you can also download it later in **Settings → AI**. See [Speaker labels](/features/speaker-labels).
+    - **Anonymous usage analytics**: no meeting content is ever sent. You can change this later in **Settings → Advanced**.
+    - **Launch on login**: starts Steno hidden in the menu bar when you log in.
+
+    Click **Continue**. Steno starts downloading its speech model in the background (about 2.5 GB on a Mac, about 670 MB on Windows).
+  </Step>
+  <Step title="How Steno thinks">
+    Choose where the AI that writes your notes runs:
+
+    - **On this computer**: private and free. About a 2 GB download.
+    - **Cloud**: faster, and sends text (never audio) to the provider you choose. Bring your own API key from OpenRouter, OpenAI or Anthropic. See [Get an API key](/getting-started/api-key).
+
+    You can switch any time in **Settings → AI**. Click **Begin setup**.
+  </Step>
+  <Step title="Getting ready">
+    Steno asks for microphone access, then downloads the transcription model, the speaker models if you chose them, and the local AI model if you chose **On this computer**. Downloads keep going if you switch apps.
+
+    When macOS asks for microphone permission, click **Allow**.
+  </Step>
+  <Step title="You're ready">
+    Click **Start your first note** to try it, or **Continue to app**.
+  </Step>
+</Steps>
+
+Downloads need an internet connection. After setup, a local configuration runs entirely offline.
+
+To record system audio (both sides of a call), follow the [system audio setup](/features/recording) guide.
 
 ## Verify the installation
 
