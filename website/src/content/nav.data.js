@@ -1,7 +1,7 @@
 // Extended hover menus for the main navigation (desktop, 1100px and up).
 // Each top-level link keeps its own href; its panel adds an overview card, the sections on that page and a
-// short readout. Section ids match the pages: the homepage sections, MissionSectors/Deploy/Assurance/Editions
-// on /enterprise/, and IndustryPage.astro on the sector pages (only sections that page renders are listed).
+// short readout. Section ids match the pages: the homepage sections, readers, rooms, adds, where, rollout and
+// faq on /enterprise/ (pages/enterprise/index.astro), and IndustryPage.astro on the sector pages (only sections that page renders are listed).
 // Images live in /images/nav/ (illustrative scenes, no insignia); `img` is the file name without extension.
 
 import { government, defense, lawEnforcement } from "./industries.data.js";
@@ -71,14 +71,15 @@ export const MEGA = {
   },
   "/enterprise/": {
     key: "ent",
-    kicker: "Enterprise · Institutional control",
-    title: "Private intelligence. Institutional control.",
-    overview: { label: "Enterprise overview", img: "coalition-hq" },
+    kicker: "Enterprise · Large and private companies",
+    title: "Meeting notes your organisation controls.",
+    overview: { label: "Enterprise overview", img: "airgap" },
     items: [
-      { id: "sectors", icon: "landmark", label: "Your sector", line: "Government, defence, law enforcement", img: "gov-exterior" },
-      { id: "deploy", icon: "server", label: "Deployment", line: "Your device or your infrastructure", img: "airgap" },
-      { id: "security", icon: "shield-check", label: "Assurance", line: "Open source you can inspect", img: "intel-fusion" },
-      { id: "editions", icon: "layers", label: "Editions", line: "Community and Enterprise", img: "gov-committee" },
+      { id: "rooms", icon: "list-checks", label: "Where it is used", line: "Six rooms, from the board to the client", img: "le-standards" },
+      { id: "adds", icon: "layers", label: "What Enterprise adds", line: "Community and Enterprise side by side", img: "le-review" },
+      { id: "where", icon: "server", label: "Where everything lives", line: "Your adapter, your model, your storage", img: "airgap" },
+      { id: "rollout", icon: "workflow", label: "Rollout", line: "Brief, pilot, assure, deploy", img: "le-records" },
+      { id: "faq", icon: "message-circle-question", label: "Questions", line: "What your security team will ask", img: "gov-ministerial" },
     ],
     readouts: [["Hosting", "Never on our servers"], ["Source", "Open, MIT licence"], ["Briefing", "On request"]],
   },

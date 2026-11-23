@@ -3,14 +3,75 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
 import { Nav } from '../../sections/Nav';
 import Footer from '../../sections/Footer.astro';
 import CTAFooter from '../../sections/CTAFooter.astro';
-import MissionSectors from '../../sections/MissionSectors.astro';
-import MissionDeploy from '../../sections/MissionDeploy.astro';
-import MissionAssurance from '../../sections/MissionAssurance.astro';
-import MissionEditions from '../../sections/MissionEditions.astro';
 import { CTA_BRIEFING } from '../../content/industries.data';
-import { ArrowUpRight, ArrowDown } from 'lucide-react';
-const title = 'StenoAI for Enterprise — Private Intelligence. Institutional Control.';
-const description = 'Private meeting intelligence for government, defence and law enforcement. Explore on-device and self-hosted deployment, open-source assurance and a meeting workflow on your own hardware.';
+import { ArrowUpRight, ArrowRight, Check } from 'lucide-react';
+import '../../sector.css';
+import '../../scroll.css';
+import '../../enterprise-page.css';
+
+// Every line below has a source in NOTES.md. Policy: src/content/README.md (no certifications, no customers, no numbers, no prices).
+const title = 'StenoAI for Enterprise — Meeting Notes Your Organisation Controls';
+const description = 'Private meeting notes for large companies and private companies. Record and transcribe on the device, set the AI route yourself and keep shared notes in your own storage. Open source.';
+
+// Hero picture slot, same shape as the sector pages. Until an agreed take exists heroVideo stays null and the still is shown.
+// To use a take: heroVideo = { src: '/video/hero-enterprise.mp4', poster: '/images/enterprise/hero-enterprise.webp', position: '50% 50%' }.
+const hero = {
+  image: '/images/enterprise/hero-enterprise.webp',
+  alt: 'An empty boardroom in the evening: a long dark table, six empty chairs, one open laptop with a dim screen and papers lying face down in the light of a low lamp',
+  heroVideo: null,
+};
+
+const readers = [
+  { h: 'Large companies', b: 'Many teams, and one IT and security group to answer to. People sign in through your organisation’s adapter. You set the AI route, so desktops never hold provider keys. IT rolls the signed app out through MDM.' },
+  { h: 'Private companies', b: 'Owners, boards and partners, with a small IT team or none. Start with one laptop. There is no account to create and no usage cap. In local mode, notes stay as files on that machine. Add your own systems when you are ready.' },
+];
+
+const rooms = [
+  { code: 'ENT-01', env: 'Your device', title: 'Board and executive', outcome: 'A clear record of what was agreed, kept on your own device or systems.', for: 'Chairs, company secretaries, executive assistants', outputs: ['Transcript', 'Summary', 'Action items'] },
+  { code: 'ENT-02', env: 'Your device · offline', title: 'Legal and M&A', outcome: 'In local mode, deal talks and advice calls never reach a third-party server.', for: 'General counsel, deal teams, outside advisers', outputs: ['Transcript', 'Key points', 'Ask your notes'] },
+  { code: 'ENT-03', env: 'Your infrastructure', title: 'Finance and audit', outcome: 'Close, forecast and audit meetings, written up the same way each time.', for: 'Finance leads, controllers, audit teams', outputs: ['Summary', 'Report template', 'Action items'] },
+  { code: 'ENT-04', env: 'Your device', title: 'People and investigations', outcome: 'Sensitive people matters, noted on your own device or systems.', for: 'HR leads, employee-relations teams, investigators', outputs: ['Transcript', 'Summary', 'Speaker labels'] },
+  { code: 'ENT-05', env: 'Your infrastructure', title: 'Product and R&D', outcome: 'Roadmap and design reviews that carry unreleased work.', for: 'Product managers, engineers, research leads', outputs: ['Summary', 'Key points', 'Ask your notes'] },
+  { code: 'ENT-06', env: 'Your device', title: 'Client and partner meetings', outcome: 'Notes from calls with clients and partners, held by you.', for: 'Account teams, partners, relationship leads', outputs: ['Transcript', 'Summary', 'Action items'] },
+];
+
+const rows = [
+  { h: 'Sign-in', c: 'No account. There is nothing to sign in to.', e: 'People sign in through your organisation’s adapter, with Google Workspace or with email and password.' },
+  { h: 'AI route', c: 'Each person picks a model in Settings: on the device, a server of their own, or a cloud account.', e: 'Your organisation sets the route. While people are signed in, the picker is locked and AI goes through your adapter.' },
+  { h: 'Shared notes', c: 'In local mode, notes stay as files on the device.', e: 'Share notes with colleagues, or upload new ones automatically to your organisation’s own storage bucket. Authors can unshare their notes.' },
+  { h: 'Ask across notes', c: 'Ask questions about one meeting, or about your own notes.', e: 'Ask questions across the notes your organisation shares.' },
+  { h: 'Central policy', c: 'Each person sets their own preferences.', e: 'The app reads your organisation’s policy at sign-in. It sets whether shared notes are on and whether new notes upload by default.' },
+  { h: 'Rollout', c: 'Download the signed app and install it yourself.', e: 'IT deploys the signed app to managed Macs through MDM, such as Jamf.' },
+  { h: 'The app', c: 'Free. MIT licence. No usage restrictions.', e: 'The same MIT-licensed app. Your security team can read and build the source.' },
+];
+
+const steps = [
+  { name: 'Brief', body: 'A briefing for your team and security lead.' },
+  { name: 'Pilot', body: 'A pilot on your own meetings and hardware.' },
+  { name: 'Assure', body: 'Source, build and data paths for your security review and DPO.' },
+  { name: 'Deploy', body: 'Roll out on devices or your infrastructure, through your procurement route.' },
+];
+
+const egress = [
+  { what: 'Meeting content', when: 'Never in local mode. Otherwise only to your adapter, your storage bucket or the model endpoint you choose.' },
+  { what: 'Update checks', when: 'Version check only. No meeting content.' },
+  { what: 'Usage analytics', when: 'Anonymous and switchable off in Settings. No meeting content.' },
+  { what: 'Model downloads', when: 'During setup, or when you choose a new model.' },
+];
+
+const faqs = [
+  { q: 'Is any meeting content sent to StenoAI’s servers?', a: 'No. StenoAI runs no server that receives meeting content. In local mode, recordings, transcripts and summaries stay as files on the device. If your organisation signs people in to an adapter, content goes only to the places it sets up: your adapter, your storage bucket and your model endpoint.' },
+  { q: 'What does leave the device?', a: 'Update checks send the version only. Anonymous usage analytics can be switched off in Settings. Model downloads happen during setup, or when you choose a new model. None of these carry meeting content.' },
+  { q: 'Can we run it on our own infrastructure?', a: 'Yes. Recording always happens on the device, and transcription runs there by default. Summaries and questions can run on the device, on a model server on your own network, in your own cloud account such as AWS Bedrock, or through your organisation’s adapter.' },
+  { q: 'Can our security team review the software?', a: 'Yes. StenoAI is open source under the MIT licence. Your team can read the source, review the dependencies and build it in your own environment.' },
+  { q: 'Can IT deploy it to managed Macs?', a: 'Yes. The macOS app is signed. IT can deploy it through MDM, such as Jamf, by distributing the .app bundle. The Windows version is in alpha and is not signed yet.' },
+  { q: 'Does it add a meeting bot?', a: 'No. StenoAI captures microphone and system audio on the laptop, so it works with Teams, Zoom, Google Meet and in-person meetings. Nothing joins the call. Consent to record stays your responsibility.' },
+];
+
+const faqJsonLd = {
+  '@context': 'https://schema.org', '@type': 'FAQPage',
+  mainEntity: faqs.map((f) => ({ '@type': 'Question', name: f.q, acceptedAnswer: { '@type': 'Answer', text: f.a } })),
+};
 const breadcrumbJsonLd = {
   '@context': 'https://schema.org', '@type': 'BreadcrumbList',
   itemListElement: [
@@ -18,23 +79,244 @@ const breadcrumbJsonLd = {
     { '@type': 'ListItem', position: 2, name: 'Enterprise', item: 'https://stenoai.co/enterprise/' },
   ],
 };
+const flowAlt = 'Diagram. Endpoints record and transcribe on each laptop. They connect to your adapter, which sits in your tenancy. The adapter connects to your model endpoint and your storage bucket. No meeting content goes to StenoAI servers.';
 ---
-<BaseLayout title={title} description={description} canonical="https://stenoai.co/enterprise/" structuredData={[breadcrumbJsonLd]}>
+<BaseLayout title={title} description={description} canonical="https://stenoai.co/enterprise/" structuredData={[faqJsonLd, breadcrumbJsonLd]}>
+  <!-- Closing doors footage, as on the home page: "on", or "still" for reduced motion and data saver; absent without JavaScript, which keeps the plain banner. -->
+  <script is:inline>
+    (function (d, c) { d.dataset.ss = matchMedia('(prefers-reduced-motion: reduce)').matches || (c && c.saveData) ? 'still' : 'on'; })(document.documentElement, navigator.connection);
+  </script>
+  <link slot="head" rel="preload" as="image" href={hero.heroVideo?.poster ?? hero.image} fetchpriority="high" />
   <Nav client:load />
-  <main id="main-content" class="mission-site">
-    <section class="enterprise-intro">
-      <div class="mission-wrap">
+  <main id="main-content" class="mission-site sector-page">
+    <section class="mission-wrap industry-hero">
+      <div>
         <p class="mission-eyebrow">StenoAI / Enterprise</p>
-        <h1>Private intelligence.<br />Institutional control.</h1>
-        <p>Give your teams the clarity of AI meeting notes while keeping control of their conversations. On the device or on infrastructure you control, open source, and never on ours.</p>
-        <div class="mission-actions"><a href={CTA_BRIEFING} class="mission-button mission-button-light" data-track="demo_request" data-location="enterprise">Request a briefing <ArrowUpRight size={17} aria-hidden="true" /></a><a class="mission-text-link" href="#sectors">Explore your sector <ArrowDown size={16} aria-hidden="true" /></a></div>
+        <h1>Meeting notes your organisation controls.</h1>
+        <p>For large companies and private companies alike. Recording and transcription happen on each laptop. Your organisation decides where the AI runs and where shared notes are kept. StenoAI runs no server that receives your meeting content.</p>
+        <div class="mission-actions">
+          <a href={CTA_BRIEFING} data-track="demo_request" data-location="enterprise" class="mission-button mission-button-dark">Request a briefing <ArrowUpRight size={16} aria-hidden="true" /></a>
+          <a href="#adds" class="mission-text-link">See what Enterprise adds <ArrowRight size={16} aria-hidden="true" /></a>
+        </div>
+        <div class="industry-hero-chips"><span>Your device or your infrastructure</span><span>No meeting bot</span><span>Open source</span></div>
+      </div>
+      <div class="industry-hero-media" role={hero.heroVideo ? 'img' : undefined} aria-label={hero.heroVideo ? hero.alt : undefined}>
+        {hero.heroVideo ? (
+          <video class="industry-hero-image" muted playsinline preload="none" poster={hero.heroVideo.poster} aria-hidden="true" tabindex="-1" disablepictureinpicture disableremoteplayback data-hero-take style={hero.heroVideo.position ? `object-position: ${hero.heroVideo.position}` : undefined}>
+            <source src={hero.heroVideo.src} type="video/mp4" />
+          </video>
+        ) : (
+          <img class="industry-hero-image" src={hero.image} alt={hero.alt} width="1664" height="936" fetchpriority="high" />
+        )}
+        <span class="mega-tag" aria-hidden="true"><span class="mission-status-dot"></span> Illustrative scene</span>
       </div>
     </section>
-    <MissionSectors standalone />
-    <MissionDeploy />
-    <MissionAssurance />
-    <MissionEditions />
-    <CTAFooter />
+
+    <section id="readers" class="mission-section sector-section sector-sunken" aria-labelledby="readers-heading">
+      <div class="mission-wrap">
+        <div class="mission-section-top"><p class="mission-eyebrow">01 / Who it is for</p><span class="mission-eyebrow">Large companies · Private companies</span></div>
+        <div class="mission-section-heading">
+          <h2 id="readers-heading">The same app.<br />Set up to fit you.</h2>
+          <p>A large company and a private company need different things from it. Here is what each one gets.</p>
+        </div>
+        <div class="sector-points">
+          {readers.map((r) => (
+            <div>
+              <h3><Check size={15} strokeWidth={2.2} aria-hidden="true" />{r.h}</h3>
+              <p>{r.b}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+
+    <section id="rooms" class="mission-section sector-section" aria-labelledby="rooms-heading">
+      <div class="mission-wrap">
+        <div class="mission-section-top"><p class="mission-eyebrow">02 / Where it is used</p><span class="mission-eyebrow">Illustrative settings · {rooms.length}</span></div>
+        <div class="mission-section-heading">
+          <h2 id="rooms-heading">Six rooms where<br />it earns its place.</h2>
+          <p>Meetings you cannot hand to a cloud vendor, and the record StenoAI makes in each, on your device or your infrastructure.</p>
+        </div>
+        <ol class="sector-cases ent-cases">
+          {rooms.map((u) => (
+            <li class="sector-case">
+              <div class="sector-case-top"><span class="mission-small-index">{u.code}</span><span class="sector-tag">{u.env}</span></div>
+              <h3>{u.title}</h3>
+              <p class="sector-case-outcome">{u.outcome}</p>
+              <p class="sector-case-for"><span class="mission-eyebrow">For</span>{u.for}</p>
+              <ul class="sector-case-outputs">{u.outputs.map((o) => <li>{o}</li>)}</ul>
+            </li>
+          ))}
+        </ol>
+        <p class="sector-note">StenoAI does not tell other people that a meeting is being recorded. Consent to record stays your responsibility.</p>
+      </div>
+    </section>
+
+    <section id="adds" class="mission-section sector-section sector-sunken" aria-labelledby="adds-heading">
+      <div class="mission-wrap">
+        <div class="mission-section-top"><p class="mission-eyebrow">03 / Community and Enterprise</p><span class="mission-eyebrow">Same app. Your systems.</span></div>
+        <div class="mission-section-heading">
+          <h2 id="adds-heading">What Enterprise<br />adds.</h2>
+          <p>Community is the free app on a laptop. Enterprise connects the same app to your organisation’s own systems.</p>
+        </div>
+        <table class="ent-compare">
+          <thead><tr><th scope="col"><span class="sr-only">Feature</span></th><th scope="col">Community</th><th scope="col">Enterprise</th></tr></thead>
+          <tbody>
+            {rows.map((r) => (
+              <tr><th scope="row">{r.h}</th><td data-label="Community">{r.c}</td><td data-label="Enterprise">{r.e}</td></tr>
+            ))}
+          </tbody>
+        </table>
+        <div class="mission-actions ent-adds-actions">
+          <a href={CTA_BRIEFING} data-track="demo_request" data-location="enterprise_adds" class="mission-button mission-button-dark">Request a briefing <ArrowUpRight size={16} aria-hidden="true" /></a>
+          <a href="/download/?src=enterprise_adds" class="mission-text-link">Try Community on one laptop <ArrowRight size={16} aria-hidden="true" /></a>
+        </div>
+      </div>
+    </section>
+
+    <section id="where" class="mission-section sector-section" aria-labelledby="where-heading">
+      <div class="mission-wrap">
+        <div class="mission-section-top"><p class="mission-eyebrow">04 / Where everything lives</p><span class="mission-eyebrow">Your tenancy, your routes</span></div>
+        <div class="mission-section-heading">
+          <h2 id="where-heading">No meeting content<br />on StenoAI servers.</h2>
+          <p>StenoAI runs no server that receives meeting content. The adapter, the AI route and shared notes sit in your tenancy.</p>
+        </div>
+        <div class="mission-boundary ent-boundary">
+          <div class="mission-boundary-top"><span class="mission-eyebrow">Your boundary</span><span class="mission-eyebrow">Content goes only where you point it <span class="mission-status-dot"></span></span></div>
+          <div class="ent-flow" data-flow>
+            <svg class="dk" viewBox="0 0 1200 380" role="img" aria-label={flowAlt}>
+              <g data-fade data-a="0.7" data-b="0.9"><rect class="dash" x="400" y="20" width="780" height="340" /><text class="tm" x="424" y="48">Your tenancy</text></g>
+              <rect data-draw data-a="0" data-b="0.14" x="20" y="120" width="280" height="140" />
+              <g data-fade data-a="0.06" data-b="0.16"><text class="tm" x="44" y="152">01</text><text class="t1" x="44" y="190">Endpoints</text><text class="t2" x="44" y="218">Record and transcribe</text><text class="t2" x="44" y="238">on each laptop.</text></g>
+              <path data-draw data-a="0.14" data-b="0.3" d="M300 190 H440" /><path data-draw data-a="0.28" data-b="0.32" d="M430 184 L440 190 L430 196" />
+              <rect data-draw data-a="0.3" data-b="0.44" x="440" y="120" width="280" height="140" />
+              <g data-fade data-a="0.36" data-b="0.46"><text class="tm" x="464" y="152">02</text><text class="t1" x="464" y="190">Your adapter</text><text class="t2" x="464" y="218">Sign-in, policy, AI route</text><text class="t2" x="464" y="238">and shared notes.</text></g>
+              <path data-draw data-a="0.44" data-b="0.62" d="M720 190 H800 V110 H880" /><path data-draw data-a="0.6" data-b="0.64" d="M870 104 L880 110 L870 116" />
+              <path data-draw data-a="0.44" data-b="0.62" d="M800 190 V280 H880" /><path data-draw data-a="0.6" data-b="0.64" d="M870 274 L880 280 L870 286" />
+              <rect data-draw data-a="0.62" data-b="0.76" x="880" y="60" width="280" height="100" />
+              <g data-fade data-a="0.68" data-b="0.78"><text class="tm" x="904" y="90">03</text><text class="t1" x="904" y="122">Your model endpoint</text><text class="t2" x="904" y="146">Summaries and questions.</text></g>
+              <rect data-draw data-a="0.66" data-b="0.8" x="880" y="230" width="280" height="100" />
+              <g data-fade data-a="0.72" data-b="0.82"><text class="tm" x="904" y="260">04</text><text class="t1" x="904" y="292">Your storage bucket</text><text class="t2" x="904" y="316">Shared notes, if you use them.</text></g>
+              <g data-fade data-a="0.85" data-b="1"><rect class="dash" x="20" y="300" width="280" height="60" /><text class="t3" x="44" y="326">StenoAI servers</text><text class="t2" x="44" y="346">No meeting content.</text></g>
+            </svg>
+            <svg class="ph" viewBox="0 0 360 700" role="img" aria-label={flowAlt}>
+              <g data-fade data-a="0.7" data-b="0.9"><rect class="dash" x="8" y="170" width="344" height="420" /><text class="tm" x="24" y="194">Your tenancy</text></g>
+              <rect data-draw data-a="0" data-b="0.14" x="20" y="20" width="320" height="110" />
+              <g data-fade data-a="0.06" data-b="0.16"><text class="tm" x="40" y="46">01</text><text class="t1" x="40" y="78">Endpoints</text><text class="t2" x="40" y="102">Record and transcribe on each laptop.</text></g>
+              <path data-draw data-a="0.14" data-b="0.28" d="M180 130 V210" /><path data-draw data-a="0.26" data-b="0.3" d="M174 200 L180 210 L186 200" />
+              <rect data-draw data-a="0.28" data-b="0.44" x="20" y="214" width="320" height="110" />
+              <g data-fade data-a="0.36" data-b="0.46"><text class="tm" x="40" y="240">02</text><text class="t1" x="40" y="272">Your adapter</text><text class="t2" x="40" y="296">Sign-in, policy, AI route, shared notes.</text></g>
+              <path data-draw data-a="0.44" data-b="0.62" d="M180 324 V354 H95 V386" /><path data-draw data-a="0.6" data-b="0.64" d="M89 376 L95 386 L101 376" />
+              <path data-draw data-a="0.44" data-b="0.62" d="M180 354 H265 V386" /><path data-draw data-a="0.6" data-b="0.64" d="M259 376 L265 386 L271 376" />
+              <rect data-draw data-a="0.62" data-b="0.76" x="20" y="390" width="150" height="130" />
+              <g data-fade data-a="0.68" data-b="0.78"><text class="tm" x="36" y="414">03</text><text class="t1s" x="36" y="444">Your model</text><text class="t1s" x="36" y="464">endpoint</text><text class="t2s" x="36" y="490">Summaries and</text><text class="t2s" x="36" y="506">questions.</text></g>
+              <rect data-draw data-a="0.66" data-b="0.8" x="190" y="390" width="150" height="130" />
+              <g data-fade data-a="0.72" data-b="0.82"><text class="tm" x="206" y="414">04</text><text class="t1s" x="206" y="444">Your storage</text><text class="t1s" x="206" y="464">bucket</text><text class="t2s" x="206" y="490">Shared notes, if</text><text class="t2s" x="206" y="506">you use them.</text></g>
+              <g data-fade data-a="0.85" data-b="1"><rect class="dash" x="20" y="624" width="320" height="60" /><text class="t3" x="40" y="650">StenoAI servers</text><text class="t2" x="40" y="670">No meeting content.</text></g>
+            </svg>
+          </div>
+        </div>
+        <div class="mission-egress">
+          <p class="mission-eyebrow">What leaves the device</p>
+          <dl>
+            {egress.map(({ what, when }) => <div><dt>{what}</dt><dd>{when}</dd></div>)}
+          </dl>
+        </div>
+      </div>
+    </section>
+
+    <section id="rollout" class="mission-section sector-section sector-sunken" aria-labelledby="rollout-heading">
+      <div class="mission-wrap">
+        <div class="mission-section-top"><p class="mission-eyebrow">05 / Rollout</p><span class="mission-eyebrow">Brief · Pilot · Assure · Deploy</span></div>
+        <div class="mission-section-heading">
+          <h2 id="rollout-heading">From briefing<br />to deployment.</h2>
+          <p>When your organisation is ready, we take you through four steps, from the first briefing to the rollout.</p>
+        </div>
+        <ol class="sector-timeline">
+          {steps.map((s, i) => (
+            <li>
+              <p class="mission-eyebrow"><span class="mission-small-index">0{i + 1}</span></p>
+              <h3>{s.name}</h3>
+              <p>{s.body}</p>
+            </li>
+          ))}
+        </ol>
+      </div>
+    </section>
+
+    <section id="faq" class="mission-faq mission-section" aria-labelledby="faq-heading">
+      <div class="mission-wrap mission-faq-layout">
+        <div><p class="mission-eyebrow">06 / Questions</p><h2 id="faq-heading">Questions your<br />security team will ask.</h2></div>
+        <div class="mission-faq-items">
+          {faqs.map((f, index) => <details><summary><span class="mission-faq-number">0{index + 1}</span><span>{f.q}</span><span class="mission-faq-symbol" aria-hidden="true"></span></summary><p>{f.a}</p></details>)}
+        </div>
+      </div>
+    </section>
+
+    <section class="sector-section sector-compliance-wrap ent-strip-wrap" aria-labelledby="public-heading">
+      <div class="mission-wrap">
+        <div class="sector-compliance ent-strip">
+          <p class="mission-eyebrow" id="public-heading">Public sector? Start here.</p>
+          <div class="ent-strip-links">
+            <a class="mission-text-link" href="/enterprise/government/">Government <ArrowUpRight size={14} aria-hidden="true" /></a>
+            <a class="mission-text-link" href="/enterprise/defense/">Defence <ArrowUpRight size={14} aria-hidden="true" /></a>
+            <a class="mission-text-link" href="/enterprise/law-enforcement/">Law enforcement <ArrowUpRight size={14} aria-hidden="true" /></a>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <CTAFooter stage />
   </main>
   <Footer />
 </BaseLayout>
+
+<script>
+  import '../../scripts/scroll-seq.js';
+</script>
+
+<script>
+  // Hero take (only when a heroVideo is set): same behaviour as IndustryPage.astro. Plays once when in view, holds at 4.9 s, never loops.
+  // Poster only under reduced motion, data saver, or if the browser blocks play(). Nothing is fetched before play().
+  const take = document.querySelector<HTMLVideoElement>('[data-hero-take]');
+  const calm = matchMedia('(prefers-reduced-motion: reduce)').matches || !!navigator.connection?.saveData;
+  if (take && !calm && 'IntersectionObserver' in window) {
+    const HOLD = 4.9;
+    let done = false;
+    const stop = () => { done = true; take.pause(); };
+    const watch = () => take.requestVideoFrameCallback?.((_, m) => (m.mediaTime >= HOLD ? stop() : watch()));
+    take.addEventListener('play', watch);
+    take.addEventListener('timeupdate', () => { if (take.currentTime >= HOLD) stop(); });
+    new IntersectionObserver((entries) => {
+      if (entries[entries.length - 1].isIntersecting) { if (!done) take.play().catch(() => {}); }
+      else take.pause();
+    }, { threshold: 0.25 }).observe(take);
+  }
+</script>
+
+<script>
+  // Where everything lives: the diagram is drawn by scrolling. Each line and box has a start and end (data-a, data-b) on the figure's
+  // progress, so scrolling back undoes it. Reduced motion and data saver leave the finished diagram as it is; so does no JavaScript.
+  const quiet = matchMedia('(prefers-reduced-motion: reduce)').matches || !!navigator.connection?.saveData;
+  const fig = document.querySelector<HTMLElement>('[data-flow]');
+  if (fig && !quiet) {
+    const clamp = (x) => Math.max(0, Math.min(1, x));
+    fig.querySelectorAll<SVGGeometryElement>('[data-draw]').forEach((el) => { el.setAttribute('pathLength', '1'); el.style.strokeDasharray = '1'; });
+    let raf = 0;
+    const update = () => {
+      raf = 0;
+      const svg = [...fig.querySelectorAll('svg')].find((s) => s.getClientRects().length);
+      if (!svg) return;
+      const r = svg.getBoundingClientRect(), vh = innerHeight;
+      const p = clamp((vh * 0.85 - r.top) / (r.height * 0.85));
+      svg.querySelectorAll<SVGElement>('[data-a]').forEach((el) => {
+        const t = clamp((p - +el.dataset.a) / (+el.dataset.b - +el.dataset.a));
+        if ('draw' in el.dataset) el.style.strokeDashoffset = String(1 - t); else el.style.opacity = String(t);
+      });
+    };
+    const queue = () => { if (!raf) raf = requestAnimationFrame(update); };
+    addEventListener('scroll', queue, { passive: true });
+    addEventListener('resize', queue);
+    update();
+  }
+</script>
