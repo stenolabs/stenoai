@@ -110,7 +110,7 @@ export function ActionsSection() {
 
   return (
     <section aria-labelledby="connect-actions-heading" className="mt-10">
-      <h2 id="connect-actions-heading" className="text-[15px] font-medium">
+      <h2 id="connect-actions-heading" data-tip-anchor="connect-actions" className="text-[15px] font-medium">
         {t('connect.actions.heading')}
       </h2>
       <p

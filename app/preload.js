@@ -51,7 +51,9 @@ const subscribeQueryStream = (queryId, { onChunk, onDone, onError, onToolStep, o
     if (payload.success) {
       if (onDone) onDone();
     } else {
-      if (onError) onError(new Error(payload.error || 'query failed'));
+      // errorCode: a stable chat failure code (chat-query.js AI_ERROR_CODES),
+      // passed as its own argument: an Error crosses contextBridge as message only.
+      if (onError) onError(new Error(payload.error || 'query failed'), typeof payload.errorCode === 'string' ? payload.errorCode : undefined);
     }
   };
   const cleanup = () => {
@@ -75,6 +77,9 @@ const stenoai = {
 
   app: {
     platform: rendererPlatformOverride || process.platform,
+    // First-run tips (renderer FirstRunTips). Off under e2e so tips never
+    // cover what other specs click; a tips spec opts in with STENOAI_E2E_TIPS=1.
+    firstRunTips: process.env.STENOAI_E2E !== '1' || process.env.STENOAI_E2E_TIPS === '1',
     getVersion: () => invoke('get-app-version'),
   },
 

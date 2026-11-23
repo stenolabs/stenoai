@@ -3,6 +3,20 @@
 const MAX_BYTES = 1024 * 1024;
 const ERROR = 'Unable to answer. Check your AI provider and try again.';
 
+// Stable failure codes from src/ai_errors.py (CHAT_STREAM_ERROR:<code>,
+// CHAT_AGENT_ERROR:<code>). They carry no provider text, so they may travel to
+// the renderer as `errorCode` next to the fixed `error` message; anything else
+// on an error line (an old backend's free text) is never forwarded.
+const AI_ERROR_CODES = new Set([
+  'ollama-unreachable', 'model-missing', 'auth', 'quota', 'rate-limit',
+  'network', 'timeout', 'context-too-long', 'unknown',
+]);
+
+function aiErrorCode(value) {
+  const code = typeof value === 'string' ? value.trim() : '';
+  return AI_ERROR_CODES.has(code) ? code : 'unknown';
+}
+
 function validateRequest(request) {
   if (!request || !['live', 'meeting', 'notes', 'general'].includes(request.scope)
       || typeof request.question !== 'string' || !request.question.trim()
@@ -35,23 +49,24 @@ function runQuery({ spawn, backend, env, cwd, payload, send, onFinish, timeoutMs
   let buffer = '';
   let answerBytes = 0;
   let timer;
-  const finish = (success, error) => {
+  const finish = (success, error, errorCode) => {
     if (done) return;
     done = true;
     clearTimeout(timer);
     proc?.kill();
-    send('query-done', { success, ...(error ? { error } : {}) });
+    send('query-done', { success, ...(error ? { error } : {}), ...(error && errorCode ? { errorCode } : {}) });
     onFinish();
   };
+  const fail = (code = 'unknown') => finish(false, ERROR, code);
   try {
     const input = JSON.stringify(payload);
     if (Buffer.byteLength(input) > MAX_BYTES) throw new Error('Payload limit');
     proc = spawn(backend, ['chat-context-streaming'], { env, cwd, windowsHide: true });
-    timer = setTimeout(() => finish(false, 'The answer timed out. Please try again.'), timeoutMs);
+    timer = setTimeout(() => finish(false, 'The answer timed out. Please try again.', 'timeout'), timeoutMs);
     proc.stdout.on('data', (data) => {
       if (done) return;
       buffer += data.toString('utf8');
-      if (Buffer.byteLength(buffer) > MAX_BYTES) return finish(false, ERROR);
+      if (Buffer.byteLength(buffer) > MAX_BYTES) return fail();
       let nl;
       while (!done && (nl = buffer.indexOf('\n')) !== -1) {
         const line = buffer.slice(0, nl).replace(/\r$/, '');
@@ -65,25 +80,26 @@ function runQuery({ spawn, backend, env, cwd, payload, send, onFinish, timeoutMs
         } else if (line.startsWith('CHAT_CHUNK:')) {
           const chunk = Buffer.from(line.slice(11), 'base64').toString('utf8');
           answerBytes += Buffer.byteLength(chunk);
-          if (answerBytes > MAX_BYTES) return finish(false, ERROR);
+          if (answerBytes > MAX_BYTES) return fail();
           send('query-chunk', { chunk });
         } else if (line === 'CHAT_STREAM_COMPLETE') {
-          finish(answerBytes > 0, answerBytes ? undefined : ERROR);
+          if (answerBytes) finish(true);
+          else fail();
         } else if (line.startsWith('CHAT_STREAM_ERROR:')) {
-          finish(false, ERROR);
+          fail(aiErrorCode(line.slice(18)));
         }
       }
     });
     // Drain without logging: providers may put private context on stderr.
     proc.stderr.on('data', () => {});
-    proc.on('error', () => finish(false, ERROR));
-    proc.on('close', () => finish(false, ERROR));
-    proc.stdin.on('error', () => finish(false, ERROR));
+    proc.on('error', () => fail());
+    proc.on('close', () => fail());
+    proc.stdin.on('error', () => fail());
     proc.stdin.end(input);
   } catch (_) {
-    finish(false, ERROR);
+    fail();
   }
   return { cancel: () => finish(false, 'Answer stopped.') };
 }
 
-module.exports = { validateRequest, liveSnapshot, runQuery };
+module.exports = { validateRequest, liveSnapshot, runQuery, aiErrorCode, AI_ERROR_CODES };

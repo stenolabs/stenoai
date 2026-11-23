@@ -2495,6 +2495,20 @@ function install({ ipcMain }) {
         if (process.env.STENOAI_E2E_CHAT_NOTICE === '1' && !event.sender.isDestroyed()) {
           event.sender.send('query-tool-step', { queryId, step: { id: 'notice-tools', source: 'notice', connection: 'Notion', tool: 'tools-unavailable', title: 'gemma4:e2b-it-qat' } });
         }
+        // STENOAI_E2E_CHAT_ERROR=<code>: the answer fails with that stable
+        // failure code (chat-query.js AI_ERROR_CODES), as the real backend
+        // reports it. Clearing global.__chatErrorCode lets a Retry succeed.
+        if (process.env.STENOAI_E2E_CHAT_ERROR) {
+          if (global.__chatErrorCode === undefined) global.__chatErrorCode = process.env.STENOAI_E2E_CHAT_ERROR;
+          const errorCode = global.__chatErrorCode;
+          if (errorCode) {
+            setTimeout(() => {
+              if (event.sender.isDestroyed()) return;
+              event.sender.send('query-done', { queryId, success: false, error: 'Unable to answer. Check your AI provider and try again.', errorCode });
+            }, 20);
+            return;
+          }
+        }
         if (process.env.STENOAI_E2E_HOLD_CHAT === '1') global.__finishChat = finish;
         else if (process.env.STENOAI_E2E_CHAT_STREAM === '1') {
           // Word by word, holding before the last word until __finishChat.

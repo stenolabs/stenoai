@@ -3,6 +3,7 @@ import { ipc, type ActionCard, type ChatRequest, type ChatToolStep } from '@/lib
 import { GENERAL_SCOPE, ORG_SHARED_SCOPE } from '@/components/FolderScopePicker';
 import { buildOrgChatPayload } from '@/lib/orgChat';
 import { CHART_INSTRUCTIONS } from '@/lib/chatChart';
+import { aiErrorCode, type AiErrorCode } from '@/lib/aiError';
 
 /** Add a step, or replace one with the same id (a repeated context step). */
 function upsertStep(steps: ChatToolStep[] | undefined, step: ChatToolStep): ChatToolStep[] {
@@ -17,6 +18,8 @@ export interface StreamState {
   text: string;
   status: StreamStatus;
   error: string | null;
+  /** Why it failed, when the backend classified it (lib/aiError.ts). */
+  errorCode?: AiErrorCode;
   /** Chat-agent turns: read tools it ran, and action cards it paused on. */
   steps?: ChatToolStep[];
   cards?: ActionCard[];
@@ -79,11 +82,11 @@ export function useStreamingQuery() {
         });
         detachStream(id);
       },
-      onError: (err) => {
+      onError: (err, errorCode) => {
         setStreams((prev) => {
           const current = prev[id];
           if (!current) return prev;
-          return { ...prev, [id]: { ...current, status: 'error', error: err.message } };
+          return { ...prev, [id]: { ...current, status: 'error', error: err.message, errorCode: aiErrorCode(errorCode) ?? undefined } };
         });
         detachStream(id);
       },
@@ -143,11 +146,11 @@ export function useStreamingQuery() {
         });
         detachStream(id);
       },
-      onError: (err) => {
+      onError: (err, errorCode) => {
         setStreams((prev) => {
           const current = prev[id];
           if (!current) return prev;
-          return { ...prev, [id]: { ...current, status: 'error', error: err.message } };
+          return { ...prev, [id]: { ...current, status: 'error', error: err.message, errorCode: aiErrorCode(errorCode) ?? undefined } };
         });
         detachStream(id);
       },
@@ -214,11 +217,11 @@ export function useStreamingQuery() {
         });
         detachStream(id);
       },
-      onError: (err) => {
+      onError: (err, errorCode) => {
         setStreams((prev) => {
           const current = prev[id];
           if (!current) return prev;
-          return { ...prev, [id]: { ...current, status: 'error', error: err.message } };
+          return { ...prev, [id]: { ...current, status: 'error', error: err.message, errorCode: aiErrorCode(errorCode) ?? undefined } };
         });
         detachStream(id);
       },
@@ -244,10 +247,10 @@ export function useStreamingQuery() {
     let finished = false;
     setStreams((prev) => ({ ...prev, [id]: result }));
     activeRef.current.add(id);
-    const finish = (status: StreamStatus, error: string | null = null) => {
+    const finish = (status: StreamStatus, error: string | null = null, errorCode?: AiErrorCode) => {
       if (finished) return;
       finished = true;
-      result = { ...result, status, error };
+      result = { ...result, status, error, ...(errorCode ? { errorCode } : {}) };
       setStreams((prev) => ({ ...prev, [id]: result }));
       completionsRef.current.delete(id);
       detachStream(id);
@@ -273,7 +276,7 @@ export function useStreamingQuery() {
         setStreams((prev) => (prev[id] ? { ...prev, [id]: snapshot } : prev));
       },
       onDone: () => finish('done'),
-      onError: (error) => finish('error', error.message),
+      onError: (error, errorCode) => finish('error', error.message, aiErrorCode(errorCode) ?? undefined),
     });
     unsubsRef.current.set(id, off);
     completionsRef.current.set(id, () => finish('done'));

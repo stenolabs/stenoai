@@ -199,8 +199,9 @@ export function relativeTime(ts: number): string {
 }
 
 /** Keep follow-up history within the backend contract and the selected scope. */
-export function boundedChatHistory(messages: Array<{ role: 'user' | 'assistant'; content: string; context?: string }>, context: string, legacyContext: string) {
-  const turns = messages.filter((m) => (m.context ?? legacyContext) === context)
+export function boundedChatHistory(messages: Array<{ role: 'user' | 'assistant'; content: string; context?: string; error?: string }>, context: string, legacyContext: string) {
+  // A failed answer ("Ollama isn't running") is UI, not conversation: leave it out.
+  const turns = messages.filter((m) => (m.context ?? legacyContext) === context && !m.error)
     .slice(-6).map(({ role, content }) => ({ role, content: content.slice(-4000) }));
   while (turns.reduce((n, t) => n + t.content.length, 0) > 12000) turns.shift();
   return turns;

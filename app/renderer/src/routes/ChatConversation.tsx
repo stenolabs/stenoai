@@ -44,6 +44,8 @@ import {
 } from '@/lib/chat';
 import { consumePendingNewChat } from '@/routes/Chat';
 import { renderMarkdown } from '@/lib/markdown';
+import { aiErrorCode, aiErrorSavedText } from '@/lib/aiError';
+import { AiErrorNotice } from '@/components/chat/AiErrorNotice';
 import { t } from '@/i18n';
 
 interface ChatConversationProps {
@@ -213,6 +215,18 @@ export function ChatConversation({ sessionId }: ChatConversationProps) {
     }
   };
 
+  // Ask the latest question again after a failed answer, without repeating
+  // the question in the thread.
+  const retry = () => {
+    if (isStreaming || submittingRef.current || !ready || !session) return;
+    const list = session.messages ?? [];
+    const at = list.map((m) => m.role).lastIndexOf('user');
+    if (at === -1) return;
+    const history = boundedChatHistory(list.slice(0, at), scopeFolderId ?? 'notes', 'notes');
+    const streamId = streaming.startGlobalStream(list[at].content, scopeFolderId, history);
+    trackChatTurn({ sessionId: session.id, streamId, context: scopeFolderId ?? 'notes' });
+  };
+
   const stop = () => {
     if (!activeStreamId) return;
     streaming.cancelStream(activeStreamId);
@@ -376,6 +390,7 @@ export function ChatConversation({ sessionId }: ChatConversationProps) {
                 const content = isStreamingBubble
                   ? (streamingContent ?? '')
                   : msg!.content;
+                const msgError = msg?.role === 'assistant' ? aiErrorCode(msg.error) : null;
                 return (
                   <div
                     key={virtualRow.key}
@@ -404,7 +419,20 @@ export function ChatConversation({ sessionId }: ChatConversationProps) {
                     ) : msg?.role === 'assistant' ? (
                       <AgentRecord steps={msg.steps} actions={msg.actions} />
                     ) : null}
-                    {!(isStreamingBubble && !activeStream?.text) && (
+                    {msgError ? (
+                      <>
+                        {/* A partial answer before the failure stays readable. */}
+                        {msg!.content.trim() && msg!.content !== aiErrorSavedText(msgError) && (
+                          <div className="mb-2"><Bubble role="assistant" content={msg!.content} /></div>
+                        )}
+                        <div className="max-w-[85%]">
+                          <AiErrorNotice
+                            code={msgError}
+                            onRetry={virtualRow.index === messages.length - 1 && !isStreaming ? retry : undefined}
+                          />
+                        </div>
+                      </>
+                    ) : !(isStreamingBubble && !activeStream?.text) && (
                       <Bubble
                         role={role}
                         content={content}
@@ -438,6 +466,7 @@ export function ChatConversation({ sessionId }: ChatConversationProps) {
             <PopoverAnchor asChild>
           <form
             onSubmit={onSubmit}
+            data-tip-anchor="chat-composer"
             className="rounded-2xl border p-3 transition-shadow focus-within:shadow-[var(--shadow-md)]"
             style={{
               borderColor: 'var(--border-subtle)',

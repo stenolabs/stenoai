@@ -4,6 +4,7 @@ import { useChatSessions, type ChatMessage } from '@/hooks/useChatSessions';
 import { useGlobalStreaming } from '@/hooks/useStreamingQuery';
 import { GLOBAL_SCOPE } from '@/lib/chat';
 import { untrackChatTurn, useChatTurns } from '@/lib/chatTurns';
+import { aiErrorSavedText } from '@/lib/aiError';
 
 /**
  * Saves each finished Chat-tab answer to its session, wherever the user is
@@ -20,16 +21,22 @@ export function ChatTurnPersister() {
       const stream = streaming.streams[turn.streamId];
       if (!stream || stream.status === 'streaming' || saving.current.has(turn.streamId)) continue;
       saving.current.add(turn.streamId);
+      // A classified failure saves its code (rendered as AiErrorNotice) and its
+      // fixed title as text, never the backend's error message.
+      const errorCode = stream.status === 'error' ? stream.errorCode : undefined;
       const content =
         stream.text.trim() ||
-        (stream.status === 'error'
-          ? `Error: ${stream.error ?? 'query failed'}`
-          : '(empty response)');
+        (errorCode
+          ? aiErrorSavedText(errorCode)
+          : stream.status === 'error'
+            ? `Error: ${stream.error ?? 'query failed'}`
+            : '(empty response)');
       const actions = actionRecords(stream.cards);
       const message: ChatMessage = {
         role: 'assistant',
         context: turn.context,
         content,
+        ...(errorCode ? { error: errorCode } : {}),
         ts: Date.now(),
         ...(stream.steps?.length ? { steps: stream.steps } : {}),
         ...(actions ? { actions } : {}),
