@@ -38,7 +38,7 @@ test("an acknowledged release leaves Settings interactive and can be reopened", 
   await page.getByRole("button", { name: "View highlights" }).click();
   await expect(page.getByRole("dialog", { name: title })).toBeVisible();
   // Every highlight carries a generated cover picture.
-  await expect(page.getByRole("dialog", { name: title }).locator(".cookbook-cover")).toHaveCount(5);
+  await expect(page.getByRole("dialog", { name: title }).locator(".cookbook-cover")).toHaveCount(6);
   await page.waitForTimeout(400);
   await page.screenshot({ path: testInfo.outputPath("whats-new.png") });
   await page.getByRole("button", { name: "Full release notes" }).click();
@@ -66,16 +66,28 @@ test("upgrade waits for foreground, dismisses across restarts, and reopens from 
   await foreground(first.app);
   const dialog = first.page.getByRole("dialog", { name: title });
   await expect(dialog).toBeVisible();
-  await expect(
-    dialog.getByRole("button", { name: "Browse notes" }),
-  ).toBeVisible();
-  await expect(dialog.getByRole("button", { name: "Open AI settings" })).toBeVisible();
-  await expect(
-    dialog.getByRole("button", { name: "Open Preferences" }),
-  ).toBeVisible();
-  await expect(
-    dialog.getByRole("button", { name: "Turn on Auto-record" }),
-  ).toBeVisible();
+  for (const heading of [
+    "Connect your AI apps",
+    "Approve follow-ups after each note",
+    "Read your transcript right after Stop",
+    "Run a recipe with /",
+    "Click a note to edit it",
+    "A new record shortcut",
+  ]) {
+    await expect(dialog.getByRole("heading", { name: heading })).toBeVisible();
+  }
+  for (const action of [
+    "Open Connect",
+    "Connect an app",
+    "Open AI settings",
+    "Browse recipes",
+    "Browse notes",
+    "Open Preferences",
+  ]) {
+    await expect(
+      dialog.getByRole("button", { name: action, exact: true }),
+    ).toBeVisible();
+  }
   await dialog.evaluate((node) =>
     node.setAttribute("data-persistence-probe", "retained"),
   );
@@ -132,6 +144,22 @@ test("upgrade waits for foreground, dismisses across restarts, and reopens from 
     .getByRole("button", { name: "Browse notes" })
     .click();
   await expect.poll(() => second.page.evaluate(() => location.hash)).toBe("#/");
+  for (const [action, hash] of [
+    ["Open Connect", "#/connect"],
+    ["Browse recipes", "#/cookbooks?tab=recipes"],
+  ]) {
+    await second.page.evaluate(() => {
+      location.hash = "#/settings?tab=about";
+    });
+    await second.page.getByRole("button", { name: "View highlights" }).click();
+    await second.page
+      .getByRole("dialog", { name: title })
+      .getByRole("button", { name: action, exact: true })
+      .click();
+    await expect
+      .poll(() => second.page.evaluate(() => location.hash))
+      .toBe(hash);
+  }
 });
 
 test("fresh setup establishes a baseline without an announcement", async ({

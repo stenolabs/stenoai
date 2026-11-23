@@ -15,48 +15,57 @@ export type ReleaseHighlight = {
 };
 export const RELEASE_HIGHLIGHTS: readonly ReleaseHighlight[] = [
   {
-    id: 'note-editing',
-    icon: 'edit',
-    title: 'Edit a generated note',
+    id: 'connect',
+    icon: 'connect',
+    title: 'Connect your AI apps',
     description:
-      'Change generated sections in a saved note. The original model output stays available.',
-    action: 'Browse notes',
-    route: '/',
+      'Claude, Cursor, Claude Code and Codex can read your meetings through a read-only connection on this computer.',
+    action: 'Open Connect',
+    route: '/connect',
   },
   {
-    id: 'hebrew-model',
-    icon: 'language',
-    title: 'Transcribe Hebrew',
+    id: 'actions',
+    icon: 'sparkles',
+    title: 'Approve follow-ups after each note',
     description:
-      'With the Whisper engine, download the optional on-device Hebrew model in AI settings.',
-    action: 'Get the Hebrew model',
-    route: '/settings?tab=ai',
+      'Connect Linear, Notion or Jira, and Steno suggests follow-ups. Nothing is sent until you approve it.',
+    action: 'Connect an app',
+    route: '/connect',
   },
   {
-    id: 'speaker-engine',
+    id: 'instant-transcripts',
     icon: 'speakers',
-    title: 'Choose speaker detection',
+    title: 'Read your transcript right after Stop',
     description:
-      'On macOS, keep Sortformer or select optional Nemotron 3 in AI settings.',
+      'With the Parakeet engine, the transcript and a first summary are ready at once. Steno refines both in the background.',
     action: 'Open AI settings',
     route: '/settings?tab=ai',
   },
   {
-    id: 'open-meetings',
-    icon: 'calendar',
-    title: 'Open meetings on time',
+    id: 'recipes',
+    icon: 'recipes',
+    title: 'Run a recipe with /',
     description:
-      'With a calendar connected, Steno can open the meeting link shortly before it starts, or ask first.',
-    action: 'Open Preferences',
-    route: '/settings?tab=general',
+      'Recipes are saved chat prompts, such as a weekly recap or a decision log. Type / in Chat to run one.',
+    action: 'Browse recipes',
+    route: '/cookbooks?tab=recipes',
   },
   {
-    id: 'auto-record',
-    icon: 'record',
-    title: 'Record detected meetings',
+    id: 'editable-notes',
+    icon: 'edit',
+    title: 'Click a note to edit it',
     description:
-      'Turn on Auto-record, and Steno starts recording a detected meeting without waiting for a tap.',
-    action: 'Turn on Auto-record',
+      'Every note is editable in place, with no edit mode. Changes save automatically.',
+    action: 'Browse notes',
+    route: '/',
+  },
+  {
+    id: 'record-shortcut',
+    icon: 'record',
+    title: 'A new record shortcut',
+    description:
+      'The default is now ⌃⌥R (Ctrl+Alt+R on Windows and Linux), because ⌘⇧R clashed with refresh. Set your own in Preferences.',
+    action: 'Open Preferences',
     route: '/settings?tab=general',
   },
 ];
