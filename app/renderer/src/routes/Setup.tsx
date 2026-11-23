@@ -6,7 +6,6 @@ import {
 } from '@/lib/parakeetProgress';
 import type { ParakeetPullProgressEvent, SpeakerModelsProgressEvent } from '@/lib/ipc';
 import { DownloadProgressBar } from '@/components/DownloadProgressBar';
-import { Mascot } from '@/components/Mascot';
 import { CookbookCover } from '@/components/cookbooks/CookbookCover';
 import { OpenAiIcon } from '@/components/ui/openai-icon';
 import { AnthropicIcon } from '@/components/ui/anthropic-icon';
@@ -958,9 +957,8 @@ export function Setup() {
 
   return (
     <div className="min-h-screen bg-background text-foreground" data-setup-stage={stage}>
-      <div className="mx-auto w-full max-w-[640px] px-4 pb-32 pt-12 sm:px-8">
+      <div className="mx-auto w-full max-w-[640px] px-4 pb-32 pt-16 sm:px-8 sm:pt-20">
         <header className="mb-6 text-center">
-          <Mascot resting={stage !== 'you' || done} className="mb-4" testId="setup-mascot" />
           {stage === 'you' ? (
             <>
               <Display className="mb-3">{t('setup.hero.title')}</Display>
