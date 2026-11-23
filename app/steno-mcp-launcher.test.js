@@ -50,6 +50,30 @@ test('Windows launcher quotes paths, doubles %, and keeps a caller STENOAI_USER_
   assert.doesNotMatch(text, /[^\r]\n/, 'batch files use CRLF line endings');
 });
 
+test('Windows launcher switches to UTF-8 before any line that carries a path', () => {
+  const text = launcher.launcherContent({
+    command: 'C:\\Users\\Zoë Müller\\AppData\\Local\\Programs\\Steno\\Steno.exe',
+    script: 'C:\\Users\\Zoë Müller\\AppData\\Local\\Programs\\Steno\\resources\\steno-mcp\\server\\index.mjs',
+    defaultUserDataDir: 'C:\\Users\\Zoë Müller\\データ',
+    platform: 'win32',
+  });
+  const lines = text.split('\r\n');
+  assert.equal(lines[0], '@echo off');
+  // Quiet on stdout and stderr: the MCP client reads the server's stdio.
+  assert.equal(lines[1], 'chcp 65001 >nul 2>nul');
+  const firstPathLine = lines.findIndex((l) => /Zoë/.test(l));
+  assert.ok(firstPathLine > 1, 'every path line comes after the code-page switch');
+  assert.ok(lines.includes('if not defined STENOAI_USER_DATA_DIR set "STENOAI_USER_DATA_DIR=C:\\Users\\Zoë Müller\\データ"'));
+  assert.ok(lines.includes(
+    '"C:\\Users\\Zoë Müller\\AppData\\Local\\Programs\\Steno\\Steno.exe" "C:\\Users\\Zoë Müller\\AppData\\Local\\Programs\\Steno\\resources\\steno-mcp\\server\\index.mjs" %*',
+  ));
+  // The bytes on disk are UTF-8, which is what chcp 65001 makes cmd.exe read.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'steno-launcher-utf8-'));
+  launcher.ensureLauncher({ userDataDir: dir, command: 'C:\\Zoë\\Steno.exe', script: 'C:\\Zoë\\index.mjs', platform: 'win32' });
+  const bytes = fs.readFileSync(path.join(dir, 'bin', 'steno-mcp.cmd'));
+  assert.ok(bytes.includes(Buffer.from('Zoë', 'utf8')));
+});
+
 test('ensureLauncher writes once, is idempotent, and rewrites when the app moves', () => {
   const dir = tmp('steno-launcher-');
   const first = launcher.ensureLauncher({ userDataDir: dir, command: '/a/Steno', script: '/a/index.mjs', platform: 'darwin' });

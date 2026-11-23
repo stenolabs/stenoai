@@ -48,6 +48,12 @@ function launcherContent({ command, script, defaultUserDataDir = null, platform 
   if (platform === 'win32') {
     return [
       '@echo off',
+      // The file is written as UTF-8 (ensureLauncher) and cmd.exe re-reads a
+      // batch file line by line in the console code page, so a path with
+      // non-ASCII characters (a user named "Zoë") would be mangled under the
+      // default OEM page. Switch to UTF-8 before the lines that carry paths;
+      // the output stays quiet so an MCP client's stdio sees only the server.
+      'chcp 65001 >nul 2>nul',
       'rem Steno MCP launcher. Written by Steno; rewritten when Steno moves or updates.',
       'setlocal',
       'set "ELECTRON_RUN_AS_NODE=1"',
