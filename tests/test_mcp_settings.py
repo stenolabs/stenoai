@@ -36,6 +36,44 @@ class McpSettingsConfigTests(unittest.TestCase):
         self.assertTrue(self.config.set_mcp_folder_allowlist(None))
         self.assertIsNone(self.on_disk()["mcp_folder_allowlist"])
 
+    def test_corrupt_config_salvages_the_scope_it_can_still_read(self):
+        # A torn write usually leaves the scope keys intact: keep them rather
+        # than widening to "every meeting" on recovery.
+        self.config_path.write_text(
+            '{"model": "x", "mcp_folder_allowlist": ["team", 7, ""], '
+            '"mcp_exclude_transcripts": true, "cloud_api_key": "sk-'
+        )
+        cfg = Config(config_path=self.config_path)
+        self.assertEqual(cfg.get_mcp_folder_allowlist(), ["team"])
+        self.assertTrue(cfg.get_mcp_exclude_transcripts())
+        # A later save (the first write after recovery) persists the salvaged
+        # scope, not the permissive defaults.
+        self.assertTrue(cfg.set_keep_recordings(True))
+        on_disk = self.on_disk()
+        self.assertEqual(on_disk["mcp_folder_allowlist"], ["team"])
+        self.assertIs(on_disk["mcp_exclude_transcripts"], True)
+        self.assertTrue((Path(self._tmp.name) / "config.json.corrupt").exists())
+
+    def test_corrupt_config_without_readable_scope_fails_closed(self):
+        for garbage in ("{not json", "null", "[]", '{"mcp_folder_allowlist": [1, "a",'):
+            with self.subTest(garbage=garbage):
+                self.config_path.write_text(garbage)
+                cfg = Config(config_path=self.config_path)
+                self.assertEqual(cfg.get_mcp_folder_allowlist(), [])
+                self.assertTrue(cfg.get_mcp_exclude_transcripts())
+                self.assertTrue(cfg.set_keep_recordings(True))
+                on_disk = self.on_disk()
+                self.assertEqual(on_disk["mcp_folder_allowlist"], [])
+                self.assertIs(on_disk["mcp_exclude_transcripts"], True)
+
+    def test_corrupt_config_keeps_an_explicit_all_meetings_choice(self):
+        # null is a value the user chose (all meetings); only an unreadable
+        # key falls closed.
+        self.config_path.write_text('{"mcp_folder_allowlist": null, "mcp_exclude_transcripts": false, "x": ')
+        cfg = Config(config_path=self.config_path)
+        self.assertIsNone(cfg.get_mcp_folder_allowlist())
+        self.assertFalse(cfg.get_mcp_exclude_transcripts())
+
     def test_invalid_allowlists_are_rejected_without_writing(self):
         self.config.set_mcp_folder_allowlist(["keep"])
         for bad in ("a1", [""], [1], ["x" * 200], ["f"] * 501):

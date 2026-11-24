@@ -820,7 +820,48 @@ class Config:
                 f"Error loading config: {last_error}. Using defaults in memory; "
                 f"backup to {backup_path} also failed: {backup_error}"
             )
-        return self._get_default_config()
+        defaults = self._get_default_config()
+        # The MCP scope must not widen because the file broke: the stock
+        # defaults (every meeting, transcripts included) are for a fresh
+        # install, not for a config the user had already narrowed.
+        defaults.update(self._salvage_mcp_scope(self.config_path))
+        return defaults
+
+    # What the Steno MCP server may read after a corrupt config: nothing,
+    # until the user chooses again. The server itself refuses to run on a
+    # corrupt config (store.mjs ConfigUnreadableError); this keeps the file
+    # the recovery writes just as closed.
+    _MCP_SCOPE_FAIL_CLOSED = {"mcp_folder_allowlist": [], "mcp_exclude_transcripts": True}
+
+    @classmethod
+    def _salvage_mcp_scope(cls, path: Path) -> Dict[str, Any]:
+        """The mcp_* keys to run on after config.json failed to parse.
+
+        A torn or hand-edited file usually still carries the two scope keys
+        intact, so each is read back textually from the corrupt bytes (the
+        .corrupt backup is a copy of the same bytes) and kept when it parses
+        on its own. A key that cannot be read falls closed: an empty
+        allowlist and transcripts excluded, never the permissive defaults.
+        """
+        out: Dict[str, Any] = dict(cls._MCP_SCOPE_FAIL_CLOSED)
+        try:
+            text = Path(path).read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            return out
+        allow = re.search(r'"mcp_folder_allowlist"\s*:\s*(null|\[[^\]]*\])', text)
+        if allow:
+            try:
+                value = json.loads(allow.group(1))
+            except ValueError:
+                value = cls._MCP_SCOPE_FAIL_CLOSED["mcp_folder_allowlist"]
+            if value is None:
+                out["mcp_folder_allowlist"] = None
+            elif isinstance(value, list):
+                out["mcp_folder_allowlist"] = [f for f in value if isinstance(f, str) and f]
+        exclude = re.search(r'"mcp_exclude_transcripts"\s*:\s*(true|false)', text)
+        if exclude:
+            out["mcp_exclude_transcripts"] = exclude.group(1) == "true"
+        return out
 
     # Seconds to wait for the cross-process config lock before giving up and
     # falling back to an unlocked write. Generous enough to cover a normal
