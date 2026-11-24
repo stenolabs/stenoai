@@ -90,9 +90,10 @@ html { scroll-behavior: smooth; scroll-padding-top: 125px; }
 .mission-nav .mission-button { min-height: 42px; padding: 11px 15px; gap: 25px; font-size: 9px; }
 .mission-menu-toggle { display: none; border: 1px solid #ffffff30; color: #fff; background: transparent; width: 44px; height: 44px; align-items: center; justify-content: center; cursor: pointer; }
 .mission-mobile-menu { position: absolute; top: 100%; left: 0; right: 0; background: var(--mission-dark); border-bottom: 1px solid #ffffff30; padding: 16px 32px 28px; max-height: calc(100dvh - 112px); overflow-y: auto; }
-.mission-mobile-menu[hidden] { display: none; }
+.mission-mobile-menu[hidden], .mission-menu-toggle[hidden], .mission-menu-fallback { display: none; }
+.mission-menu-fallback summary { display: grid; place-items: center; min-height: 44px; padding-inline: 10px; border: 1px solid #ffffff30; cursor: pointer; list-style: none; }
+.mission-menu-fallback summary::-webkit-details-marker { display: none; }
 .mission-mobile-menu a { display: flex; align-items: center; gap: 20px; padding: 15px 0; border-bottom: 1px solid #ffffff18; font-size: 18px; }
-.mission-mobile-menu a > span { font: 10px var(--font-mono); color: #aaa; }
 .mission-mobile-menu a > svg { margin-left: auto; }
 /* Cinematic hero. */
 .mission-hero { --focus-ring: #faf9f5; position: relative; min-height: 730px; height: min(850px, calc(100svh - 112px)); color: #faf9f5; background: #14110d; isolation: isolate; overflow: hidden; display: flex; flex-direction: column; }
@@ -348,7 +349,8 @@ html { scroll-behavior: smooth; scroll-padding-top: 125px; }
   .mission-wrap { width: calc(100% - 64px); }
   .mission-nav, .mission-utility { padding-inline: 32px; }
   .mission-nav-links, .mission-nav-bar { display: none; }
-  .mission-menu-toggle { display: inline-flex; }
+  .mission-menu-toggle:not([hidden]) { display: inline-flex; }
+  .mission-menu-fallback { display: block; }
   .mission-section { padding-block: 80px; }
   .mission-section-heading { gap: 40px; }
   .mission-workflow { gap: 32px; grid-template-columns: 1fr 1.65fr; }

@@ -111,6 +111,22 @@ function MegaPanel({ href, m, open, loaded, onEnter, onLeave }) {
   );
 }
 
+const MOBILE_LINKS = [
+  ...LINKS,
+  { href: "/#security", label: "Security & control" },
+  { href: "/download/?src=nav", label: "Download Steno" },
+  { href: CTA_BRIEFING, label: "Request a briefing", track: "demo_request" },
+];
+
+function MobileLinks({ path, onClick }) {
+  return MOBILE_LINKS.map(({ href, label, track }) => (
+    <a href={href} key={href} onClick={onClick} data-track={track} data-location={track && "mobile_nav"}>
+      {label}
+      {(!href.includes("#") || (path && path !== "/")) && <ArrowUpRight size={18} aria-hidden="true" />}
+    </a>
+  ));
+}
+
 export function Nav() {
   const [open, setOpen] = useState(false);
   const [mega, setMega] = useState(null);          // href of the open extended menu (desktop)
@@ -118,6 +134,7 @@ export function Nav() {
   const [bar, setBar] = useState({ x: 0, w: 0, on: false });
   const [path, setPath] = useState("");
   const trigger = useRef(null);
+  const mobileMenu = useRef(null);
   const header = useRef(null);
   const nav = useRef(null);
   const linkRefs = useRef({});
@@ -136,8 +153,18 @@ export function Nav() {
     if (!open) return;
     const onKey = (event) => {
       if (event.key === "Escape") {
+        event.preventDefault();
         setOpen(false);
         trigger.current?.focus();
+      }
+      if (event.key === "Tab") {
+        const links = [...mobileMenu.current.querySelectorAll("a[href]")];
+        const stops = [trigger.current, ...links];
+        const index = stops.indexOf(document.activeElement);
+        if (index < 0 || (event.shiftKey ? index === 0 : index === stops.length - 1)) {
+          event.preventDefault();
+          (event.shiftKey ? stops.at(-1) : trigger.current)?.focus();
+        }
       }
     };
     const onPointer = (event) => {
@@ -242,20 +269,19 @@ export function Nav() {
           <a href={CTA_BRIEFING} className="mission-button mission-button-light nav-briefing" data-track="demo_request" data-location="nav">
             Request a briefing <ArrowUpRight size={15} aria-hidden="true" />
           </a>
-          <button ref={trigger} className="mission-menu-toggle" type="button" onClick={() => setOpen(!open)} aria-expanded={open} aria-controls="mission-mobile-menu" aria-label={open ? "Close menu" : "Open menu"}>
+          <button ref={trigger} className="mission-menu-toggle" hidden={!path} type="button" onClick={() => setOpen(!open)} aria-expanded={open} aria-controls="mission-mobile-menu" aria-label={open ? "Close menu" : "Open menu"}>
             {open ? <X size={24} aria-hidden="true" /> : <Menu size={24} aria-hidden="true" />}
           </button>
         </div>
-        <div id="mission-mobile-menu" className="mission-mobile-menu" hidden={!open} onBlur={(event) => {
-          if (!header.current?.contains(event.relatedTarget)) setOpen(false);
-        }}>
-          {LINKS.map(({ href, label }, index) => (
-            <a href={href} key={href} onClick={() => setOpen(false)}><span>0{index + 1}</span>{label}<ArrowUpRight size={18} aria-hidden="true" /></a>
-          ))}
-          <a href="/#security" onClick={() => setOpen(false)}><span>06</span>Security & control<ArrowUpRight size={18} aria-hidden="true" /></a>
-          <a href="/download/?src=nav" onClick={() => setOpen(false)}><span>07</span>Download Steno<ArrowUpRight size={18} aria-hidden="true" /></a>
-          <a href={CTA_BRIEFING} data-track="demo_request" data-location="mobile_nav" onClick={() => setOpen(false)}><span>↗</span>Request a briefing</a>
+        <div id="mission-mobile-menu" className="mission-mobile-menu" ref={mobileMenu} hidden={!open}>
+          <MobileLinks path={path} onClick={() => setOpen(false)} />
         </div>
+        <noscript>
+          <details className="mission-menu-fallback">
+            <summary>Menu</summary>
+            <div className="mission-mobile-menu"><MobileLinks /></div>
+          </details>
+        </noscript>
       </nav>
     </header>
   );
