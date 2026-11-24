@@ -25,7 +25,10 @@ test('Standard note exports use the saved summary language', async ({ launchApp,
     telemetry_enabled: false,
   });
   const exported = path.join(userDataDir, 'standard-notes-export');
-  const { page } = await launchApp({ env: { STENOAI_E2E_EXPORT_PATH: exported } });
+  const { page } = await launchApp({
+    releaseHighlightsSeen: true,
+    env: { STENOAI_E2E_EXPORT_PATH: exported },
+  });
   await page.evaluate((file) => {
     // Capture the text without depending on the OS clipboard in CI.
     Object.defineProperty(navigator, 'clipboard', {
