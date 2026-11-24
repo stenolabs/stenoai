@@ -49,7 +49,10 @@
 @media (max-width: 767px) {
   .sector-cases { grid-template-columns: 1fr; }
   .sector-case, .sector-case:nth-child(2n), .sector-case:not(:nth-child(4n + 1)) { padding: 22px 0 24px; border-left: 0; }
-  .sector-case h3 { margin-top: 16px; }
+  .sector-case { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 10px; align-items: baseline; }
+  .sector-case > * { grid-column: 1 / -1; }
+  .sector-case h3 { grid-area: 1 / 1; margin-top: 0; }
+  .sector-case .sector-case-top { grid-area: 1 / 2; justify-self: end; }
   .sector-timeline { grid-template-columns: 1fr; }
   .sector-timeline > li, .sector-timeline > li + li { padding: 22px 0; border-left: 0; border-bottom: 1px solid var(--border-strong); }
   .sector-points { grid-template-columns: 1fr; gap: 22px; }
