@@ -48,6 +48,32 @@ describe('buildNotesHtml', () => {
     expect(html).toContain('www.stenoai.co');
   });
 
+  test('renders Standard headings in the saved language and preserves template headings', () => {
+    const input = { ...full, outputLanguage: 'de-CH' };
+    const standard = buildNotesHtml(input);
+    expect(standard).toContain('<html lang="de">');
+    expect([...standard.matchAll(/<h2>(.*?)<\/h2>/g)].map((match) => match[1])).toEqual([
+      'Zusammenfassung', 'Hauptthemen', 'Kernaussagen', 'Aufgaben', 'Teilnehmende',
+    ]);
+
+    const report = buildNotesHtml(input, {
+      templateName: 'Status Report',
+      contentHtml: '<h2>Action Items</h2><p>Publish draft</p>',
+    });
+    expect(report).toContain('<h2>Status Report</h2>');
+    expect(report).toContain('<h2>Action Items</h2>');
+    expect(report).not.toContain('<h2>Aufgaben</h2>');
+  });
+
+  test.each([
+    ['ar', 'المهام'],
+    ['he', 'משימות'],
+  ])('renders %s Standard notes right to left', (language, actionItems) => {
+    const html = buildNotesHtml({ ...full, outputLanguage: language });
+    expect(html).toContain(`<html lang="${language}" dir="rtl">`);
+    expect(html).toContain(`<h2>${actionItems}</h2>`);
+  });
+
   test('escapes HTML in every dynamic field (no markup injection)', () => {
     const html = buildNotesHtml({
       ...full,

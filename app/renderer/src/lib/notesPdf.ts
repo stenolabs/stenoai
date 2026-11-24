@@ -14,6 +14,7 @@
 
 import { OVO_FONT_WOFF2_BASE64, STENO_LOGO_SVG_BASE64 } from '@/lib/brandAssets';
 import type { StructuredNoteSections } from '@/lib/notesCopy';
+import { noteExportHeadings } from '@/lib/notesExportHeadings';
 
 // The PDF builder consumes the same decomposed Standard-note shape as the
 // clipboard export (one source of truth — see notesCopy.ts). `meta` is a
@@ -95,9 +96,10 @@ ${reportHtml}
     ]);
   }
 
+  const { language, labels } = noteExportHeadings(input.outputLanguage);
   if (summary) {
     sections.push(`  <section>
-    <h2>Summary</h2>
+    <h2>${escapeHtml(labels.summary)}</h2>
     <p class="summary">${escapeHtml(summary)}</p>
   </section>`);
   }
@@ -113,7 +115,7 @@ ${reportHtml}
       })
       .join('\n');
     sections.push(`  <section>
-    <h2>Key Topics</h2>
+    <h2>${escapeHtml(labels.discussionAreas)}</h2>
     <ul>
 ${rows}
     </ul>
@@ -122,7 +124,7 @@ ${rows}
 
   if (input.keyPoints.length) {
     sections.push(`  <section>
-    <h2>Key Points</h2>
+    <h2>${escapeHtml(labels.keyPoints)}</h2>
     <ul>
 ${listItems(input.keyPoints)}
     </ul>
@@ -131,7 +133,7 @@ ${listItems(input.keyPoints)}
 
   if (input.actionItems.length) {
     sections.push(`  <section class="actions">
-    <h2>Action Items</h2>
+    <h2>${escapeHtml(labels.actionItems)}</h2>
     <ul>
 ${listItems(input.actionItems)}
     </ul>
@@ -140,12 +142,12 @@ ${listItems(input.actionItems)}
 
   if (input.participants.length) {
     sections.push(`  <section>
-    <h2>Participants</h2>
+    <h2>${escapeHtml(labels.participants)}</h2>
     <p>${escapeHtml(input.participants.join(', '))}</p>
   </section>`);
   }
 
-  return renderDocument(title, input.meta, sections);
+  return renderDocument(title, input.meta, sections, language);
 }
 
 /**
@@ -153,13 +155,19 @@ ${listItems(input.actionItems)}
  * the footer. Shared by both paths (Standard note and open report) so the two
  * can never drift apart on chrome, fonts or layout.
  */
-function renderDocument(title: string, meta: string | undefined, sections: string[]): string {
+function renderDocument(
+  title: string,
+  meta: string | undefined,
+  sections: string[],
+  language = 'en',
+): string {
+  const direction = language === 'ar' || language === 'he' ? ' dir="rtl"' : '';
   const metaLine = meta?.trim()
     ? `  <div class="meta">${escapeHtml(meta.trim())}</div>`
     : '';
 
   return `<!doctype html>
-<html lang="en">
+<html lang="${escapeHtml(language)}"${direction}>
 <head>
 <meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; font-src data:; style-src 'unsafe-inline'">
@@ -202,7 +210,7 @@ function renderDocument(title: string, meta: string | undefined, sections: strin
   .brand { display: flex; align-items: center; gap: 9px; }
   .brand img { width: 26px; height: 26px; display: block; }
   .brand .wordmark { font-family: 'Ovo', Georgia, serif; font-size: 17pt; letter-spacing: 0.01em; line-height: 1; }
-  .masthead-meta { text-align: right; }
+  .masthead-meta { text-align: end; }
   .masthead .kicker { font-size: 7.5pt; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-500); }
   .masthead .site { margin-top: 3px; font-size: 8pt; letter-spacing: 0.02em; color: var(--ink-900); }
   .title-block { margin: 26px 0; padding: 0 var(--inset); }
@@ -223,9 +231,9 @@ function renderDocument(title: string, meta: string | undefined, sections: strin
   .summary { font-family: 'Ovo', Georgia, serif; font-size: 12pt; line-height: 1.6; margin: 0; }
   p { margin: 0; }
   ul { margin: 0; padding: 0; list-style: none; }
-  li { position: relative; padding-left: 16px; margin-bottom: 8px; break-inside: avoid; }
+  li { position: relative; padding-inline-start: 16px; margin-bottom: 8px; break-inside: avoid; }
   li::before {
-    content: ''; position: absolute; left: 2px; top: 0.62em;
+    content: ''; position: absolute; inset-inline-start: 2px; top: 0.62em;
     width: 4px; height: 4px; border-radius: 50%; background: var(--ink-900);
   }
   li .lead { font-weight: 600; }
@@ -258,7 +266,7 @@ function renderDocument(title: string, meta: string | undefined, sections: strin
   .report ul, .report ol { margin: 0 0 10px; padding-left: 18px; }
   .report ul { list-style: disc; }
   .report ol { list-style: decimal; }
-  .report li { padding-left: 0; margin-bottom: 5px; }
+  .report li { padding-inline-start: 0; margin-bottom: 5px; }
   .report li::before { content: none; }
   .report li::marker { color: var(--ink-900); }
   .report strong { font-weight: 600; }

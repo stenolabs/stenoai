@@ -24,6 +24,10 @@ export interface SessionInfo {
   processed_at?: string;
   updated_at?: string;
   duration_seconds?: number;
+  /** Language saved with the generated summary. */
+  output_language?: string | null;
+  /** Legacy JSON notes may store the summary language here instead. */
+  language?: string | null;
   folders?: string[];
   /** Set when transcription crashed (e.g. an OOM): the recording was
    *  preserved instead of deleted and no real summary exists. The detail

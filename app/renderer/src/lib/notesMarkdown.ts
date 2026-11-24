@@ -1,4 +1,5 @@
 import type { StructuredNoteSections } from './notesCopy';
+import { noteExportHeadings } from './notesExportHeadings';
 
 function hasText(value: string | undefined): value is string {
   return Boolean(value?.trim());
@@ -18,8 +19,9 @@ export function buildNotesMarkdown(
     return blocks.join('\n\n');
   }
 
+  const { labels } = noteExportHeadings(sections.outputLanguage);
   if (hasText(sections.summary)) {
-    blocks.push(`## Summary\n\n${sections.summary}`);
+    blocks.push(`## ${labels.summary}\n\n${sections.summary}`);
   }
 
   if (sections.discussionAreas.length) {
@@ -30,19 +32,19 @@ export function buildNotesMarkdown(
         return topic.join('\n');
       })
       .join('\n\n');
-    blocks.push(`## Key Topics\n\n${topics}`);
+    blocks.push(`## ${labels.discussionAreas}\n\n${topics}`);
   }
 
   if (sections.keyPoints.length) {
-    blocks.push(`## Key Points\n\n${sections.keyPoints.map((point) => `- ${point}`).join('\n')}`);
+    blocks.push(`## ${labels.keyPoints}\n\n${sections.keyPoints.map((point) => `- ${point}`).join('\n')}`);
   }
 
   if (sections.actionItems.length) {
-    blocks.push(`## Action Items\n\n${sections.actionItems.map((item) => `- ${item}`).join('\n')}`);
+    blocks.push(`## ${labels.actionItems}\n\n${sections.actionItems.map((item) => `- ${item}`).join('\n')}`);
   }
 
   if (sections.participants.length) {
-    blocks.push(`## Participants\n\n${sections.participants.join(', ')}`);
+    blocks.push(`## ${labels.participants}\n\n${sections.participants.join(', ')}`);
   }
 
   return blocks.join('\n\n');
