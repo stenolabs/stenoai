@@ -9,6 +9,8 @@ import ScrollSeq from '../../components/ScrollSeq.astro';
 import { CTA_BRIEFING, enterpriseHero } from '../../content/industries.data';
 import { ArrowUpRight, ArrowRight, Check } from 'lucide-react';
 import '../../sector-base.css';
+import '../../readmore.css';
+import ReadMore from '../../components/ReadMore.astro';
 import '../../enterprise-page.css';
 import '../../scroll.css';
 import '../../enterprise-scroll.css';
@@ -32,8 +34,8 @@ const houseZones = [{ r: [.562, .555, .074, .16], a: .08, b: .4, f: .1 }, { r: [
 const houseZonesPhone = [{ r: [.368, .555, .074, .16], a: .08, b: .4, f: .1 }, { r: [.533, .548, .078, .24], a: .52, b: .82, f: .08 }]; // the phone picture is mirrored
 
 const readers = [
-  { h: 'Large companies', b: 'Many teams, and one IT and security group to answer to. People sign in through your organisation’s adapter. You set the AI route, so desktops never hold provider keys. IT rolls the signed app out through MDM.' },
-  { h: 'Private companies', b: 'Owners, boards and partners, with a small IT team or none. Start with one laptop. There is no account to create and no usage cap. In local mode, notes stay as files on that machine. Add your own systems when you are ready.' },
+  { h: 'Large companies', lead: 'Many teams, and one IT and security group to answer to.', b: 'People sign in through your organisation’s adapter. You set the AI route, so desktops never hold provider keys. IT rolls the signed app out through MDM.' },
+  { h: 'Private companies', lead: 'Owners, boards and partners, with a small IT team or none.', b: 'Start with one laptop. There is no account to create and no usage cap. In local mode, notes stay as files on that machine. Add your own systems when you are ready.' },
 ];
 
 const rooms = [
@@ -145,7 +147,8 @@ const flowAlt = 'Diagram. Endpoints record, and transcribe by default, on each l
                 <ScrollLight name={i ? 'house' : 'tower'} zones={i ? houseZones : towerZones} zones-phone={i ? JSON.stringify(houseZonesPhone) : undefined} w="1600" h="900" fit="cover" flow-start=".9" flow-end=".5" />
               </div>
               <h3><Check size={15} strokeWidth={2.2} aria-hidden="true" />{r.h}</h3>
-              <p>{r.b}</p>
+              <p>{r.lead}<span id={`reader-detail-${i + 1}`} data-rm-fold> {r.b}</span></p>
+              <ReadMore subject={r.h} controls={`reader-detail-${i + 1}`} />
             </div>
           ))}
         </div>
@@ -162,13 +165,14 @@ const flowAlt = 'Diagram. Endpoints record, and transcribe by default, on each l
         </div>
         <div class="stage-m stage-m-rooms"><ScrollLight name="rooms" zones={roomZones} w="1600" h="900" fit="contain" ground=".955" hfrac=".8" avoid=".stage-rooms .ent-cases, .stage-rooms .sector-note" below=".stage-rooms .mission-section-heading" gy=".824" fit-phone="cover" align-phone="right" later=".55" items=".ent-cases > li" flow-target=".ent-cases" flow-start=".85" flow-end=".5" /></div>
         <ol class="sector-cases ent-cases">
-          {rooms.map((u) => (
+          {rooms.map((u, i) => (
             <li class="sector-case">
               <div class="sector-case-top"><span class="mission-small-index">{u.code}</span><span class="sector-tag">{u.env}</span></div>
               <h3>{u.title}</h3>
               <p class="sector-case-outcome">{u.outcome}</p>
-              <p class="sector-case-for"><span class="mission-eyebrow">For</span>{u.for}</p>
-              <ul class="sector-case-outputs">{u.outputs.map((o) => <li>{o}</li>)}</ul>
+              <p class="sector-case-for" id={`room-for-${i + 1}`} data-rm-fold="room"><span class="mission-eyebrow">For</span>{u.for}</p>
+              <ul class="sector-case-outputs" id={`room-outputs-${i + 1}`} data-rm-fold="room">{u.outputs.map((o) => <li>{o}</li>)}</ul>
+              <ReadMore subject={u.title} controls={`room-for-${i + 1} room-outputs-${i + 1}`} class="rm-room" />
             </li>
           ))}
         </ol>
@@ -197,9 +201,10 @@ const flowAlt = 'Diagram. Endpoints record, and transcribe by default, on each l
           <p class="mission-eyebrow">Organisation layer</p>
           <h3>With your Enterprise deployment</h3>
           <p class="ent-deploy-lead">The organisation layer is hosted by you and set up with your deployment. Your security team reviews it in the Assure step.</p>
-          <ul>
-            {deployment.map((d) => <li><strong>{d.h}</strong><span>{d.b}</span></li>)}
+          <ul data-rm-deployment>
+            {deployment.map((d, i) => <li><strong>{d.h}</strong><span id={`deployment-detail-${i + 1}`} data-rm-fold>{d.b}</span></li>)}
           </ul>
+          <ReadMore subject="With your Enterprise deployment" controls={deployment.map((_, i) => `deployment-detail-${i + 1}`).join(" ")} />
           <p class="ent-deploy-more">More is on the way. We share the roadmap in your briefing.</p>
         </div>
         <div class="mission-actions ent-adds-actions">
@@ -277,10 +282,11 @@ const flowAlt = 'Diagram. Endpoints record, and transcribe by default, on each l
             <li>
               <p class="mission-eyebrow"><span class="mission-small-index">0{i + 1}</span></p>
               <h3>{s.name}</h3>
-              <p>{s.body}</p>
+              <p id={`rollout-detail-${i + 1}`} data-rm-fold>{s.body}</p>
             </li>
           ))}
         </ol>
+        <ReadMore subject="From briefing to deployment" controls={steps.map((_, i) => `rollout-detail-${i + 1}`).join(" ")} />
       </div>
     </section>
 
@@ -310,6 +316,8 @@ const flowAlt = 'Diagram. Endpoints record, and transcribe by default, on each l
   </main>
   <Footer />
 </BaseLayout>
+
+<script>import '../../scripts/readmore.js';</script>
 
 <script>
   const boot = () => {

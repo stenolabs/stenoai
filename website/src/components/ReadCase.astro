@@ -1,0 +1,20 @@
+---
+import { ArrowUpRight } from "lucide-react";
+import ReadCard from "./ReadCard.astro";
+
+interface Props {
+  incident: { meta: string; title: string; what: string; why: string; source: { href: string; label: string } };
+  index: number;
+  variant: "mission-threat" | "sector-file";
+}
+const { incident, index, variant } = Astro.props;
+const limitation = incident.what.match(/The claims are unproven and Otter\.ai disputes them\.$/)?.[0];
+---
+<ReadCard id={`case-file-${index + 1}`} title={incident.title} class={variant}>
+  <p class="mission-eyebrow"><span class="mission-small-index">Case 0{index + 1}</span> {incident.meta}</p>
+  <h3>{incident.title}</h3>
+  {limitation && <p class="rm-card-preview">{limitation}</p>}
+  <p class:list={[`${variant}-what`, "rm-card-detail"]}>{incident.what}</p>
+  <div class:list={[`${variant}-why`, "rm-card-detail"]}><p class="mission-eyebrow">What StenoAI changes</p><p>{incident.why}</p></div>
+  <a href={incident.source.href} target="_blank" rel="noopener noreferrer" class="mission-text-link rm-card-detail">{incident.source.label}<span class="sr-only"> (opens in a new tab)</span> <ArrowUpRight size={14} aria-hidden="true" /></a>
+</ReadCard>

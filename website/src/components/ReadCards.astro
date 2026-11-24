@@ -1,0 +1,21 @@
+---
+import { ArrowRight } from "lucide-react";
+import "../readmore.css";
+
+interface Props {
+  as?: "ol" | "div";
+  id: string;
+  subject: string;
+  count: number;
+  class: string;
+}
+const { as: Tag = "div", id, subject, count, class: className } = Astro.props;
+---
+<Tag id={id} class={className} data-rm-row>
+  <slot />
+</Tag>
+<div class="rm-car-nav" data-rm-nav>
+  <button type="button" class="rm-arrow rm-prev" data-rm-step="-1" aria-label={`Previous card: ${subject}`} aria-controls={id} aria-disabled="true"><ArrowRight size={14} aria-hidden="true" /></button>
+  <span class="mission-eyebrow" aria-live="polite" aria-atomic="true" data-rm-count>1 of {count}</span>
+  <button type="button" class="rm-arrow" data-rm-step="1" aria-label={`Next card: ${subject}`} aria-controls={id}><ArrowRight size={14} aria-hidden="true" /></button>
+</div>

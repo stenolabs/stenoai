@@ -18,6 +18,12 @@ import "../le.css";
 import mastRegion from "../content/def-mast.json";
 import terrainRoute from "../content/def-route.json";
 import SectorPicture from "./SectorPicture.astro";
+import ReadMore from "./ReadMore.astro";
+import ReadCard from "./ReadCard.astro";
+import ReadCards from "./ReadCards.astro";
+import ReadCase from "./ReadCase.astro";
+import ReadPanel from "./ReadPanel.astro";
+import { taste } from "../content/taste.js";
 import type { governmentPictures } from "../content/government-pictures";
 
 interface Props {
@@ -26,6 +32,8 @@ interface Props {
 }
 
 const { data, pictures } = Astro.props;
+const compliance = taste(COMPLIANCE_BODY);
+const complianceDetails = compliance.flatMap(({ folded }, i) => folded ? [`compliance-detail-${i}`] : []);
 const film = films.find((f) => f.slug === data.slug);
 // Defence scroll-motion preview (D1 terrain route, D2 mast, D3 posture stills, D4 doors). Other sectors are untouched.
 const mo = data.slug === "defense";
@@ -135,13 +143,14 @@ const num = (id) => String(order.indexOf(id) + 1).padStart(2, "0");
         {motion?.corridor && <div class="sector-corridor"><LightRoom {...motion.corridor} cards=".sector-case" /></div>}
         {mo && <div class="def-pic def-terrain" aria-hidden="true" data-def-terrain data-src="/scroll/def" data-src-phone="/scroll/def/m" data-route={JSON.stringify(terrainRoute)}><div class="def-pic-in"><canvas></canvas></div></div>}
         <ol class="sector-cases">
-          {data.useCases.map((u) => (
+          {data.useCases.map((u, i) => (
             <li class="sector-case">
               <div class="sector-case-top"><span class="mission-small-index">{u.code}</span><span class="sector-tag">{u.env}</span></div>
               <h3>{u.title}</h3>
               <p class="sector-case-outcome">{u.outcome}</p>
-              <p class="sector-case-for"><span class="mission-eyebrow">For</span>{u.for}</p>
-              <ul class="sector-case-outputs">{u.outputs.map((o) => <li>{o}</li>)}</ul>
+              <p class="sector-case-for" id={`use-case-for-${i + 1}`} data-rm-fold="room"><span class="mission-eyebrow">For</span>{u.for}</p>
+              <ul class="sector-case-outputs" id={`use-case-outputs-${i + 1}`} data-rm-fold="room">{u.outputs.map((o) => <li>{o}</li>)}</ul>
+              <ReadMore subject={u.title} controls={`use-case-for-${i + 1} use-case-outputs-${i + 1}`} class="rm-room" />
             </li>
           ))}
         </ol>
@@ -161,20 +170,20 @@ const num = (id) => String(order.indexOf(id) + 1).padStart(2, "0");
           <p>{data.whyNow.intro}</p>
         </div>
         {pictures?.gates && <SectorPicture picture={pictures.gates} class="sector-banner-picture" />}
-        <ol class="sector-timeline">
+        <ReadCards as="ol" id="why-now-cards" class="sector-timeline" subject="Why now" count={data.whyNow.items.length}>
           {data.whyNow.items.map((item, i) => (
-            <li>
+            <ReadCard as="li" id={`why-now-${i + 1}`} title={item.title}>
               {pictures?.timeline[i] && <SectorPicture picture={pictures.timeline[i]} class="sector-card-picture" />}
               <p class="mission-eyebrow"><span class="sector-date">{item.date}</span> {item.place}</p>
               <h3>{item.title}</h3>
-              <p>{item.body}</p>
-              <div class="sector-sources">
+              <p class="rm-card-detail">{item.body}</p>
+              <div class="sector-sources rm-card-detail">
                 <a href={item.source.href} target="_blank" rel="noopener noreferrer">{item.source.label}<span class="sr-only"> (opens in a new tab)</span> <ArrowUpRight size={12} aria-hidden="true" /></a>
                 {item.extra && <a href={item.extra.href} target="_blank" rel="noopener noreferrer">{item.extra.label}<span class="sr-only"> (opens in a new tab)</span> <ArrowUpRight size={12} aria-hidden="true" /></a>}
               </div>
-            </li>
+            </ReadCard>
           ))}
-        </ol>
+        </ReadCards>
       </div>
     </section>
   )}
@@ -186,19 +195,20 @@ const num = (id) => String(order.indexOf(id) + 1).padStart(2, "0");
         <div>
           <h2 id="cloud-heading">Why cloud tools don’t fit.</h2>
           <ul class="sector-pains">{data.pains.map((p) => <li>{p}</li>)}</ul>
-          
         </div>
         <div class="sector-cloud-right">
           {motion?.papers && <TakeStill {...motion.papers} class="take-still-side" />}
           <div class="sector-points">
           {mo && <div class="def-pic def-mast" aria-hidden="true" data-def-mast data-src="/scroll/def" data-src-phone="/scroll/def/m" data-region={JSON.stringify(mastRegion)}><div class="def-pic-in"><canvas></canvas></div></div>}
-          {data.points.map((pt) => (
+          {data.points.map((pt, i) => (
             <div>
               <h3><Check size={15} strokeWidth={2.2} aria-hidden="true" />{pt.h}</h3>
-              <p>{pt.b}</p>
+              <p id={`cloud-point-${i + 1}`} data-rm-fold>{pt.b}</p>
+              <ReadMore subject={pt.h} controls={`cloud-point-${i + 1}`} class="rm-phone" />
             </div>
           ))}
           </div>
+          <ReadMore subject="Why cloud tools don’t fit" controls={data.points.map((_, i) => `cloud-point-${i + 1}`).join(" ")} class="rm-desktop" />
         </div>
       </div>
     </div>
@@ -214,22 +224,23 @@ const num = (id) => String(order.indexOf(id) + 1).padStart(2, "0");
         </div>
         {motion?.book && <div class="le-bd le-band" data-le="book" aria-hidden="true"><canvas></canvas></div>}
         {pictures?.library && <SectorPicture picture={pictures.library} class="sector-banner-picture" />}
-        <div class="sector-policy">
+        <ReadCards id="policy-cards" class="sector-policy" subject="Law and policy" count={data.policy.cards.length}>
           {data.policy.cards.map((c, i) => (
-            <article class="sector-policy-card">
+            <ReadCard id={`policy-${i + 1}`} title={c.law} class="sector-policy-card">
               {pictures?.policy[i] && <SectorPicture picture={pictures.policy[i]} class="sector-card-picture" />}
               <h3 class="mission-eyebrow">{c.law}</h3>
-              <dl>
+              <p class="rm-card-preview">{c.so}</p>
+              <dl class="rm-card-detail">
                 <div><dt>It says</dt><dd>{c.says}</dd></div>
                 <div><dt>So</dt><dd>{c.so}</dd></div>
                 <div><dt>Still yours</dt><dd>{c.yours}</dd></div>
               </dl>
-              <div class="sector-sources">
+              <div class="sector-sources rm-card-detail">
                 {c.sources.map((s) => <a href={s.href} target="_blank" rel="noopener noreferrer">{s.label}<span class="sr-only"> (opens in a new tab)</span> <ArrowUpRight size={12} aria-hidden="true" /></a>)}
               </div>
-            </article>
+            </ReadCard>
           ))}
-        </div>
+        </ReadCards>
       </div>
     </section>
   )}
@@ -243,17 +254,9 @@ const num = (id) => String(order.indexOf(id) + 1).padStart(2, "0");
           <p>{data.breaches.intro}</p>
           {motion?.drawer && <TakeStill {...motion.drawer} class="take-still-side" />}
         </div>
-        <div class="sector-cases-files">
-          {data.breaches.items.map((b, i) => (
-            <article class="sector-file">
-              <p class="mission-eyebrow"><span class="mission-small-index">Case 0{i + 1}</span> {b.meta}</p>
-              <h3>{b.title}</h3>
-              <p class="sector-file-what">{b.what}</p>
-              <div class="sector-file-why"><p class="mission-eyebrow">What StenoAI changes</p><p>{b.why}</p></div>
-              <a class="mission-text-link" href={b.source.href} target="_blank" rel="noopener noreferrer">{b.source.label}<span class="sr-only"> (opens in a new tab)</span> <ArrowUpRight size={14} aria-hidden="true" /></a>
-            </article>
-          ))}
-        </div>
+        <ReadCards id="case-file-cards" class="sector-cases-files" subject="Case files" count={data.breaches.items.length}>
+          {data.breaches.items.map((b, i) => <ReadCase incident={b} index={i} variant="sector-file" />)}
+        </ReadCards>
         <p class="sector-note">Each incident is a matter of public record, summarised from the linked source and verified {BREACHES_VERIFIED}. StenoAI is not affiliated with any organisation named here.</p>
       </div>
     </section>
@@ -314,7 +317,9 @@ const num = (id) => String(order.indexOf(id) + 1).padStart(2, "0");
     <div class="mission-wrap">
       <div class:list={["sector-compliance", { "sector-compliance-with-picture": pictures?.compliance }]}>
         <p class="mission-eyebrow">On compliance</p>
-        <p>{COMPLIANCE_BODY}</p>
+        <p>{compliance.map(({ text, folded }, i) => folded ? (
+          <span id={`compliance-detail-${i}`} data-rm-fold> {text}</span>
+        ) : <Fragment>{i ? " " : ""}{text}</Fragment>)}<ReadMore subject="On compliance" controls={complianceDetails.join(" ")} /></p>
         {pictures?.compliance && <SectorPicture picture={pictures.compliance} class="sector-compliance-picture" />}
       </div>
     </div>
@@ -353,6 +358,7 @@ const num = (id) => String(order.indexOf(id) + 1).padStart(2, "0");
 </main>
 
 <Footer />
+<ReadPanel />
 
 <script>
   const boot = () => {

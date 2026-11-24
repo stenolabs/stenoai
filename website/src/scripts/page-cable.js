@@ -185,6 +185,7 @@ if (main && first && !navigator.connection?.saveData) {
   addEventListener('pageshow', (e) => { if (e.persisted) { lastY = scrollY; queue(); } });
   REDUCED.addEventListener('change', () => render(true));
   const ro = new ResizeObserver(queue);
+  ro.observe(document.documentElement);
   ro.observe(first);
   if (prev) ro.observe(prev);
   document.fonts?.ready.then(queue);

@@ -1,0 +1,13 @@
+---
+import { ArrowRight } from "lucide-react";
+
+interface Props {
+  subject: string;
+  controls: string;
+  class?: string;
+}
+const { subject, controls, class: className } = Astro.props;
+---
+<button type="button" class:list={["rm-btn", "mission-text-link", className]} data-rm-toggle={subject} aria-expanded="false" aria-controls={controls} aria-label={`Read more: ${subject}`}>
+  <span>Read more</span><ArrowRight size={14} aria-hidden="true" />
+</button>
