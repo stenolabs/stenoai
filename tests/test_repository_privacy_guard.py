@@ -239,22 +239,32 @@ class RepositoryPrivacyGuardTests(unittest.TestCase):
             Path(__file__).parents[1] / ".github" / "workflows" / "e2e.yml"
         ).read_text()
         triggers = privacy_workflow.split("jobs:", maxsplit=1)[0]
-        required_t1_match = re.search(
-            r"(?ms)^  t1-renderer:\n(?P<body>.*?)(?=^  [A-Za-z0-9_-]+:\n)",
-            e2e_workflow,
-        )
+
+        def job_body(job_id: str) -> str:
+            match = re.search(
+                rf"(?ms)^  {re.escape(job_id)}:\n(?P<body>.*?)(?=^  [A-Za-z0-9_-]+:\n)",
+                e2e_workflow,
+            )
+            self.assertIsNotNone(match, f"job {job_id} missing from e2e.yml")
+            return match.group("body")
+
+        # The scan runs once in the T1 gates job; the branch-protected check
+        # (the `t1-renderer` aggregate named "T1 (renderer + mock IPC)") must
+        # depend on that job and fail when it fails, so the scan stays as
+        # blocking as it was when it lived inside the single T1 job.
+        gates = job_body("t1-gates")
+        required_t1 = job_body("t1-renderer")
 
         self.assertIn("python dev/scripts/repository_privacy_guard.py", privacy_workflow)
-        self.assertIsNotNone(required_t1_match)
-        self.assertIn(
-            "python dev/scripts/repository_privacy_guard.py",
-            required_t1_match.group("body"),
-        )
+        self.assertIn("python dev/scripts/repository_privacy_guard.py", gates)
+        self.assertNotIn("continue-on-error:", gates)
+        self.assertIn("name: T1 (renderer + mock IPC)", required_t1)
+        self.assertRegex(required_t1, r"needs: \[[^\]]*\bt1-gates\b")
+        self.assertIn("needs.t1-gates.result", required_t1)
         self.assertNotIn("paths:", triggers)
         self.assertNotIn("paths-ignore:", triggers)
         self.assertRegex(triggers, r"push:\n\s+branches:\n\s+- main")
         self.assertRegex(triggers, r"pull_request:\s*\n")
-
 
 if __name__ == "__main__":
     unittest.main()

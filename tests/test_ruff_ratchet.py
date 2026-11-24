@@ -1,5 +1,6 @@
 import ast
 import json
+import re
 import sys
 import tempfile
 import unittest
@@ -1253,8 +1254,25 @@ class RuffRatchetTests(unittest.TestCase):
 
     def test_protected_t1_job_directly_runs_both_new_lint_gates(self):
         workflow = (Path(__file__).parents[1] / ".github" / "workflows" / "e2e.yml").read_text()
-        t1_body = workflow.split("  t1-renderer:\n", 1)[1].split("\n  lint-renderer:\n", 1)[0]
 
-        self.assertIn("npm run lint:main", t1_body)
-        self.assertIn("python scripts/ruff_ratchet.py", t1_body)
-        self.assertNotIn("continue-on-error:", t1_body)
+        def job_body(job_id: str) -> str:
+            match = re.search(
+                rf"(?ms)^  {re.escape(job_id)}:\n(?P<body>.*?)(?=^  [A-Za-z0-9_-]+:\n)",
+                workflow,
+            )
+            self.assertIsNotNone(match, f"job {job_id} missing from e2e.yml")
+            return match.group("body")
+
+        # Both lint gates run once in `t1-gates`; the branch-protected
+        # `t1-renderer` aggregate must depend on it and turn its failure into
+        # a failed required check (no continue-on-error anywhere on that path).
+        gates = job_body("t1-gates")
+        required_t1 = job_body("t1-renderer")
+
+        self.assertIn("npm run lint:main", gates)
+        self.assertIn("python scripts/ruff_ratchet.py", gates)
+        self.assertNotIn("continue-on-error:", gates)
+        self.assertIn("name: T1 (renderer + mock IPC)", required_t1)
+        self.assertRegex(required_t1, r"needs: \[[^\]]*\bt1-gates\b")
+        self.assertIn("needs.t1-gates.result", required_t1)
+        self.assertNotIn("continue-on-error:", required_t1)
