@@ -65,6 +65,15 @@ describe('buildNotesHtml', () => {
     expect(report).not.toContain('<h2>Aufgaben</h2>');
   });
 
+  test.each([
+    ['ar', 'المهام'],
+    ['he', 'משימות'],
+  ])('renders %s Standard notes right to left', (language, actionItems) => {
+    const html = buildNotesHtml({ ...full, outputLanguage: language });
+    expect(html).toContain(`<html lang="${language}" dir="rtl">`);
+    expect(html).toContain(`<h2>${actionItems}</h2>`);
+  });
+
   test('escapes HTML in every dynamic field (no markup injection)', () => {
     const html = buildNotesHtml({
       ...full,

@@ -113,6 +113,7 @@ function resolveHeadingLanguage(language?: string | null): keyof typeof headings
 
   try {
     const locale = new Intl.Locale(language.trim().replace(/_/g, '-'));
+    // Legacy bare zh follows the config migration to Simplified Chinese.
     if (locale.language === 'zh') {
       return locale.maximize().script === 'Hant' ? 'zh-Hant' : 'zh-Hans';
     }

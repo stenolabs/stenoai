@@ -161,12 +161,13 @@ function renderDocument(
   sections: string[],
   language = 'en',
 ): string {
+  const direction = language === 'ar' || language === 'he' ? ' dir="rtl"' : '';
   const metaLine = meta?.trim()
     ? `  <div class="meta">${escapeHtml(meta.trim())}</div>`
     : '';
 
   return `<!doctype html>
-<html lang="${escapeHtml(language)}">
+<html lang="${escapeHtml(language)}"${direction}>
 <head>
 <meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; font-src data:; style-src 'unsafe-inline'">
@@ -209,7 +210,7 @@ function renderDocument(
   .brand { display: flex; align-items: center; gap: 9px; }
   .brand img { width: 26px; height: 26px; display: block; }
   .brand .wordmark { font-family: 'Ovo', Georgia, serif; font-size: 17pt; letter-spacing: 0.01em; line-height: 1; }
-  .masthead-meta { text-align: right; }
+  .masthead-meta { text-align: end; }
   .masthead .kicker { font-size: 7.5pt; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-500); }
   .masthead .site { margin-top: 3px; font-size: 8pt; letter-spacing: 0.02em; color: var(--ink-900); }
   .title-block { margin: 26px 0; padding: 0 var(--inset); }
@@ -230,9 +231,9 @@ function renderDocument(
   .summary { font-family: 'Ovo', Georgia, serif; font-size: 12pt; line-height: 1.6; margin: 0; }
   p { margin: 0; }
   ul { margin: 0; padding: 0; list-style: none; }
-  li { position: relative; padding-left: 16px; margin-bottom: 8px; break-inside: avoid; }
+  li { position: relative; padding-inline-start: 16px; margin-bottom: 8px; break-inside: avoid; }
   li::before {
-    content: ''; position: absolute; left: 2px; top: 0.62em;
+    content: ''; position: absolute; inset-inline-start: 2px; top: 0.62em;
     width: 4px; height: 4px; border-radius: 50%; background: var(--ink-900);
   }
   li .lead { font-weight: 600; }
@@ -265,7 +266,7 @@ function renderDocument(
   .report ul, .report ol { margin: 0 0 10px; padding-left: 18px; }
   .report ul { list-style: disc; }
   .report ol { list-style: decimal; }
-  .report li { padding-left: 0; margin-bottom: 5px; }
+  .report li { padding-inline-start: 0; margin-bottom: 5px; }
   .report li::before { content: none; }
   .report li::marker { color: var(--ink-900); }
   .report strong { font-weight: 600; }
