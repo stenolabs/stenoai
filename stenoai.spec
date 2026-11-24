@@ -253,6 +253,13 @@ for pkg in _DYLIB_PKGS:
 #   - the GPU runner libs are pruned above and there's no pip-mlx build).
 ollama_datas: list[tuple[str, str, str]] = []
 ollama_bin_dir = os.path.join(SPECPATH, 'bin')
+# CI-only: GitHub-hosted runners have no GPU, and the Linux Ollama archive's
+# cuda_v12/cuda_v13/vulkan runners are ~3 GB that every e2e job would download
+# for nothing. e2e.yml sets this for its Linux bundle and verifies the result
+# with `verify_ollama_gpu_bundle.py --expect-pruned`. Release workflows
+# (build-linux.yml / build-release.yml) never set it, so shipped bundles keep
+# their GPU backends exactly as before. Windows prunes unconditionally (above).
+_PRUNE_OLLAMA_GPU_FOR_CI = os.environ.get('STENOAI_PRUNE_OLLAMA_GPU') == '1'
 required_diarize_sidecar = require_diarize_sidecar(
     Path(ollama_bin_dir) / 'steno-diarize',
     platform=sys.platform,
@@ -268,8 +275,10 @@ if os.path.exists(ollama_bin_dir):
             filepath = os.path.join(root, filename)
             rel = os.path.relpath(filepath, ollama_bin_dir)
             rel_fs = rel.replace(os.sep, '/').lower()
-            if should_prune_ollama_gpu_path(rel_fs, platform=sys.platform):
-                continue  # Windows only: skip GPU runner libs
+            if should_prune_ollama_gpu_path(
+                rel_fs, platform=sys.platform, prune_all=_PRUNE_OLLAMA_GPU_FOR_CI
+            ):
+                continue  # Windows always, Linux only under STENOAI_PRUNE_OLLAMA_GPU=1
             if _IS_DARWIN and rel_fs.startswith('mlx_metal_v4/'):
                 # Ollama ships two MLX runners: v3 (macOS 14+) and v4 (macOS
                 # 26.2+, Metal 4 shaders), preferring v4 when the OS allows.
