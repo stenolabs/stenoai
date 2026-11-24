@@ -1,5 +1,5 @@
 ---
-import { ArrowUpRight, ArrowDown, Plus } from "lucide-react";
+import { ArrowUpRight, Plus } from "lucide-react";
 import { CTA_BRIEFING } from "../content/industries.data";
 
 // Radar layer over the film: light pulses travelling along the 88px grid lines.
@@ -51,7 +51,7 @@ const PULSES = [
     <p class="mission-hero-description">AI meeting notes for conversations that can’t be handed to a vendor. Run it on the device, or on infrastructure you control. No meeting bot. Open source.</p>
     <div class="mission-actions">
       <a href={CTA_BRIEFING} class="mission-button mission-button-light" data-track="demo_request" data-location="hero">Request a briefing <ArrowUpRight size={17} aria-hidden="true" /></a>
-      <a href="#how" class="mission-text-link">Explore the platform <ArrowDown size={16} aria-hidden="true" /></a>
+      <a href="#how" class="mission-text-link">Explore the platform</a>
     </div>
   </div>
   <div class="mission-hero-caption" aria-hidden="true"><span>Illustrative footage · Local mode</span></div>
@@ -59,7 +59,6 @@ const PULSES = [
     <span>On your device</span>
     <span>On your infrastructure</span>
     <span>Open & inspectable</span>
-    <a href="#how" aria-label="Explore how StenoAI works"><ArrowDown size={20} aria-hidden="true" /></a>
   </div>
 </section>
 

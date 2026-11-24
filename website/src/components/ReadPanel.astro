@@ -1,13 +1,13 @@
 ---
-import { ArrowRight, X } from "lucide-react";
+import { X } from "lucide-react";
 import "../readmore.css";
 ---
 <dialog id="rm-panel" class="rm-panel" aria-labelledby="rm-panel-title">
   <div class="rm-panel-inner">
     <header class="rm-panel-bar">
-      <button type="button" class="rm-arrow rm-prev" data-rm-step="-1" aria-label="Previous card"><ArrowRight size={14} aria-hidden="true" /></button>
-      <button type="button" class="rm-arrow" data-rm-step="1" aria-label="Next card"><ArrowRight size={14} aria-hidden="true" /></button>
-      <button type="button" class="rm-arrow rm-close" autofocus aria-label="Close"><X size={20} aria-hidden="true" /></button>
+      <button type="button" class="rm-control" data-rm-step="-1" aria-label="Previous card">Previous</button>
+      <button type="button" class="rm-control" data-rm-step="1" aria-label="Next card">Next</button>
+      <button type="button" class="rm-control rm-close" autofocus aria-label="Close"><X size={20} aria-hidden="true" /></button>
     </header>
     <div class="rm-panel-body"></div>
   </div>

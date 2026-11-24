@@ -118,7 +118,7 @@ section:not(.mission-films, .sector-film) .mission-section-top { border: 0; padd
 .mission-hero .mission-actions { margin-top: 31px; }
 .mission-hero-caption { white-space: nowrap; position: absolute; right: 56px; top: 64px; text-transform: uppercase; font: 9px/1.8 var(--font-mono); letter-spacing: .1em; color: #e0e4d8; display: flex; flex-direction: column; gap: 10px; border-left: 1px solid #ffffff60; padding-left: 15px; }
 .mission-hero-caption > span:first-child { font-size: 8px; color: #aeb6ac; }
-.mission-hero-bottom { margin-top: auto; border-top: 1px solid #ffffff38; display: grid; grid-template-columns: 1fr 1fr 1fr 24px; align-items: center; padding-block: 25px; gap: 20px; }
+.mission-hero-bottom { margin-top: auto; display: grid; grid-template-columns: repeat(3, 1fr); align-items: center; padding-block: 25px; gap: 20px; }
 .mission-hero-bottom > span { display: flex; gap: 18px; align-items: center; font: 10px var(--font-mono); letter-spacing: .055em; text-transform: uppercase; }
 .mission-small-index { font-size: 9px; color: #b1b8ad; }
 /* Case files. */
@@ -133,7 +133,6 @@ section:not(.mission-films, .sector-film) .mission-section-top { border: 0; padd
 .mission-threat-note { font-size: 12px; color: var(--fg-2); margin-top: 22px; line-height: 1.7; }
 .mission-threat-note a { text-decoration: underline !important; text-underline-offset: 3px; }
 /* Customer logo band. */
-.mission-trust { border-bottom: 1px solid var(--border-strong); }
 .mission-trust-inner { display: grid; grid-template-columns: 180px 1fr; align-items: center; gap: 40px; padding-block: 34px; }
 .mission-trust .mission-eyebrow { color: var(--fg-2); }
 .mission-trust ul { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 22px 40px; }
@@ -142,15 +141,13 @@ section:not(.mission-films, .sector-film) .mission-section-top { border: 0; padd
 /* Interactive product walkthrough. */
 .mission-workflow { display: grid; grid-template-columns: 1fr 1.75fr; gap: 64px; align-items: center; }
 .mission-workflow-tabs { display: flex; flex-direction: column; }
-.mission-workflow-tabs button { width: 100%; text-align: left; color: var(--fg-2); background: none; border: 0; border-top: 1px solid var(--border-strong); padding: 23px 0; display: grid; grid-template-columns: 24px 1fr 20px; gap: 14px; cursor: pointer; font-family: inherit; }
+.mission-workflow-tabs button { width: 100%; text-align: left; color: var(--fg-2); background: none; border: 0; border-top: 1px solid var(--border-strong); padding: 23px 14px; display: grid; grid-template-columns: 24px minmax(0, 1fr); gap: 14px; cursor: pointer; font-family: inherit; }
 .mission-workflow-tabs button:last-child { border-bottom: 1px solid var(--border-strong); }
-.mission-workflow-tabs button[aria-selected="true"] { color: var(--fg-1); border-top: 2px solid var(--fg-1); padding-top: 22px; }
+.mission-workflow-tabs button[aria-selected="true"] { color: var(--fg-1); background: var(--surface-sunken); box-shadow: inset 3px 0 var(--fg-1); }
 .mission-workflow-number { font: 10px var(--font-mono); padding-top: 5px; }
 .mission-workflow-tabs strong { font-size: 17px; font-weight: 500; letter-spacing: -.025em; line-height: 1.35; display: block; }
 .mission-workflow-description { display: none; margin-top: 13px; font-size: 13px; line-height: 1.7; color: var(--fg-2); }
 .mission-workflow-tabs [aria-selected="true"] .mission-workflow-description { display: block; }
-.workflow-tab-arrow { margin-top: 3px; opacity: .5; }
-.mission-workflow-tabs [aria-selected="true"] .workflow-tab-arrow { opacity: 1; }
 .platform-console-wrap { min-width: 0; }
 .platform-console { border: 1px solid var(--border-strong); background: var(--surface-raised); box-shadow: 0 18px 45px -30px #1b1b1940; }
 .platform-windowbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 18px; border-bottom: 1px solid var(--border); background: var(--surface-sunken); font-size: 11px; }
@@ -197,8 +194,6 @@ section:not(.mission-films, .sector-film) .mission-section-top { border: 0; padd
 .platform-status { padding: 11px 18px; display: flex; justify-content: space-between; align-items: center; gap: 12px; border-top: 1px solid var(--border); color: var(--fg-2); font: 8px var(--font-mono); text-transform: uppercase; }
 .platform-status > span { display: flex; align-items: center; gap: 7px; }
 .platform-demo-caption { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-top: 15px; font: 8px var(--font-mono); text-transform: uppercase; letter-spacing: .055em; color: var(--fg-2); }
-.platform-demo-caption > span { display: flex; gap: 6px; align-items: center; }
-.platform-demo-caption svg { transform: rotate(90deg); }
 .mission-capabilities { display: grid; grid-template-columns: repeat(3, 1fr); margin-top: 80px; padding-top: 28px; border-top: 1px solid var(--border-strong); gap: 32px; }
 .mission-capabilities > div { display: flex; align-items: center; gap: 24px; border-right: 1px solid var(--border-strong); }
 .mission-capabilities > div:last-child { border: 0; }
@@ -418,8 +413,7 @@ section:not(.mission-films, .sector-film) .mission-section-top { border: 0; padd
   .mission-hero-bottom > a { justify-self: end; }
   .hero-cross-one { top: 32px; }
   .mission-workflow { grid-template-columns: 1fr; gap: 30px; }
-  .mission-workflow-tabs button { padding-block: 18px; grid-template-columns: 22px 1fr 20px; gap: 10px; }
-  .mission-workflow-tabs button[aria-selected="true"] { padding-top: 17px; }
+  .mission-workflow-tabs button { padding-block: 18px; grid-template-columns: 22px minmax(0, 1fr); gap: 10px; }
   .mission-workflow-tabs strong { font-size: 17px; }
   .mission-workflow-description { margin-top: 10px; }
   .platform-demo-content { min-height: 310px; }
@@ -428,7 +422,6 @@ section:not(.mission-films, .sector-film) .mission-section-top { border: 0; padd
   .platform-windowbar .platform-local { font-size: 7px; }
   .platform-status { padding-inline: 12px; font-size: 7px; }
   .platform-demo-caption { font-size: 7px; }
-  .platform-demo-caption > span { display: none; }
   .mission-capabilities { margin-top: 40px; grid-template-columns: 1fr; padding-top: 0; gap: 0; }
   .mission-capabilities > div { border-right: 0; border-bottom: 1px solid var(--border-strong); padding: 22px 0; gap: 30px; }
   .mission-capability-value { min-width: 85px; font-size: 38px; }

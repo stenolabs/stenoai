@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { ArrowDown, ArrowUpRight, AudioLines, Check, FileText, HardDrive, MessageSquare, Mic, Search } from 'lucide-react';
+import { ArrowUpRight, AudioLines, Check, FileText, HardDrive, MessageSquare, Mic, Search } from 'lucide-react';
 import { StenoMark } from './Brand';
 
 const STEPS = [
@@ -80,7 +80,6 @@ export function MissionPlatform() {
               <button key={s.id} ref={el => { tabs.current[i] = el; }} id={`workflow-tab-${s.id}`} role="tab" aria-selected={active === i} aria-controls={`workflow-panel-${s.id}`} tabIndex={active === i ? 0 : -1} onClick={() => setActive(i)} onKeyDown={event => onKeyDown(event, i)}>
                 <span className="mission-workflow-number">0{i + 1}</span>
                 <span><strong>{s.label}</strong><span className="mission-workflow-description">{s.description}</span></span>
-                <ArrowUpRight size={17} className="workflow-tab-arrow" aria-hidden="true" />
               </button>
             ))}
           </div>
@@ -93,7 +92,7 @@ export function MissionPlatform() {
               ))}
               <div className="platform-status"><span><step.icon size={13} aria-hidden="true" /> {step.id === 'ask' ? 'Answers on-device' : `${step.id.charAt(0).toUpperCase() + step.id.slice(1)} on-device`}</span><span>Content stays here <Check size={12} aria-hidden="true" /></span></div>
             </div>
-            <p className="platform-demo-caption">Illustrative product walkthrough <span>Explore the four stages <ArrowDown size={11} aria-hidden="true" /></span></p>
+            <p className="platform-demo-caption">Illustrative product walkthrough</p>
           </div>
         </div>
         <div className="mission-capabilities" id="features">
