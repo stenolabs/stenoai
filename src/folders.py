@@ -29,8 +29,11 @@ class FoldersManager:
     # disk, short enough that a stuck lock never blocks the CLI for long.
     _SAVE_LOCK_TIMEOUT = 10
 
-    def __init__(self, data_dir: Path):
+    def __init__(self, data_dir: Path, config=None):
         self.folders_file = data_dir / "folders.json"
+        # The Config whose MCP allowlist a deleted folder is pruned from;
+        # None resolves the shared instance lazily (tests pass their own).
+        self._config = config
         self._data = self._load()
 
     def _load(self) -> Dict:
@@ -194,7 +197,30 @@ class FoldersManager:
             ]
             return True
 
-        return self._update(_mutate) is True
+        deleted = self._update(_mutate) is True
+        if deleted:
+            self._prune_mcp_allowlist(folder_id)
+        return deleted
+
+    def _prune_mcp_allowlist(self, folder_id: str) -> None:
+        """A deleted space stops being shared through the Steno MCP server.
+
+        Folder assignments live in each note's frontmatter and survive the
+        folder, so an id left in mcp_folder_allowlist would keep those notes
+        visible to connected assistants under a space the user no longer
+        sees. store.mjs also ignores ids with no live folder; this keeps
+        config.json honest too. Best effort: the folder is gone either way.
+        """
+        try:
+            cfg = self._config
+            if cfg is None:
+                from src.config import get_config
+                cfg = get_config()
+            allow = cfg.get_mcp_folder_allowlist()
+            if allow is not None and folder_id in allow:
+                cfg.set_mcp_folder_allowlist([f for f in allow if f != folder_id])
+        except Exception as e:
+            logger.warning(f"Could not remove deleted folder from the MCP allowlist: {e}")
 
     def reorder_folders(self, folder_ids: List[str]) -> bool:
         """Reorder folders to match the given ID order, updating each folder's order field."""

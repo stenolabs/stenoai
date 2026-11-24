@@ -325,6 +325,14 @@ function listSummaries(root) {
 export function loadStore(opts = {}) {
   const { dataDir, roots, config } = resolveRoots(opts);
   const scope = readScope(config);
+  const folders = loadFolders(roots[0]);
+  if (scope.folderAllowlist) {
+    // A deleted folder leaves its id in the notes that were in it. Only live
+    // folders count, so deleting a shared space stops sharing its notes even
+    // before config.json catches up (src/folders.py prunes it there).
+    const live = new Set(folders.map((f) => f.id));
+    scope.folderAllowlist = new Set([...scope.folderAllowlist].filter((id) => live.has(id)));
+  }
   const seen = new Set();
   const meetings = [];
   for (const root of roots) {
@@ -342,7 +350,6 @@ export function loadStore(opts = {}) {
     }
   }
   meetings.sort((a, b) => (b.date || '').localeCompare(a.date || '') || a.id.localeCompare(b.id));
-  const folders = loadFolders(roots[0]);
   return { dataDir, roots, scope, meetings, folders };
 }
 

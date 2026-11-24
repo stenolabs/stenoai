@@ -194,6 +194,21 @@ describe('folder allowlist', () => {
     assert.equal(seeded({ mcp_folder_allowlist: { 0: 'f-eng' } }).store().meetings.length, 0);
   });
 
+  test('a deleted folder still named in the allowlist shares nothing', () => {
+    // The folder is gone from folders.json but its notes keep the id, and the
+    // allowlist was not pruned (an older app, or a hand-edited config).
+    const { dir, store } = seeded({ mcp_folder_allowlist: ['f-eng', 'f-gone'] });
+    writeNote(path.join(dir, 'output'), 'in-deleted-space', {
+      title: 'Was in a deleted space', date: '2026-11-02', folders: ['f-gone'], sections: { Summary: 'secret' },
+    });
+    const s = store();
+    assert.deepEqual(searchMeetings(s, {}).results.map((m) => m.id), ['eng-standup']);
+    assert.throws(() => getNote(s, { id: 'in-deleted-space' }), ToolError);
+    assert.deepEqual([...s.scope.folderAllowlist], ['f-eng']);
+    // Only deleted folders left: nothing is shared, rather than everything.
+    assert.equal(seeded({ mcp_folder_allowlist: ['f-gone'] }).store().meetings.length, 0);
+  });
+
   test('a corrupt config.json fails closed', () => {
     const { dir, store, env } = seeded();
     fs.writeFileSync(path.join(dir, 'config.json'), '{ not json');
