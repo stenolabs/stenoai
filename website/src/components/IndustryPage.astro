@@ -17,8 +17,15 @@ import "../def-motion.css";
 import "../le.css";
 import mastRegion from "../content/def-mast.json";
 import terrainRoute from "../content/def-route.json";
+import SectorPicture from "./SectorPicture.astro";
+import type { governmentPictures } from "../content/government-pictures";
 
-const { data } = Astro.props;
+interface Props {
+  data: import("astro:content").CollectionEntry<"industries">["data"];
+  pictures?: typeof governmentPictures;
+}
+
+const { data, pictures } = Astro.props;
 const film = films.find((f) => f.slug === data.slug);
 // Defence scroll-motion preview (D1 terrain route, D2 mast, D3 posture stills, D4 doors). Other sectors are untouched.
 const mo = data.slug === "defense";
@@ -96,11 +103,12 @@ const num = (id) => String(order.indexOf(id) + 1).padStart(2, "0");
     <section id="app" class="mission-section sector-section sector-loop" aria-labelledby="app-heading">
       <div class="mission-wrap">
         <div class="mission-section-top"><p class="mission-eyebrow">{num("app")} / In the app</p></div>
-        <div class="sector-loop-grid">
+        <div class:list={["sector-loop-grid", { "sector-loop-with-picture": pictures?.app }]}>
           <div>
             <h2 id="app-heading">{data.loop.heading}</h2>
             <p>{data.loop.body}</p>
             <p class="mission-eyebrow sector-loop-label">Illustrative product demo</p>
+            {pictures?.app && <SectorPicture picture={pictures.app} class="sector-app-picture" />}
           </div>
           <div class="sector-loop-media">
             <video class="sector-loop-video" muted loop playsinline preload="none" poster={data.loop.poster} aria-label="Illustrative product demo" disablepictureinpicture disableremoteplayback data-loop>
@@ -152,9 +160,11 @@ const num = (id) => String(order.indexOf(id) + 1).padStart(2, "0");
           <h2 id="why-now-heading">{data.whyNow.heading}</h2>
           <p>{data.whyNow.intro}</p>
         </div>
+        {pictures?.gates && <SectorPicture picture={pictures.gates} class="sector-banner-picture" />}
         <ol class="sector-timeline">
-          {data.whyNow.items.map((item) => (
+          {data.whyNow.items.map((item, i) => (
             <li>
+              {pictures?.timeline[i] && <SectorPicture picture={pictures.timeline[i]} class="sector-card-picture" />}
               <p class="mission-eyebrow"><span class="sector-date">{item.date}</span> {item.place}</p>
               <h3>{item.title}</h3>
               <p>{item.body}</p>
@@ -203,9 +213,11 @@ const num = (id) => String(order.indexOf(id) + 1).padStart(2, "0");
           <p>{data.policy.intro}</p>
         </div>
         {motion?.book && <div class="le-bd le-band" data-le="book" aria-hidden="true"><canvas></canvas></div>}
+        {pictures?.library && <SectorPicture picture={pictures.library} class="sector-banner-picture" />}
         <div class="sector-policy">
-          {data.policy.cards.map((c) => (
+          {data.policy.cards.map((c, i) => (
             <article class="sector-policy-card">
+              {pictures?.policy[i] && <SectorPicture picture={pictures.policy[i]} class="sector-card-picture" />}
               <h3 class="mission-eyebrow">{c.law}</h3>
               <dl>
                 <div><dt>It says</dt><dd>{c.says}</dd></div>
@@ -300,16 +312,19 @@ const num = (id) => String(order.indexOf(id) + 1).padStart(2, "0");
 
   <section class="sector-section sector-compliance-wrap">
     <div class="mission-wrap">
-      <div class="sector-compliance">
+      <div class:list={["sector-compliance", { "sector-compliance-with-picture": pictures?.compliance }]}>
         <p class="mission-eyebrow">On compliance</p>
         <p>{COMPLIANCE_BODY}</p>
+        {pictures?.compliance && <SectorPicture picture={pictures.compliance} class="sector-compliance-picture" />}
       </div>
     </div>
   </section>
 
   <section id="faq" class="mission-faq mission-section" aria-labelledby="faq-heading">
     <div class="mission-wrap mission-faq-layout">
-      <div><p class="mission-eyebrow">{num("questions")} / Questions</p><h2 id="faq-heading">Questions your<br />security team will ask.</h2></div>
+      <div><p class="mission-eyebrow">{num("questions")} / Questions</p><h2 id="faq-heading">Questions your<br />security team will ask.</h2>
+        {pictures?.questions && <SectorPicture picture={pictures.questions} class="sector-questions-picture" />}
+      </div>
       <div class="mission-faq-items">
         {data.faqs.map((f, index) => <details><summary><span class="mission-faq-number">0{index + 1}</span><span>{f.q}</span><span class="mission-faq-symbol" aria-hidden="true"></span></summary><p>{f.a}</p></details>)}
       </div>

@@ -1,0 +1,56 @@
+---
+import ScrollSeq from "./ScrollSeq.astro";
+import type { Picture } from "../content/government-pictures";
+
+interface Props {
+  picture: Picture;
+  class?: string;
+}
+
+const { picture, class: className } = Astro.props;
+const { src, alt, width, height, srcset, sizes, sequence } = picture;
+---
+
+<figure class:list={["sector-picture", className]}>
+  <picture>
+    {sequence && (
+      <source media="(max-width: 767px)" srcset={`${sequence.phone}/0000.webp`} width={sequence.phoneWidth} height={sequence.phoneHeight} />
+    )}
+    <img {src} {srcset} {sizes} {alt} {width} {height} loading="lazy" decoding="async" />
+  </picture>
+  {sequence && (
+    <ScrollSeq
+      class="sector-picture-sequence"
+      src={sequence.desktop}
+      src-phone={sequence.phone}
+      frames={sequence.frames}
+      start=".74"
+      start-phone=".68"
+      end=".12"
+      near="300px 0px"
+      static-poster=""
+    />
+  )}
+</figure>
+
+<style>
+  .sector-picture {
+    position: relative;
+    margin: var(--sector-picture-margin, 0);
+    overflow: hidden;
+  }
+  picture, img {
+    display: block;
+    width: 100%;
+  }
+  img {
+    height: auto;
+  }
+  .sector-picture > :global(.sector-picture-sequence) {
+    -webkit-mask-image: none;
+    mask-image: none;
+  }
+  :global(html:not([data-ss="on"])) .sector-picture > :global(.sector-picture-sequence) {
+    display: none;
+  }
+</style>

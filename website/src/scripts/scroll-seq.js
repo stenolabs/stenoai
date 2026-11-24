@@ -180,6 +180,8 @@ function init(el) {
     } catch { /* a missing frame is skipped: the nearest decoded one is shown */ }
   }
   async function load() {
+    // The page already provides the responsive poster in still mode.
+    if (still() && el.hasAttribute('data-static-poster')) return;
     const k = PHONE.matches ? 'phone' : 'desktop'; if (loadedKey === k) return;
     loadedKey = k; blobs = []; seen = new Set(); release();
     const order = [...Array(N).keys()];

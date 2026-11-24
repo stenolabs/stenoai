@@ -74,6 +74,21 @@
 .sector-loop-grid { display: grid; grid-template-columns: 1fr 1.38fr; gap: 80px; align-items: center; }
 .sector-loop-grid p:not(.mission-eyebrow) { color: var(--fg-2); font-size: 16px; line-height: 1.7; max-width: 43ch; margin-top: 24px; }
 .sector-loop-label { margin-top: 28px; }
+.sector-loop-with-picture { align-items: start; }
+.sector-app-picture { --sector-picture-margin: 26px 0 0; }
+.sector-banner-picture { --sector-picture-margin: 0 0 36px; }
+.sector-card-picture { --sector-picture-margin: 0 0 20px; }
+.sector-questions-picture { --sector-picture-margin: 32px 0 0; }
+.sector-compliance.sector-compliance-with-picture {
+  grid-template-columns: 180px 1fr 320px;
+  align-items: center;
+}
+.sector-compliance-with-picture > p:nth-child(2) {
+  font-size: 14px;
+  line-height: 1.75;
+  color: var(--fg-2);
+  max-width: 90ch;
+}
 .sector-loop-media { order: -1; }
 .sector-loop-video { display: block; width: 100%; aspect-ratio: 16 / 9; object-fit: cover; background: #000; }
 @media (max-width: 899px) {
@@ -81,6 +96,11 @@
   .sector-loop-media { order: 0; }
 }
 @media (max-width: 1099px) {
+  .sector-compliance.sector-compliance-with-picture {
+    grid-template-columns: 1fr;
+    gap: 18px;
+  }
+  .sector-compliance-picture { max-width: 480px; }
   .sector-page .sector-sources a { min-height: 44px; }
   .sector-cloud { grid-template-columns: 1fr; gap: 40px; }
   .sector-postures { grid-template-columns: 1fr; }
@@ -88,6 +108,9 @@
   .sector-related-grid { grid-template-columns: 1fr; }
 }
 @media (max-width: 767px) {
+  .sector-banner-picture { --sector-picture-margin: 0 0 24px; }
+  .sector-card-picture { --sector-picture-margin: 0 0 16px; }
+  .sector-questions-picture { --sector-picture-margin: 22px 0 0; }
   .sector-notfor { grid-template-columns: 1fr; gap: 22px; }
   .sector-policy, .sector-cases-files { grid-template-columns: 1fr; }
   .sector-policy-card { padding: 20px; }
