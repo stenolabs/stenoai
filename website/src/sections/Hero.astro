@@ -16,15 +16,25 @@ const PULSES = [
 ---
 
 <section class="mission-hero" aria-labelledby="hero-heading">
-  <!-- The app film: the StenoAI window locked in place while real rooms change around it. Landscape on desktop,
-       portrait on phones (the window at the top, the copy below). No sound track. -->
+  <!-- The StenoAI window stays in place while real rooms change around it. The portrait framing puts the window above the copy. -->
   <video class="mission-hero-image" muted loop playsinline preload="none" disablepictureinpicture disableremoteplayback aria-hidden="true" tabindex="-1" data-hero-film>
-    <source src="/video/hero-film-m.mp4" type="video/mp4" media="(max-width: 767px)" />
+    <source src="/video/hero-film-m.mp4" type="video/mp4" media="(max-width: 767px) and (orientation: portrait), (max-width: 767px) and (min-height: 501px), (max-width: 767px) and (pointer: fine)" />
     <source src="/video/hero-film.mp4" type="video/mp4" />
   </video>
   <noscript><img class="mission-hero-image" src="/images/enterprise/hero-film.webp" alt="" width="1920" height="1080" /></noscript>
   <script is:inline>
-    (function () { var v = document.querySelector('[data-hero-film]'); if (v) v.poster = window.matchMedia('(max-width: 767px)').matches ? '/images/enterprise/hero-film-m.webp' : '/images/enterprise/hero-film.webp'; })();
+    (() => {
+      const video = document.querySelector('[data-hero-film]');
+      const portrait = matchMedia(video.querySelector('source[media]').media);
+      const setPoster = () => { video.poster = portrait.matches ? '/images/enterprise/hero-film-m.webp' : '/images/enterprise/hero-film.webp'; };
+      setPoster();
+      portrait.addEventListener('change', () => {
+        const playing = !video.paused;
+        setPoster();
+        video.load();
+        if (playing) video.play().catch(() => {});
+      });
+    })();
   </script>
   <div class="mission-hero-shade" aria-hidden="true"></div>
   <div class="hero-radar-grid" aria-hidden="true"></div>
@@ -116,6 +126,27 @@ const PULSES = [
     .hero-radar-grid, .hero-radar-pulses {
       mask-image: linear-gradient(180deg, #000 0, #000 60vw, transparent 84vw);
       -webkit-mask-image: linear-gradient(180deg, #000 0, #000 60vw, transparent 84vw);
+    }
+  }
+
+  @media (orientation: landscape) and (max-height: 500px) and (pointer: coarse) {
+    .mission-hero { min-height: 0; height: auto; }
+    .mission-hero-image {
+      left: auto; bottom: auto; width: 40%; height: auto; aspect-ratio: 16 / 9; object-position: right center;
+      mask-image: linear-gradient(to right, transparent, #000 18%), linear-gradient(to bottom, #000 86%, transparent);
+      mask-composite: intersect;
+    }
+    .mission-hero-shade, .mission-hero-caption { display: none; }
+    .hero-radar, .hero-radar-grid { left: 60%; }
+    .mission-hero-content { padding-block: 4px 18px; }
+    .mission-hero-content > .mission-eyebrow { margin-bottom: 4px; line-height: 1.1; }
+    :root:root:root .mission-hero h1 { font-size: clamp(32px, 5vw, 42px); line-height: .98; }
+    :root:root:root .mission-hero-description { width: 60%; max-width: none; margin-top: 4px; font-size: 13px; line-height: 1.25; }
+    .mission-hero .mission-actions { width: 60%; flex-direction: row; align-items: center; gap: 6px 16px; margin-top: 4px; }
+    .mission-hero .mission-actions .mission-button { min-height: 44px; padding-block: 10px; }
+    @media (max-height: 310px) {
+      .mission-hero-content { display: flex; flex-direction: column; }
+      .mission-hero-description { order: 1; }
     }
   }
 </style>
