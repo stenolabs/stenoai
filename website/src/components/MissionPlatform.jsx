@@ -4,9 +4,9 @@ import { StenoMark } from './Brand';
 
 const STEPS = [
   { id: 'capture', label: 'Capture the conversation.', description: 'Record microphone and system audio directly. In the room or on a call, without a meeting bot.', icon: Mic },
-  { id: 'transcribe', label: 'Follow the conversation', description: 'Turn audio into a searchable transcript on your device. Follow the conversation as it happens.', icon: AudioLines },
-  { id: 'summarise', label: 'Key decisions and action items', description: 'A model on the device, or on a server you run, turns the transcript into a clear summary, key decisions and action items.', icon: FileText },
-  { id: 'ask', label: 'Ask questions across your notes', description: 'Ask questions across your notes. Find the context behind a decision, with your local AI model.', icon: MessageSquare },
+  { id: 'transcribe', label: 'Make every word useful.', description: 'Turn audio into a searchable transcript on your device. Follow the conversation as it happens.', icon: AudioLines },
+  { id: 'summarise', label: 'Bring decisions into focus.', description: 'A model on the device, or on a server you run, turns the transcript into a clear summary, key decisions and action items.', icon: FileText },
+  { id: 'ask', label: 'Put your knowledge to work.', description: 'Ask questions across your notes. Find the context behind a decision, with your local AI model.', icon: MessageSquare },
 ];
 const BARS = Array.from({ length: 65 }, (_, i) => 12 + Math.abs(Math.sin(i * 1.7) * Math.cos(i * 0.31)) * 65);
 
@@ -71,7 +71,7 @@ export function MissionPlatform({ children }) {
       <div className="mission-wrap">
         <div className="platform-heading-layout">
           <div className="mission-section-heading">
-            <h2 id="platform-heading">The meeting workflow</h2>
+            <h2 id="platform-heading">Less note-taking.<br />More situational clarity.</h2>
             <p>From the first word to the next decision. One private workflow for recording, understanding and returning to the conversations that matter.</p>
             <a href="/download/?src=platform" className="mission-text-link">Try it on your device <ArrowUpRight size={15} aria-hidden="true" /></a>
           </div>
