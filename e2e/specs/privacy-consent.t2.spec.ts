@@ -1,6 +1,7 @@
 import { test, expect } from '../fixtures/electron';
 import { realUserDataDir, fileSig } from '../fixtures/real-user-data';
 import { readUserConfig, writeUserConfig } from '../fixtures/user-config';
+import { settleSetupGate } from '../fixtures/setup-gate';
 
 /**
  * T2 — one-time privacy consent modal for upgraders. Model-free + deterministic:
@@ -26,29 +27,20 @@ function seedUpgraderConfig(userDataDir: string): void {
 }
 
 /**
- * Drive the app to a neutral route and wait for the consent modal. Re-forces
- * '#/' each poll iteration to out-race the one-shot setup-gate redirect to
- * /setup (which would otherwise hide the modal on a model-free bundle).
+ * Wait for the consent modal on a neutral route. The model-free bundle's
+ * one-shot /setup redirect hides the modal and, worse, can land AFTER the modal
+ * is already visible — between two toggle clicks — and unmount the switch under
+ * Playwright's cursor. So first let that redirect land (or learn it never
+ * will) and return to '#/', which then sticks; only then expect the modal.
  */
 async function waitForConsentModal(page: import('@playwright/test').Page) {
-  await expect
-    .poll(
-      async () => {
-        await page.evaluate(() => {
-          window.location.hash = '#/';
-        });
-        return page.locator(MODAL).isVisible();
-      },
-      {
-        message: 'privacy consent modal should appear for an upgrader on a neutral route',
-        // App launch + the config migration + the privacy gate query can race
-        // the one-shot /setup redirect on a loaded CI runner; the default 5s
-        // poll was occasionally too tight (flaky, green on retry). Give it more
-        // wall-clock — the assertion (modal must appear) is unchanged.
-        timeout: 20_000,
-      },
-    )
-    .toBe(true);
+  await settleSetupGate(page);
+  await expect(page).toHaveURL(/#\/$/);
+  await expect(page.locator(MODAL), 'privacy consent modal should appear for an upgrader on a neutral route').toBeVisible({
+    // The privacy gate query resolves after the backend config migration; on a
+    // loaded CI runner that can trail the setup gate by a few seconds.
+    timeout: 20_000,
+  });
 }
 
 test('upgrader sees the consent modal; acknowledging marks it seen and it does not return', async ({

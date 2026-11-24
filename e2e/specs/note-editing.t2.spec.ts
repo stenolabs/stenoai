@@ -1,5 +1,6 @@
 import { test, expect } from '../fixtures/electron';
 import { writeMeetingMarkdown, writeUserConfig } from '../fixtures/user-config';
+import { settleSetupGate } from '../fixtures/setup-gate';
 import { existsSync, readFileSync, statSync, writeFileSync } from 'fs';
 import path from 'path';
 
@@ -70,6 +71,9 @@ test('an inline edit autosaves to the .md, snapshots once, and survives a relaun
 
   const first = await launchApp({ releaseHighlightsSeen: true });
   const page = first.page;
+  // The model-free bundle's one-shot /setup redirect would otherwise unmount
+  // the list mid-click (see fixtures/setup-gate.ts).
+  await settleSetupGate(page);
   await page.getByText('Budget Review').first().click();
   await expect(page.getByTestId('meeting-detail-title')).toContainText('Budget Review');
   await expect(page.getByRole('button', { name: 'Edit note' })).toHaveCount(0);
@@ -126,6 +130,7 @@ test('an inline edit autosaves to the .md, snapshots once, and survives a relaun
   await first.app.close();
 
   const second = await launchApp({ releaseHighlightsSeen: true });
+  await settleSetupGate(second.page);
   await second.page.getByText('Budget Review').first().click();
   await expect(second.page.getByRole('textbox', { name: 'Summary', exact: true })).toHaveValue(NEW_SUMMARY);
   await expect(
@@ -143,6 +148,7 @@ test('leaving right after typing writes the edit instead of asking', async ({
     transcript: 'Nothing to see here.',
   });
   const { page } = await launchApp({ releaseHighlightsSeen: true });
+  await settleSetupGate(page);
   await page.getByText('Leaving Note').first().click();
   await page.getByRole('textbox', { name: 'Summary', exact: true }).fill('Typed and left at once.');
   await page.getByRole('button', { name: 'Back to home' }).click();
@@ -162,6 +168,7 @@ test('a heading typed into a field is refused before it reaches the note', async
   });
   const before = readFileSync(file, 'utf8');
   const { page } = await launchApp({ releaseHighlightsSeen: true });
+  await settleSetupGate(page);
   await page.getByText('Guarded Note').first().click();
   const summaryField = page.getByRole('textbox', { name: 'Summary', exact: true });
   await summaryField.fill('Fine so far\n## Transcript\nforged');
@@ -211,6 +218,7 @@ test('a template report body is rewritten in its sidecar with its frontmatter ke
   const noteMtime = statSync(file).mtimeMs;
 
   const { page } = await launchApp({ releaseHighlightsSeen: true });
+  await settleSetupGate(page);
   await page.getByText('Reported Note').first().click();
   const rendered = page.getByTestId('report-content');
   await expect(rendered).toContainText('The Bcc field stayed empty.');
