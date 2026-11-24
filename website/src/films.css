@@ -1,26 +1,49 @@
-/* The films: three dark teasers that play by scroll (components/FilmTeaser.astro); a click opens the film in a native dialog (components/FilmDialog.astro).
-   The frames are cropped to the screen plus a 40-px margin of the 534-px source (screen = 85% of the box), so the box is 117.6% of its column and starts 8.8% to the left: the screen's own edge lines up with the text under it. */
-.films-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 300px)); justify-content: space-between; gap: 40px; }
-.film { min-width: 0; }
-.teaser { position: relative; }
-.teaser-box { position: relative; width: 117.6%; margin-left: -8.81%; aspect-ratio: 534 / 985; }
-/* Phones: the teaser box is at most 56% of the screen height and sits inside the page column (it was 117.6% of the column, which spilled over both edges at 390 px). */
-@media (max-width: 767px) { .teaser-box { width: min(100%, calc(56vh * 534 / 985)); width: min(100%, calc(56svh * 534 / 985)); margin-left: auto; margin-right: auto; } }
-.teaser-still { display: block; width: 100%; height: 100%; mix-blend-mode: screen; }
-.teaser-open { position: absolute; inset: 0; padding: 0; border: 0; background: none; cursor: pointer; display: grid; place-items: center; align-content: start; }
-.teaser-mark { position: absolute; left: 0; top: 48.9%; width: 1px; height: 1px; pointer-events: none; }
-.teaser-ring { position: absolute; left: 50%; top: 48.9%; width: 64px; height: 64px; margin: -32px 0 0 -32px; border-radius: 50%; display: grid; place-items: center; color: #fff; border: 1px solid #ffffff73; background: #121311d9; opacity: 0; transform: scale(.92); transition: opacity .5s, transform .5s, border-color .18s, background .18s; }
-.teaser-ring svg { margin-left: 3px; }
-html:not([data-ss]) .teaser-open, html:not([data-ss]) button.film-watch, html:not([data-ss]) button.sector-film-button { display: none; }
-html[data-ss=still] .teaser-ring, .teaser.is-rest .teaser-ring { opacity: 1; transform: none; }
-.teaser-open:hover .teaser-ring, .film:has(.film-watch:hover) .teaser-ring, .film:has(.film-watch:focus-visible) .teaser-ring, .sector-film-grid:has(.sector-film-button:hover) .teaser-ring, .sector-film-grid:has(.sector-film-button:focus-visible) .teaser-ring { border-color: #fff; background: #566D48; }
-.film-caption { display: grid; gap: 4px; padding-top: 14px; }
-.film-caption .mission-eyebrow { color: var(--fg-2); white-space: nowrap; }
-.film-caption .mission-text-link { justify-self: start; white-space: nowrap; min-height: 44px; background: none; border: 0; padding: 0; color: inherit; font-family: inherit; cursor: pointer; }
-.film-caption .film-watch { color: #fff; }
-.film-caption .film-watch:focus-visible, .film-close:focus-visible, .sector-film-button:focus-visible { outline: 2px solid #9DB88D; outline-offset: 3px; }
-.film-length { color: var(--fg-muted); }
-.film-length::before { content: '·'; margin-right: 10px; }
+.film-preview { position: relative; width: 100%; height: 100%; }
+.film-preview img, .film-preview video { position: absolute; inset: 0; display: block; width: 100%; height: 100%; object-fit: cover; }
+.film-preview video { opacity: 0; }
+.film-preview video[data-playing] { opacity: 1; }
+.film-screen, .sector-film-picture { overflow: hidden; aspect-ratio: 4 / 5; background: var(--page); }
+.film-strip { height: 100%; transform: translateY(calc(-100% * var(--film-index, 0))); }
+html[data-ss=on] .film-strip { transition: transform .55s cubic-bezier(.22, .8, .24, 1); }
+
+.film-stage { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, min(42%, 500px, max(300px, calc((100svh - 206px) * .8)))); grid-template-areas: 'eyebrow eyebrow' 'heading picture' 'controls picture'; column-gap: clamp(40px, 8vw, 112px); }
+.film-stage .mission-section-top { grid-area: eyebrow; }
+.film-stage .mission-section-heading { grid-area: heading; }
+.film-screen { grid-area: picture; width: 100%; }
+.film-controls { grid-area: controls; min-width: 0; }
+.film-names { list-style: none; margin: 0; padding: 0; border-bottom: 1px solid var(--border-strong); }
+.film-reel:not([data-film-ready]) :is([data-film-names], .film-sector-link) { display: none; }
+.film-names li { border-top: 1px solid var(--border-strong); }
+.film-names :is(button, a) { display: flex; align-items: center; width: 100%; min-height: 48px; padding: 12px 0; border: 0; background: none; color: var(--fg-2); cursor: pointer; text-align: left; font: inherit; font-size: clamp(26px, 2.9vw, 42px); font-weight: 450; letter-spacing: -.04em; line-height: 1.12; }
+.film-names :is(button, a):hover, .film-names [aria-current=true] { color: var(--fg-1); }
+.film-sector-link { min-height: 44px; color: var(--fg-2); margin-block: 4px 16px; margin-inline-end: 24px; }
+.film-close:focus-visible, .film-controls :is(button, a):focus-visible, .sector-film-button:focus-visible { outline: 2px solid #9DB88D; outline-offset: 3px; }
+.film-watch { cursor: pointer; }
+.film-length-inline { opacity: .92; white-space: nowrap; }
+.film-length-inline::before { content: '·'; margin-right: 8px; }
+.film-reel:not([data-film-ready]) .film-watch { margin-top: 20px; }
+
+@media (min-width: 768px) {
+  .film-stage .mission-section-top { align-self: start; margin-bottom: 24px; padding-bottom: 20px; }
+  .film-stage .mission-section-heading { display: block; margin-bottom: 24px; }
+  .film-stage .mission-section-heading > p { justify-self: start; margin-top: 18px; }
+  .film-screen, .film-controls { align-self: end; }
+}
+@media (min-width: 900px) and (min-height: 720px) {
+  html[data-ss=on]:not([data-nofit]) .film-reel[data-film-ready]::after { content: ''; display: block; height: 85svh; }
+  html[data-ss=on]:not([data-nofit]) .film-reel[data-film-ready] .film-stage { position: sticky; top: 82px; min-height: calc(100svh - 108px); padding-top: 24px; }
+}
+@media (max-width: 767px) {
+  .film-stage { grid-template-columns: minmax(0, 1fr); grid-template-areas: 'eyebrow' 'heading' 'picture' 'controls'; }
+  .film-screen { margin-bottom: 12px; }
+  .film-controls .film-watch, .sector-film-button { width: 100%; }
+  .film-names :is(button, a) { padding-block: 7px; }
+  .film-sector-link { margin-block: 0 6px; margin-inline-end: 0; }
+}
+@media (max-width: 380px) and (max-height: 700px) {
+  .film-screen, .sector-film-picture { max-height: max(180px, calc(100svh - 342px)); }
+}
+
 html.film-open { overflow: hidden; }
 .film-dialog { position: fixed; inset: 0; margin: auto; padding: 0; border: 0; background: #000; overflow: visible; height: min(84vh, calc(94vw * 16 / 9)); height: min(84svh, calc(94vw * 16 / 9)); aspect-ratio: 9 / 16; max-width: 94vw; max-height: 84vh; max-height: 84svh; color: #fff; }
 .film-dialog::backdrop { background: rgba(10, 11, 9, .84); }
@@ -28,11 +51,4 @@ html.film-open { overflow: hidden; }
 .film-dialog video { display: block; width: 100%; height: 100%; object-fit: contain; background: #000; }
 .film-close { position: absolute; top: 10px; right: 10px; width: 44px; height: 44px; display: grid; place-items: center; border: 1px solid #ffffff40; background: #121311d9; color: #fff; cursor: pointer; transition: background .18s; }
 .film-close:hover { background: #566D48; }
-@media (prefers-reduced-motion: reduce) { .teaser-ring, .film-close { transition: none; } }
-@media (max-width: 767px) {
-  .films-grid { display: flex; gap: 16px; margin-inline: -20px; padding-inline: 20px; overflow-x: auto; scroll-snap-type: x mandatory; scroll-padding-inline: 20px; overscroll-behavior-x: contain; scrollbar-width: none; }
-  .films-grid::-webkit-scrollbar { display: none; }
-  /* Safari gives the scroller its own layer, so the frames' screen blend finds no backdrop there and their black shows: the box carries the page colour itself. */
-  .films-grid .teaser-box { isolation: isolate; background: var(--page); }
-  .film { flex: 0 0 66%; max-width: none; scroll-snap-align: start; }
-}
+@media (prefers-reduced-motion: reduce) { .film-close { transition: none; } }

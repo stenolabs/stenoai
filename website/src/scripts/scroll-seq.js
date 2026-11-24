@@ -234,9 +234,7 @@ function init(el) {
   const items = el.dataset.lit ? [...sec.querySelectorAll(el.dataset.litItems)] : [], lit = el.dataset.lit?.split(',').map(Number);
   const light = el.dataset.light?.split(',').map(Number), h2 = light && sec.querySelector('h2');
   const setLit = (p, T) => { let k = 0; T.forEach((t, i) => { if (p >= t) k = i; }); items.forEach((e, i) => e.classList.toggle('is-lit', i === k)); };
-  const rest = el.dataset.rest ? el.closest('.teaser') : null; // film teasers: the play ring shows once the reveal has settled
   function onProgress(p) {
-    if (rest) rest.classList.toggle('is-rest', p >= +el.dataset.rest);
     if (items.length && !FLOW.matches) setLit(p, lit);
     if (light) h2.style.setProperty('--lit', clamp((p - light[0]) / (light[1] - light[0])).toFixed(3));
   }

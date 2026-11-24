@@ -6,7 +6,7 @@ import CTAFooter from "../sections/CTAFooter.astro";
 import Stage from "./Stage.astro";
 import ScrollSeq from "./ScrollSeq.astro";
 import { ALL, COMPLIANCE_BODY, CTA_BRIEFING, BREACHES_VERIFIED, SECTOR_VERIFIED } from "../content/industries.data.js";
-import FilmTeaser from "./FilmTeaser.astro";
+import FilmPreview from "./FilmPreview.astro";
 import FilmDialog from "./FilmDialog.astro";
 import { films } from "../content/films.js";
 import "../scroll.css";
@@ -97,10 +97,11 @@ const num = (id) => String(order.indexOf(id) + 1).padStart(2, "0");
           <div>
             <h2 id="film-heading">See it in the room.</h2>
             <p>A short film on how StenoAI keeps {data.name.toLowerCase()} conversations on hardware you control.</p>
-            <noscript><a class="mission-button mission-button-light sector-film-button" href={film.src}>Watch the film <span class="film-length-inline">{film.length}</span></a></noscript>
-            <button type="button" class="mission-button mission-button-light sector-film-button" data-film-open={film.slug} aria-haspopup="dialog">Watch the film <span class="film-length-inline">{film.length}</span></button>
           </div>
-          <FilmTeaser film={film} near="0px" />
+          <div class="sector-film-picture" data-film-screen>
+            <FilmPreview film={film} />
+          </div>
+          <a class="mission-button mission-button-light film-watch sector-film-button" href={film.src} data-film-open={film.slug}>Watch the film <span class="film-length-inline">{film.length}</span></a>
         </div>
       </div>
     </section>

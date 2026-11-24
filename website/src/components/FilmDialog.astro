@@ -4,16 +4,15 @@ import "../films.css";
 ---
 <dialog id="film-dialog" class="film-dialog" aria-label="Film">
   <video controls playsinline preload="none" crossorigin="anonymous" width="720" height="1280"></video>
-  <button type="button" class="film-close" aria-label="Close the film"><X size={20} aria-hidden="true" /></button>
+  <button type="button" class="film-close" aria-label="Close the film" autofocus><X size={20} aria-hidden="true" /></button>
 </dialog>
 <script>
   import { films } from "../content/films.js";
   const dlg = document.getElementById('film-dialog');
   const video = dlg?.querySelector('video');
-  if (dlg && video) {
-    let opener = null, y = 0;
-    const open = (slug, from) => {
-      const f = films.find((x) => x.slug === slug); if (!f) return;
+  if (dlg instanceof HTMLDialogElement && video && typeof dlg.showModal === 'function') {
+    let opener, y = 0;
+    const open = (f, from) => {
       opener = from;
       dlg.setAttribute('aria-label', `${f.name} film`);
       video.replaceChildren();
@@ -24,21 +23,28 @@ import "../films.css";
       dlg.showModal();                                                  // modal: the page behind is inert and Tab stays inside
       video.play().catch(() => {});
     };
-    document.addEventListener('click', (e) => {
-      if (!(e.target instanceof Element)) return;
-      const b = e.target.closest('[data-film-open]');
-      if (!b) return;
-      const slug = b.dataset.filmOpen;
-      const focusBack = b.closest('.teaser')
-        ? document.querySelector(`.film-watch[data-film-open="${slug}"],.sector-film-button[data-film-open="${slug}"]`) || b
-        : b;
-      open(slug, focusBack);
-    });
+    for (const control of document.querySelectorAll('[data-film-open]')) {
+      control.setAttribute('role', 'button');
+      control.setAttribute('aria-haspopup', 'dialog');
+      control.addEventListener('click', (e) => {
+        const film = films.find((f) => f.slug === control.dataset.filmOpen);
+        if (!film) return;
+        e.preventDefault();
+        if (!dlg.open) open(film, control);
+      });
+      control.addEventListener('keydown', (e) => {
+        if (e.key === ' ') e.preventDefault();
+      });
+      control.addEventListener('keyup', (e) => {
+        if (e.key === ' ') control.click();
+      });
+    }
     dlg.querySelector('.film-close')?.addEventListener('click', () => dlg.close());
     dlg.addEventListener('click', (e) => { if (e.target === dlg) dlg.close(); }); // backdrop
     dlg.addEventListener('close', () => {
       video.pause(); video.removeAttribute('src'); video.replaceChildren(); video.load();
-      document.documentElement.classList.remove('film-open'); scrollTo({ top: y, behavior: 'instant' });
+      document.documentElement.classList.remove('film-open');
+      if (scrollY !== y) scrollTo({ top: y, behavior: 'instant' });
       opener?.focus({ preventScroll: true });
     });
   }

@@ -1,29 +1,40 @@
 ---
-import { ArrowUpRight, Play } from "lucide-react";
-import FilmTeaser from "../components/FilmTeaser.astro";
+import { ArrowUpRight } from "lucide-react";
+import FilmPreview from "../components/FilmPreview.astro";
 import FilmDialog from "../components/FilmDialog.astro";
 import { films } from "../content/films.js";
 import "../films.css";
+const [firstFilm] = films;
 ---
 <section id="films" class="mission-films mission-section" aria-labelledby="films-heading">
   <div class="mission-wrap">
-    <div class="mission-section-top"><p class="mission-eyebrow">The films</p><span class="mission-eyebrow">Government. Defence. Law enforcement.</span></div>
-    <div class="mission-section-heading">
-      <h2 id="films-heading">Three rooms.<br />Three films.</h2>
-      <p>Short explainers for government, defence and law enforcement.</p>
-    </div>
-    <div class="films-grid">
-      {films.map((film) => (
-        <article class="film">
-          <FilmTeaser film={film} />
-          <div class="film-caption">
-            <p class="mission-eyebrow">{film.index} / {film.name}<span class="film-length">{film.length}</span></p>
-            <button type="button" class="mission-text-link film-watch" data-film-open={film.slug} aria-haspopup="dialog" aria-label={`Watch the ${film.name} film, ${film.length}`}>Watch the film <Play size={14} fill="currentColor" aria-hidden="true" /></button>
-            <noscript><a class="mission-text-link" href={film.src}>Watch the film <Play size={14} fill="currentColor" aria-hidden="true" /></a></noscript>
-            <a class="mission-text-link" href={`/enterprise/${film.slug}/`} aria-label={`StenoAI for ${film.name}`}>{film.name} page <ArrowUpRight size={16} aria-hidden="true" /></a>
+    <div class="film-reel" data-film-reel>
+      <div class="film-stage">
+        <div class="mission-section-top"><p class="mission-eyebrow">The films</p><span class="mission-eyebrow">Government. Defence. Law enforcement.</span></div>
+        <div class="mission-section-heading">
+          <h2 id="films-heading">Three rooms.<br />Three films.</h2>
+          <p>Short explainers for government, defence and law enforcement.</p>
+        </div>
+        <div class="film-screen" data-film-screen>
+          <div class="film-strip">
+            {films.map((film) => <FilmPreview film={film} />)}
           </div>
-        </article>
-      ))}
+        </div>
+        <div class="film-controls">
+          <ul class="film-names" aria-label="The films" data-film-names>
+            {films.map((film, index) => (
+              <li><button type="button" aria-current={index === 0 ? "true" : undefined}>{film.name}</button></li>
+            ))}
+          </ul>
+          <noscript>
+            <ul class="film-names" aria-label="The films">
+              {films.map((film) => <li><a href={`/enterprise/${film.slug}/`}>{film.name}</a></li>)}
+            </ul>
+          </noscript>
+          <a class="mission-text-link film-sector-link" href={`/enterprise/${firstFilm.slug}/`}><span>{firstFilm.name} page</span><ArrowUpRight size={14} aria-hidden="true" /></a>
+          <a class="mission-button mission-button-light film-watch" href={firstFilm.src} data-film-open={firstFilm.slug} aria-label={`Watch the ${firstFilm.name} film, ${firstFilm.length}`}>Watch the film <span class="film-length-inline">{firstFilm.length}</span></a>
+        </div>
+      </div>
     </div>
   </div>
 </section>
