@@ -38,6 +38,12 @@ test('Connect shows its own tip once the actions heading is on screen', async ({
   await page.evaluate(() => { window.location.hash = '#/connect'; });
   // Nothing is connected: the intro's one next step jumps to the actions.
   await page.getByRole('button', { name: 'Connect an app' }).click();
+  // The intro's jump scrolls smoothly, which can stall on a slow CI runner;
+  // the tip shows only once its anchor is in view, so put the heading on
+  // screen ourselves before asserting.
+  const heading = page.locator('#connect-actions-heading');
+  await heading.scrollIntoViewIfNeeded();
+  await expect(heading).toBeInViewport();
   const tip = page.getByTestId('first-run-tip');
   await expect(tip).toHaveAttribute('data-tip-id', 'connect-actions');
   await expect(tip).toBeVisible();
