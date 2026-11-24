@@ -100,7 +100,7 @@ def _frontmatter(md):
 class EarlySummaryStreamingTests(unittest.TestCase):
     """process-streaming --early-summary, with the ASR and the LLM mocked."""
 
-    def _run(self, *, batch, summaries, args_extra=(), auto_summarize=True, rename_to=None):
+    def _run(self, *, batch, summaries, args_extra=(), auto_summarize=True, rename_to=None, edit_during=None):
         from click.testing import CliRunner
         import simple_recorder
         from simple_recorder import MeetingPipeline
@@ -141,6 +141,9 @@ class EarlySummaryStreamingTests(unittest.TestCase):
                     seen_at_transcribe["note"].replace('title: "Budget sync"', f'title: "{rename_to}"'),
                     encoding="utf-8",
                 )
+            if edit_during and note.exists():
+                # Any other edit the user makes to the early note mid-run.
+                note.write_text(edit_during(note.read_text(encoding="utf-8")), encoding="utf-8")
             return dict(batch)
 
         recorder.transcribe_audio = _transcribe
@@ -158,6 +161,7 @@ class EarlySummaryStreamingTests(unittest.TestCase):
                 str(audio), "--name", "Note", "--live-transcript", str(live), *args_extra,
             ])
         final = note.read_text(encoding="utf-8") if note.exists() else ""
+        self._last_note = str(note)
         return result, calls, seen_at_transcribe.get("note"), final
 
     def _usable_batch(self):
@@ -210,6 +214,29 @@ class EarlySummaryStreamingTests(unittest.TestCase):
         self.assertEqual(result.exit_code, 0, result.output + repr(result.exception))
         self.assertIn('title: "Q3 budget review"', final)
         self.assertEqual(result.output.count("TITLE:"), 1)
+
+    def test_a_space_and_my_notes_added_to_the_early_note_survive_the_refine(self):
+        # The early note is readable for the whole refine pass: moving it into
+        # a space patches `folders:` into its frontmatter (src/folders.py) and
+        # typing My notes appends a User Notes section. The final write must
+        # carry both, not rebuild the note from the pre-refine snapshot.
+        def _edit(md):
+            md = md.replace("refining: true", 'refining: true\nfolders: ["f-budget"]')
+            return md + "\n## User Notes\n\nRemember to send the deck\n"
+
+        result, _calls, during, final = self._run(
+            batch=self._usable_batch(), summaries=[LIVE_SUMMARY, FINAL_SUMMARY],
+            args_extra=["--early-summary"], edit_during=_edit,
+        )
+        self.assertEqual(result.exit_code, 0, result.output + repr(result.exception))
+        self.assertNotIn("folders", _frontmatter(during))
+        self.assertIn('folders: ["f-budget"]', _frontmatter(final))
+        self.assertIn("FINAL summary", final)
+        self.assertIn("## User Notes\n\nRemember to send the deck", final)
+        import simple_recorder
+        parsed = simple_recorder._parse_meeting_markdown(Path(self._last_note))
+        self.assertEqual(parsed["folders"], ["f-budget"])
+        self.assertEqual(parsed["user_notes"], "Remember to send the deck")
 
     def test_refine_summary_failure_keeps_the_early_summary_and_flags_it_stale(self):
         result, calls, _during, final = self._run(

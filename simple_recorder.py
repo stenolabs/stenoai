@@ -311,6 +311,10 @@ def _render_frontmatter(meta: dict) -> list[str]:
             lines.append(f'{k}: {"true" if v else "false"}')
         elif isinstance(v, int):
             lines.append(f'{k}: {v}')
+        elif isinstance(v, list):
+            # `folders: ["id"]` — the shape _parse_meeting_markdown and
+            # src/folders.py read and patch.
+            lines.append(f'{k}: {json.dumps(v)}')
         else:
             escaped = str(v).replace('\\', '\\\\').replace('"', '\\"')
             lines.append(f'{k}: "{escaped}"')
@@ -1247,6 +1251,33 @@ def _read_existing_user_notes(summary_path: Path):
     return text or None
 
 
+def _read_note_edits(summary_path: Path) -> dict:
+    """What the user may have changed on a note while a pass was rewriting it.
+
+    An early note (instant transcript) and a note being regenerated are both
+    readable for the whole run: the user can rename them, move them into a
+    space (``folders`` in the frontmatter, patched by src/folders.py) and edit
+    My notes. A writer that rebuilds the note from its start-of-run snapshot
+    would silently undo those, so it re-reads them right before the write.
+
+    Returns ``{}`` when there is no readable .md note at ``summary_path``;
+    otherwise ``{'title', 'folders', 'user_notes'}`` as they are on disk now.
+    """
+    try:
+        if summary_path.suffix != '.md' or not summary_path.exists():
+            return {}
+        data = _parse_meeting_markdown(summary_path)
+    except Exception as e:
+        logger.debug(f"Could not re-read the note's edits: {e}")
+        return {}
+    folders = data.get('folders')
+    return {
+        'title': data.get('session_info', {}).get('name'),
+        'folders': [f for f in folders if isinstance(f, str) and f] if isinstance(folders, list) else [],
+        'user_notes': data.get('user_notes'),
+    }
+
+
 def _stream_summary_markdown(summarizer, text, duration_minutes, output_language,
                              notes_text, *, emit_chunks=True):
     """Run the streaming summariser; returns ``(markdown, error)``.
@@ -1798,6 +1829,12 @@ def process_streaming(audio_file, name, notes, live_transcript, append_to, early
             md_meta['is_live_transcript'] = True
         if notes_stale:
             md_meta['notes_stale'] = True
+        # The early note was readable for the whole refine pass: a space the
+        # user moved it into lives only in its frontmatter, so carry it over
+        # (the title is re-read above, My notes just below).
+        carried_folders = _read_note_edits(summary_path).get('folders')
+        if carried_folders:
+            md_meta['folders'] = carried_folders
         md_lines = _render_frontmatter(md_meta)
         md_lines.append('')
         md_lines.append(streamed_md)
@@ -3863,6 +3900,9 @@ def reprocess(summary_file, regenerate_title, retranscribe):
             sys.exit(1)
 
         session_name = existing_data.get('session_info', {}).get('name', 'Reprocessed')
+        # The title as the run started: a rename made while the summary
+        # streams is told apart from a title this run generates.
+        title_at_start = session_name
         duration_minutes = existing_data.get('session_info', {}).get('duration_minutes', 10)
         if duration_minutes is None:
             ds = existing_data.get('session_info', {}).get('duration_seconds')
@@ -3976,6 +4016,18 @@ def reprocess(summary_file, regenerate_title, retranscribe):
         # Save updated summary
         if summary_path.suffix == '.md':
             session_name = existing_data.get('session_info', {}).get('name', 'Reprocessed')
+            # The note stayed readable while the summary streamed: re-read the
+            # title, folders and My notes right before the write (the same
+            # idea as process_streaming's _refresh_edited_notes) instead of
+            # rebuilding them from the start-of-run snapshot.
+            edits = _read_note_edits(summary_path)
+            if edits:
+                if edits.get('title') and edits['title'] != title_at_start:
+                    # Renamed mid-run: the user's name wins over a generated one.
+                    session_name = edits['title']
+                    existing_data['session_info']['name'] = session_name
+                existing_data['folders'] = edits.get('folders', [])
+                notes_text = edits.get('user_notes')
             md_lines = ['---']
             # This rebuild intentionally omits notes_generated and notes_stale:
             # reprocessing generates a current summary, so the rewritten
