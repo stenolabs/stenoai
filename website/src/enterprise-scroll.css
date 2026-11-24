@@ -10,12 +10,13 @@ html[data-ss=still] [data-scroll-light] canvas { display: none; }
 html[data-ss] .stage-m-rooms { display: block; position: relative; width: 100%; aspect-ratio: 16 / 9; margin: 0 0 24px; background: transparent; }
 @media (max-width: 767px), (orientation: landscape) and (max-height: 500px) and (pointer: coarse) {
   html .stage-rooms .stage-m.stage-m-rooms {
-    display: block; position: relative; width: 100%; aspect-ratio: 16 / 9; margin: 0 0 16px;
-    background: transparent;
-    -webkit-mask-image: linear-gradient(to right, transparent, #000 5%, #000 97%, transparent), linear-gradient(to bottom, transparent, #000 4%, #000 94%, transparent);
-    -webkit-mask-composite: source-in;
-    mask-image: linear-gradient(to right, transparent, #000 5%, #000 97%, transparent), linear-gradient(to bottom, transparent, #000 4%, #000 94%, transparent);
+    display: block; position: relative; width: min(100%, 560px); aspect-ratio: 8 / 5; margin: 0 auto 16px;
+    background: transparent; overflow: hidden; mix-blend-mode: normal;
+    mask-image: linear-gradient(to right, transparent, #000 2%, #000 98%, transparent), linear-gradient(to bottom, transparent, #000 4%, #000 88%, transparent);
     mask-composite: intersect;
+  }
+  .stage-m-rooms [data-scroll-light] {
+    position: absolute; top: -18%; left: -38%; width: 138%; height: auto; aspect-ratio: 16 / 9;
   }
 }
 html[data-ss=on] .ent-cases > li { transition: opacity .35s; }
