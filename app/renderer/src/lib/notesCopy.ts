@@ -1,3 +1,5 @@
+import { noteExportHeadings } from './notesExportHeadings';
+
 /**
  * Builds the plain-text payload for the "Copy notes" header action in
  * MeetingDetail. Pure so the report-vs-Standard selection is unit-testable:
@@ -7,13 +9,12 @@
  */
 
 /**
- * The structured Standard note, decomposed into the fields both note exports
- * consume: buildNotesCopyText (clipboard) and buildNotesHtml (branded PDF,
- * notesPdf.ts). One shared shape so the two can't drift.
+ * The structured Standard note shared by clipboard, Markdown and PDF exports.
  */
 export interface StructuredNoteSections {
   name: string;
   meta?: string;
+  outputLanguage?: string | null;
   summary?: string;
   discussionAreas: { title: string; analysis?: string }[];
   keyPoints: string[];
@@ -37,26 +38,27 @@ export function buildNotesCopyText(
     return lines.join('\n');
   }
 
+  const { language, labels } = noteExportHeadings(sections.outputLanguage);
   const summary = sections.summary?.trim();
   if (summary) {
-    lines.push('', 'SUMMARY', summary);
+    lines.push('', labels.summary.toLocaleUpperCase(language), summary);
   }
   if (sections.discussionAreas.length) {
-    lines.push('', 'KEY TOPICS');
+    lines.push('', labels.discussionAreas.toLocaleUpperCase(language));
     sections.discussionAreas.forEach((a) =>
       lines.push(`- ${a.title}${a.analysis ? `: ${a.analysis}` : ''}`),
     );
   }
   if (sections.keyPoints.length) {
-    lines.push('', 'KEY POINTS');
+    lines.push('', labels.keyPoints.toLocaleUpperCase(language));
     sections.keyPoints.forEach((p) => lines.push(`- ${p}`));
   }
   if (sections.actionItems.length) {
-    lines.push('', 'ACTION ITEMS');
+    lines.push('', labels.actionItems.toLocaleUpperCase(language));
     sections.actionItems.forEach((a) => lines.push(`- ${a}`));
   }
   if (sections.participants.length) {
-    lines.push('', 'PARTICIPANTS', sections.participants.join(', '));
+    lines.push('', labels.participants.toLocaleUpperCase(language), sections.participants.join(', '));
   }
   return lines.join('\n');
 }

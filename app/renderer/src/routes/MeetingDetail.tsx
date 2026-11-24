@@ -781,10 +781,8 @@ function DetailContent({
     }
   };
 
-  // The Standard structured note, decomposed once into the shape both note
-  // exports consume — Copy notes (clipboard) and Save notes as PDF. Reasoning
-  // blocks are stripped like the rendered views, so neither export carries
-  // <think> content the screen hides. One memo so the two can't drift.
+  // All Standard note exports share the same saved language and sections.
+  // Strip reasoning blocks as in the rendered view.
   const noteSections = React.useMemo<StructuredNoteSections>(() => {
     const meta = [formatDetailDate(info), formatDuration(info.duration_seconds)]
       .filter(Boolean)
@@ -792,6 +790,7 @@ function DetailContent({
     return {
       name: info.name,
       meta: meta || undefined,
+      outputLanguage: info.output_language || info.language,
       summary: meeting.summary ? stripReasoning(meeting.summary) : undefined,
       discussionAreas: asDiscussionAreas(meeting.discussion_areas),
       keyPoints: meeting.key_points ?? [],

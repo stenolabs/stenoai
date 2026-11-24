@@ -14,6 +14,7 @@
 
 import { OVO_FONT_WOFF2_BASE64, STENO_LOGO_SVG_BASE64 } from '@/lib/brandAssets';
 import type { StructuredNoteSections } from '@/lib/notesCopy';
+import { noteExportHeadings } from '@/lib/notesExportHeadings';
 
 // The PDF builder consumes the same decomposed Standard-note shape as the
 // clipboard export (one source of truth — see notesCopy.ts). `meta` is a
@@ -95,9 +96,10 @@ ${reportHtml}
     ]);
   }
 
+  const { language, labels } = noteExportHeadings(input.outputLanguage);
   if (summary) {
     sections.push(`  <section>
-    <h2>Summary</h2>
+    <h2>${escapeHtml(labels.summary)}</h2>
     <p class="summary">${escapeHtml(summary)}</p>
   </section>`);
   }
@@ -113,7 +115,7 @@ ${reportHtml}
       })
       .join('\n');
     sections.push(`  <section>
-    <h2>Key Topics</h2>
+    <h2>${escapeHtml(labels.discussionAreas)}</h2>
     <ul>
 ${rows}
     </ul>
@@ -122,7 +124,7 @@ ${rows}
 
   if (input.keyPoints.length) {
     sections.push(`  <section>
-    <h2>Key Points</h2>
+    <h2>${escapeHtml(labels.keyPoints)}</h2>
     <ul>
 ${listItems(input.keyPoints)}
     </ul>
@@ -131,7 +133,7 @@ ${listItems(input.keyPoints)}
 
   if (input.actionItems.length) {
     sections.push(`  <section class="actions">
-    <h2>Action Items</h2>
+    <h2>${escapeHtml(labels.actionItems)}</h2>
     <ul>
 ${listItems(input.actionItems)}
     </ul>
@@ -140,12 +142,12 @@ ${listItems(input.actionItems)}
 
   if (input.participants.length) {
     sections.push(`  <section>
-    <h2>Participants</h2>
+    <h2>${escapeHtml(labels.participants)}</h2>
     <p>${escapeHtml(input.participants.join(', '))}</p>
   </section>`);
   }
 
-  return renderDocument(title, input.meta, sections);
+  return renderDocument(title, input.meta, sections, language);
 }
 
 /**
@@ -153,13 +155,18 @@ ${listItems(input.actionItems)}
  * the footer. Shared by both paths (Standard note and open report) so the two
  * can never drift apart on chrome, fonts or layout.
  */
-function renderDocument(title: string, meta: string | undefined, sections: string[]): string {
+function renderDocument(
+  title: string,
+  meta: string | undefined,
+  sections: string[],
+  language = 'en',
+): string {
   const metaLine = meta?.trim()
     ? `  <div class="meta">${escapeHtml(meta.trim())}</div>`
     : '';
 
   return `<!doctype html>
-<html lang="en">
+<html lang="${escapeHtml(language)}">
 <head>
 <meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; font-src data:; style-src 'unsafe-inline'">

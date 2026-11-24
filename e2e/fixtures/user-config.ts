@@ -163,9 +163,8 @@ export function writeMeetingMarkdown(
     `title: "${escapeYaml(meeting.name)}"`,
     `date: "${now}"`,
     `duration_seconds: 0`,
-    `language: "en"`,
     `is_diarised: false`,
-    ...Object.entries(meeting.frontmatter ?? {}).map(([k, v]) =>
+    ...Object.entries({ language: 'en', ...meeting.frontmatter }).map(([k, v]) =>
       typeof v === 'string' ? `${k}: "${escapeYaml(v)}"` : `${k}: ${v}`,
     ),
     ...(meeting.folders ? [`folders: ${JSON.stringify(meeting.folders)}`] : []),
