@@ -193,7 +193,8 @@ function openHash() {
   const target = document.getElementById(id);
   const fold = target?.closest('[data-rm-fold]');
   if (!fold) return;
-  fold.setAttribute('data-rm-open', '');
+  const group = controls.find(({ targets }) => targets.includes(fold));
+  for (const member of group?.targets ?? [fold]) member.setAttribute('data-rm-open', '');
   syncControls();
   target.scrollIntoView({ block: 'start', behavior: 'instant' });
 }
