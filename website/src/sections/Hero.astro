@@ -64,14 +64,14 @@ const PULSES = [
 </section>
 
 <style>
-  .mission-hero-toggle { position: absolute; right: 56px; top: 80px; }
+  .mission-hero-toggle { position: absolute; right: 56px; bottom: 74px; }
   .mission-hero:not([data-playing]) .hero-pulse,
   .mission-hero:not([data-playing]) .hero-radar-scan::after { animation-play-state: paused; }
   @media (max-width: 1199px) {
     .mission-hero-toggle { right: 32px; }
   }
   @media (max-width: 767px) {
-    .mission-hero-toggle { top: calc(86vw - 40px); right: 20px; }
+    .mission-hero-toggle { top: calc(86vw - 32px); bottom: auto; right: 20px; }
   }
 
   /* Radar layer: a hairline grid blended into the film, light pulses running along its lines and a slow amber
