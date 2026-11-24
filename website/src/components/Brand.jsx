@@ -22,15 +22,12 @@ export function Wordmark({ size = 19 }) {
   return (
     <span
       style={{
-        fontFamily: "var(--font-sans)",
-        // Epilogue capitals stand taller than Ovo's: 0.9 keeps the old cap height; epilogue.css lowers the baseline to match.
-        fontSize: size * 0.9,
-        fontWeight: 500,
-        letterSpacing: "-0.03em",
-        wordSpacing: 0,
+        fontFamily: "var(--font-serif)",
+        fontSize: size,
+        fontWeight: 400,
+        letterSpacing: "-0.01em",
         color: "var(--fg-1)",
         lineHeight: 1,
-
       }}
     >
       StenoAI

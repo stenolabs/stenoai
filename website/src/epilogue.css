@@ -149,12 +149,4 @@
 @media (max-width: 767px) {
   :root:root:root .mission-hero-description { max-width: calc(36ch * var(--chx)); }
 }
-
-/* Wordmark: Epilogue at 0.9 of the old Ovo size has the same cap height; the offsets put the baseline where Ovo's was (measured on screen). */
-:root:root:root :is(.mission-brand, .mission-footer-brand > a) > span { position: relative; top: .12em; }
-:root:root:root .mission-footer-brand > a > span { top: .02em; }
-@media (max-width: 767px) {
-  :root:root:root .mission-brand > span { font-size: 19.8px !important; top: .08em !important; }
-  :root:root:root .mission-footer-brand > a > span { top: .025em; }
-}
 :root:root:root .mission-faq-compare { max-width: calc(34ch * var(--chx)); }
