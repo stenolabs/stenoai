@@ -12,6 +12,12 @@ export interface ChatTurn {
   streamId: string;
   /** The message context the answer is saved with (folder id or 'notes'). */
   context: string;
+  /**
+   * Saving the finished answer failed (after a retry). The turn and its
+   * stream stay until the user retries or dismisses it, so the answer is
+   * never dropped silently (ChatTurnPersister, ChatConversation).
+   */
+  saveFailed?: boolean;
 }
 
 let turns: ChatTurn[] = [];
@@ -29,6 +35,14 @@ export function untrackChatTurn(streamId: string) {
     turns = next;
     notify();
   }
+}
+
+/** Flag (or clear, to retry) a turn whose save failed. */
+export function setChatTurnSaveFailed(streamId: string, saveFailed: boolean) {
+  const current = turns.find((t) => t.streamId === streamId);
+  if (!current || Boolean(current.saveFailed) === saveFailed) return;
+  turns = turns.map((t) => (t.streamId === streamId ? { ...t, saveFailed } : t));
+  notify();
 }
 
 function subscribe(listener: () => void) {

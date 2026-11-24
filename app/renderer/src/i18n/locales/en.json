@@ -70,6 +70,8 @@
   "chat.context.label": "Context: {{context}}",
   "chat.error": "Unable to answer. Please try again.",
   "chat.saveError": "Could not save this chat update. Keep this window open and try again.",
+  "chat.saveRetry": "Try again",
+  "chat.saveDismiss": "Dismiss",
   "chat.agent.searchedNotes": "Searched your notes",
   "chat.agent.readNote": "Read a note",
   "chat.agent.searched": "Searched {{connection}}",

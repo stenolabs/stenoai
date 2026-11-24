@@ -3,7 +3,8 @@ import { actionRecords } from '@/components/chat/ChatAgentTrail';
 import { useChatSessions, type ChatMessage } from '@/hooks/useChatSessions';
 import { useGlobalStreaming } from '@/hooks/useStreamingQuery';
 import { GLOBAL_SCOPE } from '@/lib/chat';
-import { untrackChatTurn, useChatTurns } from '@/lib/chatTurns';
+import { setChatTurnSaveFailed, untrackChatTurn, useChatTurns } from '@/lib/chatTurns';
+import { saveWithRetry } from '@/lib/chatSave';
 import { aiErrorSavedText } from '@/lib/aiError';
 
 /**
@@ -20,6 +21,9 @@ export function ChatTurnPersister() {
     for (const turn of turns) {
       const stream = streaming.streams[turn.streamId];
       if (!stream || stream.status === 'streaming' || saving.current.has(turn.streamId)) continue;
+      // A failed save waits for the user (retry clears the flag; dismiss
+      // untracks the turn) rather than looping here.
+      if (turn.saveFailed) continue;
       saving.current.add(turn.streamId);
       // A classified failure saves its code (rendered as AiErrorNotice) and its
       // fixed title as text, never the backend's error message.
@@ -41,11 +45,18 @@ export function ChatTurnPersister() {
         ...(stream.steps?.length ? { steps: stream.steps } : {}),
         ...(actions ? { actions } : {}),
       };
-      void chat.appendMessage(turn.sessionId, message).finally(() => {
-        streaming.clearStream(turn.streamId);
-        untrackChatTurn(turn.streamId);
-        saving.current.delete(turn.streamId);
-      });
+      // The stream is cleared only once the answer is on disk. A failed save
+      // is retried once; if that fails too the turn stays, flagged, and the
+      // conversation shows the answer with a retry and a dismiss.
+      void saveWithRetry(() => chat.appendMessage(turn.sessionId, message))
+        .then(
+          () => {
+            streaming.clearStream(turn.streamId);
+            untrackChatTurn(turn.streamId);
+          },
+          () => setChatTurnSaveFailed(turn.streamId, true),
+        )
+        .finally(() => saving.current.delete(turn.streamId));
     }
   }, [turns, streaming, chat]);
 

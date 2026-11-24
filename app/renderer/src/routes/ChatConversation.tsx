@@ -31,7 +31,7 @@ import {
 const EMPTY_MESSAGES: ChatMessage[] = [];
 import { useGlobalStreaming } from '@/hooks/useStreamingQuery';
 import { AgentRecord, LiveAgentTrail } from '@/components/chat/ChatAgentTrail';
-import { trackChatTurn, useChatTurn } from '@/lib/chatTurns';
+import { setChatTurnSaveFailed, trackChatTurn, untrackChatTurn, useChatTurn } from '@/lib/chatTurns';
 import { useAiProvider } from '@/hooks/useAi';
 import { navigate } from '@/lib/router';
 import {
@@ -157,8 +157,11 @@ export function ChatConversation({ sessionId }: ChatConversationProps) {
     () => session?.messages ?? EMPTY_MESSAGES,
     [session?.messages],
   );
-  const streamingContent = isStreaming && activeTurn !== null
-    ? activeStream?.text || ''
+  // The live bubble stays while the turn is tracked: streaming, being saved,
+  // or (saveFailed) waiting for the user, so a finished answer whose save
+  // failed is still on screen rather than dropped.
+  const streamingContent = activeTurn !== null && activeStream
+    ? activeStream.text || ''
     : null;
   const totalItems = messages.length + (streamingContent !== null ? 1 : 0);
 
@@ -449,6 +452,38 @@ export function ChatConversation({ sessionId }: ChatConversationProps) {
         {/* Composer pinned at the visual bottom — out of the scroll
             container, in the flex column. No leftover padding underneath. */}
         <div className="mx-auto w-full max-w-[760px] px-10 pb-6 pt-2">
+          {activeTurn?.saveFailed && (
+            <div
+              role="alert"
+              data-testid="chat-save-failed"
+              className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md border px-3 py-2 text-[13px]"
+              style={{
+                borderColor: 'var(--border-subtle)',
+                background: 'var(--danger-bg)',
+                color: 'var(--danger)',
+              }}
+            >
+              <span className="min-w-0 flex-1">{t('chat.saveError')}</span>
+              <button
+                type="button"
+                className="font-medium underline underline-offset-2"
+                onClick={() => setChatTurnSaveFailed(activeTurn.streamId, false)}
+              >
+                {t('chat.saveRetry')}
+              </button>
+              <button
+                type="button"
+                className="font-medium underline underline-offset-2"
+                onClick={() => {
+                  // Explicit: the answer is given up only on the user's say-so.
+                  streaming.clearStream(activeTurn.streamId);
+                  untrackChatTurn(activeTurn.streamId);
+                }}
+              >
+                {t('chat.saveDismiss')}
+              </button>
+            </div>
+          )}
           {submitError && (
             <div
               role="alert"
