@@ -111,7 +111,7 @@ const num = (id) => String(order.indexOf(id) + 1).padStart(2, "0");
   {data.loop && (
     <section id="app" class="mission-section sector-section sector-loop" aria-labelledby="app-heading">
       <div class="mission-wrap">
-        <div class:list={["sector-loop-grid", { "sector-loop-with-picture": pictures?.app }]}>
+        <div class="sector-loop-grid">
           <div>
             <h2 id="app-heading">{data.loop.heading}</h2>
             <p>{data.loop.body}</p>

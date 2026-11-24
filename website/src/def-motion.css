@@ -23,7 +23,7 @@ html[data-ss] .def-pic, .def-pic:has(noscript img) { display: block; position: r
   html[data-ss=on] .stage-uses:not([data-nofit]) .stage-panel { position: sticky; top: 0; height: 100vh; height: 100svh; overflow: hidden; background: #121311; }
   html[data-ss=on] .stage-uses:not([data-nofit]) .stage-text { height: 100%; display: grid; grid-template-columns: minmax(0, .78fr) minmax(0, 1.22fr); grid-template-rows: auto auto 1fr; column-gap: 56px; align-content: start; justify-content: stretch; padding-top: 96px; box-sizing: border-box; }
   html[data-ss=on] .stage-uses:not([data-nofit]) .mission-section-top { grid-column: 1 / -1; margin-bottom: 24px; padding-bottom: 20px; }
-  html[data-ss=on] .stage-uses:not([data-nofit]) .mission-section-heading { grid-column: 1 / -1; margin-bottom: 26px; }
+  html[data-ss=on] .stage-uses:not([data-nofit]) .mission-section-heading { grid-column: 1 / -1; --section-content-gap: 26px; }
   html[data-ss=on] .stage-uses:not([data-nofit]) .def-terrain { grid-column: 2; grid-row: 3; width: 100%; margin: 0; align-self: center; }
   html[data-ss=on] .stage-uses:not([data-nofit]) .sector-cases { grid-column: 1; grid-row: 3; display: block; align-self: start; }
   /* the card list: every title visible, the active card opens its text and tags. One card closes, then the next opens: the closing card
@@ -45,7 +45,7 @@ html[data-ss] .def-pic, .def-pic:has(noscript img) { display: block; position: r
 @media (min-width: 1024px) and (min-height: 720px) and (max-height: 899px) {
   html[data-ss=on] .stage-uses:not([data-nofit]) .stage-text { padding-top: 92px; }
   html[data-ss=on] .stage-uses:not([data-nofit]) .mission-section-top { margin-bottom: 8px; padding-bottom: 10px; }
-  html[data-ss=on] .stage-uses:not([data-nofit]) .mission-section-heading { margin-bottom: 6px; }
+  html[data-ss=on] .stage-uses:not([data-nofit]) .mission-section-heading { --section-content-gap: 6px; }
   html[data-ss=on] .stage-uses:not([data-nofit]) .sector-case { padding: 5px 0; }
   html[data-ss=on] .stage-uses:not([data-nofit]) .sector-case.is-lit .sector-tag { margin-top: 4px; padding-top: 3px; padding-bottom: 3px; }
   html[data-ss=on] .stage-uses:not([data-nofit]) .sector-case.is-lit .sector-case-outcome { margin-top: 3px; }

@@ -12,9 +12,9 @@
 html[data-ss] [data-scroll-seq] { display: block; }
 
 /* Keep the scrolling waveform in a separate visual area beside the platform introduction. */
-.platform-heading-layout { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); align-items: center; gap: 32px; margin-bottom: clamp(30px, 4vw, 58px); }
-.platform-heading-layout .mission-section-heading { margin-bottom: 0; }
-.platform-heading-layout .mission-text-link { margin-top: 16px; }
+.platform-heading-layout { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); align-items: start; gap: var(--section-content-gap); margin-bottom: var(--section-content-gap); }
+.platform-heading-layout > .mission-section-heading { margin-bottom: 0; }
+.platform-heading-layout .mission-text-link { margin-top: var(--section-content-gap); }
 .platform-visual { position: relative; overflow: hidden; height: clamp(100px, 13vw, 174px); }
 .platform-visual :is(img, [data-scroll-seq]) {
   mask-image: linear-gradient(to right, transparent, #000 7%, #000 93%, transparent), linear-gradient(to bottom, transparent, #000 12%, #000 69%, transparent);
@@ -64,13 +64,11 @@ html[data-ss=on] .mission-cta.has-stage h2 > span { color: color-mix(in srgb, #F
   /* Cable: the list sits left, the footage fills the right. */
   html[data-ss=on]:not([data-nofit]) .stage-cable .stage-text { justify-content: flex-start; padding-top: 96px; }
   html[data-ss=on]:not([data-nofit]) .stage-cable .mission-assurance-layout { display: block; width: min(36%, 500px); }
-  html[data-ss=on]:not([data-nofit]) .stage-cable .mission-assurance-layout > div:first-child > .mission-lede { margin-top: 20px; }
   html[data-ss=on]:not([data-nofit]) .stage-cable .mission-principles { margin-top: 24px; }
 
   /* Doors: text stacked in the left 45%, footage in the right 55%, nothing over the footage. */
   html[data-ss=on]:not([data-nofit]) .stage-doors .stage-text { margin-left: max(56px, calc((100% - 1440px) / 2)); width: calc(45% - 24px - max(56px, calc((100% - 1440px) / 2))); max-width: none; padding-top: 92px; }
   html[data-ss=on]:not([data-nofit]) .stage-doors .mission-cta-content { grid-template-columns: 1fr; gap: 24px; padding: 20px 0 24px; align-items: start; }
-  html[data-ss=on]:not([data-nofit]) .stage-doors .mission-cta-content > div > p { margin-block: 18px 22px; }
   html[data-ss=on]:not([data-nofit]) .stage-doors .mission-cta-content .mission-text-link { margin-top: 14px; }
   html[data-ss=on]:not([data-nofit]) .stage-doors .mission-cta-bottom { padding: 16px 0; gap: 12px; flex-wrap: wrap; }
 }
@@ -81,7 +79,6 @@ html[data-ss=on] .mission-cta.has-stage h2 > span { color: color-mix(in srgb, #F
 @media (min-width: 912px) and (min-height: 720px) and (max-height: 899px), (min-width: 768px) and (max-width: 911px) and (min-height: 800px) and (max-height: 899px) {
   html[data-ss=on]:not([data-nofit]) .stage-cable .stage-text { padding-top: 92px; }
   html[data-ss=on]:not([data-nofit]) .stage-cable .mission-section-top { margin-bottom: 24px; }
-  html[data-ss=on]:not([data-nofit]) .stage-cable .mission-assurance-layout > div:first-child > .mission-lede { margin-top: 12px; }
   html[data-ss=on]:not([data-nofit]) .stage-cable .mission-assurance-layout .mission-text-link { margin-top: 16px; }
   html[data-ss=on]:not([data-nofit]) .stage-cable .mission-principles { margin-top: 12px; }
   html[data-ss=on]:not([data-nofit]) .stage-cable .mission-principles > div { padding-bottom: 14px; }

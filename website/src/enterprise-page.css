@@ -19,6 +19,8 @@
 .ent-deploy-more { font-size: 13px; color: var(--fg-1); }
 @media (max-width: 767px) { .ent-deploy li { grid-template-columns: 1fr; gap: 4px; } }
 
+.ent-boundary { margin-top: 0; }
+
 /* Diagram: lines and boxes in the site's thin line style. */
 .ent-flow { padding: 36px 32px 40px; }
 .ent-flow svg { display: block; width: 100%; height: auto; overflow: visible; }

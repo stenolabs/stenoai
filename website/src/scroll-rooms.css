@@ -45,7 +45,7 @@ html[data-ss=on] .light-room.is-near .lr-dark, html[data-ss=on] .light-room.is-n
   html[data-ss=on] .cases-stage:not([data-nofit]) { position: relative; height: calc(100vh + 140vh); height: calc(100svh + 140svh); }
   html[data-ss=on] .cases-stage:not([data-nofit]) .cases-panel { position: sticky; top: 0; height: 100vh; height: 100svh; overflow: hidden; box-sizing: border-box; padding-top: 96px; background: #121311; }
   html[data-ss=on] .cases-stage:not([data-nofit]) .cases-panel .mission-section-top { margin-bottom: 24px; }
-  html[data-ss=on] .cases-stage:not([data-nofit]) .cases-panel .mission-section-heading { margin-bottom: 24px; }
+  html[data-ss=on] .cases-stage:not([data-nofit]) .cases-panel .mission-section-heading { --section-content-gap: 24px; }
   html[data-ss=on] .cases-stage:not([data-nofit]) .sector-cases-wrap { display: grid; grid-template-columns: minmax(420px, 36fr) minmax(0, 64fr); gap: 48px; align-items: center; }
   html[data-ss=on] .cases-stage:not([data-nofit]) .sector-corridor { grid-column: 2; grid-row: 1; margin: 0; width: 100%; }
   html[data-ss=on] .cases-stage:not([data-nofit]) .sector-corridor .light-room { width: 100%; }
@@ -68,7 +68,7 @@ html[data-ss=on] .light-room.is-near .lr-dark, html[data-ss=on] .light-room.is-n
 @media (min-width: 1100px) and (min-height: 860px) and (max-height: 899px) {
   html[data-ss=on] .cases-stage:not([data-nofit]) .cases-panel { padding-top: 92px; }
   html[data-ss=on] .cases-stage:not([data-nofit]) .cases-panel .mission-section-top { margin-bottom: 14px; }
-  html[data-ss=on] .cases-stage:not([data-nofit]) .cases-panel .mission-section-heading { margin-bottom: 14px; }
+  html[data-ss=on] .cases-stage:not([data-nofit]) .cases-panel .mission-section-heading { --section-content-gap: 14px; }
 }
 
 /* Takes (papers, drawer): the start still of a later take, beside the heading, in its own clear space at full brightness. */
