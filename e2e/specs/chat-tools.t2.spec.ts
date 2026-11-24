@@ -1,4 +1,5 @@
 import { test, expect } from '../fixtures/electron';
+import { skipWithoutSecureStorage } from '../fixtures/secure-storage';
 import { writeUserConfig, writeMeetingSummary } from '../fixtures/user-config';
 import { startMockOllama } from '../fixtures/mock-ollama';
 import { startMockMcpServer } from '../fixtures/mock-mcp-server';
@@ -46,7 +47,8 @@ test('chat asks to create an issue: approval card in chat, approve sends the edi
     ],
   });
   try {
-    const { page } = await launchApp();
+    const { app, page } = await launchApp();
+    await skipWithoutSecureStorage(app);
     const added = await page.evaluate(
       (url) => (window as unknown as { stenoai: Bridge }).stenoai.actions.addCustom({ name: 'Team n8n', url, auth: 'bearer', token: 'e2e-chat-token' }),
       mcp.url,

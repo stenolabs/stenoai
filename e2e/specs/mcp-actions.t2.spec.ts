@@ -1,4 +1,5 @@
 import { test, expect } from '../fixtures/electron';
+import { skipWithoutSecureStorage } from '../fixtures/secure-storage';
 import { writeUserConfig, writeMeetingSummary } from '../fixtures/user-config';
 import { startMockOllama } from '../fixtures/mock-ollama';
 import { startMockMcpServer, NOTION_LIKE_TOOLS } from '../fixtures/mock-mcp-server';
@@ -74,7 +75,8 @@ test('custom endpoint: suggest, approve the edited args, dismiss sends nothing, 
   const mcp = await startMockMcpServer({ auth: 'bearer', token: 'e2e-bearer-token' });
   let ollama: Awaited<ReturnType<typeof startMockOllama>> | null = null;
   try {
-    const { page } = await launchApp();
+    const { app, page } = await launchApp();
+    await skipWithoutSecureStorage(app);
 
     const added = await page.evaluate(
       (url) => (window as unknown as { stenoai: Bridge }).stenoai.actions.addCustom({ name: 'Team n8n', url, auth: 'bearer', token: 'e2e-bearer-token' }),
@@ -206,7 +208,8 @@ test('OAuth endpoint: discovery, DCR, PKCE and loopback sign-in, tokens stay enc
 }) => {
   const mcp = await startMockMcpServer({ auth: 'oauth' });
   try {
-    const { page } = await launchApp({ env: { STENOAI_E2E_MCP_OAUTH_AUTOFOLLOW: '1' } });
+    const { app, page } = await launchApp({ env: { STENOAI_E2E_MCP_OAUTH_AUTOFOLLOW: '1' } });
+    await skipWithoutSecureStorage(app);
     const added = await page.evaluate(
       (url) => (window as unknown as { stenoai: Bridge }).stenoai.actions.addCustom({ name: 'Tracker', url, auth: 'oauth' }),
       mcp.url,
