@@ -2,68 +2,74 @@
 import { X } from "lucide-react";
 import "../films.css";
 ---
-<dialog id="film-dialog" class="film-dialog" aria-label="Film">
+<dialog id="film-dialog" class="film-dialog" aria-label="Video">
   <div class="film-dialog-bar">
-    <button type="button" class="film-close" aria-label="Close the film" autofocus><X size={20} aria-hidden="true" /></button>
+    <button type="button" class="film-close" aria-label="Close video" autofocus><X size={20} aria-hidden="true" /></button>
   </div>
   <video controls playsinline preload="none" crossorigin="anonymous" width="720" height="1280"></video>
 </dialog>
-<style>
-  @media (max-width: 767px), (pointer: coarse) {
-    .film-dialog {
-      --film-height: min(calc(100svh - 60px), calc(94vw * 16 / 9));
-      width: min(94vw, calc(var(--film-height) * 9 / 16));
-      height: calc(var(--film-height) + 44px);
-      max-height: none;
-      aspect-ratio: auto;
-    }
-    .film-dialog-bar { display: flex; justify-content: flex-end; background: #121311; }
-    .film-dialog video { height: var(--film-height); }
-    .film-close { position: static; }
-  }
-  @media (orientation: landscape) and (max-height: 500px) and (pointer: coarse) {
-    .film-dialog { min-width: min(94vw, 320px); }
-  }
-</style>
 <script>
   import { films } from "../content/films.js";
-  const dlg = document.getElementById('film-dialog');
-  const video = dlg?.querySelector('video');
-  if (dlg instanceof HTMLDialogElement && video && typeof dlg.showModal === 'function') {
-    let opener, y = 0;
-    const open = (f, from) => {
-      opener = from;
-      dlg.setAttribute('aria-label', `${f.name} film`);
-      video.replaceChildren();
-      video.setAttribute('aria-label', `${f.name} film, ${f.length}`);
-      video.src = f.src;
-      if (f.track) { const t = document.createElement('track'); t.kind = 'captions'; t.srclang = 'en'; t.label = 'English'; t.src = f.track; t.default = true; video.append(t); t.addEventListener('load', () => { for (const c of t.track.cues || []) c.size = 82; }); } // 82% of the picture width: two lines at most, inset from the sides
-      y = scrollY; document.documentElement.classList.add('film-open'); // page scroll locked
-      dlg.showModal();                                                  // modal: the page behind is inert and Tab stays inside
-      video.play().catch(() => {});
-    };
-    for (const control of document.querySelectorAll('[data-film-open]')) {
+
+  const dialog = document.getElementById('film-dialog');
+  const video = dialog?.querySelector('video');
+  if (dialog instanceof HTMLDialogElement && video && typeof dialog.showModal === 'function') {
+    let opener: HTMLElement | undefined;
+    let pageY = 0;
+
+    for (const control of document.querySelectorAll<HTMLAnchorElement>('[data-film-open]')) {
+      const film = films.find((item) => item.slug === control.dataset.filmOpen);
+      if (!film) continue;
       control.setAttribute('role', 'button');
       control.setAttribute('aria-haspopup', 'dialog');
-      control.addEventListener('click', (e) => {
-        const film = films.find((f) => f.slug === control.dataset.filmOpen);
-        if (!film) return;
-        e.preventDefault();
-        if (!dlg.open) open(film, control);
+      control.addEventListener('click', (event) => {
+        if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+        event.preventDefault();
+        if (dialog.open) return;
+
+        opener = control;
+        pageY = scrollY;
+        dialog.setAttribute('aria-label', `${film.name} video`);
+        video.setAttribute('aria-label', `${film.name} video, ${film.length}`);
+
+        const track = document.createElement('track');
+        track.kind = 'captions';
+        track.srclang = 'en';
+        track.label = 'English';
+        track.src = film.track;
+        track.default = true;
+        track.addEventListener('load', () => {
+          for (const cue of track.track.cues ?? []) {
+            if (cue instanceof VTTCue) cue.size = 82;
+          }
+        });
+        video.append(track);
+        track.track.mode = 'showing';
+
+        document.documentElement.classList.add('film-open');
+        dialog.showModal();
+        video.src = film.src;
+        video.play().catch(() => {});
       });
-      control.addEventListener('keydown', (e) => {
-        if (e.key === ' ') e.preventDefault();
+      control.addEventListener('keydown', (event) => {
+        if (event.key === ' ') event.preventDefault();
       });
-      control.addEventListener('keyup', (e) => {
-        if (e.key === ' ') control.click();
+      control.addEventListener('keyup', (event) => {
+        if (event.key === ' ') control.click();
       });
     }
-    dlg.querySelector('.film-close')?.addEventListener('click', () => dlg.close());
-    dlg.addEventListener('click', (e) => { if (e.target === dlg) dlg.close(); }); // backdrop
-    dlg.addEventListener('close', () => {
-      video.pause(); video.removeAttribute('src'); video.replaceChildren(); video.load();
+
+    dialog.querySelector('.film-close')?.addEventListener('click', () => dialog.close());
+    dialog.addEventListener('click', (event) => {
+      if (event.target === dialog) dialog.close();
+    });
+    dialog.addEventListener('close', () => {
+      video.pause();
+      video.removeAttribute('src');
+      video.replaceChildren();
+      video.load();
       document.documentElement.classList.remove('film-open');
-      if (scrollY !== y) scrollTo({ top: y, behavior: 'instant' });
+      if (scrollY !== pageY) scrollTo({ top: pageY, behavior: 'instant' });
       opener?.focus({ preventScroll: true });
     });
   }

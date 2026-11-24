@@ -1,41 +1,28 @@
 ---
-import { ArrowUpRight } from "lucide-react";
-import FilmPreview from "../components/FilmPreview.astro";
+import { Play } from "lucide-react";
 import FilmDialog from "../components/FilmDialog.astro";
 import { films } from "../content/films.js";
 import "../films.css";
-const [firstFilm] = films;
 ---
-<section id="films" class="mission-films mission-section" aria-labelledby="films-heading">
+<section id="films" class="mission-section" aria-labelledby="films-heading">
   <div class="mission-wrap">
-    <div class="film-reel" data-film-reel>
-      <div class="film-stage">
-        <div class="mission-section-top"><p class="mission-eyebrow">The films</p><span class="mission-eyebrow">Government. Defence. Law enforcement.</span></div>
-        <div class="mission-section-heading">
-          <h2 id="films-heading">Three rooms.<br />Three films.</h2>
-          <p>Short explainers for government, defence and law enforcement.</p>
-        </div>
-        <div class="film-screen" data-film-screen>
-          <div class="film-strip">
-            {films.map((film) => <FilmPreview film={film} />)}
-          </div>
-        </div>
-        <div class="film-controls">
-          <ul class="film-names" aria-label="The films" data-film-names>
-            {films.map((film, index) => (
-              <li><button type="button" aria-current={index === 0 ? "true" : undefined}>{film.name}</button></li>
-            ))}
-          </ul>
-          <noscript>
-            <ul class="film-names" aria-label="The films">
-              {films.map((film) => <li><a href={`/enterprise/${film.slug}/`}>{film.name}</a></li>)}
-            </ul>
-          </noscript>
-          <a class="mission-text-link film-sector-link" href={`/enterprise/${firstFilm.slug}/`}><span>{firstFilm.name} page</span><ArrowUpRight size={14} aria-hidden="true" /></a>
-          <a class="mission-button mission-button-light film-watch" href={firstFilm.src} data-film-open={firstFilm.slug} aria-label={`Watch the ${firstFilm.name} film, ${firstFilm.length}`}>Watch the film <span class="film-length-inline">{firstFilm.length}</span></a>
-        </div>
-      </div>
+    <div class="mission-section-heading">
+      <h2 id="films-heading">See it in the room.</h2>
+      <p>Short videos for government, defence and law enforcement.</p>
     </div>
+    <ul class="film-gallery" role="list">
+      {films.map((film) => (
+        <li class="film-card">
+          <img src={film.still} alt={film.alt} width="1024" height="1536" loading="lazy" decoding="async" />
+          <h3>{film.name}</h3>
+          <a class="film-gallery-watch" href={film.src} data-film-open={film.slug} aria-label={`Watch video: ${film.name}, ${film.length}`}>
+            <Play size={14} fill="currentColor" aria-hidden="true" />
+            <span>Watch video</span>
+            <span class="film-length">{film.length}</span>
+          </a>
+        </li>
+      ))}
+    </ul>
   </div>
 </section>
 <FilmDialog />
