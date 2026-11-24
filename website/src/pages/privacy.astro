@@ -3,7 +3,7 @@ import BaseLayout from "../layouts/BaseLayout.astro";
 ---
 
 <BaseLayout
-  title="Privacy Policy — StenoAI"
+  title="Privacy Policy | StenoAI"
   description="StenoAI privacy policy. Learn how we protect your data with local-first processing."
   canonical="https://stenoai.co/privacy/"
 >
@@ -114,7 +114,7 @@ import BaseLayout from "../layouts/BaseLayout.astro";
         <h2>Google Calendar integration (optional)</h2>
         <p>If you choose to connect Google Calendar, StenoAI accesses your calendar data with the <code>calendar.readonly</code> scope. This means:</p>
         <ul>
-          <li>StenoAI can only <strong>read</strong> your calendar events — it cannot create, modify, or delete events</li>
+          <li>StenoAI can only <strong>read</strong> your calendar events; it cannot create, modify, or delete events</li>
           <li>Event data (titles, times, attendees, descriptions) is fetched directly from Google's API to your device</li>
           <li>Calendar data is held in memory only and is never written to disk or sent to any third-party server</li>
           <li>OAuth tokens are encrypted using macOS Keychain (via Electron safeStorage) and stored locally</li>
@@ -142,7 +142,7 @@ import BaseLayout from "../layouts/BaseLayout.astro";
           <li>Auto-populate meeting names and attendee lists for your transcription sessions</li>
         </ul>
         <p>Google user data is never used for advertising, profiling, or any purpose unrelated to the app's core meeting-transcription functionality.</p>
-        <p><strong>Google Workspace APIs are not used to develop, improve, or train generalized AI and/or ML models.</strong> Data retrieved from Google Workspace APIs (including Google Calendar) is used solely for the user-facing features described above and is never used as training data, fine-tuning data, or input to any AI/ML model — generalized or otherwise.</p>
+        <p><strong>Google Workspace APIs are not used to develop, improve, or train generalized AI and/or ML models.</strong> Data retrieved from Google Workspace APIs (including Google Calendar) is used solely for the user-facing features described above and is never used as training data, fine-tuning data, or input to any AI/ML model, generalized or otherwise.</p>
 
         <h3>Data sharing</h3>
         <p>StenoAI does <strong>not</strong> share, sell, or transfer Google user data to any third party. Calendar data stays entirely on your device and is never sent to StenoAI servers, analytics services, or any other external service.</p>
@@ -156,7 +156,7 @@ import BaseLayout from "../layouts/BaseLayout.astro";
 
         <h3>Data retention and deletion</h3>
         <ul>
-          <li>Calendar event data is not retained — it exists only in application memory and is discarded when the app is closed or when you navigate away from the calendar view.</li>
+          <li>Calendar event data is not retained; it exists only in application memory and is discarded when the app is closed or when you navigate away from the calendar view.</li>
           <li>OAuth tokens are retained locally until you disconnect Google Calendar.</li>
           <li><strong>To delete all Google data:</strong> Open StenoAI Settings and click "Disconnect Google Calendar." This immediately revokes the OAuth token with Google and deletes all stored credentials from your device.</li>
           <li>Uninstalling StenoAI also removes all locally stored tokens and data.</li>
@@ -169,7 +169,7 @@ import BaseLayout from "../layouts/BaseLayout.astro";
         <p>StenoAI includes optional, privacy-safe analytics via PostHog to help improve the product. This can be disabled in Settings. When enabled, we collect:</p>
         <ul>
           <li>Anonymous usage events (e.g., "recording started", "summary generated")</li>
-          <li>Duration buckets (e.g., "5-15 minutes") — never exact durations</li>
+          <li>Duration buckets (e.g., "5-15 minutes"), never exact durations</li>
           <li>App version and platform information</li>
         </ul>
         <p>We never collect or transmit: audio content, transcript text, summary content, file paths, meeting names, or any personally identifiable information.</p>
@@ -180,7 +180,7 @@ import BaseLayout from "../layouts/BaseLayout.astro";
         <p>StenoAI connects to the internet only for:</p>
         <ul>
           <li>Google Calendar API (if connected by you)</li>
-          <li>PostHog analytics (enabled by default — can be disabled in Settings)</li>
+          <li>PostHog analytics (enabled by default; can be disabled in Settings)</li>
           <li>Checking for app updates via GitHub</li>
         </ul>
       </section>

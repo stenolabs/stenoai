@@ -1,4 +1,4 @@
-// Source of truth: brand/mark.svg (repo root). Keep in sync by hand — this is
+// Source of truth: brand/mark.svg (repo root). Keep in sync by hand: this is
 // inlined separately per-package since website/app-renderer don't share a build.
 export function StenoMark({ size = 22, className = "" }) {
   return (

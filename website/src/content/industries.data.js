@@ -2,13 +2,13 @@
 // content collection (see ../content.config.ts). See src/content/README.md
 // for the compliance-wording policy behind these claims.
 
-// Shared compliance paragraph — one source of truth so the pages can't drift
+// Shared compliance paragraph: one source of truth so the pages can't drift
 // into overclaiming. Rendered on every industry page's "Compliance" block.
 export const COMPLIANCE_BODY =
-  "In local mode, StenoAI runs entirely on your device. Your meeting recordings, transcripts, and summaries never reach our servers — there is no third-party processor handling your meeting data, which addresses a meaningful part of HIPAA, GDPR, and data-residency exposure. (Those frameworks also cover safeguards, agreements, and processes that remain your responsibility — no tool hands you compliance.) StenoAI itself isn't a certified cloud service, because there is no cloud service handling your meetings to certify — and that's the point: the vendor-breach risk that frameworks such as SOC 2 exist to assure against isn't in that path.";
+  "In local mode, StenoAI runs entirely on your device. Your meeting recordings, transcripts, and summaries never reach our servers; there is no third-party processor handling your meeting data, which addresses a meaningful part of HIPAA, GDPR, and data-residency exposure. (Those frameworks also cover safeguards, agreements, and processes that remain your responsibility; no tool hands you compliance.) StenoAI itself isn't a certified cloud service, because there is no cloud service handling your meetings to certify, and that's the point: the vendor-breach risk that frameworks such as SOC 2 exist to assure against isn't in that path.";
 
 // Short, honest compliance chips shown on industry pages. "-aligned" / "by
-// design" / "-friendly" are load-bearing hedges — do not upgrade them to
+// design" / "-friendly" are load-bearing hedges; do not upgrade them to
 // "certified" or "compliant".
 const CHIPS = {
   gdpr: "GDPR-aligned",
@@ -30,7 +30,7 @@ const CHIPS = {
 export const BREACHES_VERIFIED = "September 2026";
 
 const BREACH_INTRO_GOV =
-  "None of these were careless organisations. In each case the data was lost somewhere outside the walls of the organisation that owned it — at a cloud provider, at a processor, or inside a tool that quietly took a copy.";
+  "None of these were careless organisations. In each case the data was lost somewhere outside the walls of the organisation that owned it: at a cloud provider, at a processor, or inside a tool that quietly took a copy.";
 
 const BREACH_INTRO_DEF =
   "The pattern is consistent: the compromise happens at a link in the chain that isn't yours. A contractor's system, a vendor's build server, a file that left the enclave and couldn't be recalled.";
@@ -51,26 +51,26 @@ export const government = {
   heroVideo: { src: "/video/hero-government.mp4", poster: "/images/enterprise/hero-government-poster.webp", position: "0% 50%" },
   loop: { src: "/video/loop-government.mp4", poster: "/images/enterprise/loop-government-poster.webp", heading: "Decisions, ready for the minutes.", body: "After the meeting, the transcript becomes a summary with decisions and actions, on your device." },
   name: "Government",
-  metaTitle: "StenoAI for Government — On-Device Meeting Notes, No Cloud",
+  metaTitle: "StenoAI for Government: On-Device Meeting Notes, No Cloud",
   metaDescription:
-    "On-device meeting transcription and summaries for government teams — data stays on your device or your infrastructure, supports data-residency obligations by architecture. Open source.",
+    "On-device meeting transcription and summaries for government teams: data stays on your device or your infrastructure, supports data-residency obligations by architecture. Open source.",
   eyebrow: "StenoAI for Government",
   lede: "Briefings, policy discussions and internal reviews carry information that belongs within your perimeter. Turn those conversations into a clear record, processed on your device or on infrastructure you control.",
   image: "government",
   imageAlt: "People outside a lit office building at dusk",
   h1: "Meeting notes that never leave your perimeter.",
   intro:
-    "Briefings, policy discussions, and internal reviews carry information that can't be handed to a cloud vendor. StenoAI records, transcribes, and summarizes entirely on the device — no third-party processor, no data crossing a border, no records leaving the machine they were captured on.",
+    "Briefings, policy discussions, and internal reviews carry information that can't be handed to a cloud vendor. StenoAI records, transcribes, and summarizes entirely on the device: no third-party processor, no data crossing a border, no records leaving the machine they were captured on.",
   chips: [CHIPS.dataResidency, CHIPS.airGapped, CHIPS.gdpr],
   pains: [
-    "Cloud meeting tools route audio through servers outside your control — and often outside your jurisdiction.",
+    "Cloud meeting tools route audio through servers outside your control, and often outside your jurisdiction.",
     "A bot joining the call is a participant you can't fully account for in a sensitive briefing.",
     "Retention and access to recordings sit under a vendor's terms, not your records policy.",
   ],
   points: [
     { h: "Data sovereignty", b: "Everything is processed and stored on the device, or on infrastructure you run inside your own boundary. Nothing transits a vendor's server, so residency and sovereignty obligations are supported by architecture, not a vendor promise." },
     { h: "Your device or your infrastructure", b: "Run it on the laptop in the room, or on a model server or cloud tenancy you control. It also works on isolated networks, where cloud tools can't operate." },
-    { h: "No bot in the room", b: "StenoAI captures system and microphone audio directly — nothing joins the meeting as a participant." },
+    { h: "No bot in the room", b: "StenoAI captures system and microphone audio directly; nothing joins the meeting as a participant." },
     { h: "Auditable by design", b: "It's open source. Your security team can read exactly what touches the audio and confirm the no-network claim themselves." },
   ],
   breaches: {
@@ -81,7 +81,7 @@ export const government = {
         title: "A stolen signing key opened government mailboxes",
         meta: "Microsoft Exchange Online · 2023",
         what: "A China-linked actor, tracked as Storm-0558, used a stolen Microsoft consumer signing key to forge authentication tokens and read Exchange Online mailboxes belonging to 22 organisations and more than 500 individuals, including officials at the US State and Commerce Departments. Roughly 60,000 State Department emails were taken. The Cyber Safety Review Board concluded in 2024 that the intrusion was preventable and traced it to a cascade of avoidable failures at Microsoft.",
-        why: "No tenant setting would have stopped this. The affected departments did nothing wrong — the compromise was inside the provider holding their mail. StenoAI removes that dependency for meeting content: there is no provider account, no key and no server holding your transcripts to be compromised.",
+        why: "No tenant setting would have stopped this. The affected departments did nothing wrong; the compromise was inside the provider holding their mail. StenoAI removes that dependency for meeting content: there is no provider account, no key and no server holding your transcripts to be compromised.",
         source: {
           label: "Cyber Safety Review Board report (CISA, 2024)",
           href: "https://www.cisa.gov/sites/default/files/2025-03/CSRBReviewOfTheSummer2023MEOIntrusion508.pdf",
@@ -90,7 +90,7 @@ export const government = {
       {
         title: "One file-transfer product, 2,500 organisations",
         meta: "MOVEit Transfer · 2023",
-        what: "From 27 May 2023 the CL0P group exploited a zero-day in Progress Software's MOVEit Transfer to steal data from every instance it could reach. More than 2,500 organisations were affected, among them multiple US federal agencies — the Department of Energy confirmed two of its entities were caught in it.",
+        what: "From 27 May 2023 the CL0P group exploited a zero-day in Progress Software's MOVEit Transfer to steal data from every instance it could reach. More than 2,500 organisations were affected, among them multiple US federal agencies; the Department of Energy confirmed two of its entities were caught in it.",
         why: "Most of those organisations would not have named MOVEit if you had asked them to list their data path. Meeting recordings and transcripts are exactly the kind of data that accumulates in that sort of intermediary. StenoAI's pipeline has no intermediary: capture, transcription and summarisation all happen on the machine.",
         source: {
           label: "CISA advisory AA23-158A",
@@ -100,7 +100,7 @@ export const government = {
       {
         title: "The notetaker itself became the exposure",
         meta: "Otter.ai litigation · 2025",
-        what: "Class actions consolidated as In re Otter.AI Privacy Litigation in the Northern District of California allege that the AI notetaker joined Zoom, Teams and Google Meet calls and recorded participants who were not its customers, transmitted call content to its servers, and used those conversations to train its models — without the consent of everyone in the room. The claims are unproven and Otter.ai disputes them.",
+        what: "Class actions consolidated as In re Otter.AI Privacy Litigation in the Northern District of California allege that the AI notetaker joined Zoom, Teams and Google Meet calls and recorded participants who were not its customers, transmitted call content to its servers, and used those conversations to train its models, without the consent of everyone in the room. The claims are unproven and Otter.ai disputes them.",
         why: "Whatever the outcome, the exposure is structural: once a notetaker sends audio off the device, consent, retention and model-training become somebody else's policy. StenoAI never sends the audio anywhere, so those questions stay yours to answer.",
         source: {
           label: "NPR, August 2025",
@@ -110,7 +110,7 @@ export const government = {
     ],
   },
   faqs: [
-    { q: "Does StenoAI meet data-residency requirements?", a: "Because processing and storage happen on the device and nothing is uploaded, your data never leaves the machine — or the jurisdiction it's in. There is no cloud region to configure and no cross-border transfer to account for." },
+    { q: "Does StenoAI meet data-residency requirements?", a: "Because processing and storage happen on the device and nothing is uploaded, your data never leaves the machine, or the jurisdiction it's in. There is no cloud region to configure and no cross-border transfer to account for." },
     { q: "Can it run on our own infrastructure, or on an isolated network?", a: "Yes, either. Summaries can run on a model server in your network or in your own cloud tenancy. In local mode, once the models are downloaded, recording, transcription and summarisation all run with no network at all." },
     { q: "How do we verify what it does?", a: "StenoAI is open source (MIT). Your team can audit the code, build it from source, and confirm exactly what it does and doesn't send before deploying." },
   ],
@@ -121,7 +121,7 @@ export const defense = {
   heroVideo: { src: "/video/hero-defense.mp4", poster: "/images/enterprise/hero-defense-poster.webp", position: "85% 50%" },
   loop: { src: "/video/loop-defense.mp4", poster: "/images/enterprise/loop-defense-poster.webp", heading: "No network. Still recording.", body: "In local mode, recording and notes carry on with the network off. Recordings stay on the device." },
   name: "Defence",
-  metaTitle: "StenoAI for Defence — Meeting Notes on Your Device or Your Infrastructure",
+  metaTitle: "StenoAI for Defence: Meeting Notes on Your Device or Your Infrastructure",
   metaDescription:
     "Meeting transcription and summaries on your own device or your own infrastructure, from connected HQs to air-gapped enclaves. Nothing transits a vendor's server. Open source.",
   eyebrow: "StenoAI for Defence",
@@ -130,12 +130,12 @@ export const defense = {
   imageAlt: "Personnel gathered around a planning table",
   h1: "Built for the discussions that can't leave your boundary.",
   intro:
-    "Operational planning and sensitive discussions run on hardware you control, on networks you control. StenoAI does the pipeline — capture, transcription, summary — on the device or on servers inside your boundary, with nothing transiting a vendor's server. The same app runs from a connected headquarters to an air-gapped enclave. (Accreditation for any specific classified environment is a function of your own deployment and authorization process, not the app alone.)",
+    "Operational planning and sensitive discussions run on hardware you control, on networks you control. StenoAI does the pipeline (capture, transcription, summary) on the device or on servers inside your boundary, with nothing transiting a vendor's server. The same app runs from a connected headquarters to an air-gapped enclave. (Accreditation for any specific classified environment is a function of your own deployment and authorization process, not the app alone.)",
   chips: [CHIPS.airGapped, CHIPS.dataResidency],
   pains: [
     "Cloud transcription is a non-starter when the audio can't leave the enclave.",
     "SaaS meeting assistants require connectivity and a vendor relationship you can't extend to classified work.",
-    "A meeting bot is an external participant — unacceptable in an operational context.",
+    "A meeting bot is an external participant, unacceptable in an operational context.",
   ],
   points: [
     { h: "Your device or your infrastructure", b: "Run it on one laptop, on a model server inside your network, or in your own cloud tenancy. Local mode also works on air-gapped and disconnected systems." },
@@ -150,8 +150,8 @@ export const defense = {
       {
         title: "A spreadsheet that left the building",
         meta: "UK Ministry of Defence, Afghan relocations · 2022, disclosed 2025",
-        what: "In February 2022 a member of staff at UK Special Forces headquarters emailed out a dataset holding the names and details of roughly 19,000 Afghans who had applied for relocation under ARAP. It was not discovered until August 2023, when part of it surfaced in a Facebook group. The government obtained an unprecedented superinjunction that kept the breach — and a secret resettlement scheme built in response — out of public view until July 2025.",
-        why: "Nothing was hacked. A copy was made and sent, and it could not be recalled. StenoAI cannot stop a person emailing a file, and doesn't claim to — but it adds no copies of its own: no vendor-side duplicate, no automatic sync, no export step in the pipeline. Recordings, transcripts and summaries are ordinary local files, held under whatever controls you already run on that machine.",
+        what: "In February 2022 a member of staff at UK Special Forces headquarters emailed out a dataset holding the names and details of roughly 19,000 Afghans who had applied for relocation under ARAP. It was not discovered until August 2023, when part of it surfaced in a Facebook group. The government obtained an unprecedented superinjunction that kept the breach, and a secret resettlement scheme built in response, out of public view until July 2025.",
+        why: "Nothing was hacked. A copy was made and sent, and it could not be recalled. StenoAI cannot stop a person emailing a file, and doesn't claim to, but it adds no copies of its own: no vendor-side duplicate, no automatic sync, no export step in the pipeline. Recordings, transcripts and summaries are ordinary local files, held under whatever controls you already run on that machine.",
         source: {
           label: "House of Commons Defence Committee report",
           href: "https://publications.parliament.uk/pa/cm5902/cmselect/cmdfence/69/report.html",
@@ -160,7 +160,7 @@ export const defense = {
       {
         title: "The contractor was the way in",
         meta: "UK MoD payroll provider · 2024",
-        what: "Disclosed to Parliament in May 2024: an external payroll system operated by contractor Shared Services Connected Ltd was accessed by what the Defence Secretary called a malign actor, exposing names and bank details of up to around 270,000 serving personnel, reservists and veterans. The MoD's own networks were not the entry point — the third party's system was.",
+        what: "Disclosed to Parliament in May 2024: an external payroll system operated by contractor Shared Services Connected Ltd was accessed by what the Defence Secretary called a malign actor, exposing names and bank details of up to around 270,000 serving personnel, reservists and veterans. The MoD's own networks were not the entry point; the third party's system was.",
         why: "Defence security is bounded by the least-defended system holding the data, and that system frequently belongs to someone else. Every SaaS notetaker adds one. StenoAI adds none: there is no vendor holding your meeting content, so there is no vendor to breach.",
         source: {
           label: "AP / SecurityWeek, May 2024",
@@ -171,7 +171,7 @@ export const defense = {
         title: "A trusted update carried the attacker in",
         meta: "SolarWinds Orion · 2020",
         what: "An actor the US government attributed to Russia's SVR compromised SolarWinds' build process and planted a backdoor in signed Orion updates shipped between March and June 2020. CISA issued Emergency Directive 21-01 ordering federal civilian agencies to disconnect the product; agencies including Treasury, Commerce and DHS were breached through it.",
-        why: "StenoAI does not make supply-chain risk disappear — no software does, and any vendor claiming otherwise is selling you something. What it removes is the standing data flow a compromise could ride: StenoAI makes no network calls with your meeting content, so there is no established channel out. And it is MIT-licensed, so your security authority can review the source and build it themselves rather than trusting a binary.",
+        why: "StenoAI does not make supply-chain risk disappear; no software does, and any vendor claiming otherwise is selling you something. What it removes is the standing data flow a compromise could ride: StenoAI makes no network calls with your meeting content, so there is no established channel out. And it is MIT-licensed, so your security authority can review the source and build it themselves rather than trusting a binary.",
         source: {
           label: "CISA advisory AA20-352A",
           href: "https://www.cisa.gov/news-events/cybersecurity-advisories/aa20-352a",
@@ -194,16 +194,16 @@ export const lawEnforcement = {
   heroVideo: { src: "/video/hero-law-enforcement.mp4", poster: "/images/enterprise/hero-law-enforcement-poster.webp" },
   loop: { src: "/video/loop-law-enforcement.mp4", poster: "/images/enterprise/loop-law-enforcement-poster.webp", heading: "The briefing, written up.", body: "After the briefing, the transcript becomes a decision log and a list of actions, on your device." },
   name: "Law enforcement",
-  metaTitle: "StenoAI for Law Enforcement — On-Device Meeting Notes for Policing",
+  metaTitle: "StenoAI for Law Enforcement: On-Device Meeting Notes for Policing",
   metaDescription:
-    "Meeting transcription and summaries for police briefings, reviews and command meetings — processed on the device or on force infrastructure, with no third-party processor in the audio path. Open source.",
+    "Meeting transcription and summaries for police briefings, reviews and command meetings, processed on the device or on force infrastructure, with no third-party processor in the audio path. Open source.",
   eyebrow: "StenoAI for Law Enforcement",
   h1: "Notes that stay inside the force.",
   lede: "Briefings, investigation reviews, witness contact and command meetings carry personal data your force is accountable for under Part 3 of the Data Protection Act 2018. StenoAI records, transcribes and summarises on the laptop in the room, or on infrastructure the force controls. It is not an interview recorder and never replaces your authorised PACE equipment.",
   image: "law-enforcement",
   imageAlt: "Officers in a briefing room",
   intro:
-    "Policing is adopting AI, and the question every DPO asks first is where the data goes. StenoAI keeps the answer simple: on the device, or on force infrastructure — with a full transcript behind every summary.",
+    "Policing is adopting AI, and the question every DPO asks first is where the data goes. StenoAI keeps the answer simple: on the device, or on force infrastructure, with a full transcript behind every summary.",
   chips: [CHIPS.dataResidency, CHIPS.airGapped],
   pains: [
     "Cloud notetakers route audio through servers you must name in a DPIA and cannot inspect.",
@@ -230,7 +230,7 @@ export const lawEnforcement = {
         title: "A chatbot's fixture that never happened",
         meta: "West Midlands Police · 2025–2026",
         what: "West Midlands Police relied in part on Microsoft Copilot output describing a football match that had never taken place, in advice that fed a decision to ban away fans from a fixture. After the error came to light, the Chief Constable retired and the assistant was switched off across the force.",
-        why: "Any language model can get things wrong, including the one StenoAI runs. The difference is what the output can be checked against: StenoAI summarises only what was said in the meeting, and keeps the verbatim transcript next to every summary, so a claim in the notes can be traced to the words behind it — or found to have none.",
+        why: "Any language model can get things wrong, including the one StenoAI runs. The difference is what the output can be checked against: StenoAI summarises only what was said in the meeting, and keeps the verbatim transcript next to every summary, so a claim in the notes can be traced to the words behind it, or found to have none.",
         source: {
           label: "The Register, February 2026",
           href: "https://www.theregister.com/2026/02/24/west_midlands_police_copilot/",
@@ -259,7 +259,7 @@ export const lawEnforcement = {
     ],
   },
   faqs: [
-    { q: "Can StenoAI be used to record suspect interviews?", a: "No. Interviews with suspects under caution must be recorded on your authorised recording device under PACE Code E. StenoAI is for the work around an investigation — briefings, reviews, command and partner meetings — under your force policy." },
+    { q: "Can StenoAI be used to record suspect interviews?", a: "No. Interviews with suspects under caution must be recorded on your authorised recording device under PACE Code E. StenoAI is for the work around an investigation (briefings, reviews, command and partner meetings) under your force policy." },
     { q: "Does it add a data processor under Part 3 of the DPA 2018?", a: "In local mode there is no processor in the audio path: recording, transcription and summarisation happen on the device. If you configure a model server, it is one your force operates or contracts for. Your DPIA, records of processing and endpoint security remain your responsibility." },
     { q: "Can it run on force infrastructure rather than individual laptops?", a: "Yes. Transcription runs on the device by default, and summaries can run on a model server on the force network or in the force's own cloud tenancy. It also runs fully offline on an isolated machine." },
     { q: "How do we evaluate it?", a: "Download the open-source app for a single-officer evaluation, have your information security team review and build the source, or request a briefing to discuss a force deployment." },
@@ -272,7 +272,7 @@ export const lawEnforcement = {
 // wording here (SECTOR_VERIFIED). Same rules as the breaches above: if a
 // detail can't be checked from the linked source, it doesn't ship. Policy
 // cards say what the rule says, what the design changes, and what stays the
-// buyer's responsibility — never that StenoAI makes anyone compliant.
+// buyer's responsibility, never that StenoAI makes anyone compliant.
 export const SECTOR_VERIFIED = "October 2026";
 
 const SRC = {

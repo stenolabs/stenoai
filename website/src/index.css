@@ -3,7 +3,7 @@
 /* ── Dark mode variant (class-based) ── */
 @custom-variant dark (&:where(.dark, .dark *));
 
-/* Ovo (brand wordmark/serif), self-hosted — avoids a Google Fonts dependency. */
+/* Ovo (brand wordmark/serif), self-hosted; avoids a Google Fonts dependency. */
 @font-face {
   font-family: 'Ovo';
   font-style: normal;
@@ -274,7 +274,7 @@
   color: var(--primary-fg);
 }
 
-/* How it works — step cards */
+/* How it works: step cards */
 .step-card {
   position: relative;
   height: 100%;
@@ -375,7 +375,7 @@
 }
 
 /* ═══════════════════════════════════════════════════
-   /vs/ comparison pages — ledger-style table
+   /vs/ comparison pages: ledger-style table
    ═══════════════════════════════════════════════════ */
 .vs-table-wrap {
   overflow-x: auto;

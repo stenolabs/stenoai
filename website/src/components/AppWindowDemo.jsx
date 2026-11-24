@@ -12,7 +12,7 @@ const SCREENS = ["notes", "generating", "summary", "chat"];
 const SCREEN_MS = { notes: 5500, generating: 4000, summary: 5500, chat: 7000 };
 
 const NOTES_TEXT =
-  "- Rotate 2nd company off the eastern line\n- Resupply convoy delayed — reroute via northern road\n- Air-defence coverage gap at dawn\n- Engineers to reinforce forward positions";
+  "- Rotate 2nd company off the eastern line\n- Resupply convoy delayed: reroute via northern road\n- Air-defence coverage gap at dawn\n- Engineers to reinforce forward positions";
 
 const SUMMARY_INTRO =
   "The team aligned on the sector defence plan for the coming week. The 2nd company rotates off the eastern line for rest and refit, with resupply rerouted through the northern road after convoy delays. Engineers will reinforce the forward positions before the next rotation.";
@@ -239,7 +239,7 @@ function NotesScreen() {
 
       <PillFade />
 
-      {/* Recording dock — mirrors LiveDock.tsx: centered rounded-full pill */}
+      {/* Recording dock (mirrors LiveDock.tsx: centered rounded-full pill) */}
       <div style={{ position: "absolute", bottom: 10, left: 0, right: 0, zIndex: 2, display: "flex", justifyContent: "center" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "8px 12px", background: "var(--surface-raised)", border: "1px solid var(--border-subtle)", borderRadius: 999, boxShadow: "var(--shadow-md)" }}>
           {/* RecordingPill: wave | label | timer */}
@@ -352,7 +352,7 @@ function GeneratingScreen() {
 
   return (
     <div className="flex-1 min-h-0 relative overflow-hidden" style={{ background: "var(--page)" }}>
-      {/* New note button — mirrors MainToolbar record-btn */}
+      {/* New note button (mirrors MainToolbar record-btn) */}
       <button style={{ position: "absolute", top: 10, right: 12, zIndex: 3, display: "inline-flex", alignItems: "center", gap: 8, height: 30, padding: "0 14px", borderRadius: 999, background: "transparent", color: "var(--fg-1)", fontWeight: 500, fontSize: 13, border: 0, cursor: "default", fontFamily: "var(--font-sans)", boxShadow: "inset 0 0 0 1px var(--border)", letterSpacing: "-0.005em" }}>
         <PencilLine size={13} /> New note
       </button>
@@ -395,7 +395,7 @@ function GeneratingScreen() {
 
       <PillFade />
 
-      {/* Processing dock — mirrors ProcessingDock.tsx: centered rounded-full */}
+      {/* Processing dock (mirrors ProcessingDock.tsx: centered rounded-full) */}
       <div style={{ position: "absolute", bottom: 10, left: 0, right: 0, zIndex: 2, display: "flex", justifyContent: "center" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "8px 12px", background: "var(--surface-raised)", border: "1px solid var(--border-subtle)", borderRadius: 999, boxShadow: "var(--shadow-md)" }}>
           <span style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "0 8px", fontSize: 13 }}>
@@ -549,7 +549,7 @@ function ChatScreen() {
 
   return (
     <div className="flex-1 min-h-0 relative overflow-hidden" style={{ background: "var(--page)", textAlign: "left" }}>
-      {/* Faded meeting content — shows notes visible behind the chat panel */}
+      {/* Faded meeting content (shows notes visible behind the chat panel) */}
       <div style={{ maxWidth: 680, margin: "0 auto", padding: "20px 40px", opacity: 0.3, pointerEvents: "none", userSelect: "none" }}>
         <div style={{ fontSize: 13, color: "var(--fg-2)", marginBottom: 10, display: "flex", alignItems: "center", gap: 3 }}>
           <ChevronLeft size={13} /> Work
@@ -641,7 +641,7 @@ function ChatScreen() {
 // ─── Root ─────────────────────────────────────────────────────────
 
 // Window is built at a native 680×480 reference size (matching Features.jsx's
-// ScaledApp convention). On containers narrower than that — phones — it
+// ScaledApp convention). On containers narrower than that (phones), it
 // scales down as a unit via a CSS transform so the sidebar/text/spacing
 // shrink together instead of the sidebar just eating a bigger share of a
 // squeezed flex row. Containers at or above the reference width (desktop)
@@ -667,7 +667,7 @@ export function AppWindowDemo() {
     if (!el) return;
     const measure = () => {
       const s = Math.min(1, el.offsetWidth / NATIVE_W);
-      if (!s) return; // transient 0-width measurement (e.g. bfcache restore) — skip, keep last good scale
+      if (!s) return; // transient 0-width measurement (e.g. bfcache restore): skip, keep last good scale
       setScale(s);
     };
     measure();

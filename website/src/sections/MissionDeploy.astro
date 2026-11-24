@@ -4,7 +4,7 @@ import ScrollSeq from '../components/ScrollSeq.astro';
 // Three equally supported deployment modes. Wording is load-bearing: audio
 // capture always stays on the device and transcription does by default (cloud
 // ASR is opt-in, to an endpoint the customer configures); otherwise only the
-// summarisation/chat model moves. Keep "never ours" true — StenoAI runs
+// summarisation/chat model moves. Keep "never ours" true: StenoAI runs
 // no server that receives meeting content in any of these modes.
 const modes = [
   { media: 'device', frames: 61, sw: 1152, sh: 720, start: '.98', end: '.58', index: '01', icon: Laptop, name: 'On the device', body: 'Capture, transcription, summaries and questions all run on the laptop. After setup it works offline and on air-gapped networks.', tags: 'Local mode · Air-gap ready' },

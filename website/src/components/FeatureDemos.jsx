@@ -1,6 +1,6 @@
 // Interactive/animated feature-card demos that need real client JS (typed
 // text simulation, ResizeObserver-driven scaling). Split out of the section
-// markup so only these two cards hydrate as React islands — the rest of
+// markup so only these two cards hydrate as React islands; the rest of
 // Features.astro is pure static SVG/CSS animation with no JS shipped.
 import { useEffect, useRef, useState } from "react";
 import { m as Motion, AnimatePresence, LazyMotion, domMax } from "framer-motion";
@@ -147,7 +147,7 @@ function NotesPane() {
 
 const CARD_CHAT_Q = "What's the renewal risk with Acme?";
 const CARD_CHAT_A =
-  "Acme flagged pricing as a concern but confirmed intent to renew at the current seat count. Contract renews Aug 15 — send the updated proposal by Aug 1, highlighting the new AI features.";
+  "Acme flagged pricing as a concern but confirmed intent to renew at the current seat count. Contract renews Aug 15; send the updated proposal by Aug 1, highlighting the new AI features.";
 
 function FeatureThinkingDots() {
   return (
