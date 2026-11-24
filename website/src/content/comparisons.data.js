@@ -40,7 +40,7 @@ export const granola = {
     }),
     ROW("Open source", STENO.openSource, { text: "No, proprietary", tone: "bad" }),
     ROW("Transcription", STENO.transcription, {
-      text: "In the cloud: audio is streamed to Granola's servers",
+      text: "In the cloud: audio is streamed to Granola’s servers",
       tone: "bad",
     }),
     ROW("AI summaries", STENO.summaries, {
@@ -63,7 +63,7 @@ export const granola = {
   verdict:
     "Granola is a polished cloud notetaker without the bot. StenoAI is the same idea taken to its conclusion: if the notes can be made without a bot, they can be made without a server too. Everything (recording, transcription, summaries, chat) runs on your device, free.",
   chooseSteno: [
-    "Your meetings involve confidential, legal, medical, or client material that shouldn't transit third-party servers",
+    "Your meetings involve confidential, legal, medical, or client material that shouldn’t transit third-party servers",
     "You want unlimited meetings without a per-user subscription",
     "You need it to work offline: planes, secure sites, flaky Wi-Fi",
     "You (or your security team) want to audit the code that touches your audio",
@@ -72,7 +72,7 @@ export const granola = {
     "You want an iPhone app for in-person meetings on the go",
     "You rely on cloud sync across several devices",
     "Your team lives in its integrations: Notion, Slack, HubSpot, Zapier",
-    "You're comfortable with cloud processing and want the most polished template ecosystem",
+    "You’re comfortable with cloud processing and want the most polished template ecosystem",
   ],
   faqs: [
     {
@@ -85,14 +85,14 @@ export const granola = {
     },
     {
       q: "How much does Granola cost compared to StenoAI?",
-      a: "Granola's paid plans start at $14/user/month ($168/user/year), with a free plan that limits meeting history. StenoAI is free and open source (MIT): there is no paid tier, and nothing is held back.",
+      a: "Granola’s paid plans start at $14/user/month ($168/user/year), with a free plan that limits meeting history. StenoAI is free and open source (MIT): there is no paid tier, and nothing is held back.",
     },
     {
       q: "Can I use StenoAI on my phone?",
-      a: "No. StenoAI is a desktop app for macOS (Apple Silicon) and Windows (alpha). If phone-first capture matters more to you than on-device privacy, Granola's iPhone app is the better fit today.",
+      a: "No. StenoAI is a desktop app for macOS (Apple Silicon) and Windows (alpha). If phone-first capture matters more to you than on-device privacy, Granola’s iPhone app is the better fit today.",
     },
     {
-      q: "Are StenoAI's local summaries as good as Granola's cloud ones?",
+      q: "Are StenoAI’s local summaries as good as Granola’s cloud ones?",
       a: "StenoAI ships a lineup of open-weight models (up to GPT-OSS 20B) that run on your machine, and you can optionally plug in your own cloud API key if you want a frontier model. For meeting summaries and action items, well-prompted local models are strong, and you can verify the results because you keep the full transcript.",
     },
   ],
@@ -108,7 +108,7 @@ export const otter = {
   eyebrow: "StenoAI vs Otter.ai",
   h1: "StenoAI and Otter compared.",
   intro:
-    "Otter is the incumbent cloud transcription service: an OtterPilot bot joins your call as a participant, recordings live on Otter's servers, and every plan below Business has minute caps. StenoAI takes the opposite approach: it captures system audio on your own machine, transcribes and summarizes locally, and never uploads anything.",
+    "Otter is the incumbent cloud transcription service: an OtterPilot bot joins your call as a participant, recordings live on Otter’s servers, and every plan below Business has minute caps. StenoAI takes the opposite approach: it captures system audio on your own machine, transcribes and summarizes locally, and never uploads anything.",
   rows: [
     ROW("Price", STENO.price, {
       text: "Free: 300 min/month (30 min per conversation); Pro from $8.33/user/month billed annually; Business from $19.99",
@@ -118,7 +118,7 @@ export const otter = {
     ROW("Transcription", STENO.transcription, { text: "In the cloud", tone: "bad" }),
     ROW("AI summaries", STENO.summaries, { text: "In the cloud", tone: "bad" }),
     ROW("Audio leaves your device", STENO.audio, {
-      text: "Yes: recordings are stored on Otter's servers",
+      text: "Yes: recordings are stored on Otter’s servers",
       tone: "bad",
     }),
     ROW("Bot joins your meetings", STENO.bot, {
@@ -139,15 +139,15 @@ export const otter = {
   verdict:
     "Otter charges a subscription to run your audio through its servers, with a bot sitting visibly in your meetings. StenoAI removes the bot, the server, the account, and the bill; the whole pipeline runs on hardware you already own.",
   chooseSteno: [
-    "You don't want a bot appearing in client or internal calls",
-    "Your recordings shouldn't live on a third party's servers",
+    "You don’t want a bot appearing in client or internal calls",
+    "Your recordings shouldn’t live on a third party’s servers",
     "You keep hitting minute caps; StenoAI has no limits at any length",
-    "You record in-person conversations and don't want them uploaded",
+    "You record in-person conversations and don’t want them uploaded",
   ],
   chooseThem: [
     "You need to record from a phone, or work entirely in a browser",
     "Your team collaborates inside a shared cloud workspace of transcripts",
-    "You want Otter's live shared highlights during large webinars",
+    "You want Otter’s live shared highlights during large webinars",
   ],
   faqs: [
     {
@@ -156,19 +156,19 @@ export const otter = {
     },
     {
       q: "Is StenoAI really unlimited?",
-      a: "Yes. Transcription and summarization run on your own hardware, so there's no metering: no monthly minutes, no per-conversation cap, no file-import quota. Otter's free plan allows 300 minutes a month with a 30-minute cap per conversation.",
+      a: "Yes. Transcription and summarization run on your own hardware, so there’s no metering: no monthly minutes, no per-conversation cap, no file-import quota. Otter’s free plan allows 300 minutes a month with a 30-minute cap per conversation.",
     },
     {
       q: "Where do my recordings go?",
-      a: "With Otter, recordings and transcripts are stored in Otter's cloud, under Otter's terms. With StenoAI, they're ordinary files in local app storage on your device; your meeting content is never uploaded. (StenoAI does make some network calls unrelated to your content: update checks, first-run model downloads, and anonymous usage telemetry that's on by default and can be switched off in Settings.)",
+      a: "With Otter, recordings and transcripts are stored in Otter’s cloud, under Otter’s terms. With StenoAI, they’re ordinary files in local app storage on your device; your meeting content is never uploaded. (StenoAI does make some network calls unrelated to your content: update checks, first-run model downloads, and anonymous usage telemetry that’s on by default and can be switched off in Settings.)",
     },
     {
-      q: "Is StenoAI's accuracy comparable to Otter's?",
+      q: "Is StenoAI’s accuracy comparable to Otter’s?",
       a: "StenoAI uses Parakeet TDT v3 for live transcription and Whisper for the long tail of 99 languages, current open models that benchmark competitively with commercial cloud ASR. As with any transcription, quiet rooms and decent microphones matter more than the engine.",
     },
     {
-      q: "What's the catch? Why is StenoAI free?",
-      a: "There's no hosted infrastructure to pay for: your machine does the work. StenoAI is an open-source project (MIT), so you can read the code, build it yourself, and verify exactly what it does and doesn't send.",
+      q: "What’s the catch? Why is StenoAI free?",
+      a: "There’s no hosted infrastructure to pay for: your machine does the work. StenoAI is an open-source project (MIT), so you can read the code, build it yourself, and verify exactly what it does and doesn’t send.",
     },
   ],
 };
@@ -183,7 +183,7 @@ export const fireflies = {
   eyebrow: "StenoAI vs Fireflies.ai",
   h1: "Meeting notes without Fred in the room.",
   intro:
-    "Fireflies is a cloud conversation-intelligence platform: its bot (Fred) joins your calls, recordings are stored and analyzed in Fireflies' cloud, and plans are metered by storage and AI credits. StenoAI is the private counterpart: it records on your machine, transcribes and summarizes locally, and nothing is uploaded, metered, or credited.",
+    "Fireflies is a cloud conversation-intelligence platform: its bot (Fred) joins your calls, recordings are stored and analyzed in Fireflies’ cloud, and plans are metered by storage and AI credits. StenoAI is the private counterpart: it records on your machine, transcribes and summarizes locally, and nothing is uploaded, metered, or credited.",
   rows: [
     ROW("Price", STENO.price, {
       text: "Free (400 min storage, AI-credit caps); Pro $10/seat/month billed annually; Business $19; Enterprise $39",
@@ -196,7 +196,7 @@ export const fireflies = {
       tone: "bad",
     }),
     ROW("Audio leaves your device", STENO.audio, {
-      text: "Yes, stored in Fireflies' cloud",
+      text: "Yes, stored in Fireflies’ cloud",
       tone: "bad",
     }),
     ROW("Bot joins your meetings", STENO.bot, {
@@ -217,9 +217,9 @@ export const fireflies = {
   verdict:
     "Fireflies is built for teams that want a cloud archive of every call, analyzed and integrated with their CRM. If what you actually need is accurate, private notes from your own meetings, StenoAI does that with no bot, no credits, and no data leaving your machine.",
   chooseSteno: [
-    "A bot in the participant list isn't acceptable for your calls",
+    "A bot in the participant list isn’t acceptable for your calls",
     "Compliance or client confidentiality rules out cloud storage of recordings",
-    "You'd rather not budget storage minutes and AI credits; StenoAI has neither",
+    "You’d rather not budget storage minutes and AI credits; StenoAI has neither",
     "You want notes from in-person meetings, not just scheduled video calls",
   ],
   chooseThem: [
@@ -234,15 +234,15 @@ export const fireflies = {
     },
     {
       q: "Does StenoAI have AI credits or storage limits like Fireflies?",
-      a: "No. Everything runs on your own hardware, so nothing is metered. Unlimited meetings, unlimited length, unlimited summaries: the only resource used is your machine's disk and compute.",
+      a: "No. Everything runs on your own hardware, so nothing is metered. Unlimited meetings, unlimited length, unlimited summaries: the only resource used is your machine’s disk and compute.",
     },
     {
       q: "Can my team share notes with StenoAI?",
       a: "StenoAI is built around local-first, per-person notes; you can copy and share summaries wherever your team works. If your core need is a shared, always-on cloud archive with CRM automation, Fireflies is honestly the better match, at the cost of every call living in its cloud.",
     },
     {
-      q: "Is Fireflies' free plan enough?",
-      a: "Fireflies' free tier caps storage at 400 minutes per team, limits AI credits, and holds back downloads and several AI features. StenoAI's free tier is the entire product; it's the only tier.",
+      q: "Is Fireflies’ free plan enough?",
+      a: "Fireflies’ free tier caps storage at 400 minutes per team, limits AI credits, and holds back downloads and several AI features. StenoAI’s free tier is the entire product; it’s the only tier.",
     },
   ],
 };
