@@ -106,7 +106,7 @@ export const otter = {
   metaDescription:
     "Otter sends a bot into your meetings, stores recordings in the cloud, and caps free transcription at 300 minutes a month. StenoAI transcribes unlimited meetings entirely on your device: free, no bot, no account.",
   eyebrow: "StenoAI vs Otter.ai",
-  h1: "Everything Otter does, without the bot or the cloud.",
+  h1: "StenoAI and Otter compared.",
   intro:
     "Otter is the incumbent cloud transcription service: an OtterPilot bot joins your call as a participant, recordings live on Otter's servers, and every plan below Business has minute caps. StenoAI takes the opposite approach: it captures system audio on your own machine, transcribes and summarizes locally, and never uploads anything.",
   rows: [
