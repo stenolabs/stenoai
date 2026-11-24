@@ -1,7 +1,8 @@
 import * as React from 'react';
 import {
+  ChefHat,
   ChevronDown,
-  Blocks,
+  Cable,
   Globe,
   HelpCircle,
   Home as HomeIcon,
@@ -21,7 +22,6 @@ import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip
 import { useUpdateFolderIcon } from '@/hooks/useFolders';
 import { useOrgLogout, useOrgSession, useSharedNotesGate } from '@/hooks/useOrg';
 import { useCommandPalette } from '@/components/CommandPalette';
-import { AGENTS_COPY } from '@/lib/agentSkills';
 import { t } from '@/i18n';
 
 export interface SidebarMeeting {
@@ -173,6 +173,7 @@ export function Sidebar({
   const updateIcon = useUpdateFolderIcon();
 
   const isHomeActive = currentRoute === '/' || currentRoute === '';
+  const isCookbooksActive = currentRoute === '/cookbooks' || currentRoute.startsWith('/cookbooks?');
   const isAllMeetingsActive = currentRoute === '/meetings';
   // Match /chat as well as any /chat/<id> conversation route — the same Chat
   // tab item should stay highlighted when drilling into a session.
@@ -398,12 +399,34 @@ export function Sidebar({
 
           <button
             type="button"
-            className={cn('sb-row', currentRoute === '/agents' && 'active')}
-            aria-current={currentRoute === '/agents' ? 'page' : undefined}
-            onClick={() => navigate('/agents')}
+            className={cn('sb-row', currentRoute === '/connect' && 'active')}
+            aria-current={currentRoute === '/connect' ? 'page' : undefined}
+            onClick={() => navigate('/connect')}
           >
-            <Blocks className="size-[14px]" />
-            <span className="flex-1 truncate">{AGENTS_COPY.nav}</span>
+            <Cable className="size-[14px]" />
+            <span className="flex-1 truncate">{t('sidebar.connect')}</span>
+            <span
+              className="rounded-full px-1.5 py-px text-[10.5px] font-medium leading-[1.4]"
+              style={{ background: 'var(--surface-sunken)', color: 'var(--fg-2)' }}
+            >
+              {t('sidebar.new')}
+            </span>
+          </button>
+
+          <button
+            type="button"
+            className={cn('sb-row', isCookbooksActive && 'active')}
+            aria-current={isCookbooksActive ? 'page' : undefined}
+            onClick={() => navigate('/cookbooks')}
+          >
+            <ChefHat className="size-[14px]" />
+            <span className="flex-1 truncate">{t('sidebar.cookbooks')}</span>
+            <span
+              className="rounded-full px-1.5 py-px text-[10.5px] font-medium leading-[1.4]"
+              style={{ background: 'var(--surface-sunken)', color: 'var(--fg-2)' }}
+            >
+              {t('sidebar.new')}
+            </span>
           </button>
 
           {sharedNotes.enabled && (

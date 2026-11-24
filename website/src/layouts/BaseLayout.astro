@@ -41,7 +41,7 @@ const allStructuredData = isHome ? [websiteJsonLd, softwareApplicationJsonLd, ..
 ---
 
 <!doctype html>
-<html lang="en">
+<html lang="en" class="dark">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/stenoai-logo.svg" />
@@ -96,17 +96,9 @@ const allStructuredData = isHome ? [websiteJsonLd, softwareApplicationJsonLd, ..
       <script type="application/ld+json" set:html={JSON.stringify(data).replace(/</g, '\\u003c')} />
     ))}
 
-    <!-- No-flash dark mode: apply class before first paint -->
-    <script is:inline>
-      (function() {
-        var stored;
-        try { stored = localStorage.getItem('theme'); } catch (_) {}
-        var prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-        if (stored === 'dark' || (!stored && prefersDark)) {
-          document.documentElement.classList.add('dark');
-        }
-      })();
-    </script>
+    <slot name="head" />
+    <meta name="theme-color" content="#121311" />
+    <meta name="color-scheme" content="dark" />
   </head>
   <body>
     <a class="skip-link" href="#main-content">Skip to content</a>

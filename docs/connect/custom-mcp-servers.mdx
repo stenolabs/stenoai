@@ -1,0 +1,162 @@
+---
+title: "Custom MCP servers"
+description: "Add any MCP server to Steno, by URL or as a command on this computer, including n8n, Zapier and Make workflows."
+icon: "server"
+---
+
+Beyond the built-in apps, Steno can send approved actions to any [MCP](https://modelcontextprotocol.io) server. Add one by its URL, or run one as a command on this computer. Its tools are then used for [suggested actions](/connect/actions) after each note and in [chat](/features/ask-your-meetings#take-actions-in-connected-apps).
+
+As with every action, nothing that changes data runs until you approve it.
+
+## Add a server
+
+<Steps>
+  <Step title="Open the dialog">
+    Click **Connect** in the sidebar. Under **Actions**, find **Custom MCP server** and click **Add**.
+  </Step>
+  <Step title="Choose the server type">
+    Pick **Server URL** for a server on the internet or your network, or **Command on this computer** for a program you run locally.
+  </Step>
+  <Step title="Fill in the details">
+    Give it a **Name**, then follow the steps for your server type below.
+  </Step>
+</Steps>
+
+You can save up to 20 connections. To change a server's details, disconnect it in **Settings → Connectors** and add it again.
+
+## By URL
+
+Steno connects over Streamable HTTP. If a service offers both an SSE URL and a Streamable HTTP URL, use the Streamable HTTP one.
+
+| Field | What to enter |
+|-------|---------------|
+| **Name** | A label you will recognise, such as "Team n8n". |
+| **Server URL** | The server's address. Use `https`, or `http` only for a server on this computer or your local network. |
+| **Sign-in** | How Steno authenticates. See below. |
+
+Choose a **Sign-in** option:
+
+- **Bearer token** (the default): paste the token in **Token**. Steno sends it as `Authorization: Bearer <token>`.
+- **Custom header**: enter a **Header name** such as `X-Api-Key`, and the value in **Token**.
+- **Sign in with OAuth**: your browser opens to sign in. Steno never sees your password.
+- **None**: for servers that need no authentication, such as one on your own network.
+
+Tokens are kept in your system's secure storage. Click **Connect** to save. Steno then lists the server's tools.
+
+If the server is on the internet, the dialog reminds you that approved actions are sent to that endpoint, so that data leaves your device.
+
+### Example: n8n
+
+<Steps>
+  <Step title="Create the trigger">
+    In n8n, add an **MCP Server Trigger** node to a workflow and set its authentication to bearer auth.
+  </Step>
+  <Step title="Add tools">
+    Connect the tool nodes you want Steno to use, such as a Slack or Google Sheets node, then activate the workflow.
+  </Step>
+  <Step title="Add it to Steno">
+    Copy the trigger's **production** URL. In Steno, paste it in **Server URL**, choose **Bearer token** and paste the same token you set in n8n.
+  </Step>
+</Steps>
+
+### Example: Zapier
+
+<Steps>
+  <Step title="Set up Zapier MCP">
+    In [Zapier MCP](https://zapier.com/mcp), create a server and add the actions you want, such as "Send Channel Message in Slack".
+  </Step>
+  <Step title="Copy the connection details">
+    Copy the server URL Zapier gives you. If Zapier also shows a token or API key, copy that too.
+  </Step>
+  <Step title="Add it to Steno">
+    Paste the URL in **Server URL**. Choose **Bearer token** and paste the token, or **Sign in with OAuth** if Zapier offers it. If the URL already includes your key, choose **None**.
+  </Step>
+</Steps>
+
+### Example: Make
+
+<Steps>
+  <Step title="Set up Make's MCP server">
+    In Make, set up its MCP server and choose which scenarios it exposes as tools. Scenarios need to be active and set to run on demand.
+  </Step>
+  <Step title="Copy the URL">
+    Copy the Streamable HTTP URL and any token Make shows you.
+  </Step>
+  <Step title="Add it to Steno">
+    Paste the URL in **Server URL** and choose the matching **Sign-in** option.
+  </Step>
+</Steps>
+
+<Note>
+Zapier and Make change their setup screens from time to time. If the steps above don't match what you see, check their own MCP documentation for the server URL and authentication method.
+</Note>
+
+## Command on this computer
+
+Use this for MCP servers that run as a local program over stdio, such as ones started with `npx` or `uvx`.
+
+<Warning>
+This runs a program on this computer with your permissions. Only add commands you trust.
+</Warning>
+
+| Field | What to enter |
+|-------|---------------|
+| **Name** | A label you will recognise, such as "Notes server". |
+| **Command** | The command and its arguments, as you would type them in a terminal. Quote arguments that contain spaces. |
+| **Environment variables (optional)** | One `KEY=value` per line. Values are kept in your system's secure storage. |
+
+Click **Add**. Steno shows a confirmation dialog with the exact command and the names of any environment variables. Click **Run on this computer** to save it, or **Cancel**.
+
+### Examples
+
+<CodeGroup>
+```text Files (Node)
+npx -y @modelcontextprotocol/server-filesystem ~/Documents
+```
+
+```text Web fetch (Python)
+uvx mcp-server-fetch
+```
+</CodeGroup>
+
+The first gives Steno tools for reading and writing files in `~/Documents`. The second lets it fetch web pages. `npx` needs [Node.js](https://nodejs.org); `uvx` needs [uv](https://docs.astral.sh/uv/).
+
+A server that needs an API key usually reads it from an environment variable. Add it under **Environment variables**, for example:
+
+```text
+API_KEY=your-key-here
+```
+
+### How the command runs
+
+- The command is not run through a shell, so pipes, globs and `$VARIABLES` don't work. A leading `~` is expanded to your home folder.
+- It starts in your home folder with a minimal environment plus the variables you set.
+- Steno starts it when it lists or uses the server's tools, and stops it after 10 minutes of inactivity. It starts again the next time it is needed.
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Steno couldn't find that command">
+    The program isn't installed, or Steno can't find it on your `PATH`. Check that it runs in a terminal (for example, `npx --version` or `uvx --version`). If you need to install it, get [Node.js](https://nodejs.org) for `npx` or [uv](https://docs.astral.sh/uv/) for `uvx`.
+
+    Steno reads the `PATH` from your login shell and also checks common folders such as `/opt/homebrew/bin`, `/usr/local/bin` and `~/.local/bin`. If your tool lives somewhere else, use its full path in **Command** (run `which npx` in a terminal to find it), or set `PATH=...` under **Environment variables**.
+  </Accordion>
+  <Accordion title="The command didn't respond in time">
+    The first run of `npx` or `uvx` may download the server, which can be slow. Steno waits up to 60 seconds for the server to start. Try again once the download has finished, or run the command once in a terminal first.
+  </Accordion>
+  <Accordion title="The command stopped or couldn't start">
+    Run the same command in a terminal to see its error. Common causes are a missing argument, a path that doesn't exist, or a missing API key.
+  </Accordion>
+  <Accordion title="Can't reach this endpoint">
+    Check the URL, and that the server or workflow is running. For n8n, use the production URL and make sure the workflow is active.
+  </Accordion>
+  <Accordion title="Sign in again to use this connection">
+    The token expired or was revoked. Click **Sign in** on the connection in **Settings → Connectors**, or disconnect and add the server again with a new token.
+  </Accordion>
+  <Accordion title="No actions available">
+    The server has no tools that change anything, or none Steno can use. Click **Refresh** on the connection after adding tools to the server.
+  </Accordion>
+  <Accordion title="Your organisation does not allow commands on this computer">
+    Your organisation's policy blocks local commands or limits which servers you can add. Ask your admin.
+  </Accordion>
+</AccordionGroup>

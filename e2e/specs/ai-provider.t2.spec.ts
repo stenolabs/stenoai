@@ -157,3 +157,56 @@ test('cloud API key is stored encrypted (safeStorage) in the temp dir, not confi
   // ...and the plaintext key never appears in config.json.
   expect(JSON.stringify(readUserConfig(userDataDir))).not.toContain('sk-e2e-secret-123');
 });
+
+test('OpenRouter is a first-class cloud provider: config keys, its own default model, encrypted key', async ({
+  launchApp,
+  userDataDir,
+}) => {
+  test.setTimeout(90_000);
+  const realDirBefore = fileSig(realUserDataDir());
+  const { app, page } = await launchApp();
+
+  await page.evaluate(() => (window as StenoWindow).stenoai.ai.setProvider('cloud'));
+  const set = await page.evaluate(() => (window as StenoWindow).stenoai.ai.setCloudProvider('openrouter'));
+  expect(set.success).toBe(true);
+  await expect.poll(() => readUserConfig(userDataDir).cloud_provider).toBe('openrouter');
+
+  // First use falls back to OpenRouter's own default, not another provider's.
+  const fresh = await getProvider(page);
+  expect(fresh).toMatchObject({
+    ai_provider: 'cloud',
+    cloud_provider: 'openrouter',
+    cloud_model: 'google/gemini-2.5-flash',
+  });
+
+  // A chosen model is remembered per provider (vendor/model ids pass through).
+  await page.evaluate(() => (window as StenoWindow).stenoai.ai.setCloudModel('anthropic/claude-sonnet-4.5'));
+  await expect
+    .poll(() => (readUserConfig(userDataDir).cloud_models as Record<string, string> | undefined)?.openrouter)
+    .toBe('anthropic/claude-sonnet-4.5');
+  await page.evaluate(() => (window as StenoWindow).stenoai.ai.setCloudProvider('openai'));
+  expect((await getProvider(page)).cloud_model).toBe('gpt-4o-mini');
+  await page.evaluate(() => (window as StenoWindow).stenoai.ai.setCloudProvider('openrouter'));
+  expect((await getProvider(page)).cloud_model).toBe('anthropic/claude-sonnet-4.5');
+
+  // Unknown providers are still refused.
+  const bad = await page.evaluate(() => (window as StenoWindow).stenoai.ai.setCloudProvider('not-a-provider'));
+  expect(bad.success).toBe(false);
+  expect(readUserConfig(userDataDir).cloud_provider).toBe('openrouter');
+
+  // The key goes through the same encrypted store as every other provider.
+  const encryptionAvailable = await app.evaluate(({ safeStorage }) => safeStorage.isEncryptionAvailable());
+  if (encryptionAvailable) {
+    await page.evaluate(() => (window as StenoWindow).stenoai.ai.setCloudApiKey('sk-or-v1-e2e-secret-456'));
+    await expect
+      .poll(() => existsSync(path.join(userDataDir, '.cloud-api-key')), { timeout: 10_000 })
+      .toBe(true);
+    await expect.poll(async () => (await getProvider(page)).cloud_api_key_set).toBe(true);
+    expect(JSON.stringify(readUserConfig(userDataDir))).not.toContain('sk-or-v1-e2e-secret-456');
+  } else {
+    // eslint-disable-next-line no-console
+    console.warn('[t2] encrypted-key half SKIPPED: safeStorage unavailable on this runner.');
+  }
+
+  expect(fileSig(realUserDataDir())).toBe(realDirBefore);
+});

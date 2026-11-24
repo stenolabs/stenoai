@@ -555,6 +555,17 @@ export function useRecordingEvents() {
  */
 export function useRecordingProcessingEffects() {
   const qc = useQueryClient();
+  // Instant transcript: an early note was written mid-job. Refresh lists and
+  // drop a stale stream entry even when that note's detail isn't mounted, so
+  // opening it later shows the saved note rather than a half-finished stream.
+  React.useEffect(
+    () =>
+      ipc().on.noteUpdated((data) => {
+        if (data.summaryFile) streamCache.delete(data.summaryFile);
+        void qc.invalidateQueries({ queryKey: meetingsKeys.all });
+      }),
+    [qc]
+  );
   React.useEffect(() => {
     const off = ipc().on.processingComplete((data) => {
       if (data.success && data.meetingData?.session_info.summary_file) {
@@ -581,6 +592,19 @@ export function useRecordingProcessingEffects() {
         const isFailedNote =
           Boolean(data.transcriptionFailed) ||
           Boolean(newMeeting.session_info.transcription_failed);
+        // Suggested actions after a note is generated. Main gates it (any
+        // usable connection, the auto-suggest setting, org policy, and never
+        // over cards the note already has); this only proposes, nothing runs.
+        if (!isFailedNote && data.notesGenerated !== false) {
+          void ipc()
+            .actions.suggest(newSummaryFile, { auto: true })
+            .then((res) => {
+              if (res.success && !res.skipped) {
+                void qc.invalidateQueries({ queryKey: ['actions', 'cards'] });
+              }
+            })
+            .catch(() => {});
+        }
         if (body && !isFailedNote) {
           ipc()
             .org.tryAutoBackup({

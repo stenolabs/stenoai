@@ -322,6 +322,14 @@ const ANALYTICS_MODEL_ALLOWLIST = new Set([
   'claude-3-5-sonnet-latest',
   'claude-3-7-sonnet-latest',
   'claude-haiku-4-5-20251001',
+  // OpenRouter recommended picks (OPENROUTER_RECOMMENDED_MODELS in src/cloud_providers.py)
+  'google/gemini-2.5-flash',
+  'openai/gpt-4o-mini',
+  'anthropic/claude-haiku-4.5',
+  'openai/gpt-5-mini',
+  'anthropic/claude-sonnet-4.5',
+  'google/gemini-2.5-pro',
+  'anthropic/claude-opus-4.1',
   // Bedrock dropdown (SUPPORTED_BEDROCK_MODELS in src/config.py)
   'anthropic.claude-sonnet-4-5-20250929-v2:0',
   'anthropic.claude-haiku-4-5-20251001-v1:0',

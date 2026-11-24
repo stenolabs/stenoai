@@ -84,7 +84,7 @@ test('Copy notes copies the open report, and the Standard note when none is open
 
   // Switching back to Summary (Standard) restores the structured-note copy.
   await page.getByTestId('note-view-menu-trigger').click();
-  await menu.getByRole('button', { name: 'Summary' }).click();
+  await menu.getByRole('button', { name: 'Summary', exact: true }).click();
   await (await openShareMenu(page)).getByRole('button', { name: 'Copy notes' }).click();
   writes = await clipboardWrites(page);
   expect(writes).toHaveLength(3);

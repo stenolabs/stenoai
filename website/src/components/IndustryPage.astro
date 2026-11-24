@@ -11,6 +11,8 @@ const others = ALL.filter((c) => c.slug !== data.slug);
 
 // Sections are numbered in render order, skipping any the sector doesn't have.
 const order = [
+  data.film && "film",
+  data.loop && "app",
   data.useCases && "use-cases",
   data.whyNow && "why-now",
   "cloud",
@@ -37,8 +39,56 @@ const num = (id) => String(order.indexOf(id) + 1).padStart(2, "0");
       </div>
       <div class="industry-hero-chips"><span>Your device or your infrastructure</span><span>No meeting bot</span><span>Open source</span></div>
     </div>
-    <img class="industry-hero-image" src={`/images/enterprise/${data.image}.webp`} alt={data.imageAlt} width="1200" height="800" fetchpriority="high" />
+    {data.heroVideo ? (
+      <div class="industry-hero-media" role="img" aria-label={data.imageAlt}>
+        <video class="industry-hero-image" muted playsinline preload="none" poster={data.heroVideo.poster} aria-hidden="true" tabindex="-1" disablepictureinpicture disableremoteplayback data-hero-take style={data.heroVideo.position ? `object-position: ${data.heroVideo.position}` : undefined}>
+          <source src={data.heroVideo.src} type="video/mp4" />
+        </video>
+        <span class="mega-tag" aria-hidden="true"><span class="mission-status-dot"></span> Illustrative scene</span>
+      </div>
+    ) : (
+      <img class="industry-hero-image" src={`/images/enterprise/${data.image}.webp`} alt={data.imageAlt} width="1200" height="800" fetchpriority="high" />
+    )}
   </section>
+
+  {data.film && (
+    <section id="film" class="mission-section sector-section sector-film" aria-labelledby="film-heading">
+      <div class="mission-wrap">
+        <div class="mission-section-top"><p class="mission-eyebrow">{num("film")} / The film</p></div>
+        <div class="sector-film-grid">
+          <div>
+            <h2 id="film-heading">See it in the room.</h2>
+            <p>A short film on how StenoAI keeps {data.name.toLowerCase()} conversations on hardware you control.</p>
+          </div>
+          <video class="sector-film-video" controls playsinline preload="none" poster={data.film.poster} aria-label={data.film.title} width="720" height="1280">
+            <source src={data.film.src} type="video/mp4" />
+            <track kind="captions" srclang="en" label="English" src={data.film.src.replace(/\.mp4$/, ".vtt")} />
+          </video>
+        </div>
+      </div>
+    </section>
+  )}
+
+  {data.loop && (
+    <section id="app" class="mission-section sector-section sector-loop" aria-labelledby="app-heading">
+      <div class="mission-wrap">
+        <div class="mission-section-top"><p class="mission-eyebrow">{num("app")} / In the app</p></div>
+        <div class="sector-loop-grid">
+          <div>
+            <h2 id="app-heading">{data.loop.heading}</h2>
+            <p>{data.loop.body}</p>
+            <p class="mission-eyebrow sector-loop-label">Illustrative product demo</p>
+          </div>
+          <div class="sector-loop-media">
+            <video class="sector-loop-video" muted loop playsinline preload="none" poster={data.loop.poster} aria-label="Illustrative product demo" disablepictureinpicture disableremoteplayback data-loop>
+              <source src={data.loop.src} type="video/mp4" />
+            </video>
+            <button type="button" class="mission-text-link sector-loop-toggle" hidden data-loop-toggle>Pause</button>
+          </div>
+        </div>
+      </div>
+    </section>
+  )}
 
   {data.useCases && (
     <section id="use-cases" class="mission-section sector-section" aria-labelledby="use-cases-heading">
@@ -243,3 +293,43 @@ const num = (id) => String(order.indexOf(id) + 1).padStart(2, "0");
 </main>
 
 <Footer />
+
+<script>
+  // Hero take: plays once when in view and holds at 4.9 s (the picture stops moving within 5 s), never loops.
+  // Poster only under reduced motion, data saver, or if the browser blocks play(). Nothing is fetched before play().
+  // Loop: plays while in view; the toggle is the WCAG 2.2.2 pause control.
+  const quiet = window.matchMedia('(prefers-reduced-motion: reduce)').matches || !!navigator.connection?.saveData;
+  const hero = document.querySelector<HTMLVideoElement>('[data-hero-take]');
+  if (hero && !quiet && 'IntersectionObserver' in window) {
+    const HOLD = 4.9;
+    let done = false;
+    const stop = () => { done = true; hero.pause(); };
+    const watch = () => hero.requestVideoFrameCallback?.((_, m) => (m.mediaTime >= HOLD ? stop() : watch()));
+    hero.addEventListener('play', watch);
+    hero.addEventListener('timeupdate', () => { if (hero.currentTime >= HOLD) stop(); }); // browsers without requestVideoFrameCallback
+    new IntersectionObserver((entries) => {
+      if (entries[entries.length - 1].isIntersecting) { if (!done) hero.play().catch(() => {}); }
+      else hero.pause();
+    }, { threshold: 0.25 }).observe(hero);
+  }
+  const loop = document.querySelector<HTMLVideoElement>('[data-loop]');
+  const toggle = document.querySelector<HTMLButtonElement>('[data-loop-toggle]');
+  if (loop && toggle) {
+    let held = quiet; // user (or reduced motion, data saver) holds it paused
+    const sync = () => { toggle.textContent = loop.paused ? 'Play' : 'Pause'; };
+    loop.addEventListener('play', sync);
+    loop.addEventListener('pause', sync);
+    sync();
+    toggle.hidden = false;
+    toggle.addEventListener('click', () => {
+      held = !loop.paused;
+      if (held) loop.pause(); else loop.play().catch(() => {});
+    });
+    if ('IntersectionObserver' in window) {
+      new IntersectionObserver((entries) => {
+        if (entries[entries.length - 1].isIntersecting && !held) loop.play().catch(() => {});
+        else loop.pause();
+      }, { threshold: 0.25 }).observe(loop);
+    }
+  }
+</script>

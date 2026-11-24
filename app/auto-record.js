@@ -7,7 +7,7 @@
 // Electron. main.js owns the wiring: handleMicEvent decides, requestAutoRecord
 // starts, and createAutoStarts below ties each toast to its own recording.
 
-const fs = require('fs');
+const { readConfigFlag } = require('./config-flags');
 
 // How long an unattended start may stay pending before it is dropped. The
 // renderer starts the recording within a second or two; a start that never
@@ -16,19 +16,12 @@ const fs = require('fs');
 const ANNOUNCE_WINDOW_MS = 30_000;
 
 /**
- * Sync read of the setting from config.json; default OFF. Same pattern as
- * loadAutoDetectMeetingsEnabled in main.js: a JSON read on the detection path
- * instead of spawning Python for a boolean. Only a real `true` turns it on, so
- * a hand-edited "true" string or a missing or unreadable file reads as off.
+ * Sync read of the setting from config.json; default OFF (config-flags.js).
+ * Only a real `true` turns it on, so a hand-edited "true" string or a missing
+ * or unreadable file reads as off.
  */
 function loadAutoRecordMeetingsEnabled(configPath) {
-  try {
-    if (!fs.existsSync(configPath)) return false;
-    const cfg = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
-    return cfg.auto_record_meetings_enabled === true;
-  } catch (_) {
-    return false;
-  }
+  return readConfigFlag(configPath, 'auto_record_meetings_enabled');
 }
 
 /**

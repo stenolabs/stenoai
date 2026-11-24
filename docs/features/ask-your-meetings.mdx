@@ -1,74 +1,107 @@
 ---
-title: "Ask your meetings"
-description: "Ask about a live meeting, saved notes, or general topics using your configured AI provider."
+title: "Chat"
+sidebarTitle: "Chat"
+description: "Ask about one meeting, all your notes, or anything at all. Chat shows its steps, draws charts, runs recipes, and can take actions in your connected apps with your approval."
+icon: "comments"
 ---
 
-Use the ask bar while recording or when viewing a saved note. Questions use your configured AI provider, and follow-up questions include recent conversation history for the selected context.
+Chat answers questions about your meetings using your configured AI provider. Open **Chat** in the sidebar to ask across your notes, or use the ask bar at the bottom of a note to ask about that meeting.
 
-## How to use it
+## Ask a question
 
-1. Open a saved note from the sidebar
-2. Click the **Ask** bar at the bottom of the pane
-3. Type your question and press Return
+<Steps>
+  <Step title="Open chat">
+    Click **Chat** in the sidebar, or click the ask bar at the bottom of an open note.
+  </Step>
+  <Step title="Pick the context">
+    Use the **Context** menu to choose which meetings the question is about. See below.
+  </Step>
+  <Step title="Ask">
+    Type your question and press Return. Follow-up questions keep the recent conversation in mind.
+  </Step>
+</Steps>
 
-General questions work with any context, even before anyone speaks or when a folder is empty. The **Context** menu controls which meeting information accompanies your question:
+Past chats are listed under **Recents** on the Chat page.
 
-- **This meeting** uses the saved note, or a snapshot of finalized speech during recording.
-- **All notes** or a folder uses a bounded selection of saved meeting summaries.
-- **No meeting context** answers without attaching meeting content or conversation turns from another context.
-- **Shared notes**, when signed in, queries your organisation's shared notes.
+## Choose the context
 
-Answers should distinguish general knowledge from what was said in the meeting. When you ask about a meeting without enough evidence, the assistant should say what is missing.
+The **Context** menu controls which meeting information goes with your question:
+
+| Context | What chat uses |
+|---------|----------------|
+| **This meeting** | The open note: summary, topics, key points, action items, your notes and the transcript. While recording, the speech transcribed so far. Available in a note's ask bar. |
+| **All notes** | The default. A selection of your recent saved notes. Very old notes may be left out, so open a note to ask about it directly. |
+| A space | Notes in that space only. |
+| **Shared notes** | Your organisation's shared notes. Shown only when you're signed in to an organisation. |
+| **No context** | Nothing from your meetings. Use it for general questions. |
+
+Answers should separate general knowledge from what was said in your meetings. If there isn't enough evidence in your notes, chat should say what's missing.
 
 ## During recording
 
-You can chat as soon as recording starts, including with Whisper or before speech has been transcribed. Keep **Context: This meeting** selected to include available meeting evidence alongside general questions.
+You can chat as soon as recording starts. Keep **This meeting** selected to ask about what has been said so far.
 
-Parakeet adds finalized speech as the meeting progresses. Whisper transcribes after recording stops, so its current recording has no live transcript to reference. New speech becomes available to the next question; it does not change an answer already being generated.
+With Parakeet, transcribed speech is added as the meeting goes on; new speech is available to your next question. Whisper transcribes after you stop, so during a Whisper recording chat has no live transcript to read.
 
-Recording continues while you chat. Pausing or stopping recording does not discard an answer in progress, and the conversation stays attached to the saved note. You can also chat with other notes or ask general questions when live transcription is unavailable.
+Recording continues while you chat, and the conversation stays attached to the saved note.
+
+## See what chat is doing
+
+While chat works, it shows **Thinking** with a timer, and a line for each step it takes, such as "Read 12 notes", "Searched your notes" or "Searched Linear". The steps stay visible above the answer once it arrives, so you can see what it was based on.
+
+## Use a recipe
+
+On the **Chat** page, type `/` at the start of the message box to open your recipes, such as **Write weekly recap** or **Decision log**. Keep typing to filter, use the arrow keys to choose, and press Return or Tab. The recipe fills the message box; edit it if you like, then send.
+
+See [Cookbooks and recipes](/features/cookbooks) to browse recipes or write your own.
+
+## Charts
+
+Ask for a chart and chat draws one in the answer, for example "Chart how many meetings I had with each customer this month".
+
+- **Types**: bar (including stacked and horizontal), line, area, pie, donut, scatter, radar, and table.
+- **From your notes**: chat only charts numbers that appear in your notes or can be counted from them. It doesn't invent values or fill gaps with zeros.
+- **From your own numbers**: numbers you give in the chat are charted as given.
+- **General knowledge**: for questions not about your notes, chat may chart widely known public figures. It says in the title or text that these values are approximate and the period they cover.
+
+Under each chart, click **View data** to see the numbers, **Copy data** to copy them as CSV, or **Copy as image**.
+
+## Take actions in connected apps
+
+If you have [connected apps](/connect/actions), you can ask chat to act on them, for example "Create a Linear issue for the pricing follow-up".
+
+- Chat can look things up in a connected app without asking, when the app marks the tool as read-only.
+- Anything that creates or changes something appears as a card. Review or edit it, then click **Approve** to send it, or **Dismiss**. Nothing that writes runs without your approval.
+
+Taking actions needs a model that can use tools reliably:
+
+- **Cloud providers**: OpenAI, Anthropic, AWS Bedrock, OpenRouter and custom OpenAI-compatible endpoints.
+- **Local or Private Server models**: Qwen 3 and Qwen 3.5, gpt-oss, Gemma 4 12B and 27B, Llama 3.1 and 3.3, and Mistral Small.
+
+Other models, including the default Gemma 4 E2B, answer in plain text. If you ask such a model to act, chat shows a notice that the model can't use your connected apps, with a link to **Open AI settings**. Organisation-managed AI also answers in plain text.
 
 ## What you can ask
 
-The ask bar is useful for questions you would ask a colleague who was in the meeting:
-
 - "What decisions were made?"
-- "What did we agree to do about the pricing change?"
 - "Who is responsible for the API migration?"
+- "What did I promise people this week?"
 - "Summarize this in three bullet points."
-- "What were the concerns raised about the timeline?"
-- "Was there anything about [client name]?"
+- "Chart the action items per person from last week's meetings."
 
-Questions that reference specific details from the meeting work best. Vague questions ("what happened?") return less useful answers than specific ones ("what was the outcome of the budget discussion?").
-
-## What Steno reads
-
-The selected context determines what Steno sends to your AI provider:
-
-| Context | Content |
-|-------|---------|
-| This meeting, while recording | A snapshot of finalized speech, including earlier transcript when continuing a saved note |
-| This meeting, saved note | Summary, topics, key points, action items, personal notes, and transcript |
-| All notes or a folder | A bounded selection of recent saved summaries, titles, and key points |
-| Shared notes | Your organisation's shared-note content |
-| No meeting context | The question and recent conversation turns with this same selection, without meeting content |
-
-Recent follow-ups are bounded and kept within the selected scope. Long contexts are truncated; local and remote Ollama budgets depend on the configured model. Older meetings may fall outside the All notes budget, so open a specific note to ask about it directly.
+Specific questions work better than vague ones.
 
 ## Privacy
 
-Chat follows your existing AI-provider setting. With local Ollama, questions stay on your device. A configured remote, cloud, or organisation provider receives the question and selected context. Selecting **No meeting context** excludes meeting content and conversation history from other contexts.
+Chat follows your **AI provider** setting. With a local model, questions and meeting content stay on your device. A Private Server, cloud or organisation provider receives your question and the context you selected, and any notes chat reads while answering. **No context** sends no meeting content.
+
+Approved actions are sent to the app you approved them for. See [Actions → Privacy](/connect/actions#privacy).
 
 ---
 
-<Accordion title="Can I ask questions across multiple meetings?">
-Yes. Alongside the inline ask bar for a single note, Steno supports library-wide chat across all of your meetings, so you can ask questions that span your whole meeting history.
-</Accordion>
-
 <Accordion title="The answers are not very accurate -- what should I try?">
-Larger models produce better answers. In **Settings → AI**, switch to `qwen3.5:9b` or `gemma4:12b-it-qat`. Also check that the full transcript was saved -- if transcription failed or was skipped, the model only has the summary to work from.
+Larger models produce better answers. In **Settings → AI**, switch to `qwen3.5:9b` or `gemma4:12b-it-qat`, which can also take actions. Also check that the full transcript was saved -- if transcription failed, the model only has the summary to work from.
 </Accordion>
 
 <Accordion title="Can I ask in a language other than English?">
-Yes. The ask bar passes your question directly to the language model, which supports multilingual input. Results may vary by model and language.
+Yes. Chat passes your question to the language model, which supports many languages. Results vary by model and language.
 </Accordion>

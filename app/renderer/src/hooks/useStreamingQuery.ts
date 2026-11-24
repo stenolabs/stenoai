@@ -1,8 +1,16 @@
 import * as React from 'react';
-import { ipc, type ChatRequest } from '@/lib/ipc';
+import { ipc, type ActionCard, type ChatRequest, type ChatToolStep } from '@/lib/ipc';
 import { GENERAL_SCOPE, ORG_SHARED_SCOPE } from '@/components/FolderScopePicker';
 import { buildOrgChatPayload } from '@/lib/orgChat';
 import { CHART_INSTRUCTIONS } from '@/lib/chatChart';
+import { aiErrorCode, type AiErrorCode } from '@/lib/aiError';
+
+/** Add a step, or replace one with the same id (a repeated context step). */
+function upsertStep(steps: ChatToolStep[] | undefined, step: ChatToolStep): ChatToolStep[] {
+  const list = steps ?? [];
+  const at = list.findIndex((s) => s.id === step.id);
+  return at === -1 ? [...list, step] : list.map((s, i) => (i === at ? step : s));
+}
 
 export type StreamStatus = 'streaming' | 'done' | 'error';
 
@@ -10,6 +18,21 @@ export interface StreamState {
   text: string;
   status: StreamStatus;
   error: string | null;
+  /** Why it failed, when the backend classified it (lib/aiError.ts). */
+  errorCode?: AiErrorCode;
+  /** Chat-agent turns: read tools it ran, and action cards it paused on. */
+  steps?: ChatToolStep[];
+  cards?: ActionCard[];
+}
+
+/** Add or replace an action card by id, keeping the order it first arrived in. */
+export function upsertCard(cards: ActionCard[] | undefined, card: ActionCard): ActionCard[] {
+  const list = cards ?? [];
+  const i = list.findIndex((c) => c.id === card.id);
+  if (i === -1) return [...list, card];
+  const next = list.slice();
+  next[i] = card;
+  return next;
 }
 
 function newId() {
@@ -59,11 +82,11 @@ export function useStreamingQuery() {
         });
         detachStream(id);
       },
-      onError: (err) => {
+      onError: (err, errorCode) => {
         setStreams((prev) => {
           const current = prev[id];
           if (!current) return prev;
-          return { ...prev, [id]: { ...current, status: 'error', error: err.message } };
+          return { ...prev, [id]: { ...current, status: 'error', error: err.message, errorCode: aiErrorCode(errorCode) ?? undefined } };
         });
         detachStream(id);
       },
@@ -85,6 +108,7 @@ export function useStreamingQuery() {
     question: string,
     folderId?: string | null,
     history?: Array<{ role: 'user' | 'assistant'; content: string }>,
+    sessionId?: string,
   ): string => {
     const id = newId();
     setStreams((prev) => ({
@@ -101,6 +125,20 @@ export function useStreamingQuery() {
           return { ...prev, [id]: { ...current, text: current.text + chunk } };
         });
       },
+      onToolStep: (step) => {
+        setStreams((prev) => {
+          const current = prev[id];
+          if (!current) return prev;
+          return { ...prev, [id]: { ...current, steps: upsertStep(current.steps, step) } };
+        });
+      },
+      onActionCard: (card) => {
+        setStreams((prev) => {
+          const current = prev[id];
+          if (!current) return prev;
+          return { ...prev, [id]: { ...current, cards: upsertCard(current.cards, card) } };
+        });
+      },
       onDone: () => {
         setStreams((prev) => {
           const current = prev[id];
@@ -109,11 +147,11 @@ export function useStreamingQuery() {
         });
         detachStream(id);
       },
-      onError: (err) => {
+      onError: (err, errorCode) => {
         setStreams((prev) => {
           const current = prev[id];
           if (!current) return prev;
-          return { ...prev, [id]: { ...current, status: 'error', error: err.message } };
+          return { ...prev, [id]: { ...current, status: 'error', error: err.message, errorCode: aiErrorCode(errorCode) ?? undefined } };
         });
         detachStream(id);
       },
@@ -144,7 +182,13 @@ export function useStreamingQuery() {
         }
       })();
     } else {
-      ipc().query.chatContext(id, { scope: folderId === GENERAL_SCOPE ? 'general' : 'notes', question, folder: folderId === GENERAL_SCOPE ? undefined : folderId, history: history ?? [] });
+      ipc().query.chatContext(id, {
+        scope: folderId === GENERAL_SCOPE ? 'general' : 'notes',
+        question,
+        folder: folderId === GENERAL_SCOPE ? undefined : folderId,
+        history: history ?? [],
+        ...(sessionId ? { sessionId } : {}),
+      });
     }
     return id;
   }, []);
@@ -180,11 +224,11 @@ export function useStreamingQuery() {
         });
         detachStream(id);
       },
-      onError: (err) => {
+      onError: (err, errorCode) => {
         setStreams((prev) => {
           const current = prev[id];
           if (!current) return prev;
-          return { ...prev, [id]: { ...current, status: 'error', error: err.message } };
+          return { ...prev, [id]: { ...current, status: 'error', error: err.message, errorCode: aiErrorCode(errorCode) ?? undefined } };
         });
         detachStream(id);
       },
@@ -210,10 +254,10 @@ export function useStreamingQuery() {
     let finished = false;
     setStreams((prev) => ({ ...prev, [id]: result }));
     activeRef.current.add(id);
-    const finish = (status: StreamStatus, error: string | null = null) => {
+    const finish = (status: StreamStatus, error: string | null = null, errorCode?: AiErrorCode) => {
       if (finished) return;
       finished = true;
-      result = { ...result, status, error };
+      result = { ...result, status, error, ...(errorCode ? { errorCode } : {}) };
       setStreams((prev) => ({ ...prev, [id]: result }));
       completionsRef.current.delete(id);
       detachStream(id);
@@ -226,8 +270,20 @@ export function useStreamingQuery() {
         const snapshot = result;
         setStreams((prev) => ({ ...prev, [id]: snapshot }));
       },
+      onToolStep: (step) => {
+        if (finished) return;
+        result = { ...result, steps: upsertStep(result.steps, step) };
+        const snapshot = result;
+        setStreams((prev) => ({ ...prev, [id]: snapshot }));
+      },
+      // Cards keep updating after the turn ends (an approve that finishes late).
+      onActionCard: (card) => {
+        result = { ...result, cards: upsertCard(result.cards, card) };
+        const snapshot = result;
+        setStreams((prev) => (prev[id] ? { ...prev, [id]: snapshot } : prev));
+      },
       onDone: () => finish('done'),
-      onError: (error) => finish('error', error.message),
+      onError: (error, errorCode) => finish('error', error.message, aiErrorCode(errorCode) ?? undefined),
     });
     unsubsRef.current.set(id, off);
     completionsRef.current.set(id, () => finish('done'));

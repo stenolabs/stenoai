@@ -820,7 +820,48 @@ class Config:
                 f"Error loading config: {last_error}. Using defaults in memory; "
                 f"backup to {backup_path} also failed: {backup_error}"
             )
-        return self._get_default_config()
+        defaults = self._get_default_config()
+        # The MCP scope must not widen because the file broke: the stock
+        # defaults (every meeting, transcripts included) are for a fresh
+        # install, not for a config the user had already narrowed.
+        defaults.update(self._salvage_mcp_scope(self.config_path))
+        return defaults
+
+    # What the Steno MCP server may read after a corrupt config: nothing,
+    # until the user chooses again. The server itself refuses to run on a
+    # corrupt config (store.mjs ConfigUnreadableError); this keeps the file
+    # the recovery writes just as closed.
+    _MCP_SCOPE_FAIL_CLOSED = {"mcp_folder_allowlist": [], "mcp_exclude_transcripts": True}
+
+    @classmethod
+    def _salvage_mcp_scope(cls, path: Path) -> Dict[str, Any]:
+        """The mcp_* keys to run on after config.json failed to parse.
+
+        A torn or hand-edited file usually still carries the two scope keys
+        intact, so each is read back textually from the corrupt bytes (the
+        .corrupt backup is a copy of the same bytes) and kept when it parses
+        on its own. A key that cannot be read falls closed: an empty
+        allowlist and transcripts excluded, never the permissive defaults.
+        """
+        out: Dict[str, Any] = dict(cls._MCP_SCOPE_FAIL_CLOSED)
+        try:
+            text = Path(path).read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            return out
+        allow = re.search(r'"mcp_folder_allowlist"\s*:\s*(null|\[[^\]]*\])', text)
+        if allow:
+            try:
+                value = json.loads(allow.group(1))
+            except ValueError:
+                value = cls._MCP_SCOPE_FAIL_CLOSED["mcp_folder_allowlist"]
+            if value is None:
+                out["mcp_folder_allowlist"] = None
+            elif isinstance(value, list):
+                out["mcp_folder_allowlist"] = [f for f in value if isinstance(f, str) and f]
+        exclude = re.search(r'"mcp_exclude_transcripts"\s*:\s*(true|false)', text)
+        if exclude:
+            out["mcp_exclude_transcripts"] = exclude.group(1) == "true"
+        return out
 
     # Seconds to wait for the cross-process config lock before giving up and
     # falling back to an unlocked write. Generous enough to cover a normal
@@ -1071,11 +1112,15 @@ class Config:
             # item and suppresses the first window show on a login launch.
             # Users opt out in Settings.
             "launch_on_login": True,
-            # Default ON — the global (system-wide) record shortcut
-            # (CommandOrControl+Shift+R) is registered at startup so recording
-            # can be toggled from anywhere. Users turn it off in Settings when
-            # it conflicts with another app (e.g. a browser's hard-reload).
+            # Default ON — the global (system-wide) record shortcut is
+            # registered at startup so recording can be toggled from anywhere.
+            # Users turn it off in Settings when it conflicts with another app.
             "record_hotkey_enabled": True,
+            # The record shortcut's Electron accelerator. None = the platform
+            # default (Control+Alt+R: ⌃⌥R on macOS, Ctrl+Alt+R elsewhere),
+            # so a user who never customised it follows a changed default.
+            # Validated in app/record-hotkey.js before it is registered.
+            "record_hotkey_accelerator": None,
             # "auto" so _resolve_output_language() picks the transcript's
             # detected language instead of silently defaulting every
             # unconfigured install to English summaries (#281).
@@ -1094,6 +1139,12 @@ class Config:
             # vault folder. One-way (Steno -> vault); see app/obsidian-sync.js.
             "obsidian_sync_enabled": False,
             "obsidian_vault_path": "",
+            # Steno MCP server (app/steno-mcp): what AI assistants can read.
+            # None = every meeting; a list = only meetings in those folder ids.
+            # The server reads these keys straight from config.json on every
+            # tool call and enforces them itself.
+            "mcp_folder_allowlist": None,
+            "mcp_exclude_transcripts": False,
             # Default ON — when the app is idle and nothing is in flight, a
             # downloaded update installs itself and relaunches so the user
             # never has to click "Restart". The "update available/downloaded"
@@ -2035,6 +2086,31 @@ class Config:
         self._config["record_hotkey_enabled"] = enabled
         return self._save()
 
+    MAX_ACCELERATOR_LENGTH = 64
+
+    def get_record_hotkey_accelerator(self) -> Optional[str]:
+        """The user's own record shortcut (an Electron accelerator), or None
+        for the platform default. Anything that is not a short string reads
+        as None, matching app/record-hotkey.js customAcceleratorFromConfig."""
+        value = self._config.get("record_hotkey_accelerator")
+        if isinstance(value, str) and 0 < len(value) <= self.MAX_ACCELERATOR_LENGTH:
+            return value
+        return None
+
+    def set_record_hotkey_accelerator(self, accelerator: Optional[str]) -> bool:
+        """Save the record shortcut; None (or "") restores the default.
+        Returns False for a value that is not a short string, or if the save
+        fails. The accelerator grammar is checked by Electron's main process,
+        the only caller, before it reaches here."""
+        if accelerator == "":
+            accelerator = None
+        if accelerator is not None and (
+            not isinstance(accelerator, str) or len(accelerator) > self.MAX_ACCELERATOR_LENGTH
+        ):
+            return False
+        self._config["record_hotkey_accelerator"] = accelerator
+        return self._save()
+
     def get_premeeting_notifications_enabled(self) -> bool:
         """Get whether the calendar-based pre-meeting heads-up notification
         is enabled. Independent of notifications_enabled (post-meeting)."""
@@ -2297,6 +2373,51 @@ class Config:
                 return False
 
         self._config["obsidian_vault_path"] = vault_path
+        return self._save()
+
+    MCP_FOLDER_ALLOWLIST_MAX = 500
+    MCP_FOLDER_ID_MAX_LEN = 128
+
+    def get_mcp_folder_allowlist(self) -> Optional[list]:
+        """Folder ids the Steno MCP server may read, or None for all meetings.
+
+        Mirrors app/steno-mcp/store.mjs readScope(): a value that is set but
+        not a list reads as an empty allowlist (nothing visible), so a
+        hand-edited config can only narrow access, never widen it."""
+        raw = self._config.get("mcp_folder_allowlist")
+        if raw is None:
+            return None
+        if not isinstance(raw, list):
+            return []
+        return [f for f in raw if isinstance(f, str) and f]
+
+    def set_mcp_folder_allowlist(self, folder_ids: Optional[list]) -> bool:
+        """Set the MCP folder allowlist. None = all meetings. Ids must be
+        non-empty strings; duplicates are dropped, order kept."""
+        if folder_ids is not None:
+            if not isinstance(folder_ids, list) or len(folder_ids) > self.MCP_FOLDER_ALLOWLIST_MAX:
+                return False
+            cleaned = []
+            for fid in folder_ids:
+                if (
+                    not isinstance(fid, str)
+                    or not fid
+                    or len(fid) > self.MCP_FOLDER_ID_MAX_LEN
+                ):
+                    return False
+                if fid not in cleaned:
+                    cleaned.append(fid)
+            folder_ids = cleaned
+        self._config["mcp_folder_allowlist"] = folder_ids
+        return self._save()
+
+    def get_mcp_exclude_transcripts(self) -> bool:
+        """When true the MCP server serves notes only: get_transcript is
+        refused and search skips transcript text. Only a literal true counts."""
+        return self._config.get("mcp_exclude_transcripts") is True
+
+    def set_mcp_exclude_transcripts(self, exclude: bool) -> bool:
+        self._config["mcp_exclude_transcripts"] = bool(exclude)
         return self._save()
 
     def get_silence_auto_stop_enabled(self) -> bool:
@@ -2688,7 +2809,7 @@ class Config:
     # --- AI provider settings ---
 
     VALID_AI_PROVIDERS = ("local", "remote", "cloud", "adapter")
-    VALID_CLOUD_PROVIDERS = ("openai", "anthropic", "bedrock", "custom")
+    VALID_CLOUD_PROVIDERS = ("openai", "anthropic", "bedrock", "custom", "openrouter")
 
     # AWS Bedrock has ~30 regions; we surface the common ones in the UI but
     # accept any value as set_bedrock_region trusts the caller. Defaulting to
@@ -2769,6 +2890,9 @@ class Config:
         "anthropic": "claude-haiku-4-5-20251001",
         "bedrock": "anthropic.claude-haiku-4-5-20251001-v1:0",
         "custom": "gpt-4o-mini",
+        # Kept in step with src.cloud_providers.OPENROUTER_DEFAULT_MODEL
+        # (asserted by tests/test_openrouter_provider.py).
+        "openrouter": "google/gemini-2.5-flash",
     }
 
     def get_cloud_provider(self) -> str:

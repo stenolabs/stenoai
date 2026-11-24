@@ -14,6 +14,8 @@ The app is a thin Electron shell over a PyInstaller-bundled Python CLI. There is
 - **State across CLI invocations** is persisted to `recorder_state.json` and similar small JSON files — there is no daemon. Long-running recordings are a `record` subprocess kept alive by the Electron main process.
 - **User data lives in `~/Library/Application Support/stenoai/`** (`recordings/`, `transcripts/`, `output/`), resolved via `src.config.get_data_dirs()`. Repo-root `recordings/`/`transcripts/`/`output/` dirs are dev-only scratch.
 - **Bundled binaries (`bin/`)**: Ollama + ffmpeg, downloaded by `scripts/download-ollama.sh`. PyInstaller copies them into `dist/stenoai/ollama/` and `dist/stenoai/ffmpeg`. Electron then re-bundles `dist/stenoai/` as an `extraResource`. `bin/steno-diarize` (macOS only) is a separate Swift/CoreML sidecar built by `scripts/build-diarize-sidecar.sh` — see "Speaker diarization" below.
+- **Steno MCP server (`app/steno-mcp/`)**: a read-only stdio MCP server over the notes on disk (`store.mjs` owns path safety + the `mcp_folder_allowlist` / `mcp_exclude_transcripts` scope from `config.json`). `scripts/build-steno-mcp.mjs` (also the electron-builder `beforePack` hook) bundles it to `steno-mcp/dist` (+ `Steno.mcpb` for Claude Desktop), shipped as `resources/steno-mcp`. Other assistants run it with Steno's own binary + `ELECTRON_RUN_AS_NODE=1` (`steno-mcp-install.js`). UI: the Connect page.
+- **Suggested actions (MCP client, `app/mcp-*.js`)**: see "Suggested actions" below.
 - **Deep links**: app registers the `stenoai://` URL scheme. Handler logic is in `app/main.js` near `SHORTCUT_PROTOCOL`. Used by macOS Shortcuts: `stenoai://record/start?name=...` and `stenoai://record/stop`.
 
 ## Development Commands
@@ -90,6 +92,35 @@ back to channel labels when the cache is unavailable. The cache lives below
 the Steno user-data directory and therefore honors `STENOAI_USER_DATA_DIR` in
 tests; `STENOAI_DIARIZE_MODEL_DIR` is the lower-level sidecar override.
 
+### Suggested actions (remote MCP client)
+Connect page -> "Turn meetings into actions", plus the action cards under a note.
+The main process is an MCP client over Streamable HTTP (`mcp-remote-client.js`, the
+remote sibling of `imcp-client.js`); `mcp-actions.js` is the Electron-free service and
+`mcp-actions-ipc.js` its IPC. Connections (name, URL, kind, auth type, header name,
+toggle, last tools/list) live in `<userData>/mcp-connections.json`, owned by main only.
+Tokens, OAuth token sets and DCR registrations live in `mcp-secret-store.js`:
+safeStorage-encrypted, one file per secret under `mcp-credentials/`, bound to the
+endpoint origin like the cloud ASR key; never in config, argv, env or logs
+(`diagnostics-filter.redactCredentials` masks Bearer/OAuth shapes in the debug log).
+Auth: none / bearer / custom header, or OAuth 2.1 (`mcp-oauth.js`): WWW-Authenticate ->
+RFC 9728 -> RFC 8414/OIDC discovery; CIMD (`https://stenoai.co/oauth/client.json`,
+served from `website/public/oauth/client.json`) only when advertised, else DCR cached
+per issuer (not for Atlassian), else the static registry in `mcp-connectors.js`
+(HubSpot/Asana stubbed as needing registration); PKCE S256 + RFC 8707 `resource`
+everywhere; a 127.0.0.1 loopback listener (`mcp-oauth-loopback.js`); serialized
+proactive refresh that persists rotated refresh tokens before use. Suggestions come
+from the configured summariser provider via the Python `suggest-actions` command
+(`src/action_suggest.py`): it sees only the note's title, summary and action items,
+fenced as untrusted data; proposals are filtered to catalogue tools and re-validated
+against the tool's JSON schema (`mcp-schema.js`) at proposal and at Approve. Nothing runs
+without Approve. Cards persist in `<userData>/mcp-actions/<hash>.json`; every approved
+call is appended to `<userData>/mcp-actions-audit.jsonl` (argument SHA-256, not content).
+**Org hook:** a signed-in org's adapter `GET /policy` may return
+`mcp_actions_enabled: false` (feature off) and `mcp_endpoint_allowlist: [origin or URL
+prefix, ...]`; both are re-checked before every network call. If the policy cannot be
+fetched, the last good one (24 h) applies, else actions are off. Under e2e,
+`STENOAI_E2E_MCP_OAUTH_AUTOFOLLOW=1` replaces the browser step of the OAuth sign-in.
+
 ### Caller recognition (macOS only, opt-in)
 Settings -> General -> "Identify call participants" (`caller_id_enabled`, off
 by default, turned on only after a dialog that says caller names reach the AI
@@ -152,7 +183,11 @@ overrides an agent's own test-level defaults.
     `cd app && npm run test:e2e -- --project=t1 --grep @perf`. Pace matters - fired
     back-to-back the ticks get batched into one React render and the measurement silently
     collapses; the harness paces one per animation frame and counts DOM writes to prove it.
-  - **Current specs:** `org-lock.t1`, `shared-notes-policy.t1`, `live-transcript-lanes.t1`
+  - **Current specs:** `org-lock.t1`, `shared-notes-policy.t1`, `mcp-actions.t1` / `mcp-actions.t2` (Suggested actions: Connect
+    section + action cards; custom bearer endpoint and the OAuth DCR flow against
+    `e2e/fixtures/mock-mcp-server.js`, suggestions via mock Ollama, approve/dismiss/audit), `cookbooks.t1`
+    (the Cookbooks gallery over note templates: sidebar Cook entry, Featured row + category
+    sections, search/filter, cards opening the existing template editor), `live-transcript-lanes.t1`
     (the live panel's rendering contract: a partial is replaced in place per speaker, a
     final retires it, a late final sorts into place, and the Resumed divider - driven
     through the real `live-transcript-chunk` channel via `e2e/fixtures/live-transcript.ts`),
@@ -184,7 +219,11 @@ overrides an agent's own test-level defaults.
     picker and the upgrade Download action, is `diarization-engine.t1`),
     `caller-id.t2` (the Identify call participants setting and the iMCP status it
     reports, against `e2e/fixtures/mock-imcp-server.js`; macOS only), and the onboarding spec
-    `setup-check.t2` (the setup-wizard allGood + checks contract) (all model-free,
+    `setup-check.t2` (the setup-wizard allGood + checks contract), and the Steno MCP pair
+    `connect.t1` (Connect page: assistant cards, install sheets, scope controls via
+    the `connect` bridge) / `steno-mcp.t2` (spawns the server the app advertises over
+    stdio and calls `search_meetings`/`get_note` on seeded notes; its settings
+    round-trip test needs the backend) (all model-free,
     run in `t2-macos` /
     `t2-windows`); `transcription-pipeline.t2` and `honest-failure.t2` (tagged
     `@pipeline`, run in `t2-pipeline-macos` / `t2-pipeline-windows`), and

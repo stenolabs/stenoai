@@ -88,7 +88,8 @@ vi.mock('@/hooks/useMeetings', () => ({
   useGenerateReport: () => ({ mutate: vi.fn(), isPending: false }),
   useSetActiveReport: () => ({ mutate: vi.fn() }),
   useDeleteReport: () => ({ mutate: vi.fn() }),
-  useUpdateMeeting: () => ({ mutate: vi.fn(), mutateAsync: vi.fn(), isPending: false }),
+  useAutosaveNote: () => ({ mutate: vi.fn(), mutateAsync: vi.fn(), isPending: false }),
+  useUpdateReportBody: () => ({ mutate: vi.fn(), mutateAsync: vi.fn(), isPending: false }),
   // The wrapper is deliberately fresh on every render, like useMutation.
   // Depending on the whole object would turn an effect cleanup into a save.
   useUpdateUserNotes: () => ({ mutate: h.userNotesMutate, mutateAsync: h.userNotesSave }),
@@ -112,7 +113,10 @@ vi.mock('@/hooks/useFolders', () => ({
 
 vi.mock('@/lib/askBarContext', () => ({ useActiveMeeting: () => {} }));
 
-vi.mock('@/lib/router', () => ({ navigate: (...a: unknown[]) => h.navigate(...a) }));
+vi.mock('@/lib/router', () => ({
+  navigate: (...a: unknown[]) => h.navigate(...a),
+  setNavigationGuard: () => () => {},
+}));
 
 vi.mock('@/hooks/useRecording', () => ({
   useRecording: () => h.recording,
@@ -130,6 +134,7 @@ vi.mock('@/lib/ipc', () => ({
       summaryChunk: h.noop,
       summaryComplete: h.noop,
       processingComplete: h.noop,
+      noteUpdated: h.noop,
       processingProgress: h.noop,
     },
     meetings: {
@@ -282,7 +287,15 @@ describe('My notes autosave', () => {
 test('an active recording on this note disables generated-note editing', () => {
   h.recording = { ...h.recording, status: 'recording', recordingSummaryFile: SUMMARY_FILE };
   renderDetail(makeMeeting());
-  expect((screen.getByRole('button', { name: 'Edit note' }) as HTMLButtonElement).disabled).toBe(true);
+  // Read-only with a hint: no inline fields while the recording appends.
+  expect(screen.queryByRole('textbox', { name: 'Summary' })).toBeNull();
+  expect(screen.getByTestId('note-readonly-hint')).toBeTruthy();
+});
+
+test('an idle markdown note is editable in place', () => {
+  renderDetail(makeMeeting());
+  expect(screen.getByRole('textbox', { name: 'Summary' })).toBeTruthy();
+  expect(screen.queryByTestId('note-readonly-hint')).toBeNull();
 });
 
 describe('the regenerate guard', () => {

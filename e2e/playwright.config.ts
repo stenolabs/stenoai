@@ -34,7 +34,12 @@ export default defineConfig({
     // T1 is renderer-only with mock IPC — instant, so it keeps Playwright's 5s
     // default expect timeout (a slow T1 assertion is a real UI regression to
     // catch fast, not to hide behind a wider budget).
-    { name: 't1', testMatch: /.*\.t1\.spec\.ts$/ },
+    // The per-test budget is wider on CI only: the shared xvfb runner is
+    // roughly ten times slower than a dev Mac, and the longest multi-step
+    // specs (Connect, Cookbooks, Recipes) cross 30s there while passing in a
+    // few seconds locally. The 5s expect timeout above is unchanged, so a
+    // slow assertion still fails fast; this only lets a long spec finish.
+    { name: 't1', testMatch: /.*\.t1\.spec\.ts$/, timeout: process.env.CI ? 90_000 : 30_000 },
     // T2/T3 assertions poll IPC calls that each spawn a fresh `stenoai`
     // subprocess; under CI-runner load a single call can spike past 5s and
     // flake an otherwise-correct poll (the same reason ai-provider.t2's

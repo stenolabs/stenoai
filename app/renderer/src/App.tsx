@@ -5,9 +5,11 @@ import { Sandbox } from '@/routes/Sandbox';
 import { Settings } from '@/routes/Settings';
 import { Setup } from '@/routes/Setup';
 import { Chat } from '@/routes/Chat';
-import { Agents } from '@/routes/Agents';
+import { Connect } from '@/routes/Connect';
+import { Cookbooks } from '@/routes/Cookbooks';
 import { ChatConversation } from '@/routes/ChatConversation';
 import { StreamingProvider } from '@/hooks/useStreamingQuery';
+import { ChatTurnPersister } from '@/components/ChatTurnPersister';
 import { Home } from '@/routes/Home';
 import { MeetingDetail } from '@/routes/MeetingDetail';
 import { FolderDetail } from '@/routes/FolderDetail';
@@ -38,6 +40,7 @@ import { ipc } from '@/lib/ipc';
 import { primeDebugLogs } from '@/lib/debugLogs';
 import { useMeetingTransferEvents } from '@/hooks/useMeetingTransfer';
 import { WhatsNewProvider } from '@/components/WhatsNew';
+import { FirstRunTips } from '@/components/FirstRunTips';
 
 async function hasInstalledTranscriptionModel() {
   const [parakeet, whisper] = await Promise.all([
@@ -218,14 +221,16 @@ export function App() {
   // sub-route /chat/<id> (conversation view) also owns its own composer.
   // Note: no /recording exclusion — recording coexists with the app, and
   // during it PrimaryDock renders the Ask bar next to the pill.
-  const isChatRoute = route === '/chat' || route.startsWith('/chat/');
+  const isChatRoute = route === '/chat' || route.startsWith('/chat/') || route.startsWith('/chat?');
   // App-chrome routes where a chat composer never belongs. When idle the
   // AskBar self-hides there anyway (no active meeting), but the recording
   // composer renders even without one — without this exclusion it
   // would float over Settings/Setup and block clicks in that band; the
   // pill docks alone there instead.
   const isChromeRoute =
-    route === '/agents' ||
+    route === '/connect' ||
+    route === '/cookbooks' ||
+    route.startsWith('/cookbooks?') ||
     route === '/settings' ||
     route.startsWith('/settings?') ||
     route === '/setup' ||
@@ -245,11 +250,17 @@ export function App() {
     <CommandPaletteProvider>
       <CommandPaletteHotkey />
       <StreamingProvider>
+      <ChatTurnPersister />
       <AskBarProvider>
         <RouteView route={route} />
         <QuitDialog />
         <PrivacyConsentModal open={showPrivacyModal} />
         <ImportDropZone />
+        {/* One first-run tip at a time; never during onboarding or a recording. */}
+        <FirstRunTips
+          route={route}
+          blocked={recording.isLoading || recordingActive || !setupGateResolved || showPrivacyModal}
+        />
 
         {/* Bottom dock — shared anchor across recording → processing → meeting.
             Recording is status-driven, not route-driven: PrimaryDock docks the
@@ -301,6 +312,8 @@ function CommandPaletteHotkey() {
   React.useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (!(e.metaKey || e.ctrlKey) || e.key.toLowerCase() !== 'k') return;
+      // The record-shortcut capture control is recording this combination.
+      if ((e.target as Element | null)?.closest?.('[data-shortcut-capture]')) return;
       e.preventDefault();
       open();
     };
@@ -329,14 +342,21 @@ function RouteView({ route }: { route: string }) {
     }
   }, [onOrgSharedRoute, sharedNotes.resolved, sharedNotes.enabled]);
 
+  // The Agents page merged into Connect (Coding agents); keep old links working.
+  React.useEffect(() => {
+    if (route === '/agents') navigate('/connect');
+  }, [route]);
+
   if (route === '/dev' || route.startsWith('/dev/')) return <Sandbox />;
   // Match deep-links like /settings?tab=organisation too — the Settings
   // component reads the tab param off the route on mount.
   if (route === '/settings' || route.startsWith('/settings?')) return <Settings />;
   if (route === '/setup') return <Setup />;
   if (route === '/recording') return <Recording />;
-  if (route === '/chat') return <Chat />;
-  if (route === '/agents') return <Agents />;
+  // ?recipe=<id> deep links (Cookbooks → Recipes → Run) carry a query.
+  if (route === '/chat' || route.startsWith('/chat?')) return <Chat />;
+  if (route === '/connect' || route === '/agents') return <Connect />;
+  if (route === '/cookbooks' || route.startsWith('/cookbooks?')) return <Cookbooks />;
   if (route.startsWith('/chat/')) {
     const sessionId = safeDecode(route.slice('/chat/'.length));
     return <ChatConversation sessionId={sessionId} />;

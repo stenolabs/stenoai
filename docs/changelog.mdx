@@ -3,7 +3,56 @@ title: "Changelog"
 description: "What's new in Steno -- recent releases and notable changes."
 ---
 
-<Update label="v0.8.1" description="November 25, 2026">
+<Update label="v0.9.0" description="November 24, 2026">
+**New**
+- **Connect page**: open [Connect](/connect/overview) in the sidebar to link Steno with the Claude desktop app, Cursor, Claude Code and Codex. They read your meetings through a read-only Steno MCP server that runs on your computer.
+- **What assistants can see**: limit MCP connections to chosen spaces, or to notes without transcripts, in Settings → Connectors.
+- **Actions**: connect Linear, Notion, or Jira and Confluence, and Steno suggests follow-ups after each note. Edit a suggestion, then approve it; nothing is sent until you do. See [Actions](/connect/actions).
+- **Email drafts**: approve an Email action to open a follow-up draft in your own mail app. No sign-in is needed, and nothing is sent until you press Send there.
+- **Custom MCP servers**: add any MCP server by URL, such as an n8n, Zapier or Make workflow, or run one as a command on this computer. See [Custom MCP servers](/connect/custom-mcp-servers).
+- **Actions in chat**: ask chat to create or change something in a connected app, and approve each change before it runs. This needs a model that can use tools; chat says so when the selected model can't.
+- **Recipes**: save a chat prompt as a recipe and run it by typing `/` in Chat. Keep typing to filter the list. Nine built-in recipes include Write weekly recap, Decision log and Draft the follow-up.
+- **Cookbooks**: browse the built-in note formats in a gallery, or write your own, from the new [Cookbooks](/features/cookbooks) page in the sidebar. Cookbooks replace report templates.
+- **Always-editable notes**: click any part of a note and type. Changes save automatically, with no edit mode and no Save button. Cookbook reports are editable too. See [Editing notes](/features/editing-notes).
+- **Instant transcripts**: with Parakeet, the labelled transcript and a first summary are ready right after Stop. Steno then refines both in the background. See [Instant transcripts](/features/instant-transcripts).
+- **More chart types in chat**: ask for an area, pie, donut, scatter, radar or table chart, as well as bar and line. Copy a chart as an image, or copy its data as CSV.
+- **OpenRouter**: choose OpenRouter as a cloud provider to reach many models with one API key.
+- **New setup**: choose Local or Cloud in three short steps. Cloud setup links to the OpenRouter, OpenAI and Anthropic key pages and tests the key you paste. See [Get an API key](/getting-started/api-key).
+- **Customisable record shortcut**: set your own combination in Settings → Preferences. The default is now `⌃⌥R` (`Ctrl+Alt+R` on Windows and Linux).
+
+**Improved**
+- Chat answers appear as they are written, with a Thinking trace that lists each step chat took.
+- AI errors in chat say what went wrong and offer one fix, such as restarting the local model, updating the API key or opening AI settings.
+- Folders are now called Spaces. Your existing folders and their notes are unchanged.
+- Obsidian sync moved from Settings → Integrations to the Sync section of Connect.
+- The model picker in Settings → AI shows friendly model names with a Fast, Balanced or Best hint.
+- Home, Chat, Connect, Spaces and search show a next step when they are empty, and Home lists ways to start.
+- First-run tips point out `/` recipes, Connect follow-ups and click-to-edit notes, one at a time.
+- Home shows the record shortcut as key caps.
+- Suggested action cards show the destination app's logo, and a finished action collapses to one line with an Open link.
+- Chat's context chip sits inside the message box, and the note's ask bar shows it as an icon.
+- The dragonfly mascot greets you in Chat and wears a hat for the holidays.
+- Settings groups the meeting-start options in one section and nests the Hebrew model under Language.
+
+**Fixed**
+- Fixed an issue that could lose a chat answer if you left the conversation while it was being written.
+- The transcript toggle in a note closes the transcript on a second click instead of reopening it.
+- Charts render when the model fences them as `json` or without a language.
+- Clicking anywhere on a provider card in setup selects it; previously only the card's header responded.
+- Settings says transcription is on-device by default, because optional cloud transcription sends audio to the provider you configure.
+
+**Known Issues**
+- Updating from 0.8.0 installs but does not reopen Steno, because the app's name changed in 0.8.1. Open Steno from Applications once; later updates restart on their own.
+- The record shortcut's default changed from `⌘⇧R` to `⌃⌥R`. If you relied on the old shortcut, set it again in Settings → Preferences.
+- The Steno skill reads notes directly, so the "What assistants can see" limits apply only to MCP connections.
+- Actions in chat need a tool-capable model. The default local model, Gemma 4 E2B, answers in plain text, as does organisation-managed AI.
+- Slack, HubSpot, Asana and ChatGPT are listed on Connect as Coming soon. Until Slack is available, post to it through an n8n or Zapier workflow added as a custom MCP server.
+- Instant transcripts need the Parakeet engine. With Whisper, the transcript and notes appear after transcription finishes.
+- The Linux `.deb` is not attached to this release because it exceeds GitHub's 2 GiB asset limit. Use the AppImage instead.
+- Windows and Linux installers remain unsigned. Linux updates are manual.
+</Update>
+
+<Update label="v0.8.1" description="November 23, 2026">
 **New**
 - **Edit generated notes**: change a saved note's generated sections while keeping the original model output available for recovery.
 - **Share menu**: copy or export notes and transcripts from one menu, or send a note through the macOS share sheet.

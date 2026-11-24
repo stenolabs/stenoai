@@ -6,9 +6,11 @@ import {
   type AutoOpenMode,
   type AutoOpenProvider,
   type GetCallerIdResponse,
+  type RecordHotkeyState,
   type TelemetryToggleSource,
 } from '@/lib/ipc';
 import { unwrap } from '@/lib/result';
+import { DEFAULT_RECORD_ACCELERATOR } from '@/lib/accelerator';
 
 export const settingsKeys = {
   all: ['settings'] as const,
@@ -97,10 +99,27 @@ export function useSetNotifications() {
 export function useRecordHotkeySetting() {
   return useQuery({
     queryKey: settingsKeys.recordHotkey(),
-    queryFn: async () => {
+    queryFn: async (): Promise<RecordHotkeyState> => {
       const res = unwrap(await ipc().settings.getRecordHotkey());
-      return { enabled: res.enabled, registered: res.registered };
+      return {
+        enabled: res.enabled,
+        registered: res.registered,
+        accelerator: res.accelerator ?? DEFAULT_RECORD_ACCELERATOR,
+        customAccelerator: res.customAccelerator ?? null,
+        defaultAccelerator: res.defaultAccelerator ?? DEFAULT_RECORD_ACCELERATOR,
+      };
     },
+  });
+}
+
+/** Change the record shortcut; null restores the default. Rejects with a
+ *  ResultError whose code is 'in-use' when another app owns it. */
+export function useSetRecordHotkeyAccelerator() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (accel: string | null) =>
+      unwrap(await ipc().settings.setRecordHotkeyAccelerator(accel)),
+    onSettled: () => qc.invalidateQueries({ queryKey: settingsKeys.recordHotkey() }),
   });
 }
 

@@ -56,3 +56,50 @@ test('cancel, early close and provider errors terminate with fixed errors', () =
     assert.doesNotMatch(JSON.stringify(h.events), /PRIVATE/);
   }
 });
+
+test('a context step is forwarded as a tool step before the answer', () => {
+  const h = harness();
+  const step = { id: 'context', source: 'context', connection: '', tool: 'notes', count: 12, title: null };
+  h.proc.stdout.write(`CHAT_STEP:${Buffer.from(JSON.stringify(step)).toString('base64')}\n`);
+  h.proc.stdout.write(`CHAT_STEP:${Buffer.from(JSON.stringify({ source: 'other' })).toString('base64')}\n`);
+  h.proc.stdout.write(`CHAT_CHUNK:${Buffer.from('hi').toString('base64')}\nCHAT_STREAM_COMPLETE\n`);
+  assert.deepEqual(h.events.slice(0, 2), [{ channel: 'query-tool-step', step }, { channel: 'query-chunk', chunk: 'hi' }]);
+});
+
+test('a classified CHAT_STREAM_ERROR forwards only its stable code', () => {
+  for (const [line, code] of [
+    ['CHAT_STREAM_ERROR:auth', 'auth'],
+    ['CHAT_STREAM_ERROR:ollama-unreachable\r', 'ollama-unreachable'],
+    ['CHAT_STREAM_ERROR:context-too-long', 'context-too-long'],
+    // An old backend's free text (or anything unknown) is never forwarded.
+    ['CHAT_STREAM_ERROR:Unable to answer. PRIVATE provider body', 'unknown'],
+    ['CHAT_STREAM_ERROR:', 'unknown'],
+  ]) {
+    const h = harness();
+    h.proc.stdout.write(`${line}\n`);
+    const done = h.events.at(-1);
+    assert.equal(done.channel, 'query-done');
+    assert.equal(done.success, false);
+    assert.equal(done.errorCode, code);
+    assert.equal(done.error, 'Unable to answer. Check your AI provider and try again.');
+    assert.doesNotMatch(JSON.stringify(h.events), /PRIVATE/);
+  }
+});
+
+test('early closes report unknown; a cancel carries no failure code', () => {
+  const h = harness();
+  h.proc.emit('close', 1);
+  assert.equal(h.events.at(-1).errorCode, 'unknown');
+  const c = harness();
+  c.query.cancel();
+  assert.equal(c.events.at(-1).errorCode, undefined);
+  assert.equal(c.events.at(-1).error, 'Answer stopped.');
+});
+
+test('aiErrorCode accepts only known codes', () => {
+  const { aiErrorCode, AI_ERROR_CODES } = require('./chat-query');
+  for (const code of AI_ERROR_CODES) assert.equal(aiErrorCode(code), code);
+  assert.equal(aiErrorCode('failed'), 'unknown');
+  assert.equal(aiErrorCode('tools-unsupported'), 'unknown');
+  assert.equal(aiErrorCode(undefined), 'unknown');
+});

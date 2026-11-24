@@ -17,6 +17,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from src.config import Config
 from src.folders import FoldersManager
 
 
@@ -213,3 +214,46 @@ class MarkdownFolderFrontmatterTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class DeleteFolderMcpScopeTests(unittest.TestCase):
+    """Deleting a space removes it from the Steno MCP allowlist, so the notes
+    that were in it (they keep the folder id in their frontmatter) stop being
+    shared with connected assistants."""
+
+    def test_deleted_folder_is_pruned_from_the_allowlist(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            _seed(tmp_dir)
+            cfg = Config(config_path=Path(tmp_dir) / "config.json")
+            cfg.set_mcp_folder_allowlist(["aaa", "bbb"])
+            mgr = FoldersManager(Path(tmp_dir), config=cfg)
+
+            self.assertTrue(mgr.delete_folder("aaa"))
+
+            self.assertEqual([f["id"] for f in mgr.list_folders()], ["bbb"])
+            self.assertEqual(cfg.get_mcp_folder_allowlist(), ["bbb"])
+            on_disk = json.loads((Path(tmp_dir) / "config.json").read_text())
+            self.assertEqual(on_disk["mcp_folder_allowlist"], ["bbb"])
+
+    def test_deleting_the_last_allowed_folder_leaves_an_empty_allowlist(self):
+        # Empty means "nothing shared", never a fall-back to every meeting.
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            _seed(tmp_dir)
+            cfg = Config(config_path=Path(tmp_dir) / "config.json")
+            cfg.set_mcp_folder_allowlist(["aaa"])
+            FoldersManager(Path(tmp_dir), config=cfg).delete_folder("aaa")
+            self.assertEqual(cfg.get_mcp_folder_allowlist(), [])
+
+    def test_all_meetings_scope_and_unrelated_folders_are_untouched(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            _seed(tmp_dir)
+            cfg = Config(config_path=Path(tmp_dir) / "config.json")
+            FoldersManager(Path(tmp_dir), config=cfg).delete_folder("aaa")
+            self.assertIsNone(cfg.get_mcp_folder_allowlist())
+
+            cfg.set_mcp_folder_allowlist(["bbb"])
+            saves = cfg._save
+            with patch.object(cfg, "_save", wraps=saves) as spy:
+                FoldersManager(Path(tmp_dir), config=cfg).delete_folder("zzz")
+                spy.assert_not_called()
+            self.assertEqual(cfg.get_mcp_folder_allowlist(), ["bbb"])

@@ -5,6 +5,7 @@ import { useMeetings } from '@/hooks/useMeetings';
 import { useFolders, useUpdateFolderIcon } from '@/hooks/useFolders';
 import { LucideIcon, IconPicker } from '@/components/IconPicker';
 import { navigate } from '@/lib/router';
+import { Button } from '@/components/ui/button';
 import { t } from '@/i18n';
 
 interface FolderDetailProps {
@@ -99,7 +100,18 @@ export function FolderDetail({ folderId }: FolderDetailProps) {
             </div>
 
             {filtered.length === 0 ? (
-              <div className="px-6 py-24 text-center" style={{ color: 'var(--fg-2)' }}>
+              <div
+                data-testid="folder-empty"
+                className="mt-2 flex flex-col items-center rounded-[18px] px-6 py-16 text-center"
+                style={{ border: '1px dashed var(--border-strong, var(--border-subtle))', color: 'var(--fg-2)' }}
+              >
+                <span
+                  aria-hidden
+                  className="mb-4 inline-flex size-11 items-center justify-center rounded-[12px]"
+                  style={{ background: 'var(--surface-sunken)', color: 'var(--fg-2)' }}
+                >
+                  <LucideIcon name={folder.icon ?? 'folder'} size={20} />
+                </span>
                 <div
                   className="mb-1.5"
                   style={{
@@ -117,6 +129,9 @@ export function FolderDetail({ folderId }: FolderDetailProps) {
                 >
                   {t('folder.empty.body')}
                 </div>
+                <Button size="sm" variant="outline" className="mt-5 rounded-full px-4" onClick={() => navigate('/meetings')}>
+                  {t('folder.empty.action')}
+                </Button>
               </div>
             ) : (
               <div>

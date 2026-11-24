@@ -1,0 +1,101 @@
+/* Home page scroll footage (scripts/scroll-seq.js). The footage IS the page background: no frame, border, radius or visible box.
+   html[data-ss] is "on" (scroll-driven) or "still" (reduced motion, data saver) and is absent without JavaScript, which keeps the
+   plain page: nothing here applies, the footage boxes stay hidden. */
+
+/* The player element: fills its host, edges fade to transparent. */
+[data-scroll-seq] { position: absolute; inset: 0; z-index: 0; pointer-events: none; overflow: hidden; display: none;
+  -webkit-mask-image: linear-gradient(to right, transparent 0, #000 48px, #000 calc(100% - 48px), transparent 100%), linear-gradient(to bottom, transparent 0, #000 24px, #000 calc(100% - 96px), transparent 100%);
+  -webkit-mask-composite: source-in;
+  mask-image: linear-gradient(to right, transparent 0, #000 48px, #000 calc(100% - 48px), transparent 100%), linear-gradient(to bottom, transparent 0, #000 24px, #000 calc(100% - 96px), transparent 100%);
+  mask-composite: intersect; }
+[data-scroll-seq] canvas { display: block; width: 100%; height: 100%; }
+html[data-ss] [data-scroll-seq] { display: block; }
+
+/* Voice waveform (01 / The app): sits behind the section, which paints above it. */
+.scroll-host { position: relative; }
+.scroll-host .mission-platform { position: relative; }
+
+/* Cable and doors: the section takes the page colour so the footage floor (#121311) meets it exactly. */
+html[data-ss] .has-stage { background: #121311; }
+.stage-m { display: none; }
+.stage-m > [data-scroll-seq] { -webkit-mask-image: none; mask-image: none; }
+html[data-ss] .stage-m { display: block; position: relative; background: #121311; width: min(100%, 640px); aspect-ratio: 1024 / 720; margin: 0 auto 24px; }
+html[data-ss] .stage-m-doors { width: min(100%, 420px); aspect-ratio: 1; }
+
+/* Flow layout (phones and short windows): the footage sits in a normal-flow box above the text, never over it, and its progress follows its own
+   travel through the screen. Phones run the box edge to edge. */
+@media (max-width: 767px) {
+  html[data-ss] .stage-m { width: calc(100% + 40px); margin: 0 -20px 16px; aspect-ratio: 780 / 518; }
+  html[data-ss] .stage-m-doors { aspect-ratio: 390 / 300; }
+}
+
+/* Cable list: one step open at a time, lit by the footage (phones: by the list's own travel). */
+html[data-ss=on] .stage-cable .mission-principles > div { opacity: .7; transition: opacity .35s; }
+html[data-ss=on] .stage-cable .mission-principles > div > div > p { max-height: 0; opacity: 0; margin-top: 0; overflow: hidden; transition: max-height .4s, opacity .35s; }
+html[data-ss=on] .stage-cable .mission-principles > div.is-lit { opacity: 1; }
+html[data-ss=on] .stage-cable .mission-principles > div.is-lit > div > p { max-height: 90px; opacity: 1; }
+html[data-ss=on] #security h2 { text-wrap: balance; } /* no single-word line */
+html[data-ss=on] .mission-cta.has-stage h2 > span { color: color-mix(in srgb, #FAF9F5 calc(var(--lit, 0) * 100%), #b6bdaf); }
+
+/* Tablets (800px tall) and laptops (720px tall) that hold the text: a pinned stage (mirrored in FLOW, scroll-env.js, which also falls back to flow when the text does not fit). The panel stays on screen for the extra scroll length while the footage plays. */
+@media (min-width: 912px) and (min-height: 720px), (min-width: 768px) and (max-width: 911px) and (min-height: 800px) {
+  html[data-ss=on]:not([data-nofit]) .has-stage { padding-top: 0; }
+  html[data-ss=on]:not([data-nofit]) .stage { position: relative; height: calc(100vh + 180vh); height: calc(100svh + 180svh); } /* vh first for browsers without svh */
+  html[data-ss=on]:not([data-nofit]) .stage-cable { height: calc(100vh + 240vh); height: calc(100svh + 240svh); }
+  html[data-ss=on]:not([data-nofit]) .stage-panel { position: sticky; top: 0; height: 100vh; height: 100svh; overflow: hidden; background: #121311; }
+  html[data-ss=on]:not([data-nofit]) .stage-m { position: absolute; inset: 0; z-index: -1; width: auto; aspect-ratio: auto; margin: 0; }
+  html[data-ss=on]:not([data-nofit]) .stage-text { height: 100%; display: flex; flex-direction: column; justify-content: center; padding-top: 84px; box-sizing: border-box; }
+  html[data-ss=on]:not([data-nofit]) .stage-after { padding-top: 56px; }
+
+  /* Cable: the list sits left, the footage fills the right. */
+  html[data-ss=on]:not([data-nofit]) .stage-cable .stage-text { justify-content: flex-start; padding-top: 96px; }
+  html[data-ss=on]:not([data-nofit]) .stage-cable .mission-assurance-layout { display: block; width: min(36%, 500px); }
+  html[data-ss=on]:not([data-nofit]) .stage-cable .mission-assurance-layout > div:first-child > .mission-lede { margin-top: 20px; }
+  html[data-ss=on]:not([data-nofit]) .stage-cable .mission-principles { margin-top: 24px; }
+
+  /* Doors: text stacked in the left 45%, footage in the right 55%, nothing over the footage. */
+  html[data-ss=on]:not([data-nofit]) .stage-doors .stage-text { margin-left: max(56px, calc((100% - 1440px) / 2)); width: calc(45% - 24px - max(56px, calc((100% - 1440px) / 2))); max-width: none; padding-top: 80px; }
+  html[data-ss=on]:not([data-nofit]) .stage-doors .mission-cta-content { grid-template-columns: 1fr; gap: 24px; padding: 20px 0 24px; align-items: start; }
+  html[data-ss=on]:not([data-nofit]) .stage-doors .mission-cta-content > div > p { margin-bottom: 22px; }
+  html[data-ss=on]:not([data-nofit]) .stage-doors .mission-cta-content .mission-text-link { margin-top: 14px; }
+  html[data-ss=on]:not([data-nofit]) .stage-doors .mission-cta-bottom { padding: 16px 0; gap: 12px; flex-wrap: wrap; }
+}
+@media (min-width: 912px) and (max-width: 1180px) and (min-height: 720px), (min-width: 768px) and (max-width: 911px) and (min-height: 800px) { html[data-ss=on]:not([data-nofit]) .stage-doors .stage-text { margin-left: 32px; width: max(calc(45% - 56px), calc(5.75 * clamp(56px, 6.7vw, 96px))); } } /* page gutter is 32px; wide enough for "Keep control." on one line */
+/* Laptops and wider: the text column is wide enough for "Keep the record." on one line (7.06 em of the heading size, plus a little). */
+@media (min-width: 1181px) and (min-height: 720px) { html[data-ss=on]:not([data-nofit]) .stage-doors .stage-text { width: max(calc(45% - 24px - max(56px, calc((100% - 1440px) / 2))), calc(7.15 * clamp(56px, 6.7vw, 96px))); } }
+/* Short laptop screens: tighter spacing inside the cable stage only (type styles unchanged) so the whole list fits the panel. */
+@media (min-width: 912px) and (min-height: 720px) and (max-height: 899px), (min-width: 768px) and (max-width: 911px) and (min-height: 800px) and (max-height: 899px) {
+  html[data-ss=on]:not([data-nofit]) .stage-cable .stage-text { padding-top: 84px; }
+  html[data-ss=on]:not([data-nofit]) .stage-cable .mission-section-top { margin-bottom: 24px; }
+  html[data-ss=on]:not([data-nofit]) .stage-cable .mission-assurance-layout > div:first-child > .mission-lede { margin-top: 12px; }
+  html[data-ss=on]:not([data-nofit]) .stage-cable .mission-assurance-layout .mission-text-link { margin-top: 16px; }
+  html[data-ss=on]:not([data-nofit]) .stage-cable .mission-principles { margin-top: 12px; }
+  html[data-ss=on]:not([data-nofit]) .stage-cable .mission-principles > div { padding-bottom: 14px; }
+  html[data-ss=on]:not([data-nofit]) .stage-cable .mission-principles > div:not(:first-child) { padding-top: 14px; }
+}
+
+/* Record cards (02 / Where it's used): the pictures become canvases that melt into the card colour. Text, sizes and layout are untouched.
+   Without JavaScript, or until a card's poster has loaded (.rec-ready), the photos stay. */
+html[data-ss] .mission-sector-rec.rec-ready .mission-sector-image { background: var(--surface-sunken); }
+html[data-ss] .mission-sector-rec.rec-ready .mission-sector-image::after { background: none; }
+html[data-ss] .mission-sector-rec.rec-ready .mission-sector-image > img { display: none; }
+.rec { position: absolute; inset: 0; z-index: -2; pointer-events: none; overflow: hidden;
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 14%, #000 86%, transparent), linear-gradient(to bottom, transparent, #000 10%, #000 90%, transparent);
+  -webkit-mask-composite: source-in;
+  mask-image: linear-gradient(to right, transparent, #000 14%, #000 86%, transparent), linear-gradient(to bottom, transparent, #000 10%, #000 90%, transparent);
+  mask-composite: intersect; }
+.rec-obj { position: absolute; will-change: transform;
+  /* The atlas floor is already flat at its outer 4%; a lossy-decoded floor can sit a level or two off the card colour, so the canvas edge fades out instead of ending in a line. */
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 4%, #000 96%, transparent), linear-gradient(to bottom, transparent, #000 4%, #000 96%, transparent);
+  -webkit-mask-composite: source-in;
+  mask-image: linear-gradient(to right, transparent, #000 4%, #000 96%, transparent), linear-gradient(to bottom, transparent, #000 4%, #000 96%, transparent);
+  mask-composite: intersect; }
+.rec-obj canvas { display: block; width: 100%; height: 100%; }
+.rec-wave { position: absolute; left: 0; pointer-events: none; }
+.rec-glow { position: absolute; inset: 0; opacity: 0; transition: opacity .33s cubic-bezier(.2, .6, .3, 1);
+  background: radial-gradient(ellipse 70% 62% at 22% 16%, rgba(86, 109, 72, .55), rgba(86, 109, 72, .22) 45%, rgba(86, 109, 72, 0) 100%); }
+.rec-hot .rec-glow { opacity: 1; }
+.rec-seam { position: absolute; height: 28px; margin-top: -14px; background: radial-gradient(ellipse at center, rgba(157, 184, 141, .5), rgba(86, 109, 72, .18) 45%, rgba(86, 109, 72, 0) 70%);
+  opacity: var(--s, 0); transition: opacity .8s cubic-bezier(0, .2, .7, .8) .4s; }
+.rec-hot .rec-seam { opacity: 1; transition: opacity .55s cubic-bezier(.3, .1, .1, .5) .3s; }
+@media (prefers-reduced-motion: reduce) { .rec-seam, .rec-glow { transition: none !important; } }

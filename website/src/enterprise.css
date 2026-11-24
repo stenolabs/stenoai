@@ -16,6 +16,10 @@ html { scroll-behavior: smooth; scroll-padding-top: 125px; }
 .mission-button-light:hover { background: #deded3; }
 .mission-button-dark { background: var(--fg-1); color: var(--page); }
 .mission-button-dark:hover { opacity: .85; }
+.dark .mission-button-dark, .dark .mission-button-light { background: #566D48; color: #fff; }
+.dark .mission-button-dark:hover, .dark .mission-button-light:hover { background: #647E54; opacity: 1; }
+.dark .mission-section-top .mission-eyebrow:first-child, .dark .industry-hero > div > .mission-eyebrow:first-child { color: var(--green-text); }
+.dark body { background: var(--page); }
 .mission-text-link { display: inline-flex; align-items: center; gap: 20px; font-size: 12px; font-weight: 500; text-decoration: none; }
 .mission-text-link svg { transition: transform .2s; }
 .mission-text-link:hover svg { transform: translate(2px, -2px); }
@@ -46,8 +50,7 @@ html { scroll-behavior: smooth; scroll-padding-top: 125px; }
 .mega-feat { position: relative; display: block; min-height: 340px; overflow: hidden; border: 1px solid #ffffff28; background: #232620; color: #faf9f5; }
 .mega-layer { position: absolute; inset: 0; margin: 0; opacity: 0; transition: opacity .5s ease; }
 .mega-layer.is-on { opacity: 1; }
-.mega-layer img { width: 100%; height: 100%; object-fit: cover; transform: scale(1.06); filter: saturate(.75) contrast(1.04); transition: transform 1.6s cubic-bezier(.2,.7,.2,1); }
-.mega-layer.is-on img { transform: scale(1); }
+.mega-layer img, .mega-layer video { width: 100%; height: 100%; object-fit: cover; filter: saturate(.75) contrast(1.04); }
 .mega-layer::after { content: ''; position: absolute; inset: 0; background: linear-gradient(180deg, rgba(12,10,8,.08) 30%, rgba(12,10,8,.88) 100%); }
 .mega-layer figcaption { position: absolute; left: 20px; right: 20px; bottom: 46px; z-index: 1; display: grid; gap: 6px; }
 .mega-fk { font: 10px var(--font-mono); letter-spacing: .1em; text-transform: uppercase; color: #d0d3c8; }
@@ -291,7 +294,7 @@ html { scroll-behavior: smooth; scroll-padding-top: 125px; }
 .mission-faq-items details > p { padding: 0 28px 25px 33px; color: var(--fg-2); font-size: 13px; line-height: 1.8; }
 /* A shared enterprise-first closing and footer. */
 .mission-cta { --focus-ring: #faf9f5; background: #232620; color: var(--mission-paper); padding: 65px 0 0; }
-.mission-cta > .mission-wrap > .mission-eyebrow { color: #b9bcb3; }
+.mission-cta > .mission-wrap > .mission-eyebrow, .mission-cta > .stage > .stage-panel > .mission-wrap > .mission-eyebrow { color: #b9bcb3; }
 .mission-cta-content { display: grid; grid-template-columns: 1.4fr 1fr; align-items: center; gap: 60px; padding: 46px 0 70px; }
 .mission-cta h2 { font-size: clamp(56px, 6.7vw, 96px); line-height: 1; }
 .mission-cta h2 > span { color: #b6bdaf; }

@@ -33,6 +33,7 @@ export const COPY_ATTRIBUTES = [
   'alt',
   'aria-label',
   'aria-description',
+  'aria-roledescription', // read aloud by screen readers ("carousel")
   // This app's own copy-bearing component props
   'label',
   'entryLabel',
@@ -81,7 +82,9 @@ export const I18N_GATE_RULE_IDS = [
  */
 export const KNOWN_NON_COPY_ATTRIBUTES = [
   'className', // structure
+  'labelFormatter', // recharts callback that formats a data label
   'descriptionId', // aria wiring, an id
+  'messageId', // aria wiring, the id of the element holding the message
   'aria-labelledby', // references element ids; the referenced elements carry the copy
   'name', // form field / entity name
   'folderName', // user-entered data

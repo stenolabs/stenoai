@@ -176,6 +176,30 @@ const PROCESSING_MEETING = {
   participants: [],
 };
 
+// An early note (instant transcript, refining:true): notes written from the
+// live transcript at stop while the batch pass refines them in the
+// background. Readable like a normal note, with a small "Refining transcript"
+// marker. Seeded only when STENOAI_E2E_SEED_REFINING_NOTE=1.
+const REFINING_NOTE_FILE = 'refining_summary.md';
+const REFINING_MEETING = {
+  session_info: {
+    name: 'Budget sync',
+    summary_file: REFINING_NOTE_FILE,
+    processed_at: '2026-07-12T10:00:00Z',
+    duration_seconds: 60,
+    is_live_transcript: true,
+    refining: true,
+  },
+  transcript: "[00:01] [You] Let's review the budget.\n\n[00:06] [Others] Q3 came in under plan.",
+  is_diarised: true,
+  diarised_text: "[00:01] [You] Let's review the budget.\n\n[00:06] [Others] Q3 came in under plan.",
+  summary: 'Early summary written from the live transcript.',
+  key_points: ['Q3 came in under plan'],
+  action_items: [],
+  discussion_areas: [],
+  participants: [],
+};
+
 // A generated template report attached to SEED_MEETING when
 // STENOAI_E2E_SEED_REPORT=1 (copy-notes-report T1). Gated separately so the
 // transcript-export T1 keeps seeing the report-less meeting it asserts on.
@@ -211,6 +235,112 @@ const SEED_FRONTMATTER_REPORT = {
 // Mutable so the stateful set-active-report mock below persists the pill
 // switch across the invalidate → get-meeting refetch, like the real sidecar.
 let seedActiveReport = null;
+// Inline report edits (update-report), keyed by report id, so the refetch that
+// follows a save shows the edited body like the real sidecar would.
+const seedReportContent = {};
+const withReportEdits = (report) =>
+  seedReportContent[report.id] !== undefined ? { ...report, content: seedReportContent[report.id] } : report;
+
+// README demo tour (e2e/specs/zz-demo-tour.t1.spec.ts): a small, clearly
+// fictional workspace. Seeded only when STENOAI_E2E_DEMO=1, so no other spec
+// sees it. Dates are relative to launch so Home reads "today" / "yesterday".
+const DEMO = process.env.STENOAI_E2E_DEMO === '1';
+const demoAgo = (days, hour, minute = 0) => {
+  const d = new Date();
+  d.setDate(d.getDate() - days);
+  d.setHours(hour, minute, 0, 0);
+  return d.toISOString();
+};
+const demoMeeting = (name, file, when, minutes, folder, body) => ({
+  session_info: {
+    name,
+    summary_file: file,
+    processed_at: when,
+    updated_at: when,
+    duration_seconds: minutes * 60,
+    transcription_failed: false,
+    folders: [folder],
+  },
+  folders: [folder],
+  transcript: '',
+  is_diarised: false,
+  participants: [],
+  key_points: [],
+  action_items: [],
+  discussion_areas: [],
+  ...body,
+});
+const DEMO_FOLDERS = [
+  { id: 'f-product', name: 'Product', color: '#6366f1', icon: 'folder', order: 0 },
+  { id: 'f-customers', name: 'Customers', color: '#0ea5e9', icon: 'folder', order: 1 },
+  { id: 'f-hiring', name: 'Hiring', color: '#f59e0b', icon: 'folder', order: 2 },
+];
+const DEMO_MEETINGS = DEMO
+  ? [
+      demoMeeting('Q1 roadmap review', 'q1-roadmap-review_summary.md', demoAgo(0, 10, 30), 42, 'f-product', {
+        participants: ['Maya Okafor', 'Tomas Lindqvist', 'Priya Raman', 'Jonah Eze'],
+        transcript:
+          '[00:04] [You] Let us lock the three bets for Q1.\n[00:11] [Others] Onboarding first, it unblocks the Brightwater rollout.',
+        is_diarised: true,
+        summary:
+          'The team locked the Q1 roadmap around three bets: self-serve onboarding, the mobile beta and usage-based billing. Onboarding ships first.',
+        key_points: [
+          'Self-serve onboarding is the top priority and ships by 24 January.',
+          'The mobile beta opens to 50 design partners in February.',
+          'Usage-based billing slips two weeks for a pricing review.',
+          'One senior backend engineer is approved for the billing work.',
+        ],
+        action_items: [
+          'Maya to draft the onboarding spec by Friday.',
+          'Tomas to scope the mobile beta invite flow.',
+          'Priya to share the pricing model with finance.',
+          'Jonah to open the backend engineer role.',
+        ],
+        discussion_areas: [
+          {
+            title: 'Onboarding',
+            analysis: 'A guided setup should cut the time to a first report from four days to one.',
+          },
+        ],
+      }),
+      demoMeeting('Brightwater kickoff', 'brightwater-kickoff_summary.md', demoAgo(1, 15, 0), 35, 'f-customers', {
+        summary:
+          'Kickoff with the Brightwater operations team. They want 120 seats live by March and a single sign-on setup before the pilot starts.',
+        key_points: ['Pilot starts with the operations team in February.', 'Single sign-on is a hard requirement.'],
+        action_items: ['Send the pilot plan to Brightwater.', 'Book the single sign-on setup call.', 'Share the security overview.'],
+      }),
+      demoMeeting('Design critique: mobile beta', 'design-critique-mobile-beta_summary.md', demoAgo(2, 11, 0), 28, 'f-product', {
+        summary:
+          'Reviewed the mobile beta flows. The capture screen is ready; the invite flow needs one more pass on empty states.',
+        key_points: ['Capture screen approved.', 'Invite flow needs clearer empty states.'],
+        action_items: ['Revise the invite flow empty states.', 'Prepare the beta feedback form.'],
+      }),
+      demoMeeting('Weekly standup', 'weekly-standup_summary.md', demoAgo(3, 9, 30), 14, 'f-product', {
+        summary: 'No blockers. The onboarding prototype is on track and the billing migration is waiting on the pricing review.',
+        key_points: ['Onboarding prototype on track.'],
+        action_items: ['Unblock the billing migration after the pricing review.'],
+      }),
+      demoMeeting('Halden Freight renewal call', 'halden-freight-renewal_summary.md', demoAgo(4, 14, 0), 31, 'f-customers', {
+        summary:
+          'Halden Freight will renew for two years if reporting exports arrive this quarter. They asked for a named contact during the migration.',
+        key_points: ['Two-year renewal is on the table.', 'Reporting exports are the deciding feature.'],
+        action_items: [
+          'Confirm the export timeline with product.',
+          'Send the renewal proposal.',
+          'Assign a migration contact.',
+          'Schedule the quarterly review.',
+          'Share the reporting roadmap.',
+        ],
+      }),
+      demoMeeting('Backend engineer debrief', 'backend-engineer-debrief_summary.md', demoAgo(6, 16, 0), 22, 'f-hiring', {
+        summary:
+          'Debrief after the system design interview. Strong on data modelling and clear communication; the panel recommends moving to the final round.',
+        key_points: ['Panel recommends the final round.'],
+        action_items: ['Schedule the final round.'],
+      }),
+    ]
+  : [];
+const DEMO_HERO_FILE = 'q1-roadmap-review_summary.md';
 
 const seededMeeting = () => {
   const meeting = process.env.STENOAI_E2E_SEED_DIARISED_EXPORT === '1'
@@ -223,10 +353,10 @@ const seededMeeting = () => {
       }
     : SEED_MEETING;
   if (process.env.STENOAI_E2E_SEED_REPORT === 'frontmatter') {
-    return { ...meeting, reports: [SEED_FRONTMATTER_REPORT], active_report: seedActiveReport };
+    return { ...meeting, reports: [withReportEdits(SEED_FRONTMATTER_REPORT)], active_report: seedActiveReport };
   }
   return process.env.STENOAI_E2E_SEED_REPORT === '1'
-    ? { ...meeting, reports: [SEED_REPORT], active_report: seedActiveReport }
+    ? { ...meeting, reports: [withReportEdits(SEED_REPORT)], active_report: seedActiveReport }
     : meeting;
 };
 
@@ -340,6 +470,15 @@ function install({ ipcMain }) {
   // Renderer tests can save and reopen chat turns without a backend or disk.
   let chatSessions = { sessions: [] };
   let privacyNoticeSeen = true;
+  // Record shortcut state for GeneralTab / Home hints (T1). Mirrors main.js's
+  // recordHotkeyState() shape.
+  let mockRecordHotkey = {
+    enabled: true,
+    registered: true,
+    accelerator: 'Control+Alt+R',
+    customAccelerator: null,
+    defaultAccelerator: 'Control+Alt+R',
+  };
   let delayPrivacyNotice = process.env.STENOAI_E2E_DELAY_PRIVACY_NOTICE === '1';
   // In-memory stand-in for the org session + provider config that the real
   // handlers persist to disk. Mutated by the org-login / org-logout / set-ai
@@ -406,6 +545,7 @@ function install({ ipcMain }) {
   // the renderer's world, so monkey-patching window.stenoai.meetings.update in
   // page.evaluate silently no-ops instead of recording anything.
   global.__stenoaiE2eUpdateMeetingCalls = [];
+  global.__stenoaiE2eUpdateReportCalls = [];
 
   // Every reprocess-meeting call, same recording trick and the same reason. A
   // spec that has to prove a rebuild did NOT start cannot assert on the UI
@@ -565,7 +705,369 @@ function install({ ipcMain }) {
   // Channels with behaviour a test depends on. Each is (event, ...args) like a
   // real ipcMain.handle callback. Mirror the real handlers' return shapes from
   // app/main.js (get-ai-provider ~5950, org-* ~7990).
+  // Connect page (Steno MCP server). The scope settings are stateful so the
+  // connect.t1 spec can assert what the renderer asked the bridge to save;
+  // global.__connectSettings exposes them to app.evaluate().
+  global.__connectSettings = { folderAllowlist: null, excludeTranscripts: false };
+  global.__mockRecipes = [];
+  // Built with the real snippet builders, from the stable launcher path, so the
+  // T1 spec asserts the exact text a user copies.
+  const connectInstall = require('./steno-mcp-install');
+  const CONNECT_LAUNCHER = { command: '/Users/sam/Library/Application Support/stenoai/bin/steno-mcp', args: [], env: {} };
+  const connectInfo = () => ({
+    success: true,
+    serverAvailable: true,
+    claudeBundleAvailable: true,
+    snippets: connectInstall.snippets(CONNECT_LAUNCHER, 'darwin'),
+    launch: CONNECT_LAUNCHER,
+    // Claude Code: MCP + the skill; Codex: the skill only; Claude: MCP. So the
+    // spec covers Connected (+ Skill installed hint), Skill installed alone,
+    // the not-connected state, and Last used on both kinds of card.
+    clients: { claudeDesktop: true, claudeCode: true, codex: false, cursor: false },
+    skills: { claudeCode: true, codex: true },
+    lastUsed: {
+      any: new Date(Date.now() - 5 * 60_000).toISOString(),
+      claudeCode: new Date(Date.now() - 5 * 60_000).toISOString(),
+      claudeDesktop: new Date(Date.now() - 2 * 86_400_000).toISOString(),
+      codex: new Date(Date.now() - 60_000).toISOString(),
+      cursor: null,
+    },
+  });
+
+  // Suggested actions (Connect page + action cards). Stateful so the
+  // mcp-actions.t1 spec can assert what the renderer asked to send:
+  // global.__actionsApproved records every approve (card id + exact args),
+  // global.__actionsDismissed every dismiss. STENOAI_E2E_SEED_ACTIONS=1 starts
+  // with one connected endpoint and two proposals for the seed meeting.
+  const ACTION_TOOLS = [
+    { name: 'create_issue', title: 'Create issue', description: 'Create an issue in the tracker.', readOnly: false },
+    { name: 'send_message', title: 'Send message', description: 'Post a message to a channel.', readOnly: false },
+    { name: 'search_issues', title: 'Search issues', description: 'Find issues.', readOnly: true },
+  ];
+  const ACTION_SCHEMAS = {
+    create_issue: {
+      type: 'object',
+      properties: {
+        title: { type: 'string', title: 'Title' },
+        description: { type: 'string' },
+        priority: { type: 'string', enum: ['low', 'medium', 'high'] },
+      },
+      required: ['title'],
+    },
+    send_message: {
+      type: 'object',
+      properties: { channel: { type: 'string' }, text: { type: 'string' } },
+      required: ['channel', 'text'],
+    },
+    // A Notion-shaped page tool for the readable-card screenshot and the
+    // STENOAI_E2E_SEED_ACTIONS=notion seed.
+    create_page: {
+      type: 'object',
+      properties: {
+        title: { type: 'string', title: 'Title' },
+        content: { type: 'string', title: 'Content' },
+        parent_page_id: { type: 'string', title: 'Parent page' },
+        icon: { type: 'string', title: 'Icon' },
+      },
+      required: ['title'],
+    },
+  };
+  const NOTION_TOOLS = [
+    { name: 'notion-create-pages', title: 'Create Notion pages', description: 'Create Notion pages.', readOnly: false },
+    { name: 'search', title: 'Search', description: 'Search the workspace.', readOnly: true },
+  ];
+  const ACTION_CONNECTORS = [
+    { id: 'linear', name: 'Linear', url: 'https://mcp.linear.app/mcp', auth: 'oauth', status: 'available' },
+    { id: 'notion', name: 'Notion', url: 'https://mcp.notion.com/mcp', auth: 'oauth', status: 'available' },
+    { id: 'atlassian', name: 'Jira and Confluence', url: 'https://mcp.atlassian.com/v2/mcp', auth: 'oauth', status: 'available' },
+    { id: 'hubspot', name: 'HubSpot', url: 'https://mcp.hubspot.com', auth: 'oauth', status: 'needs-registration' },
+    { id: 'asana', name: 'Asana', url: 'https://mcp.asana.com/v2/mcp', auth: 'oauth', status: 'needs-registration' },
+    { id: 'slack', name: 'Slack', url: 'https://mcp.slack.com/mcp', auth: 'oauth', status: 'needs-registration' },
+  ];
+  let actionSeq = 0;
+  const mockConnection = (over) => ({
+    id: `conn-${++actionSeq}`,
+    name: 'Team n8n',
+    url: 'http://127.0.0.1:5678/mcp/steno',
+    origin: 'http://127.0.0.1:5678',
+    locality: 'device',
+    kind: 'custom',
+    auth: 'bearer',
+    headerName: null,
+    enabled: true,
+    account: null,
+    status: 'ok',
+    tools: ACTION_TOOLS,
+    toolsFetchedAt: 1,
+    blockedByPolicy: false,
+    ...over,
+  });
+  const mockCard = (connection, tool, args, reason, actionItem) => ({
+    id: `card-${++actionSeq}`,
+    connectionId: connection.id,
+    connectionName: connection.name,
+    connectionAvailable: true,
+    origin: connection.origin,
+    locality: connection.locality,
+    tool,
+    toolTitle: [...ACTION_TOOLS, ...NOTION_TOOLS].find((t) => t.name === tool)?.title ?? null,
+    toolDescription: null,
+    inputSchema: ACTION_SCHEMAS[tool],
+    arguments: args,
+    reason,
+    actionItem,
+    validationErrors: [],
+    status: 'proposed',
+    createdAt: 1,
+    updatedAt: 1,
+  });
+  global.__actionsApproved = [];
+  global.__actionsDismissed = [];
+  global.__actionsAdded = [];
+  const actionsState = { connections: [], cards: [], autoSuggest: true, recent: [] };
+  const seedActionCards = () => {
+    const c = actionsState.connections.find((x) => x.enabled) || actionsState.connections[0];
+    if (!c) return;
+    actionsState.cards = [
+      mockCard(c, 'create_issue', { title: 'Prep the release notes', priority: 'high' }, 'Bob owns the release notes', 'Bob to prep the release notes'),
+      mockCard(c, 'send_message', { channel: '#release', text: 'We ship on Friday.' }, 'Tell the team the date', 'Alice to tell the team we ship Friday'),
+    ];
+  };
+  if (process.env.STENOAI_E2E_SEED_ACTIONS === '1') {
+    actionsState.connections.push(mockConnection({}));
+    seedActionCards();
+  }
+  // A Notion connection and the note's concrete, Notion-ready action item.
+  if (process.env.STENOAI_E2E_SEED_ACTIONS === 'notion') {
+    const notion = mockConnection({
+      name: 'Notion', url: 'https://mcp.notion.com/mcp', origin: 'https://mcp.notion.com', locality: 'internet',
+      kind: 'notion', auth: 'oauth', account: 'Acme workspace', tools: NOTION_TOOLS,
+    });
+    actionsState.connections.push(notion);
+    // A simple action (app/mcp-simple-actions.js): flat fields on the card,
+    // translated to Notion's nested notion-create-pages call by sendTemplate.
+    actionsState.cards = [
+      {
+        ...mockCard(
+          notion,
+          'notion-create-pages',
+          { title: 'Website content cleanup', content: 'Pages to trim:\n- Defence\n- Law enforcement' },
+          '',
+          "Create a Notion page called 'Website content cleanup' listing the pages to trim: Defence, Law enforcement",
+        ),
+        toolTitle: 'Create page',
+        inputSchema: {
+          type: 'object',
+          properties: { title: { type: 'string', minLength: 1 }, content: { type: 'string' } },
+          required: ['title'],
+          additionalProperties: false,
+        },
+        sendTemplate: { pages: [{ properties: { title: '{{title}}' }, content: '{{content}}' }] },
+      },
+    ];
+  }
+  // README demo tour: Linear and Notion connected, one suggestion each on the
+  // hero note (get-cards answers per note there, so the other notes stay quiet).
+  if (DEMO) {
+    const linear = mockConnection({
+      name: 'Linear', url: 'https://mcp.linear.app/mcp', origin: 'https://mcp.linear.app', locality: 'internet',
+      kind: 'linear', auth: 'oauth', account: 'Larkspur',
+    });
+    const notion = mockConnection({
+      name: 'Notion', url: 'https://mcp.notion.com/mcp', origin: 'https://mcp.notion.com', locality: 'internet',
+      kind: 'notion', auth: 'oauth', account: 'Larkspur', tools: NOTION_TOOLS,
+    });
+    actionsState.connections.push(linear, notion);
+    actionsState.cards = [
+      mockCard(
+        linear,
+        'create_issue',
+        { title: 'Draft the self-serve onboarding spec', priority: 'high' },
+        '',
+        'Maya to draft the onboarding spec by Friday.',
+      ),
+      {
+        ...mockCard(
+          notion,
+          'notion-create-pages',
+          { title: 'Q1 roadmap decisions', content: 'Onboarding ships by 24 January.\nMobile beta opens in February.\nBilling slips two weeks.' },
+          '',
+          'Priya to share the pricing model with finance.',
+        ),
+        toolTitle: 'Create page',
+        inputSchema: {
+          type: 'object',
+          properties: { title: { type: 'string', minLength: 1 }, content: { type: 'string' } },
+          required: ['title'],
+          additionalProperties: false,
+        },
+        sendTemplate: { pages: [{ properties: { title: '{{title}}' }, content: '{{content}}' }] },
+      },
+    ];
+  }
+  // The built-in Email drafts (app/mcp-email.js): always listed, on by default.
+  const emailTool = require('./mcp-email');
+  const emailConnection = {
+    id: emailTool.EMAIL_CONNECTION_ID,
+    name: 'Email',
+    url: '',
+    origin: null,
+    locality: 'device',
+    kind: 'email',
+    transport: 'builtin',
+    builtin: true,
+    auth: 'none',
+    headerName: null,
+    enabled: true,
+    account: null,
+    status: 'ok',
+    tools: [{ name: 'draft_email', title: 'Draft email', description: '', readOnly: false }],
+    toolsFetchedAt: 1,
+    blockedByPolicy: false,
+  };
+  global.__actionsAddedLocal = [];
+  // A suggested follow-up email on the note, as the real service would make it.
+  if (process.env.STENOAI_E2E_SEED_ACTIONS === 'email') {
+    actionsState.cards = [{
+      ...mockCard(emailConnection, 'draft_email', {
+        to: ['dana@acme.co'],
+        subject: 'Follow-up: release plan',
+        body: 'Hi Dana,\n\nThanks for today. We ship Friday & Bob preps the notes.\n\nBest',
+      }, 'Recap the decisions for Dana', 'Alice to tell the team we ship Friday'),
+      connectionKind: 'email',
+      toolTitle: 'Draft email',
+      inputSchema: emailTool.EMAIL_TOOL.inputSchema,
+    }];
+  }
+  const actionsOverview = () => ({
+    success: true,
+    connections: [...actionsState.connections, emailConnection],
+    connectors: ACTION_CONNECTORS,
+    autoSuggest: actionsState.autoSuggest,
+    policy: { actionsEnabled: process.env.STENOAI_E2E_ACTIONS_DISABLED !== '1', managed: process.env.STENOAI_E2E_ACTIONS_DISABLED === '1', endpointAllowlist: null, reason: null },
+    secureStorage: true,
+  });
+  const ACTIONS_MOCKS = {
+    'actions-list': async () => actionsOverview(),
+    'actions-add-custom': async (_event, input) => {
+      global.__actionsAdded.push({ ...input, token: input.token ? '<set>' : undefined });
+      const connection = mockConnection({ name: input.name || 'Endpoint', url: input.url, auth: input.auth, headerName: input.headerName || null });
+      actionsState.connections.push(connection);
+      return { success: true, connection };
+    },
+    'actions-add-local': async (_event, input) => {
+      // Env values never come back to a spec: only their names.
+      global.__actionsAddedLocal.push({ ...input, env: Object.keys(input.env || {}) });
+      const connection = mockConnection({
+        name: input.name || input.command, url: '', origin: null, locality: 'device', kind: 'local', transport: 'stdio',
+        auth: 'none', command: [input.command, ...(input.args || [])].join(' '), envKeys: Object.keys(input.env || {}),
+      });
+      actionsState.connections.push(connection);
+      return { success: true, connection };
+    },
+    'actions-connect-connector': async (_event, id) => {
+      // A spec sets global.__connectConnectorError = { [id]: code } to make a
+      // vendor sign-in fail with that ActionError code.
+      const failure = global.__connectConnectorError?.[id];
+      if (failure) return { success: false, error_code: failure, error: 'Sign-in did not complete' };
+      const c = ACTION_CONNECTORS.find((x) => x.id === id);
+      const connection = mockConnection({ name: c.name, url: c.url, origin: new URL(c.url).origin, locality: 'internet', kind: id, auth: 'oauth', account: 'sam@example.com' });
+      actionsState.connections.push(connection);
+      return { success: true, connection };
+    },
+    'actions-authorize': async (_event, id) => ({ success: true, connection: actionsState.connections.find((c) => c.id === id) }),
+    'actions-cancel-authorize': async () => ({ success: true, cancelled: false }),
+    'actions-refresh-tools': async (_event, id) => ({ success: true, connection: actionsState.connections.find((c) => c.id === id) }),
+    'actions-set-enabled': async (_event, id, enabled) => {
+      if (id === emailConnection.id) {
+        emailConnection.enabled = enabled;
+        return { success: true, connection: emailConnection };
+      }
+      const c = actionsState.connections.find((x) => x.id === id);
+      c.enabled = enabled;
+      return { success: true, connection: c };
+    },
+    'actions-remove': async (_event, id) => {
+      actionsState.connections = actionsState.connections.filter((c) => c.id !== id);
+      return { success: true, removed: true };
+    },
+    'actions-set-auto-suggest': async (_event, value) => {
+      actionsState.autoSuggest = value;
+      return { success: true, autoSuggest: value };
+    },
+    'actions-get-cards': async (_event, summaryFile) => ({
+      success: true,
+      cards: DEMO && summaryFile !== DEMO_HERO_FILE ? [] : actionsState.cards,
+      // Email drafts alone make every note offer actions in the real app; the
+      // mock keeps other specs' notes quiet unless a spec seeds actions.
+      available: actionsState.connections.some((c) => c.enabled) || (process.env.STENOAI_E2E_SEED_ACTIONS === 'email' && emailConnection.enabled),
+    }),
+    'actions-suggest': async () => {
+      if (!actionsState.cards.some((c) => c.status === 'proposed')) seedActionCards();
+      return { success: true, skipped: false, cards: actionsState.cards };
+    },
+    'actions-approve': async (_event, _summaryFile, cardId, args) => {
+      global.__actionsApproved.push({ cardId, args });
+      const card = actionsState.cards.find((c) => c.id === cardId);
+      if (card.connectionKind === 'email') {
+        // The real mailto builder and the real shell.openExternal (a spec stubs it).
+        try {
+          const res = await emailTool.runDraftEmail(args, {
+            openMailto: (url) => require('electron').shell.openExternal(url),
+            writeClipboard: async (text) => require('electron').clipboard.writeText(text),
+          });
+          Object.assign(card, { status: 'done', arguments: args, result: { status: 'ok', link: null, text: res.text, ...(res.clipboard ? { clipboard: true } : {}) } });
+          return { success: true, card };
+        } catch (_) {
+          return { success: false, error_code: 'invalid-arguments', error: 'Check the email addresses', validationErrors: [] };
+        }
+      }
+      // A spec sets global.__actionsFailDetail to make the endpoint reject
+      // the call with that (already redacted) message.
+      if (typeof global.__actionsFailDetail === 'string') {
+        Object.assign(card, { status: 'failed', arguments: args, result: { status: 'tool-error', link: null, text: '', detail: global.__actionsFailDetail } });
+        return { success: true, card };
+      }
+      Object.assign(card, { status: 'done', arguments: args, result: { status: 'ok', link: 'https://mock.example/items/1', text: '' } });
+      actionsState.recent.unshift({
+        time: new Date(Date.UTC(2026, 11, 7, 10, 30)).toISOString(),
+        connectionId: card.connectionId,
+        connectionName: card.connectionName,
+        origin: card.origin,
+        tool: card.tool,
+        argumentsSha256: 'f'.repeat(64),
+        status: 'ok',
+        link: 'https://mock.example/items/1',
+      });
+      return { success: true, card };
+    },
+    'actions-dismiss': async (_event, _summaryFile, cardId) => {
+      global.__actionsDismissed.push(cardId);
+      actionsState.cards.find((c) => c.id === cardId).status = 'dismissed';
+      return { success: true, cards: actionsState.cards };
+    },
+    'actions-recent': async () => ({ success: true, entries: actionsState.recent }),
+  };
+
   const MOCKS = {
+    ...ACTIONS_MOCKS,
+    // Recipes: an in-memory list (the store itself is covered by recipes-store.test.js / recipes.t2).
+    'recipes-list': async () => ({ success: true, recipes: global.__mockRecipes }),
+    'recipes-save': async (_event, input) => {
+      const recipe = { description: '', ...input, id: input.id || `r_${String(global.__mockRecipes.length + 1).padStart(12, '0')}`, updatedAt: Date.now() };
+      global.__mockRecipes = [...global.__mockRecipes.filter((r) => r.id !== recipe.id), recipe];
+      return { success: true, recipe };
+    },
+    'recipes-delete': async (_event, id) => {
+      global.__mockRecipes = global.__mockRecipes.filter((r) => r.id !== id);
+      return { success: true, deleted: true };
+    },
+    'connect-get-info': async () => connectInfo(),
+    'connect-get-settings': async () => ({ success: true, ...global.__connectSettings }),
+    'connect-set-settings': async (_event, patch) => {
+      global.__connectSettings = { ...global.__connectSettings, ...patch };
+      return { success: true, ...global.__connectSettings };
+    },
     'get-privacy-notice-seen': async () => {
       if (delayPrivacyNotice) {
         delayPrivacyNotice = false;
@@ -875,7 +1377,7 @@ function install({ ipcMain }) {
       cloud_model: state.cloudModel,
       model: state.model,
       remote_ollama_url: state.remoteUrl,
-      cloud_api_key_set: false,
+      cloud_api_key_set: Boolean(state.cloudKey),
     }),
 
     // Mirror the real hard-lock: while a valid session exists the provider is
@@ -886,6 +1388,56 @@ function install({ ipcMain }) {
       }
       state.provider = provider;
       return { success: true, ai_provider: provider };
+    },
+
+    // Cloud key flow (onboarding + Settings). Stateful like the real config:
+    // switching provider recalls that provider's default model, and the key
+    // test answers from the pasted key so a T1 spec can drive each outcome:
+    // a key containing "bad" is rejected, "nocredit" has no credit,
+    // "offline" cannot reach the provider, anything else connects.
+    // global.__cloudKeyTests counts test calls.
+    'set-cloud-provider': async (_event, provider) => {
+      const defaults = {
+        openai: 'gpt-4o-mini',
+        anthropic: 'claude-haiku-4-5-20251001',
+        bedrock: 'anthropic.claude-haiku-4-5-20251001-v1:0',
+        custom: 'gpt-4o-mini',
+        openrouter: 'google/gemini-2.5-flash',
+      };
+      if (!Object.prototype.hasOwnProperty.call(defaults, provider)) {
+        return { success: false, error: `Invalid cloud provider: ${provider}` };
+      }
+      state.cloudProvider = provider;
+      state.cloudModel = defaults[provider];
+      return { success: true, cloud_provider: provider };
+    },
+    'set-cloud-model': async (_event, model) => {
+      state.cloudModel = model;
+      return { success: true, cloud_model: model };
+    },
+    'set-cloud-api-key': async (_event, key) => {
+      state.cloudKey = key || '';
+      return { success: true, cloud_api_key_set: Boolean(key) };
+    },
+    'test-cloud-api': async () => {
+      const tests = global.__cloudKeyTests ||= { calls: 0, providers: [] };
+      tests.calls++;
+      tests.providers.push(state.cloudProvider);
+      const key = state.cloudKey || '';
+      if (!key) return { success: false, error: 'No API key configured' };
+      if (key.includes('bad')) {
+        return { success: false, error: "Error code: 401 - {'error': {'code': 'invalid_api_key'}}", error_code: 'invalid_key' };
+      }
+      if (key.includes('nocredit')) {
+        return { success: false, error: 'Error code: 429 - insufficient_quota', error_code: 'no_credit' };
+      }
+      if (key.includes('offline')) return { success: false, error: 'Connection error.', error_code: 'network' };
+      const models = {
+        openai: ['gpt-4o-mini', 'gpt-4o'],
+        anthropic: ['claude-haiku-4-5-20251001', 'claude-sonnet-4-5-20250929'],
+        openrouter: ['google/gemini-2.5-flash', 'anthropic/claude-sonnet-4.5'],
+      }[state.cloudProvider] || [];
+      return { success: true, models };
     },
 
     // Stateful idle auto-install toggle: set updates the in-memory value that
@@ -918,6 +1470,7 @@ function install({ ipcMain }) {
     // lives in MOCKS, which shadows DEFAULTS, so it is the single source for the
     // channel.
     'list-meetings': async () => {
+      if (DEMO) return { success: true, meetings: DEMO_MEETINGS.map(applyOverlay) };
       if (process.env.STENOAI_E2E_MEETING_TRANSFER === '1') {
         return { success: true, meetings: [TRANSFER_MEETING] };
       }
@@ -933,6 +1486,9 @@ function install({ ipcMain }) {
       if (process.env.STENOAI_E2E_SEED_PROCESSING_NOTE === '1') {
         return { success: true, meetings: [PROCESSING_MEETING] };
       }
+      if (process.env.STENOAI_E2E_SEED_REFINING_NOTE === '1') {
+        return { success: true, meetings: [REFINING_MEETING] };
+      }
       if (seedSpeakers) {
         return { success: true, meetings: [seededSpeakerMeeting()] };
       }
@@ -945,6 +1501,19 @@ function install({ ipcMain }) {
     // Mirror the real handler just enough for the copy-notes-report T1: persist
     // the switch so the refetch that follows the mutation doesn't reset the
     // pill. 'standard' clears it, like src/reports.py set_active.
+    // Inline report editing. Runs the real pure transform (report-body.js), so
+    // a T1 sees the same accept/refuse decisions main makes; every call is
+    // recorded on global.__stenoaiE2eUpdateReportCalls like update-meeting.
+    'update-report': async (_event, summaryFile, reportId, frontmatter, body) => {
+      global.__stenoaiE2eUpdateReportCalls.push({ summaryFile, reportId, frontmatter, body });
+      const { updateReportInSidecar } = require('./report-body');
+      const reports = [SEED_REPORT, SEED_FRONTMATTER_REPORT].map(withReportEdits);
+      const result = updateReportInSidecar({ reports }, reportId, frontmatter, body);
+      if (!result.ok) return { success: false, error: result.error };
+      seedReportContent[reportId] = result.content;
+      return { success: true, content: result.content };
+    },
+
     'set-active-report': async (_event, _summaryFile, reportId) => {
       seedActiveReport = !reportId || reportId === 'standard' ? null : reportId;
       return { success: true };
@@ -953,16 +1522,32 @@ function install({ ipcMain }) {
     // Mirrors main.js's set-record-hotkey shape (enabled + live registered
     // flag). Stateless under mock IPC — the real registration is asserted by
     // the T2 spec; here it just keeps the toggle mutation from erroring.
-    'set-record-hotkey': async (_event, enabled) => ({
-      success: true,
-      enabled,
-      registered: !!enabled,
-    }),
+    'set-record-hotkey': async (_event, enabled) => {
+      mockRecordHotkey = { ...mockRecordHotkey, enabled: !!enabled, registered: !!enabled };
+      return { success: true, ...mockRecordHotkey };
+    },
+    // STENOAI_E2E_MOCK_HOTKEY_IN_USE names an accelerator another app "owns",
+    // so the Settings warning can be exercised without a real conflict.
+    'set-record-hotkey-accelerator': async (_event, accel) => {
+      if (accel && accel === process.env.STENOAI_E2E_MOCK_HOTKEY_IN_USE) {
+        return { success: false, error_code: 'in-use', error: 'That shortcut is already in use by another app.', ...mockRecordHotkey };
+      }
+      mockRecordHotkey = {
+        ...mockRecordHotkey,
+        customAccelerator: accel || null,
+        accelerator: accel || mockRecordHotkey.defaultAccelerator,
+      };
+      return { success: true, ...mockRecordHotkey };
+    },
 
     // The detail route loads via get-meeting (the lazy per-meeting fetch), not
     // by filtering list-meetings — answer it with the same seeded meeting so the
     // transcript-export detail route resolves and renders the transcript actions.
     'get-meeting': async (_event, summaryFile) => {
+      if (DEMO) {
+        const demo = DEMO_MEETINGS.find((x) => x.session_info.summary_file === summaryFile);
+        return demo ? { success: true, meeting: applyOverlay(demo) } : { success: false, error: 'meeting not found' };
+      }
       if (
         process.env.STENOAI_E2E_MEETING_TRANSFER === '1' &&
         summaryFile === TRANSFER_MEETING.session_info.summary_file
@@ -977,6 +1562,9 @@ function install({ ipcMain }) {
       }
       if (process.env.STENOAI_E2E_SEED_PROCESSING_NOTE === '1') {
         return { success: true, meeting: applyOverlay(PROCESSING_MEETING) };
+      }
+      if (process.env.STENOAI_E2E_SEED_REFINING_NOTE === '1') {
+        return { success: true, meeting: applyOverlay(REFINING_MEETING) };
       }
       if (seedSpeakers) {
         return { success: true, meeting: seededSpeakerMeeting() };
@@ -1076,7 +1664,7 @@ function install({ ipcMain }) {
           edited_fields: [...new Set([...existing, ...changed])],
         };
       }
-      return { success: true, message: 'ok' };
+      return { success: true, message: 'ok', edited_fields: changed };
     },
 
     // Mirror the real export-transcript handler's seam: with STENOAI_E2E_EXPORT_PATH
@@ -1740,7 +2328,16 @@ function install({ ipcMain }) {
         shared_notes_enabled: process.env.STENOAI_E2E_SHARED_NOTES !== '0',
       },
     },
-    'list-folders': { success: true, folders: [] },
+    // Seeded only for specs that need folders (connect.t1); others stay empty.
+    'list-folders': () => ({
+      success: true,
+      folders: DEMO ? DEMO_FOLDERS : process.env.STENOAI_E2E_SEED_FOLDERS === '1'
+        ? [
+          { id: 'f-sales', name: 'Sales', color: '#6366f1', icon: 'folder', order: 0 },
+          { id: 'f-eng', name: 'Engineering', color: '#6366f1', icon: 'folder', order: 1 },
+        ]
+        : [],
+    }),
     'get-calendar-events': { success: true, events: [] },
     // Without these, both new toggles fall through to the permissive
     // {success:true} default (no show_menu_bar_icon/premeeting_notifications_enabled
@@ -1751,7 +2348,7 @@ function install({ ipcMain }) {
     // Global record shortcut toggle (GeneralTab's "Global record shortcut"
     // row + the hero copy). Default enabled + registered so T1 renderer specs
     // render the ON state without a real globalShortcut registration.
-    'get-record-hotkey': { success: true, enabled: true, registered: true },
+    'get-record-hotkey': () => ({ success: true, ...mockRecordHotkey }),
     // Auto-record (#463) defaults off; answered so its row isn't stuck loading.
     'get-auto-record-meetings': { success: true, auto_record_meetings_enabled: false },
     // parakeet-status lives in MOCKS (env-gated installed flag).
@@ -1882,9 +2479,9 @@ function install({ ipcMain }) {
     'get-current-model': { success: true, model: 'gemma4:e2b-it-qat' },
     // get-queue-status lives in MOCKS (stateful recording machine) — its idle
     // shape is identical to the static default that used to sit here.
-    // Settings > Templates renders a row per template with badge/prompt/action
-    // variety (default, locked built-in, unlocked built-in, custom) — an empty
-    // list would only ever show the "New Template" row.
+    // Cookbooks renders a card per template with badge/prompt/action variety
+    // (default, locked built-in, unlocked built-in, custom) — an empty list
+    // would only ever show the "New cookbook" tile.
     'list-templates': {
       success: true,
       templates: [
@@ -1920,6 +2517,34 @@ function install({ ipcMain }) {
           builtin: false,
           locked: false,
         },
+        // The real built-in gallery (src/templates.py) plus the seeded sample,
+        // so the Cookbooks page renders its curated Featured row + sections.
+        ...[
+          ['product-demo', 'Product Demo', 'Summarise this call for someone evaluating a product or service being demonstrated to them.'],
+          ['sales-call', 'Sales Call', "Summarise this call for the person running the sales conversation. Cover the prospect's needs and objections."],
+          ['one-on-one', '1:1', 'Summarise this 1:1 conversation. Cover updates, feedback, blockers and follow-up actions.'],
+          ['standup', 'Standup', 'Summarise this standup/status meeting concisely: done, next, blockers.'],
+        ].map(([id, name, prompt]) => ({
+          id,
+          name,
+          icon: '',
+          prompt,
+          language: 'auto',
+          format: 'markdown',
+          builtin: true,
+          locked: false,
+        })),
+        {
+          id: 'shareable-summary',
+          name: 'Shareable summary',
+          icon: 'megaphone',
+          prompt:
+            'Write a clear, plain-language summary I can forward to a colleague or manager: the key points, decisions, and any next steps.',
+          language: 'auto',
+          format: 'markdown',
+          builtin: false,
+          locked: false,
+        },
       ],
       default_template_id: 'standard',
     },
@@ -1930,6 +2555,34 @@ function install({ ipcMain }) {
   // this is the observable seam for "which IPC did the renderer actually call".
   global.__mockIpcCalls = [];
 
+  // Chat-agent turns waiting on an action card (STENOAI_E2E_CHAT_AGENT=1).
+  const chatAgentTurns = new Map();
+  global.__chatActionApproved = [];
+  MOCKS['chat-action-approve'] = async (_event, queryId, cardId, args) => {
+    const turn = chatAgentTurns.get(queryId);
+    if (!turn || turn.card.id !== cardId) return { success: false, error_code: 'not-found', error: 'This action is no longer waiting for approval' };
+    global.__chatActionApproved.push({ cardId, args });
+    const card = { ...turn.card, arguments: args, status: 'done', result: { status: 'ok', link: 'https://linear.app/acme/issue/REL-2', text: 'Created REL-2' } };
+    chatAgentTurns.delete(queryId);
+    turn.send('query-action-card', { card });
+    setTimeout(() => {
+      turn.send('query-chunk', { chunk: `Done: I created REL-2, "${args.title}", in Linear.` });
+      turn.send('query-done', { success: true });
+    }, 20);
+    return { success: true, card };
+  };
+  MOCKS['chat-action-dismiss'] = async (_event, queryId, cardId) => {
+    const turn = chatAgentTurns.get(queryId);
+    if (!turn || turn.card.id !== cardId) return { success: false, error_code: 'not-found', error: 'This action is no longer waiting for approval' };
+    const card = { ...turn.card, status: 'dismissed' };
+    chatAgentTurns.delete(queryId);
+    turn.send('query-action-card', { card });
+    setTimeout(() => {
+      turn.send('query-chunk', { chunk: "OK, I won't create it." });
+      turn.send('query-done', { success: true });
+    }, 20);
+    return { success: true, card };
+  };
   let chatData = null;
   MOCKS['load-chat-sessions'] = async () => ({ success: true, data: chatData });
   MOCKS['save-chat-sessions'] = async (_event, data) => {
@@ -1968,8 +2621,55 @@ function install({ ipcMain }) {
           event.sender.send('query-chunk', { queryId, chunk: reply });
           event.sender.send('query-done', { queryId, success: true });
         };
+        if (process.env.STENOAI_E2E_CHAT_AGENT === '1') {
+          // A chat-agent turn (chat-agent.js): one read step, then an action
+          // card the turn waits on; chat-action-approve / -dismiss finish it.
+          const send = (channel, data) => { if (!event.sender.isDestroyed()) event.sender.send(channel, { queryId, ...data }); };
+          const conn = { id: 'conn-linear', name: 'Linear', origin: 'https://mcp.linear.app', locality: 'internet' };
+          const card = {
+            ...mockCard(conn, 'create_issue', { title: 'Prep the release notes', priority: 'high' }, '', undefined),
+            actionItem: undefined,
+          };
+          chatAgentTurns.set(queryId, { send, card });
+          setTimeout(() => {
+            send('query-tool-step', { step: { id: 's1', source: 'connection', connection: 'Linear', tool: 'search_issues', title: 'Search issues' } });
+            // A read on a custom endpoint carries what it asked for (chat-agent.js compactArguments).
+            send('query-tool-step', { step: { id: 's2', source: 'connection', connection: 'Tracker', tool: 'search_issues', title: 'Search issues', detail: 'query: "release notes", limit: "5"' } });
+            send('query-action-card', { card });
+          }, 20);
+          return;
+        }
+        if (process.env.STENOAI_E2E_CHAT_NOTICE === '1' && !event.sender.isDestroyed()) {
+          event.sender.send('query-tool-step', { queryId, step: { id: 'notice-tools', source: 'notice', connection: 'Notion', tool: 'tools-unavailable', title: 'gemma4:e2b-it-qat' } });
+        }
+        // STENOAI_E2E_CHAT_ERROR=<code>: the answer fails with that stable
+        // failure code (chat-query.js AI_ERROR_CODES), as the real backend
+        // reports it. Clearing global.__chatErrorCode lets a Retry succeed.
+        if (process.env.STENOAI_E2E_CHAT_ERROR) {
+          if (global.__chatErrorCode === undefined) global.__chatErrorCode = process.env.STENOAI_E2E_CHAT_ERROR;
+          const errorCode = global.__chatErrorCode;
+          if (errorCode) {
+            setTimeout(() => {
+              if (event.sender.isDestroyed()) return;
+              event.sender.send('query-done', { queryId, success: false, error: 'Unable to answer. Check your AI provider and try again.', errorCode });
+            }, 20);
+            return;
+          }
+        }
         if (process.env.STENOAI_E2E_HOLD_CHAT === '1') global.__finishChat = finish;
-        else setTimeout(finish, 20);
+        else if (process.env.STENOAI_E2E_CHAT_STREAM === '1') {
+          // Word by word, holding before the last word until __finishChat.
+          const words = reply.split(/(?<= )/);
+          const send = (c, d) => { if (!event.sender.isDestroyed()) event.sender.send(c, { queryId, ...d }); };
+          send('query-tool-step', { step: { id: 'context', source: 'context', connection: '', tool: 'notes', count: DEMO ? DEMO_MEETINGS.length : 3, title: null } });
+          // STENOAI_E2E_CHAT_STREAM_MS slows the stream to a readable pace (demo tour).
+          const stepMs = Number(process.env.STENOAI_E2E_CHAT_STREAM_MS) || 20;
+          words.slice(0, -1).forEach((w, i) => setTimeout(() => send('query-chunk', { chunk: w }), 400 + stepMs * i));
+          global.__finishChat = () => {
+            send('query-chunk', { chunk: words[words.length - 1] });
+            send('query-done', { success: true });
+          };
+        } else setTimeout(finish, 20);
       });
     }
     return originalOn(channel, handler);

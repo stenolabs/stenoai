@@ -15,7 +15,10 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover';
-import { PRESETS, PresetGlyph } from '@/lib/chatPresets';
+import { ModelIndicator } from '@/components/ModelIndicator';
+import { RecipeMenu } from '@/components/RecipeMenu';
+import { useRecipes } from '@/hooks/useRecipes';
+import { useSlashMenu } from '@/hooks/useSlashMenu';
 import {
   useAllChatSessions,
   useChatSessions,
@@ -27,6 +30,8 @@ import {
 // a fresh `[]` on every render, invalidating downstream deps.
 const EMPTY_MESSAGES: ChatMessage[] = [];
 import { useGlobalStreaming } from '@/hooks/useStreamingQuery';
+import { AgentRecord, LiveAgentTrail } from '@/components/chat/ChatAgentTrail';
+import { setChatTurnSaveFailed, trackChatTurn, untrackChatTurn, useChatTurn } from '@/lib/chatTurns';
 import { useAiProvider } from '@/hooks/useAi';
 import { navigate } from '@/lib/router';
 import {
@@ -35,11 +40,12 @@ import {
   bucketKey,
   deriveSessionName,
   toBucketLabel,
-  formatActiveModel,
   chatProviderReady,
 } from '@/lib/chat';
 import { consumePendingNewChat } from '@/routes/Chat';
 import { renderMarkdown } from '@/lib/markdown';
+import { aiErrorCode, aiErrorSavedText } from '@/lib/aiError';
+import { AiErrorNotice } from '@/components/chat/AiErrorNotice';
 import { t } from '@/i18n';
 
 interface ChatConversationProps {
@@ -58,20 +64,19 @@ export function ChatConversation({ sessionId }: ChatConversationProps) {
   const provider = useAiProvider();
 
   const [input, setInput] = React.useState('');
-  const [activeStreamId, setActiveStreamId] = React.useState<string | null>(null);
+  // The live answer for this session, if any (it outlives this page: see lib/chatTurns).
+  const activeTurn = useChatTurn(sessionId);
+  const activeStreamId = activeTurn?.streamId ?? null;
   const [historyOpen, setHistoryOpen] = React.useState(false);
-  const [presetsOpen, setPresetsOpen] = React.useState(false);
+  const recipes = useRecipes();
   // Folder scope persists for the lifetime of the conversation page mount.
   // The entry page's scope is handed off via consumePendingNewChat; later
   // turns in the same conversation can be re-scoped from this composer.
   const [scopeFolderId, setScopeFolderId] = React.useState<string | null>(null);
-  const pendingPersistRef = React.useRef<{ sessionId: string; context: string } | null>(null);
   const submittingRef = React.useRef(false);
   const inputRef = React.useRef<HTMLInputElement>(null);
   const scrollRef = React.useRef<HTMLDivElement>(null);
 
-  const isLocalEngine =
-    provider.data?.ai_provider === 'local' || provider.data?.ai_provider === 'remote';
   // Shared cloud/local/remote readiness; local/remote answer over a
   // context-capped, most-recent slice (see hint).
   const providerReady = chatProviderReady(provider.data);
@@ -93,11 +98,7 @@ export function ChatConversation({ sessionId }: ChatConversationProps) {
   // composer here starts with the same folder context.
   React.useEffect(() => {
     const pending = consumePendingNewChat(sessionId);
-    if (pending) {
-      pendingPersistRef.current = { sessionId: pending.sessionId, context: pending.folderId ?? 'notes' };
-      setActiveStreamId(pending.streamId);
-      setScopeFolderId(pending.folderId);
-    }
+    if (pending) setScopeFolderId(pending.folderId);
   }, [sessionId]);
 
   const session = React.useMemo(() => {
@@ -142,30 +143,9 @@ export function ChatConversation({ sessionId }: ChatConversationProps) {
 
   const activeStream = activeStreamId ? streaming.streams[activeStreamId] : null;
   const isStreaming = activeStream?.status === 'streaming';
+  const slash = useSlashMenu({ recipes, input, setInput, enabled: ready && !isStreaming });
 
-  // Persist the assistant turn when its stream finishes.
-  React.useEffect(() => {
-    if (!activeStreamId) return;
-    const stream = streaming.streams[activeStreamId];
-    if (!stream || stream.status === 'streaming') return;
-    const pending = pendingPersistRef.current;
-    if (!pending) return;
-    const content =
-      stream.text.trim() ||
-      (stream.status === 'error'
-        ? `Error: ${stream.error ?? 'query failed'}`
-        : '(empty response)');
-    const message: ChatMessage = {
-      role: 'assistant',
-      context: pending.context,
-      content,
-      ts: Date.now(),
-    };
-    void chat.appendMessage(pending.sessionId, message);
-    pendingPersistRef.current = null;
-    streaming.clearStream(activeStreamId);
-    setActiveStreamId(null);
-  }, [activeStreamId, streaming, chat]);
+  // ChatTurnPersister saves the answer when it finishes, even if this page is gone.
 
   // Virtualized message list. Long meetings produce thousands of messages
   // (diarised replay + long prompts), and rendering them all on every
@@ -181,8 +161,11 @@ export function ChatConversation({ sessionId }: ChatConversationProps) {
     () => session?.messages ?? EMPTY_MESSAGES,
     [session?.messages],
   );
-  const streamingContent = isStreaming && pendingPersistRef.current?.sessionId === sessionId
-    ? activeStream?.text || 'Thinking…'
+  // The live bubble stays while the turn is tracked: streaming, being saved,
+  // or (saveFailed) waiting for the user, so a finished answer whose save
+  // failed is still on screen rather than dropped.
+  const streamingContent = activeTurn !== null && activeStream
+    ? activeStream.text || ''
     : null;
   const totalItems = messages.length + (streamingContent !== null ? 1 : 0);
 
@@ -224,9 +207,8 @@ export function ChatConversation({ sessionId }: ChatConversationProps) {
 
       // Follow-ups include only bounded history from the selected context.
       const history = boundedChatHistory(session.messages ?? [], scopeFolderId ?? 'notes', 'notes');
-      const streamId = streaming.startGlobalStream(q, scopeFolderId, history);
-      pendingPersistRef.current = { sessionId: session.id, context: scopeFolderId ?? 'notes' };
-      setActiveStreamId(streamId);
+      const streamId = streaming.startGlobalStream(q, scopeFolderId, history, session.id);
+      trackChatTurn({ sessionId: session.id, streamId, context: scopeFolderId ?? 'notes' });
     } catch (err) {
       // Disk write / IPC / streaming setup can all fail. Surface the error.
       // Only restore the input if nothing made it to disk — once the user
@@ -238,6 +220,18 @@ export function ChatConversation({ sessionId }: ChatConversationProps) {
     } finally {
       submittingRef.current = false;
     }
+  };
+
+  // Ask the latest question again after a failed answer, without repeating
+  // the question in the thread.
+  const retry = () => {
+    if (isStreaming || submittingRef.current || !ready || !session) return;
+    const list = session.messages ?? [];
+    const at = list.map((m) => m.role).lastIndexOf('user');
+    if (at === -1) return;
+    const history = boundedChatHistory(list.slice(0, at), scopeFolderId ?? 'notes', 'notes');
+    const streamId = streaming.startGlobalStream(list[at].content, scopeFolderId, history, session.id);
+    trackChatTurn({ sessionId: session.id, streamId, context: scopeFolderId ?? 'notes' });
   };
 
   const stop = () => {
@@ -401,6 +395,7 @@ export function ChatConversation({ sessionId }: ChatConversationProps) {
                 const content = isStreamingBubble
                   ? (streamingContent ?? '')
                   : msg!.content;
+                const msgError = msg?.role === 'assistant' ? aiErrorCode(msg.error) : null;
                 return (
                   <div
                     key={virtualRow.key}
@@ -419,11 +414,36 @@ export function ChatConversation({ sessionId }: ChatConversationProps) {
                     // room above the composer.
                     className="pb-5"
                   >
-                    <Bubble
-                      role={role}
-                      content={content}
-                      live={isStreamingBubble}
-                    />
+                    {isStreamingBubble && activeStreamId ? (
+                      <LiveAgentTrail
+                        queryId={activeStreamId}
+                        steps={activeStream?.steps}
+                        cards={activeStream?.cards}
+                        pending={!activeStream?.text}
+                      />
+                    ) : msg?.role === 'assistant' ? (
+                      <AgentRecord steps={msg.steps} actions={msg.actions} />
+                    ) : null}
+                    {msgError ? (
+                      <>
+                        {/* A partial answer before the failure stays readable. */}
+                        {msg!.content.trim() && msg!.content !== aiErrorSavedText(msgError) && (
+                          <div className="mb-2"><Bubble role="assistant" content={msg!.content} /></div>
+                        )}
+                        <div className="max-w-[85%]">
+                          <AiErrorNotice
+                            code={msgError}
+                            onRetry={virtualRow.index === messages.length - 1 && !isStreaming ? retry : undefined}
+                          />
+                        </div>
+                      </>
+                    ) : !(isStreamingBubble && !activeStream?.text) && (
+                      <Bubble
+                        role={role}
+                        content={content}
+                        live={isStreamingBubble}
+                      />
+                    )}
                   </div>
                 );
               })}
@@ -434,6 +454,38 @@ export function ChatConversation({ sessionId }: ChatConversationProps) {
         {/* Composer pinned at the visual bottom — out of the scroll
             container, in the flex column. No leftover padding underneath. */}
         <div className="mx-auto w-full max-w-[760px] px-10 pb-6 pt-2">
+          {activeTurn?.saveFailed && (
+            <div
+              role="alert"
+              data-testid="chat-save-failed"
+              className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md border px-3 py-2 text-[13px]"
+              style={{
+                borderColor: 'var(--border-subtle)',
+                background: 'var(--danger-bg)',
+                color: 'var(--danger)',
+              }}
+            >
+              <span className="min-w-0 flex-1">{t('chat.saveError')}</span>
+              <button
+                type="button"
+                className="font-medium underline underline-offset-2"
+                onClick={() => setChatTurnSaveFailed(activeTurn.streamId, false)}
+              >
+                {t('chat.saveRetry')}
+              </button>
+              <button
+                type="button"
+                className="font-medium underline underline-offset-2"
+                onClick={() => {
+                  // Explicit: the answer is given up only on the user's say-so.
+                  streaming.clearStream(activeTurn.streamId);
+                  untrackChatTurn(activeTurn.streamId);
+                }}
+              >
+                {t('chat.saveDismiss')}
+              </button>
+            </div>
+          )}
           {submitError && (
             <div
               role="alert"
@@ -447,10 +499,11 @@ export function ChatConversation({ sessionId }: ChatConversationProps) {
               {submitError}
             </div>
           )}
-          <Popover open={presetsOpen} onOpenChange={setPresetsOpen}>
+          <Popover open={slash.open} onOpenChange={(next) => !next && slash.close()}>
             <PopoverAnchor asChild>
           <form
             onSubmit={onSubmit}
+            data-tip-anchor="chat-composer"
             className="rounded-2xl border p-3 transition-shadow focus-within:shadow-[var(--shadow-md)]"
             style={{
               borderColor: 'var(--border-subtle)',
@@ -463,14 +516,9 @@ export function ChatConversation({ sessionId }: ChatConversationProps) {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => {
-              // Same '/' shortcut as the entry page — opens the preset
-              // picker when the input is empty so a literal slash typed
-              // mid-sentence doesn't surprise the user.
-              if (e.key === '/' && input === '' && ready && !isStreaming) {
-                e.preventDefault();
-                setPresetsOpen(true);
-                return;
-              }
+              // Same '/' recipe menu as the entry page: a leading slash opens
+              // it and the text after it filters; a slash mid-sentence is text.
+              if (slash.onKeyDown(e)) return;
               if (e.key === 'Enter' && !e.shiftKey && !isStreaming) {
                 e.preventDefault();
                 void submit(input);
@@ -492,22 +540,7 @@ export function ChatConversation({ sessionId }: ChatConversationProps) {
                   setSubmitError(t('chat.saveError'));
                 });
               }} disabled={isStreaming || !session} />
-              <span
-                data-testid="chat-model-indicator"
-                className="text-[12px]"
-                style={{ color: 'var(--fg-muted)' }}
-              >
-                {formatActiveModel(provider.data)}
-              </span>
-              {isLocalEngine && (
-                <span
-                  data-testid="chat-local-scope-hint"
-                  className="text-[12px]"
-                  style={{ color: 'var(--fg-muted)' }}
-                >
-                  · may omit older notes
-                </span>
-              )}
+              <ModelIndicator provider={provider.data} />
             </div>
             <div className="flex items-center gap-1">
               {isStreaming ? (
@@ -542,37 +575,15 @@ export function ChatConversation({ sessionId }: ChatConversationProps) {
               className="w-[var(--radix-popover-trigger-width)] max-w-none p-1"
               onOpenAutoFocus={(e) => e.preventDefault()}
             >
-              <div
-                className="px-2 pb-1 pt-0.5 text-[11px] font-medium"
-                style={{ color: 'var(--fg-muted)' }}
-              >
-                Presets
-              </div>
-              <div className="flex flex-col">
-                {PRESETS.map((p) => (
-                  <button
-                    key={p.label}
-                    type="button"
-                    onClick={() => {
-                      setInput(p.prompt);
-                      setPresetsOpen(false);
-                      inputRef.current?.focus();
-                    }}
-                    className="flex flex-col items-start gap-0.5 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-[color:var(--surface-hover)]"
-                  >
-                    <div
-                      className="flex items-center gap-2 text-[13px]"
-                      style={{ color: 'var(--fg-1)' }}
-                    >
-                      <PresetGlyph />
-                      {p.label}
-                    </div>
-                    <div className="pl-[26px] text-[12px]" style={{ color: 'var(--fg-2)' }}>
-                      {p.description}
-                    </div>
-                  </button>
-                ))}
-              </div>
+              <RecipeMenu
+                recipes={slash.filtered}
+                selectedIndex={slash.selected}
+                onHover={slash.setSelected}
+                onPick={(r) => {
+                  slash.pick(r);
+                  inputRef.current?.focus();
+                }}
+              />
             </PopoverContent>
           </Popover>
         </div>

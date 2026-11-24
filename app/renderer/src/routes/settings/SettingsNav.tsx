@@ -1,10 +1,9 @@
 import {
   ArrowLeft,
   Building2,
+  Cable,
   Code2,
   Info,
-  LayoutTemplate,
-  Plug,
   Settings2,
   Sparkles,
   Users,
@@ -21,10 +20,9 @@ import { t } from '@/i18n';
 export type SettingsTabId =
   | 'general'
   | 'ai'
-  | 'templates'
   | 'people'
   | 'organisation'
-  | 'integrations'
+  | 'connectors'
   | 'advanced'
   | 'developer'
   | 'about';
@@ -58,13 +56,6 @@ const NAV_GROUPS: NavGroup[] = [
         icon: Sparkles,
       },
       {
-        id: 'templates',
-        get label() {
-          return t('settings.nav.templates');
-        },
-        icon: LayoutTemplate,
-      },
-      {
         id: 'people',
         get label() {
           return t('settings.nav.people');
@@ -85,6 +76,13 @@ const NAV_GROUPS: NavGroup[] = [
         },
         icon: Building2,
       },
+      {
+        id: 'connectors',
+        get label() {
+          return t('settings.nav.connectors');
+        },
+        icon: Cable,
+      },
     ],
   },
   {
@@ -92,13 +90,6 @@ const NAV_GROUPS: NavGroup[] = [
       return t('settings.nav.system');
     },
     items: [
-      {
-        id: 'integrations',
-        get label() {
-          return t('settings.nav.integrations');
-        },
-        icon: Plug,
-      },
       {
         id: 'advanced',
         get label() {
@@ -133,14 +124,12 @@ export function settingsTabLabel(id: SettingsTabId): string {
       return t('settings.nav.preferences');
     case 'ai':
       return t('settings.nav.ai');
-    case 'templates':
-      return t('settings.nav.templates');
     case 'people':
       return t('settings.nav.people');
     case 'organisation':
       return t('settings.nav.organisation');
-    case 'integrations':
-      return t('settings.nav.integrations');
+    case 'connectors':
+      return t('settings.nav.connectors');
     case 'advanced':
       return t('settings.nav.advanced');
     case 'developer':

@@ -74,29 +74,32 @@
    Semantic tokens - dark mode
    ═══════════════════════════════════════════════════ */
 .dark {
-  --page:                #1A1A18;
-  --surface:             #1A1A18;
-  --surface-raised:      #24241F;
-  --surface-sunken:      #14140F;
-  --surface-hover:       #242420;
-  --surface-active:      #2E2E28;
-  --surface-translucent: rgba(26, 26, 24, 0.78);
+  --page:                #121311;
+  --surface:             #121311;
+  --surface-raised:      #1B1D1A;
+  --surface-sunken:      #0C0D0B;
+  --surface-hover:       #1B1D1A;
+  --surface-active:      #242722;
+  --surface-translucent: rgba(18, 19, 17, 0.82);
 
-  --fg-1:      #EDEAE0;
-  --fg-2:      #9A968A;
-  --fg-muted:  #5D5A52;
-  --fg-inverse: var(--ink-900);
+  --fg-1:      #FFFFFF;
+  --fg-2:      #B4B8AF;
+  --fg-muted:  #8C9187;
+  --fg-inverse: var(--page);
 
-  --border-subtle: rgba(237, 234, 224, 0.06);
-  --border:        rgba(237, 234, 224, 0.10);
-  --border-strong: rgba(237, 234, 224, 0.20);
+  --border-subtle: rgba(255, 255, 255, 0.07);
+  --border:        rgba(255, 255, 255, 0.12);
+  --border-strong: rgba(255, 255, 255, 0.22);
 
-  --primary:       #EDEAE0;
-  --primary-hover: #FFFFFF;
-  --primary-fg:    #1A1A18;
-  --focus-ring:    rgba(237, 234, 224, 0.45);
+  --primary:       #566D48;
+  --primary-hover: #647E54;
+  --primary-fg:    #FFFFFF;
+  --focus-ring:    var(--green-text);
 
   --recording: #D17563;
+
+  --green-text: #9DB88D;
+  color-scheme: dark;
 
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.45);
   --shadow-md: 0 8px 24px -8px rgba(0, 0, 0, 0.55), 0 2px 4px -2px rgba(0, 0, 0, 0.3);

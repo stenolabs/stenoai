@@ -69,6 +69,17 @@
     --success-bg: var(--green-50);
     --recording: var(--red-600);
 
+    /* Chat chart series: muted categorical hues in a fixed order, validated
+       for CVD separation and >= 3:1 contrast against --surface-raised. */
+    --chart-1: #3F6EA8;
+    --chart-2: #C2603E;
+    --chart-3: #14937A;
+    --chart-4: #B5841C;
+    --chart-5: #97578C;
+    --chart-6: #6E8B33;
+    --chart-7: #6A5DB3;
+    --chart-8: #B5485A;
+
     /* Elevation */
     --shadow-sm: 0 1px 2px rgba(27, 27, 25, 0.05);
     --shadow-md: 0 8px 24px -8px rgba(27, 27, 25, 0.14), 0 2px 4px -2px rgba(27, 27, 25, 0.06);
@@ -137,6 +148,28 @@
      * active tabs, toggles, and stream-markdown links all use the same
      * neutral ink tone so the interface reads as one paper+ink palette. */
     --accent-primary: 60 4% 10%;
+
+    /* Cookbook cover art (generative). Ink/paper tones so a row
+     * of covers has rhythm, plus the muted colour tones below. */
+    --cover-ink-bg: #1B1B19;
+    --cover-ink-fg: #FAF9F5;
+    --cover-stone-bg: #E5DFD1;
+    --cover-stone-fg: #1B1B19;
+    --cover-paper-bg: #F1EEE5;
+    --cover-paper-fg: #3D3D39;
+    /* Muted colour tones: printed-ink colours that sit on paper, for rhythm
+     * across a row of covers without a single brand accent. */
+    --cover-sage-bg: #C9D3BF;
+    --cover-sage-fg: #26301F;
+    --cover-clay-bg: #E2BFA8;
+    --cover-clay-fg: #3B2116;
+    --cover-sky-bg: #BCCCDA;
+    --cover-sky-fg: #1C2A38;
+    --cover-plum-bg: #D3C0D2;
+    --cover-plum-fg: #33213A;
+    --cover-ochre-bg: #E6CF95;
+    --cover-ochre-fg: #3A2E0E;
+    --cover-grain: 0.22;
   }
 
   .dark,
@@ -167,6 +200,15 @@
     --success-bg: rgba(125, 160, 136, 0.14);
     --recording: #D17563;
 
+    --chart-1: #5F8FD6;
+    --chart-2: #CC6A48;
+    --chart-3: #22A184;
+    --chart-4: #B88A26;
+    --chart-5: #B26AA6;
+    --chart-6: #7E9A3E;
+    --chart-7: #8A7FDB;
+    --chart-8: #CF5D70;
+
     --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.45);
     --shadow-md: 0 8px 24px -8px rgba(0, 0, 0, 0.55), 0 2px 4px -2px rgba(0, 0, 0, 0.3);
     --shadow-lg: 0 24px 48px -16px rgba(0, 0, 0, 0.6), 0 4px 8px -4px rgba(0, 0, 0, 0.3);
@@ -194,6 +236,26 @@
     /* Accent = foreground ink (light variant for dark mode). Matches the
      * light-mode pattern of accent == foreground for an all-neutral UI. */
     --accent-primary: 48 20% 90%;
+
+    /* Covers in dark mode: ink deepens below the page, paper turns warm
+     * graphite, and line-work drops to a quieter cream. */
+    --cover-ink-bg: #0F0F0D;
+    --cover-ink-fg: #D9D5C8;
+    --cover-stone-bg: #2C2B25;
+    --cover-stone-fg: #CFCABC;
+    --cover-paper-bg: #22221E;
+    --cover-paper-fg: #A9A496;
+    --cover-sage-bg: #2F3A2B;
+    --cover-sage-fg: #C9D3BF;
+    --cover-clay-bg: #4A3024;
+    --cover-clay-fg: #E8C9B5;
+    --cover-sky-bg: #263646;
+    --cover-sky-fg: #C3D2DF;
+    --cover-plum-bg: #3B2A3D;
+    --cover-plum-fg: #DCCADB;
+    --cover-ochre-bg: #4A3D19;
+    --cover-ochre-fg: #EBD7A3;
+    --cover-grain: 0.3;
   }
 }
 
@@ -258,6 +320,15 @@
 @keyframes titleFadeIn {
   from { opacity: 0; transform: translateY(-5px); }
   to   { opacity: 1; transform: translateY(0); }
+}
+/* Onboarding screens ease in when the step changes (Setup.tsx). Motion only
+   when the person hasn't asked for less of it. */
+@keyframes setupStageIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .setup-stage-in { animation: setupStageIn 0.32s cubic-bezier(0.16, 1, 0.3, 1); }
 }
 /* Onboarding transcription-model download: Parakeet exposes only coarse stages
    (no byte counts), so its progress bar is indeterminate - a segment sweeps the
@@ -456,6 +527,35 @@
   }
 
   /* Meeting view — bullet list */
+  /* Inline note editing: a field is typeset exactly like the read-only note
+     and only shows a surface on hover/focus. The padding is cancelled by an
+     equal negative margin so the text does not move when it gains one. */
+  .note-inline-field {
+    display: block; box-sizing: border-box;
+    width: calc(100% + 12px); margin: -2px -6px; padding: 2px 6px;
+    border: 0; border-radius: 6px; background: transparent;
+    font: inherit; color: inherit; letter-spacing: inherit;
+    resize: none; overflow: hidden; outline: none;
+    transition: background-color 120ms ease, box-shadow 120ms ease;
+  }
+  .note-inline-field::placeholder { color: var(--fg-2); opacity: 0.7; }
+  .note-inline-field:hover { background: var(--surface-hover); }
+  .note-inline-field:focus { background: var(--surface-hover); box-shadow: 0 0 0 1px var(--border-subtle); }
+  .note-inline-field[aria-invalid="true"] { box-shadow: 0 0 0 1px var(--danger); }
+  .note-inline-add {
+    display: inline-flex; width: fit-content; align-items: center; gap: 6px;
+    margin-left: -8px; padding: 4px 8px; border-radius: 6px;
+    font-size: 13px; color: var(--fg-2); opacity: 0;
+    transition: opacity 120ms ease, background-color 120ms ease;
+  }
+  .note-inline-section:hover .note-inline-add,
+  .note-inline-section:focus-within .note-inline-add,
+  .note-inline-add:focus-visible,
+  .note-inline-add--shown { opacity: 1; }
+  .note-inline-add:hover { background: var(--surface-hover); color: var(--fg-1); }
+  .note-inline-add:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--focus-ring); }
+  @media (hover: none) { .note-inline-add { opacity: 1; } }
+
   .mv-bullets {
     list-style: none; padding: 0; margin: 0;
     display: flex; flex-direction: column; gap: 8px;
@@ -833,3 +933,64 @@
 .chat-markdown blockquote { border-left: 2px solid var(--border-subtle); padding-left: 0.75rem; color: var(--fg-2); }
 .chat-markdown > :first-child { margin-top: 0; }
 .chat-markdown > :last-child { margin-bottom: 0; }
+
+/* =============================================================================
+   Cookbook covers — see components/cookbooks/CookbookCover.tsx
+   =============================================================================*/
+.cookbook-cover[data-cover-tone='ink'] { --cover-bg: var(--cover-ink-bg); color: var(--cover-ink-fg); }
+.cookbook-cover[data-cover-tone='stone'] { --cover-bg: var(--cover-stone-bg); color: var(--cover-stone-fg); }
+.cookbook-cover[data-cover-tone='paper'] { --cover-bg: var(--cover-paper-bg); color: var(--cover-paper-fg); }
+.cookbook-cover[data-cover-tone='sage'] { --cover-bg: var(--cover-sage-bg); color: var(--cover-sage-fg); }
+.cookbook-cover[data-cover-tone='clay'] { --cover-bg: var(--cover-clay-bg); color: var(--cover-clay-fg); }
+.cookbook-cover[data-cover-tone='sky'] { --cover-bg: var(--cover-sky-bg); color: var(--cover-sky-fg); }
+.cookbook-cover[data-cover-tone='plum'] { --cover-bg: var(--cover-plum-bg); color: var(--cover-plum-fg); }
+.cookbook-cover[data-cover-tone='ochre'] { --cover-bg: var(--cover-ochre-bg); color: var(--cover-ochre-fg); }
+.cookbook-cover { background: var(--cover-bg); }
+.cookbook-cover-glyph {
+  width: 54%;
+  height: 54%;
+  background: var(--cover-bg);
+  box-shadow: 0 0 0 1px color-mix(in srgb, currentColor 35%, transparent), 0 0 0 4px var(--cover-bg);
+}
+.cookbook-cover-glyph svg { width: 50%; height: 50%; }
+@media (prefers-reduced-motion: no-preference) {
+  .cookbook-cover-art { transition: transform var(--dur-slow) var(--ease); }
+  .group:hover .cookbook-cover-art,
+  .group:focus-visible .cookbook-cover-art { transform: scale(1.04); }
+}
+.cookbook-row { scrollbar-width: none; }
+.cookbook-row::-webkit-scrollbar { display: none; }
+
+/* =============================================================================
+   Chat mascot — see components/Mascot.tsx (a pixel sprite).
+   =============================================================================*/
+:root { --mascot-outline: #1B1B19; }
+.dark, [data-theme="dark"] { --mascot-outline: #0B0B0A; }
+.steno-mascot { line-height: 0; user-select: none; filter: drop-shadow(0 6px 0 color-mix(in srgb, var(--fg-1) 8%, transparent)); }
+.steno-mascot-float { animation: steno-mascot-float 2.4s steps(4, end) infinite; }
+@keyframes steno-mascot-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-5px); }
+}
+.steno-snow { position: absolute; inset: -18px -40px -8px -40px; pointer-events: none; overflow: hidden; }
+.steno-snow-flake {
+  position: absolute;
+  top: -8px;
+  background: var(--snow, #B4D6EA);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--fg-1) 10%, transparent);
+  opacity: 0;
+  animation-name: steno-snow-fall;
+  animation-timing-function: steps(24, end);
+  animation-iteration-count: infinite;
+}
+.dark .steno-snow-flake, [data-theme="dark"] .steno-snow-flake { --snow: #EAF4FA; box-shadow: none; }
+@keyframes steno-snow-fall {
+  0% { transform: translate(0, 0); opacity: 0; }
+  10% { opacity: 0.9; }
+  50% { transform: translate(6px, 70px); }
+  90% { opacity: 0.9; }
+  100% { transform: translate(-2px, 140px); opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .steno-snow { display: none; }
+}
