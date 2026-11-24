@@ -8,7 +8,16 @@ html[data-ss=still] [data-scroll-light] canvas { display: none; }
 /* 02: six rooms. Flow (phones, short windows): the model sits above the list, inside the content edge. */
 .stage-m-rooms [data-scroll-light] canvas, .stage-m-rooms [data-scroll-light] img { mix-blend-mode: normal; }
 html[data-ss] .stage-m-rooms { display: block; position: relative; width: 100%; aspect-ratio: 16 / 9; margin: 0 0 24px; background: transparent; }
-@media (max-width: 767px) { html[data-ss] .stage-m-rooms { aspect-ratio: 4 / 3; margin-bottom: 16px; } }
+@media (max-width: 767px), (orientation: landscape) and (max-height: 500px) and (pointer: coarse) {
+  html .stage-rooms .stage-m.stage-m-rooms {
+    display: block; position: relative; width: 100%; aspect-ratio: 16 / 9; margin: 0 0 16px;
+    background: transparent;
+    -webkit-mask-image: linear-gradient(to right, transparent, #000 5%, #000 97%, transparent), linear-gradient(to bottom, transparent, #000 4%, #000 94%, transparent);
+    -webkit-mask-composite: source-in;
+    mask-image: linear-gradient(to right, transparent, #000 5%, #000 97%, transparent), linear-gradient(to bottom, transparent, #000 4%, #000 94%, transparent);
+    mask-composite: intersect;
+  }
+}
 html[data-ss=on] .ent-cases > li { transition: opacity .35s; }
 html[data-ss=on] .ent-cases > li:not(.is-lit):not(.is-done) { opacity: .76; }
 html[data-ss=on] .ent-cases > li.is-done { opacity: .84; }
