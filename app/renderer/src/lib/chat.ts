@@ -4,7 +4,7 @@ import type { AiProvider, CloudProvider } from '@/lib/ipc';
 import { UI_LOCALE } from './locale';
 
 /** The AI-provider config fields the active-model label reads. */
-type ActiveModelFields = {
+export type ActiveModelFields = {
   ai_provider: AiProvider;
   cloud_provider: CloudProvider;
   cloud_model: string;
@@ -52,7 +52,11 @@ export function formatActiveModel(p: ActiveModelFields | undefined): string {
   // render "Ollama · undefined" for a frame.
   switch (p.ai_provider) {
     case 'cloud':
-      return [p.cloud_provider, p.cloud_model].filter(Boolean).join(' · ') || 'Cloud';
+      return (
+        [p.cloud_provider === 'openrouter' ? 'OpenRouter' : p.cloud_provider, p.cloud_model]
+          .filter(Boolean)
+          .join(' · ') || 'Cloud'
+      );
     case 'remote':
       return p.model ? `Remote Ollama · ${p.model}` : 'Remote Ollama';
     case 'adapter':
@@ -61,6 +65,58 @@ export function formatActiveModel(p: ActiveModelFields | undefined): string {
     case 'local':
     default:
       return p.model ? `Ollama · ${p.model}` : 'Ollama';
+  }
+}
+
+const MODEL_WORDS: Record<string, string> = { gpt: 'GPT', oss: 'OSS', deepseek: 'DeepSeek', phi: 'Phi' };
+const MODEL_NOISE = new Set(['it', 'qat', 'instruct', 'gguf', 'latest', 'chat']);
+
+/**
+ * A short, readable name for an Ollama model id, for the chat composer:
+ * "gemma4:e2b-it-qat" -> "Gemma 4 E2B", "qwen3.5:9b" -> "Qwen 3.5 9B",
+ * "hf.co/bartowski/google_gemma-4-E2B-it-GGUF:Q4_K_M" -> "Gemma 4 E2B".
+ * The full id stays available in the indicator's tooltip.
+ */
+export function shortModelName(id: string): string {
+  let [name, tag = ''] = id.split(':');
+  if (name.includes('/')) {
+    name = name.split('/').pop() ?? name;
+    name = name.replace(/^[a-z]+_/i, ''); // vendor prefix, e.g. google_gemma-4
+    tag = ''; // a quantisation such as Q4_K_M
+  }
+  const words = name
+    .replace(/^([a-z]+)(\d)/i, '$1-$2') // gemma4 -> gemma-4, qwen3.5 -> qwen-3.5
+    .split(/[-_]/)
+    .filter((w) => w && !MODEL_NOISE.has(w.toLowerCase()))
+    .map((w) => {
+      const lower = w.toLowerCase();
+      if (MODEL_WORDS[lower]) return MODEL_WORDS[lower];
+      if (/^[a-z]*\d+(\.\d+)?[bkm]?$/i.test(w)) return w.toUpperCase(); // 4, 3.5, E2B, 9B, R1
+      return w.charAt(0).toUpperCase() + w.slice(1);
+    });
+  const size = tag.split('-')[0];
+  if (size && /^[a-z]?\d+(\.\d+)?[bm]$/i.test(size)) words.push(size.toUpperCase());
+  const label = words.join(' ').replace('GPT OSS', 'GPT-OSS');
+  return label || id;
+}
+
+/** The composer's compact model label; formatActiveModel is its tooltip. */
+export function shortActiveModel(p: ActiveModelFields | undefined): string {
+  if (!p) return 'Auto';
+  switch (p.ai_provider) {
+    case 'cloud':
+      // OpenRouter ids carry a vendor path (google/gemini-2.5-flash); show the
+      // short vendor-free id so the composer chip stays compact.
+      if (p.cloud_provider === 'openrouter' && p.cloud_model) {
+        return p.cloud_model.split('/').pop() || p.cloud_model;
+      }
+      return p.cloud_model || p.cloud_provider || 'Cloud';
+    case 'adapter':
+      return 'Organisation';
+    case 'remote':
+    case 'local':
+    default:
+      return p.model ? shortModelName(p.model) : 'Ollama';
   }
 }
 
@@ -143,8 +199,9 @@ export function relativeTime(ts: number): string {
 }
 
 /** Keep follow-up history within the backend contract and the selected scope. */
-export function boundedChatHistory(messages: Array<{ role: 'user' | 'assistant'; content: string; context?: string }>, context: string, legacyContext: string) {
-  const turns = messages.filter((m) => (m.context ?? legacyContext) === context)
+export function boundedChatHistory(messages: Array<{ role: 'user' | 'assistant'; content: string; context?: string; error?: string }>, context: string, legacyContext: string) {
+  // A failed answer ("Ollama isn't running") is UI, not conversation: leave it out.
+  const turns = messages.filter((m) => (m.context ?? legacyContext) === context && !m.error)
     .slice(-6).map(({ role, content }) => ({ role, content: content.slice(-4000) }));
   while (turns.reduce((n, t) => n + t.content.length, 0) > 12000) turns.shift();
   return turns;

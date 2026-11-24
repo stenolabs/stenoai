@@ -33,9 +33,17 @@ const subscribe = (channel, cb) => {
 // every in-flight query; the helper filters by queryId so the caller only
 // gets events for the stream they asked for. Returns an unsubscribe fn
 // that also sends query-cancel to the main process.
-const subscribeQueryStream = (queryId, { onChunk, onDone, onError } = {}) => {
+const subscribeQueryStream = (queryId, { onChunk, onDone, onError, onToolStep, onActionCard } = {}) => {
   const chunkHandler = (_event, payload) => {
     if (payload && payload.queryId === queryId && onChunk) onChunk(payload.chunk);
+  };
+  // Chat-agent turns (chat-agent.js): a read tool ran ("Searched Linear…"),
+  // or an action card waits for Approve / changed state.
+  const stepHandler = (_event, payload) => {
+    if (payload && payload.queryId === queryId && onToolStep) onToolStep(payload.step);
+  };
+  const cardHandler = (_event, payload) => {
+    if (payload && payload.queryId === queryId && onActionCard) onActionCard(payload.card);
   };
   const doneHandler = (_event, payload) => {
     if (!payload || payload.queryId !== queryId) return;
@@ -43,14 +51,20 @@ const subscribeQueryStream = (queryId, { onChunk, onDone, onError } = {}) => {
     if (payload.success) {
       if (onDone) onDone();
     } else {
-      if (onError) onError(new Error(payload.error || 'query failed'));
+      // errorCode: a stable chat failure code (chat-query.js AI_ERROR_CODES),
+      // passed as its own argument: an Error crosses contextBridge as message only.
+      if (onError) onError(new Error(payload.error || 'query failed'), typeof payload.errorCode === 'string' ? payload.errorCode : undefined);
     }
   };
   const cleanup = () => {
     ipcRenderer.removeListener('query-chunk', chunkHandler);
+    ipcRenderer.removeListener('query-tool-step', stepHandler);
+    ipcRenderer.removeListener('query-action-card', cardHandler);
     ipcRenderer.removeListener('query-done', doneHandler);
   };
   ipcRenderer.on('query-chunk', chunkHandler);
+  ipcRenderer.on('query-tool-step', stepHandler);
+  ipcRenderer.on('query-action-card', cardHandler);
   ipcRenderer.on('query-done', doneHandler);
   return () => {
     cleanup();
@@ -63,6 +77,9 @@ const stenoai = {
 
   app: {
     platform: rendererPlatformOverride || process.platform,
+    // First-run tips (renderer FirstRunTips). Off under e2e so tips never
+    // cover what other specs click; a tips spec opts in with STENOAI_E2E_TIPS=1.
+    firstRunTips: process.env.STENOAI_E2E !== '1' || process.env.STENOAI_E2E_TIPS === '1',
     getVersion: () => invoke('get-app-version'),
   },
 
@@ -176,6 +193,8 @@ const stenoai = {
     generateReport: (summaryFile, templateId) => invoke('generate-report-meeting', summaryFile, templateId),
     setActiveReport: (summaryFile, reportId) => invoke('set-active-report', summaryFile, reportId),
     deleteReport: (summaryFile, reportId) => invoke('delete-report', summaryFile, reportId),
+    updateReport: (summaryFile, reportId, frontmatter, body) =>
+      invoke('update-report', summaryFile, reportId, frontmatter, body),
     exportTranscript: (defaultFilename, content) =>
       invoke('export-transcript', defaultFilename, content),
     exportNotePdf: (defaultFilename, html) =>
@@ -194,6 +213,9 @@ const stenoai = {
     askStream: (id, file, q) => send('query-transcript-stream', id, file, q),
     chatGlobalStream: (id, q, folderId) => send('chat-global-stream', id, q, folderId ?? null),
     cancel: (id) => send('query-cancel', id),
+    /** Approve / dismiss an action card a chat-agent turn is paused on. */
+    approveAction: (id, cardId, args) => invoke('chat-action-approve', id, cardId, args),
+    dismissAction: (id, cardId) => invoke('chat-action-dismiss', id, cardId),
   },
 
   chat: {
@@ -294,6 +316,7 @@ const stenoai = {
     setNotifications: (v) => invoke('set-notifications', v),
     getRecordHotkey: () => invoke('get-record-hotkey'),
     setRecordHotkey: (v) => invoke('set-record-hotkey', v),
+    setRecordHotkeyAccelerator: (accel) => invoke('set-record-hotkey-accelerator', accel),
     getTelemetry: () => invoke('get-telemetry'),
     setTelemetry: (v, source) => invoke('set-telemetry', v, source),
     getDockIcon: () => invoke('get-dock-icon'),
@@ -354,6 +377,42 @@ const stenoai = {
     getAiPrompts: () => invoke('get-ai-prompts'),
     saveDiagnostics: (defaultFilename, content) =>
       invoke('save-diagnostics', defaultFilename, content),
+  },
+
+  // Recipes: the user's saved chat prompts (built-ins live in the renderer).
+  recipes: {
+    list: () => invoke('recipes-list'),
+    save: (recipe) => invoke('recipes-save', recipe),
+    remove: (id) => invoke('recipes-delete', id),
+  },
+
+  // Connect page: the Steno MCP server's install surfaces + scope settings.
+  connect: {
+    getInfo: () => invoke('connect-get-info'),
+    getSettings: () => invoke('connect-get-settings'),
+    setSettings: (patch) => invoke('connect-set-settings', patch),
+    openClaudeDesktop: () => invoke('connect-open-claude-desktop'),
+    openCursor: () => invoke('connect-open-cursor'),
+  },
+
+  // Suggested actions: remote MCP endpoints + the action cards under a note.
+  // Nothing runs without approve(); see app/mcp-actions.js.
+  actions: {
+    list: () => invoke('actions-list'),
+    addCustom: (input) => invoke('actions-add-custom', input),
+    addLocal: (input) => invoke('actions-add-local', input),
+    connectConnector: (connectorId) => invoke('actions-connect-connector', connectorId),
+    authorize: (id) => invoke('actions-authorize', id),
+    cancelAuthorize: () => invoke('actions-cancel-authorize'),
+    refreshTools: (id) => invoke('actions-refresh-tools', id),
+    setEnabled: (id, enabled) => invoke('actions-set-enabled', id, enabled),
+    remove: (id) => invoke('actions-remove', id),
+    setAutoSuggest: (value) => invoke('actions-set-auto-suggest', value),
+    getCards: (summaryFile) => invoke('actions-get-cards', summaryFile),
+    suggest: (summaryFile, options) => invoke('actions-suggest', summaryFile, options),
+    approve: (summaryFile, cardId, args) => invoke('actions-approve', summaryFile, cardId, args),
+    dismiss: (summaryFile, cardId) => invoke('actions-dismiss', summaryFile, cardId),
+    recent: (limit) => invoke('actions-recent', limit),
   },
 
   ai: {
@@ -450,6 +509,7 @@ const stenoai = {
     summaryTitle: (cb) => subscribe('summary-title', cb),
     summaryComplete: (cb) => subscribe('summary-complete', cb),
     processingComplete: (cb) => subscribe('processing-complete', cb),
+    noteUpdated: (cb) => subscribe('note-updated', cb),
     processingProgress: (cb) => subscribe('processing-progress', cb),
     queryChunk: (cb) => subscribe('query-chunk', cb),
     queryDone: (cb) => subscribe('query-done', cb),

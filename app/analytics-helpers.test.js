@@ -502,6 +502,8 @@ test('sanitizeModelForAnalytics keeps known public model ids but collapses custo
   assert.strictEqual(sanitizeModelForAnalytics('/Users/alice/Secret Client/model.gguf'), 'custom');
   assert.strictEqual(sanitizeModelForAnalytics('acme-board-meeting-private-model'), 'custom');
   assert.strictEqual(sanitizeModelForAnalytics('ft:gpt-4o-mini:acme-corp:board:abc123'), 'custom');
+  assert.strictEqual(sanitizeModelForAnalytics('google/gemini-2.5-flash'), 'google/gemini-2.5-flash');
+  assert.strictEqual(sanitizeModelForAnalytics('acme/private-finetune'), 'custom');
   assert.strictEqual(sanitizeModelForAnalytics(''), 'unknown');
   assert.strictEqual(sanitizeModelForAnalytics(null), 'unknown');
 });

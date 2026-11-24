@@ -1,7 +1,7 @@
 import * as React from 'react';
 import ReactMarkdown, { type ExtraProps } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { CHART_COPY, parseChatChart } from '@/lib/chatChart';
+import { parseChatChart } from '@/lib/chatChart';
 import { ChartErrorBoundary } from '@/components/ChartErrorBoundary';
 import yaml, { type EventType, type State } from 'js-yaml';
 import { t } from '@/i18n';
@@ -24,7 +24,10 @@ function ChartCodeBlock({ node, children, ...props }: React.ComponentProps<'pre'
       {children}
     </pre>
   );
-  if (language !== 'steno-chart' || code?.type !== 'element') return fallback;
+  // Small models often fence the chart JSON as ```json (or with no language)
+  // instead of ```steno-chart. Accept those too: parseChatChart's strict
+  // validation still decides, so ordinary JSON stays a code block.
+  if (!CHART_FENCES.has((language ?? '').toLowerCase()) || code?.type !== 'element') return fallback;
 
   // CommonMark also produces a code node for an unfinished streaming fence.
   // Inspect the source span so charts only render once the fence is closed.
@@ -32,7 +35,7 @@ function ChartCodeBlock({ node, children, ...props }: React.ComponentProps<'pre'
   const end = node?.position?.end.offset;
   if (start === undefined || end === undefined) return fallback;
   const lines = source.slice(start, end).trimEnd().split(/\r?\n/);
-  const opening = lines[0].trimStart().match(/^(`{3,}|~{3,})steno-chart\s*$/)?.[1];
+  const opening = lines[0].trimStart().match(/^(`{3,}|~{3,})(?:steno-chart|json|chart)?\s*$/i)?.[1];
   const closing = lines[lines.length - 1].trim().match(/^(`{3,}|~{3,})$/)?.[1];
   if (!opening || !closing || opening[0] !== closing[0] || closing.length < opening.length)
     return fallback;
@@ -41,12 +44,14 @@ function ChartCodeBlock({ node, children, ...props }: React.ComponentProps<'pre'
   if (!spec) return fallback;
   return (
     <ChartErrorBoundary fallback={fallback}>
-      <React.Suspense fallback={<p role="status">{CHART_COPY.loading}</p>}>
+      <React.Suspense fallback={<p role="status">{t('chat.chart.loading')}</p>}>
         <ChatChart spec={spec} />
       </React.Suspense>
     </ChartErrorBoundary>
   );
 }
+
+const CHART_FENCES = new Set(['steno-chart', 'json', 'chart', '']);
 
 const markdownComponents = { pre: ChartCodeBlock };
 
@@ -160,8 +165,14 @@ export type ReportProperty = [string, unknown];
  * Returns no properties for ordinary reports, which have no frontmatter, so
  * the caller renders exactly what it always did.
  */
-export function splitFrontmatter(text: string): { properties: ReportProperty[]; body: string } {
-  const empty = { properties: [] as ReportProperty[], body: text ?? '' };
+export function splitFrontmatter(text: string): {
+  properties: ReportProperty[];
+  body: string;
+  /** The exact delimited block the properties came from ('' when none), for
+   *  the inline report editor to send back unchanged. */
+  frontmatter: string;
+} {
+  const empty = { properties: [] as ReportProperty[], body: text ?? '', frontmatter: '' };
   // CRLF line endings, from a report written or synced elsewhere, would hide
   // both delimiters.
   const source = text?.replace(/\r\n/g, '\n');
@@ -188,7 +199,8 @@ export function splitFrontmatter(text: string): { properties: ReportProperty[]; 
     return empty;
   }
   if (!properties.every(([, v]) => isFlat(v))) return empty;
-  return { properties, body };
+  const frontmatter = source.slice(0, open[0].length + close.index + close[0].length);
+  return { properties, body, frontmatter };
 }
 
 // One value: booleans read yes/no. The lookups stay in JSX, where the i18n

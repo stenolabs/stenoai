@@ -43,35 +43,38 @@ If you're looking for a hosted desktop recording API, consider checking out [Rec
 
 ## 📢 What's New
 
-- **2026-11-25** 🔴 Recording timer in the menu bar: On macOS, see the elapsed time next to the Steno icon while you record.
-- **2026-11-25** 🇮🇱 Hebrew transcription: With the Whisper engine, download the optional on-device Hebrew model in Settings → AI.
-- **2026-10-29** ⏺️ Auto-record detected meetings: Turn it on under Settings → Preferences, and Steno starts recording a detected meeting without waiting for a tap.
-- **2026-10-28** 📅 Open meetings on time: Steno can open a calendar meeting's link shortly before it starts, or ask first. Choose under Settings → Preferences.
+- **2026-11-24** 🔌 Connect your AI apps: Claude, Cursor, Claude Code and Codex can read your meetings through Steno's read-only MCP server. Set it up on the new Connect page.
+- **2026-11-24** ⚡ Actions: Connect Linear, Notion, Jira or any MCP server, and Steno suggests follow-ups after each note that run only when you approve them.
+- **2026-11-24** ⏱️ Instant transcripts: With Parakeet, your transcript and a first summary are ready the moment you press Stop, then refine in the background.
+- **2026-11-24** 🧑‍🍳 Cookbooks and recipes: Templates are now Cookbooks, and recipes are saved chat prompts you run by typing `/` in Chat.
 
 ## Features
 
 - **Privacy-first**: local AI processes your recordings, transcripts, and summaries on your device. External AI providers are optional.
 - **Live speaker labels** — Real-time on-screen text as you speak via Parakeet TDT v3 on Apple Silicon (MLX). Granola-style chat-bubble view with `[You]` vs `[Others]` attribution live during the recording.
-- **Individual speakers (macOS)** — Once the recording stops, StenographAI separates the voices sharing each channel, so the saved transcript reads `Speaker 2` / `Speaker 3` rather than one merged `[Others]`. Sortformer remains the default; Nemotron 3 can be selected under Settings → AI after its models download. Name a speaker once and StenographAI can suggest them in later meetings — that part is off by default, and the voice profiles never leave your Mac.
-- **Auto start/stop meetings** — StenographAI notices when a meeting starts and offers to take notes, then offers to summarise when it ends. Granola-style frictionless capture.
-- **Auto-record detected meetings** — Turn it on under Settings → Preferences, and StenographAI starts recording a detected meeting without waiting for a tap. It needs Auto-detected meetings on, and a Recording started notification offers Stop. Off by default. Remember to obtain the consent of all participants when necessary.
+- **Individual speakers (macOS)** — Once the recording stops, Steno separates the voices sharing each channel, so the saved transcript reads `Speaker 2` / `Speaker 3` rather than one merged `[Others]`. Sortformer remains the default; Nemotron 3 can be selected under Settings → AI after its models download. Name a speaker once and Steno can suggest them in later meetings — that part is off by default, and the voice profiles never leave your Mac.
+- **Auto start/stop meetings** — Steno notices when a meeting starts and offers to take notes, then offers to summarise when it ends. Granola-style frictionless capture.
+- **Auto-record detected meetings** — Turn it on under Settings → Preferences, and Steno starts recording a detected meeting without waiting for a tap. It needs Auto-detected meetings on, and a Recording started notification offers Stop. Off by default. Remember to obtain the consent of all participants when necessary.
 - **Identify call participants (macOS)** — Put the other party of a phone or FaceTime call into a note's Participants, by Contacts name, through the free [iMCP](https://imcp.app) app. Caller names reach the AI model, cloud ones included; numbers stay on your Mac. Off by default.
-- **Open meetings** — With a calendar connected, StenographAI can open a meeting's Meet, Zoom or Teams link shortly before it starts, or ask first. Off by default, under Settings → Preferences.
+- **Open meetings** — With a calendar connected, Steno can open a meeting's Meet, Zoom or Teams link shortly before it starts, or ask first. Off by default, under Settings → Preferences.
 - **System audio capture** — Record both sides of virtual meetings. Native Core Audio Tap on macOS 14.4+, Windows loopback capture, and PipeWire capture on Linux, with selectable microphone input. A recording can use system audio alone when no microphone is present.
+- **Instant transcripts** — With Parakeet, Stop saves the live transcript at once, labelled You / Others, and writes a first summary from it. Steno then refines the transcript, speaker labels and notes in the background.
 - **Recording that coexists** — A compact transcription pill docks beside the app instead of taking over; Stop lands you on the note instantly and you can resume recording into an existing note (it appends and re-generates on demand).
-- **Global record shortcut** — Start or stop recording from anywhere with `⌘⇧R` (`Ctrl+Shift+R` on Windows). Toggle it off in Settings if it clashes with another app. On macOS, power users can additionally bind any key of their own via the `stenoai://record/start` / `record/stop` deep links (Shortcuts app).
-- **In-app note-taking** — Jot notes while you record, keep a dedicated **My notes** tab, or edit a saved note's generated sections. Earlier generated text remains available for recovery.
-- **Ask your meetings** — Ask general questions anytime, including while recording. Attach This meeting, All notes, a folder, or Shared notes as optional context, or choose No meeting context. Conversations stay with the note when recording stops.
-- **Charts in chat** — Ask for a bar or line chart based on numbers in your notes, and open its data table to inspect the values.
-- **Agent setup** — The Agents sidebar offers Steno skill install prompts for Claude Code and Codex, with a [setup guide](docs/features/agents.mdx).
+- **Global record shortcut** — Start or stop recording from anywhere with `⌃⌥R` (`Ctrl+Alt+R` on Windows). The default changed from `⌘⇧R`, which clashed with refresh. Pick your own combination in Settings → Preferences, or turn it off. On macOS, power users can additionally bind any key of their own via the `stenoai://record/start` / `record/stop` deep links (Shortcuts app).
+- **Always-editable notes** — Click any part of a note, including a cookbook report, and type; changes save automatically. Jot your own notes in the **My notes** tab while you record. Regenerating keeps your edited version for recovery.
+- **Ask your meetings** — Ask general questions anytime, including while recording. Attach This meeting, All notes, a space, or Shared notes as optional context, or choose No meeting context. Answers stream in with a trace of the steps chat took, and conversations stay with the note when recording stops.
+- **Actions in chat** — With a tool-capable model, ask chat to create a Linear issue or a Notion page, and approve each change before it runs. Chat tells you when the selected model can't use your connected apps.
+- **Charts in chat** — Ask for a bar, line, area, pie, donut, scatter, radar or table chart from numbers in your notes. View its data, or copy it as an image or CSV.
+- **Connect** — Give the Claude desktop app, Cursor, Claude Code and Codex read-only access to your meetings through the bundled Steno MCP server or the Steno skill. Limit what they can see in Settings → Connectors. See the [Connect guide](docs/connect/overview.mdx).
+- **Actions** — Connect Linear, Notion, Jira and Confluence, and Steno suggests follow-ups after each note for you to approve. Email drafts open in your own mail app, and custom MCP servers (n8n, Zapier, Make, or a command on this computer) work too. See [Actions](docs/connect/actions.mdx).
 - **Meeting packages (macOS)** — Import and export `.stenomeeting` packages containing notes and transcripts. Include audio only when you choose; supported recordings are compressed for export while originals stay unchanged.
 - **Multi-language (25 live, 99 total)** — Parakeet covers 25 European languages with live transcription; Whisper handles 99 languages including Chinese, Japanese, Arabic, and Hindi post-stop.
-- **Markdown ownership** — Summaries and transcripts save as clean Markdown you can edit, search, or sync to whatever knowledge base you live in.
-- **Report templates** — Define custom report styles and generate them per meeting; a note can hold multiple reports, switchable in the detail view. Flat YAML frontmatter in a custom report appears in a collapsible Properties panel.
+- **Markdown ownership** — Summaries and transcripts save as clean Markdown you can edit, search, or sync to an Obsidian vault from Connect.
+- **Cookbooks and recipes** — Cookbooks (formerly report templates) set the format of a note; a note can hold several reports, and flat YAML frontmatter appears in a collapsible Properties panel. Recipes are saved chat prompts you run by typing `/` in Chat. Both have built-in options and your own, in the Cookbooks sidebar page.
 - **Share and export** — Use a saved note's Share menu to copy or export notes and transcripts. On macOS, send a note through the system share sheet.
-- **Bring your own cloud model** — Optional OpenAI, Anthropic, AWS Bedrock (Claude — including application inference profile ARNs for governed AWS environments), or custom API endpoint for users who prefer a hosted LLM.
+- **Bring your own cloud model** — Optional OpenRouter, OpenAI, Anthropic, AWS Bedrock (Claude — including application inference profile ARNs for governed AWS environments), or custom API endpoint for users who prefer a hosted LLM. Setup guides you through getting an OpenRouter, OpenAI or Anthropic key and tests it before saving.
 - **Optional cloud transcription** — Choose an OpenAI-compatible transcription endpoint in Settings → AI. Enabling it requires confirmation because recording audio is sent to that provider.
-- **Organisation AI** — On managed deployments, sign in to your org's StenographAI adapter and AI routes through it automatically — no local API key, no per-user setup.
+- **Organisation AI** — On managed deployments, sign in to your org's Steno adapter and AI routes through it automatically — no local API key, no per-user setup.
 
 ## Coming from Granola?
 

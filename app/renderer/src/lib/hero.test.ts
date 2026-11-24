@@ -71,7 +71,7 @@ describe('heroHeadline', () => {
 
   test('idle fallbacks distinguish a connected clear day from no calendar', () => {
     expect(heroHeadline(state({ calendarConnected: true }))).toBe('Clear day ahead');
-    expect(heroHeadline(state({ calendarConnected: false }))).toBe('Ready to capture beautiful notes');
+    expect(heroHeadline(state({ calendarConnected: false }))).toBe('Your Sovereign AI Workspace');
   });
 });
 

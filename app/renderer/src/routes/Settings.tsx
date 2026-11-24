@@ -1,47 +1,26 @@
 import * as React from 'react';
-import { ExternalLink } from 'lucide-react';
 import { AppShell } from '@/components/AppShell';
 import { cn } from '@/lib/utils';
-import { ipc } from '@/lib/ipc';
 import { useNavigate, getLastNonSettingsRoute, useRoute, getRouteParam } from '@/lib/router';
 import { useAppVersion } from '@/hooks/useSettings';
 import { useRecording } from '@/hooks/useRecording';
 import { SettingsNav, settingsTabLabel, type SettingsTabId } from './settings/SettingsNav';
 import { GeneralTab } from './settings/GeneralTab';
 import { AiTab } from './settings/AiTab';
-import { TemplatesTab } from './settings/TemplatesTab';
 import { PeopleTab } from './settings/PeopleTab';
+import { ConnectorsTab } from './settings/ConnectorsTab';
 import { OrganisationTab } from './settings/OrganisationTab';
 import { AdvancedTab } from './settings/AdvancedTab';
-import { IntegrationsTab } from './settings/IntegrationsTab';
 import { DeveloperTab } from './settings/DeveloperTab';
 import { AboutTab } from './settings/AboutTab';
 import { t } from '@/i18n';
 
 // Per-tab intro copy, shown in the page header above the divider (rather
 // than repeated inside each tab's own content, which used to duplicate the
-// header on Templates/Organisation). Only tabs with a page-level intro (as
+// header on Organisation). Only tabs with a page-level intro (as
 // opposed to AiTab's per-section copy, or tabs with no intro at all) need an
 // entry here.
 const SETTINGS_TAB_DESCRIPTIONS: Partial<Record<SettingsTabId, React.ReactNode>> = {
-  get templates() {
-    return (
-    <>
-      {t('settings.nav.templatesIntro')}{' '}
-      <button
-        type="button"
-        onClick={() =>
-          void ipc().shell.openExternal('https://docs.stenoai.co/features/report-templates')
-        }
-        className="inline-flex items-center gap-1 underline underline-offset-2 hover:no-underline"
-        style={{ color: 'var(--fg-1)' }}
-      >
-        {t('settings.nav.learnMore')}
-        <ExternalLink className="size-3" />
-      </button>
-    </>
-    );
-  },
   get people() {
     return t('settings.nav.peopleIntro');
   },
@@ -50,18 +29,20 @@ const SETTINGS_TAB_DESCRIPTIONS: Partial<Record<SettingsTabId, React.ReactNode>>
   },
 };
 
-// Deep-linkable tab ids: the 8 SettingsTabId nav destinations, plus
+// Deep-linkable tab ids: the SettingsTabId nav destinations, plus
 // 'transcription' as a legacy alias that resolves onto 'ai' (its content
 // moved into AiTab's Transcription section, which renders first on that
 // page) — keeps `/settings?tab=transcription` links working unmodified.
+// 'templates' and 'integrations' are not here: templates moved to the
+// Cookbooks page and Obsidian sync to Connect, and Settings redirects those
+// old deep links there (see legacyRouteTarget).
 const DEEP_LINK_IDS = [
   'general',
   'transcription',
   'ai',
-  'templates',
   'people',
   'organisation',
-  'integrations',
+  'connectors',
   'advanced',
   'developer',
   'about',
@@ -92,6 +73,14 @@ function tabFromRoute(route: string): SettingsTabId | null {
 // context menus MeetingsShell also drags in.
 // ---------------------------------------------------------------------------
 
+/** Where an old Settings deep link now lives: Templates in Cookbooks, Obsidian sync in Connect. */
+function legacyRouteTarget(route: string): string | null {
+  const tab = getRouteParam(route, 'tab');
+  if (tab === 'templates') return '/cookbooks';
+  if (tab === 'integrations') return '/connect';
+  return null;
+}
+
 export function Settings() {
   const navigate = useNavigate();
   // Deep-link support: /settings?tab=<id> opens the matching tab on mount.
@@ -117,18 +106,12 @@ export function Settings() {
     setTab(tabFromRoute(route) ?? 'general');
   }, [route]);
   const version = useAppVersion();
-  // Templates' own editor is a full-page takeover with its own header/back
-  // button — while it's open, the outer "Templates" title/description/divider
-  // would just be a leftover from the list view carried over on top of it.
-  const [templateEditorOpen, setTemplateEditorOpen] = React.useState(false);
-  // Leaving the Templates tab (via the nav rail OR the ⌘K settings search)
-  // unmounts TemplatesTab, but its editor-open flag lived on here — a stale
-  // `true` would suppress the page header when Templates is reopened. Reset it
-  // whenever the active tab isn't Templates.
+  // Old /settings?tab=templates and ?tab=integrations links (release notes,
+  // docs, muscle memory) land on the page that now owns them.
   React.useEffect(() => {
-    if (tab !== 'templates' && templateEditorOpen) setTemplateEditorOpen(false);
-  }, [tab, templateEditorOpen]);
-  const showPageHeader = !(tab === 'templates' && templateEditorOpen);
+    const target = legacyRouteTarget(route);
+    if (target) navigate(target);
+  }, [route, navigate]);
 
   // Supplies AppShell's recordingStatus/onToggleRecording props directly —
   // previously supplied by MeetingsShell, now that Settings no longer
@@ -182,14 +165,8 @@ export function Settings() {
             a panel, not a document, so centering just pushes it away from
             the nav with a large empty gap. Settings uses `bleed` to own its
             own header+scroll split, but the width/padding still matches. */}
-        {showPageHeader && (
-          <header style={{ borderBottom: '1px solid var(--border-subtle)' }}>
-            <div
-              className={cn(
-                'mb-6 flex flex-col gap-3 px-10 pt-7',
-                tab === 'templates' ? 'max-w-full' : 'w-full max-w-[720px]',
-              )}
-            >
+        <header style={{ borderBottom: '1px solid var(--border-subtle)' }}>
+            <div className="mb-6 flex w-full max-w-[720px] flex-col gap-3 px-10 pt-7">
               <h1
                 className="m-0 text-[28px] font-normal"
                 style={{
@@ -209,37 +186,26 @@ export function Settings() {
                 </p>
               )}
             </div>
-          </header>
-        )}
+        </header>
 
         <div className="scrollbar-clean min-h-0 flex-1 overflow-y-auto">
           <div
             className={cn(
-              'px-10 pb-36',
+              'w-full max-w-[720px] px-10 pb-36',
               // Tabs whose content opens with a bordered box (Organisation's
-              // sign-in card, Templates' row list) need more breathing room
-              // than the bare pt-2 the row-based tabs use — their own
-              // SettingRow padding already puts daylight between the divider
-              // and the first label, but a box's border sits right at the
-              // wrapper's edge and reads as cramped against the divider above it.
-              // The template editor supplies its own top padding as a full
-              // page, so it gets the header's own pt-7 instead.
-              !showPageHeader
-                ? 'pt-7'
-                : tab === 'organisation' || tab === 'templates'
-                  ? 'pt-6'
-                  : 'pt-2',
-              tab === 'templates'
-                ? 'h-full max-w-full flex flex-col'
-                : 'w-full max-w-[720px]',
+              // sign-in card) need more breathing room than the bare pt-2 the
+              // row-based tabs use — their own SettingRow padding already puts
+              // daylight between the divider and the first label, but a box's
+              // border sits right at the wrapper's edge and reads as cramped
+              // against the divider above it.
+              tab === 'organisation' ? 'pt-6' : 'pt-2',
             )}
           >
             {tab === 'general' && <GeneralTab />}
             {tab === 'ai' && <AiTab />}
-            {tab === 'templates' && <TemplatesTab onEditingChange={setTemplateEditorOpen} />}
             {tab === 'people' && <PeopleTab />}
             {tab === 'organisation' && <OrganisationTab />}
-            {tab === 'integrations' && <IntegrationsTab />}
+            {tab === 'connectors' && <ConnectorsTab />}
             {tab === 'advanced' && <AdvancedTab />}
             {tab === 'developer' && <DeveloperTab />}
             {tab === 'about' && <AboutTab />}

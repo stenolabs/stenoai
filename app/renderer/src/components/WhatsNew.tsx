@@ -1,5 +1,20 @@
 import * as React from 'react';
-import { ArrowUpRight, ExternalLink } from 'lucide-react';
+import {
+  ArrowUpRight,
+  AudioLines,
+  Cable,
+  CalendarClock,
+  ChartColumn,
+  CircleDot,
+  ExternalLink,
+  Languages,
+  PenLine,
+  Slash,
+  Sparkles,
+  type LucideIcon,
+} from 'lucide-react';
+import { CookbookCover, type CoverTone } from '@/components/cookbooks/CookbookCover';
+import type { CookbookCategory } from '@/lib/cookbooks';
 import {
   Dialog,
   DialogContent,
@@ -21,6 +36,7 @@ import {
   RELEASE_VERSION,
   WHATS_NEW_COPY as copy,
   isUnseenRelease,
+  type ReleaseHighlight,
 } from '@/lib/releaseHighlights';
 
 const WhatsNewContext = React.createContext({ available: false, show: () => {} });
@@ -149,29 +165,8 @@ export function WhatsNewProvider({
             <DialogDescription>{copy.subtitle}</DialogDescription>
           </DialogHeader>
           <div className="divide-y" style={{ borderColor: 'var(--border-subtle)' }}>
-            {RELEASE_HIGHLIGHTS.map((highlight) => (
-              <section key={highlight.id} className="flex gap-5 py-5">
-                {highlight.visual && (
-                  <div
-                    aria-hidden="true"
-                    className="flex h-[72px] w-[96px] shrink-0 items-center justify-center gap-3 rounded-xl"
-                    style={{ background: 'var(--surface-sunken)', color: 'var(--fg-1)' }}
-                  >
-                    {highlight.visual === 'agents' ? (
-                      <>
-                        <AnthropicIcon size={26} />
-                        <OpenAiIcon size={26} />
-                      </>
-                    ) : (
-                      <svg width="72" height="46" viewBox="0 0 72 46" fill="currentColor">
-                        <path d="M2 45h68" stroke="var(--border-subtle)" />
-                        <rect x="8" y="24" width="11" height="20" rx="2" opacity=".45" />
-                        <rect x="29" y="6" width="11" height="38" rx="2" />
-                        <rect x="50" y="16" width="11" height="28" rx="2" opacity=".7" />
-                      </svg>
-                    )}
-                  </div>
-                )}
+            {RELEASE_HIGHLIGHTS.map((highlight, index) => (
+              <section key={highlight.id} className="flex items-start justify-between gap-5 py-5">
                 <div className="min-w-0">
                   <h3 className="text-sm font-medium">{highlight.title}</h3>
                   <p
@@ -191,6 +186,7 @@ export function WhatsNewProvider({
                     <ArrowUpRight size={13} />
                   </button>
                 </div>
+                <HighlightCover highlight={highlight} index={index} />
               </section>
             ))}
           </div>
@@ -211,5 +207,55 @@ export function WhatsNewProvider({
         </DialogContent>
       </Dialog>
     </WhatsNewContext.Provider>
+  );
+}
+
+const HIGHLIGHT_ICONS: Record<NonNullable<ReleaseHighlight['icon']>, LucideIcon> = {
+  edit: PenLine,
+  language: Languages,
+  speakers: AudioLines,
+  calendar: CalendarClock,
+  record: CircleDot,
+  connect: Cable,
+  recipes: Slash,
+  chart: ChartColumn,
+  sparkles: Sparkles,
+};
+const COVER_CATEGORIES: CookbookCategory[] = ['planning', 'briefings', 'interviews', 'everyday'];
+// Ink and paper only, so the dialog stays calm next to the colourful Cookbooks.
+const COVER_TONES: CoverTone[] = ['stone', 'paper', 'ink'];
+
+/**
+ * A generated picture for each highlight, beside its text: the Cookbooks
+ * cover art in ink and paper tones, with the feature's icon (or its bespoke visual) on a
+ * paper chip. No image assets, so every release gets art for free.
+ */
+function HighlightCover({ highlight, index }: { highlight: ReleaseHighlight; index: number }) {
+  const Icon = HIGHLIGHT_ICONS[highlight.icon ?? 'sparkles'];
+  return (
+    <div aria-hidden="true" className="relative h-[84px] w-[112px] shrink-0 overflow-hidden rounded-xl">
+      <CookbookCover
+        seedId={`whats-new-${highlight.id}`}
+        category={COVER_CATEGORIES[index % COVER_CATEGORIES.length]}
+        tone={COVER_TONES[index % COVER_TONES.length]}
+        shape="wide"
+        className="absolute inset-0"
+      />
+      <div className="absolute inset-0 flex items-center justify-center">
+        <div
+          className="flex items-center justify-center gap-2 rounded-[10px] px-2.5 py-2"
+          style={{ background: 'var(--surface-raised)', color: 'var(--fg-1)', boxShadow: '0 8px 18px -10px rgba(0,0,0,0.5)' }}
+        >
+          {highlight.visual === 'agents' ? (
+            <>
+              <AnthropicIcon size={20} />
+              <OpenAiIcon size={20} />
+            </>
+          ) : (
+            <Icon size={20} strokeWidth={1.7} />
+          )}
+        </div>
+      </div>
+    </div>
   );
 }

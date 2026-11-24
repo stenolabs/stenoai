@@ -1,0 +1,94 @@
+---
+title: "Actions"
+description: "Connect Linear, Notion, Jira and Confluence, or any MCP server. After each meeting Steno suggests follow-ups, and nothing runs until you approve it."
+icon: "bolt"
+---
+
+Actions turn a meeting's action items into work in the apps you use. When a note is ready, Steno suggests follow-ups such as a Linear issue or an email draft. You review each one, edit it if needed, and approve it. Nothing runs until you do.
+
+## Connect an app
+
+<Steps>
+  <Step title="Open Connect">
+    Click **Connect** in the sidebar and scroll to **Actions**.
+  </Step>
+  <Step title="Choose an app">
+    Click **Connect** on the app's card.
+  </Step>
+  <Step title="Sign in">
+    Your browser opens the app's sign-in page. Approve access, then return to Steno. Steno never sees your password.
+  </Step>
+</Steps>
+
+| App | What Steno can do | Status |
+|-----|-------------------|--------|
+| **Linear** | Create issues from action items. | Available |
+| **Notion** | Add pages and tasks to your workspace. | Available |
+| **Jira and Confluence** | Create Jira tickets and Confluence pages. Your Atlassian admin must allow Rovo MCP. | Available |
+| **Email** | Draft follow-up emails in your mail app. Built in, no sign-in needed. | Available |
+| **Custom MCP server** | Any MCP server by URL or a command on this computer, including n8n, Zapier and Make. See [Custom MCP servers](/connect/custom-mcp-servers). | Available |
+| **Slack** | Post meeting summaries to channels. | Coming soon |
+| **HubSpot** | Log meetings and follow-ups to your CRM. | Coming soon |
+| **Asana** | Turn action items into tasks. | Coming soon |
+
+<Tip>
+Until Slack is available, you can post to Slack through an n8n or Zapier workflow added as a [custom MCP server](/connect/custom-mcp-servers).
+</Tip>
+
+Your connected apps appear in **Settings → Connectors** under **Your connections**. Each card shows where the app runs, how many actions it offers, and buttons to **Refresh**, **Sign in** again or **Disconnect**. Use the switch on a card to stop using that app for suggestions without disconnecting it.
+
+## How suggestions work
+
+<Steps>
+  <Step title="A note is ready">
+    When Steno finishes a note, it reads the note's title, summary and action items and proposes up to five follow-ups. It uses the AI model you set in **Settings → AI**.
+  </Step>
+  <Step title="Review the cards">
+    Cards appear under the note in **Suggested actions**. Each card says what it will do and where, for example "Create issue in Linear", and which action item it came from.
+  </Step>
+  <Step title="Edit if needed">
+    Change any field on the card before you approve it. Required fields are marked. Click **Show what will be sent** to see exactly what Steno will send.
+  </Step>
+  <Step title="Approve or dismiss">
+    Click **Approve** to send that action, exactly as shown, and nothing else. Click **Dismiss** to discard it; nothing is sent. Once an action is done, the card shows **Done** with an **Open** link to the new item.
+  </Step>
+</Steps>
+
+To suggest again, or to get suggestions for an older note, click **Suggest actions** in the note.
+
+To stop automatic suggestions, turn off **Suggest actions after each note** in **Settings → Connectors**. You can still click **Suggest actions** whenever you want them.
+
+**Recent actions** in **Settings → Connectors** lists what you have approved and whether it succeeded.
+
+## Email drafts
+
+The **Email** action drafts a follow-up email in your own mail app.
+
+- The draft opens in your default mail app. Nothing is sent until you press **Send** there.
+- Recipients are only taken from email addresses written in the note. Steno does not guess or look up addresses. If the note has none, the recipient field is left empty.
+- If the message is too long to open directly, Steno puts the full text on your clipboard so you can paste it in.
+
+To stop email suggestions, turn off **Email** on the Connect page.
+
+## Privacy
+
+- **Suggesting** uses only the note's title, summary and action items. Your transcript and your own typed notes are never used. If your AI model is a cloud provider, that text is sent to the provider.
+- **Approving** sends the card's contents to that app, and nothing else.
+- Every connection is labelled with where it runs: **Runs on this computer**, **On your local network** or **On the internet**. Each card also says where it sends data, for example "Leaves your device for Linear."
+- Sign-in tokens and secrets are kept in your system's secure storage.
+
+## Organisation policy
+
+If you are signed in to an organisation, your admin can turn actions off, limit which apps and servers you can connect, block commands on this computer, or turn off email drafts. Steno then shows a message such as "Your organisation has turned off actions." or marks a connection **Not allowed by your organisation**.
+
+If Steno cannot reach your organisation's settings, it keeps using the last policy it received for up to 24 hours. After that, actions are paused until Steno can reach them again.
+
+---
+
+<Accordion title="Can Steno take actions from chat too?">
+Yes. With a capable AI model, chat can use your connected apps and asks you to approve each change. See [Chat](/features/ask-your-meetings#take-actions-in-connected-apps).
+</Accordion>
+
+<Accordion title="Which model writes the suggestions?">
+The AI model set in **Settings → AI**. With the default local model, suggesting runs on your device.
+</Accordion>

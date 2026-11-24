@@ -38,6 +38,8 @@ interface SettingsEntry {
    *  a row navigates to `/settings?tab=<tab>`. Keep these in sync with the
    *  current nav rail (SettingsNav) — a stale id would land on the General tab. */
   tab: string;
+  /** A non-Settings destination (e.g. Cookbooks); wins over `tab`. */
+  route?: string;
   title: string;
   sub: string;
   /** Settings that only render on macOS (behind `isMac` in GeneralTab):
@@ -82,7 +84,7 @@ const SETTINGS_INDEX: SettingsEntry[] = [
   { id: 'ai-save-recordings', tab: 'ai', title: 'Save recordings', sub: 'Keep the audio files after transcription' },
   { id: 'ai-autonotes', tab: 'ai', title: 'Generate notes automatically', sub: 'Summarise after transcription' },
   { id: 'ai-provider', tab: 'ai', title: 'AI provider', sub: 'Local, private server, cloud, or organisation' },
-  { id: 'templates', tab: 'templates', title: 'Templates', sub: 'Custom note formats' },
+  { id: 'cookbooks', tab: '', route: '/cookbooks', title: 'Cookbooks', sub: 'Custom note formats' },
   { id: 'org', tab: 'organisation', title: 'Organisation', sub: 'Sign in and back up notes to your org' },
   { id: 'advanced-storage', tab: 'advanced', title: 'Storage location', sub: 'Where notes and recordings are saved' },
   { id: 'advanced-setup', tab: 'advanced', title: 'Setup wizard', sub: 'Re-run first-time setup' },
@@ -187,7 +189,7 @@ function CommandPalette({ onClose }: { onClose: () => void }) {
 
   const openSetting = (s: SettingsEntry | undefined) => {
     if (!s) return;
-    navigate(`/settings?tab=${s.tab}`);
+    navigate(s.route ?? `/settings?tab=${s.tab}`);
     onClose();
   };
 

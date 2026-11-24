@@ -311,6 +311,10 @@ def _render_frontmatter(meta: dict) -> list[str]:
             lines.append(f'{k}: {"true" if v else "false"}')
         elif isinstance(v, int):
             lines.append(f'{k}: {v}')
+        elif isinstance(v, list):
+            # `folders: ["id"]` — the shape _parse_meeting_markdown and
+            # src/folders.py read and patch.
+            lines.append(f'{k}: {json.dumps(v)}')
         else:
             escaped = str(v).replace('\\', '\\\\').replace('"', '\\"')
             lines.append(f'{k}: "{escaped}"')
@@ -1247,6 +1251,165 @@ def _read_existing_user_notes(summary_path: Path):
     return text or None
 
 
+def _read_note_edits(summary_path: Path) -> dict:
+    """What the user may have changed on a note while a pass was rewriting it.
+
+    An early note (instant transcript) and a note being regenerated are both
+    readable for the whole run: the user can rename them, move them into a
+    space (``folders`` in the frontmatter, patched by src/folders.py) and edit
+    My notes. A writer that rebuilds the note from its start-of-run snapshot
+    would silently undo those, so it re-reads them right before the write.
+
+    Returns ``{}`` when there is no readable .md note at ``summary_path``;
+    otherwise ``{'title', 'folders', 'user_notes'}`` as they are on disk now.
+    """
+    try:
+        if summary_path.suffix != '.md' or not summary_path.exists():
+            return {}
+        data = _parse_meeting_markdown(summary_path)
+    except Exception as e:
+        logger.debug(f"Could not re-read the note's edits: {e}")
+        return {}
+    folders = data.get('folders')
+    return {
+        'title': data.get('session_info', {}).get('name'),
+        'folders': [f for f in folders if isinstance(f, str) and f] if isinstance(folders, list) else [],
+        'user_notes': data.get('user_notes'),
+    }
+
+
+def _stream_summary_markdown(summarizer, text, duration_minutes, output_language,
+                             notes_text, *, emit_chunks=True):
+    """Run the streaming summariser; returns ``(markdown, error)``.
+
+    ``emit_chunks=True`` relays every chunk as ``CHUNK:<base64>`` (and map-reduce
+    steps as ``PROGRESS:``) so the renderer streams the summary in. ``False`` is
+    the background refine of an early note: the note the user is reading must
+    not be replaced by a second stream mid-read, so only ``HEARTBEAT:`` lines are
+    printed -- enough for Electron's inactivity watchdog, invisible in the UI.
+    The final note write is what brings the refined summary on screen.
+    """
+    import base64
+    streamed_chunks = []
+    # Keep the watchdog alive through model load + prompt eval -- the silent
+    # stretch before the first streamed token.
+    summary_heartbeat = _start_summary_heartbeat()
+    last_beat = [0.0]
+
+    def _silent_progress(step, total):
+        sys.stdout.write(f"HEARTBEAT:refine-summarize:{step}/{total}\n")
+        sys.stdout.flush()
+
+    try:
+        for chunk in summarizer.summarize_transcript_streaming(
+            text, duration_minutes, output_language, notes_text,
+            progress_callback=_emit_progress if emit_chunks else _silent_progress,
+        ):
+            if emit_chunks:
+                # From the first chunk on, the chunks are the liveness signal.
+                summary_heartbeat.set()
+                encoded = base64.b64encode(chunk.encode('utf-8')).decode('ascii')
+                sys.stdout.write(f"CHUNK:{encoded}\n")
+                sys.stdout.flush()
+            else:
+                now = time.monotonic()
+                if now - last_beat[0] >= 10:
+                    last_beat[0] = now
+                    sys.stdout.write("HEARTBEAT:refine-summarize:stream\n")
+                    sys.stdout.flush()
+            streamed_chunks.append(chunk)
+    except Exception as e:
+        return None, e
+    finally:
+        summary_heartbeat.set()
+    return _apply_chinese_variant(''.join(streamed_chunks)) or '', None
+
+
+def _write_early_note(recorder, audio_path, name, snapshot, refresh_notes):
+    """Instant transcript: summarise the LIVE transcript and save the note
+    before the batch re-transcription runs, so the note has notes seconds after
+    Stop instead of after the full transcribe + diarize + summarise pass.
+
+    The note is written with ``refining: true`` and ``is_live_transcript:
+    true``; process-streaming's final write replaces it (refined transcript,
+    batch speaker labels, a fresh summary) and drops both flags. Prints
+    ``EARLY_SAVED:<path>`` on success. Returns a dict the final pass reuses
+    (summary markdown, title), or None when no early note was written --
+    auto-summarize off, or the summary failed/came back empty, in which case
+    ``EARLY_SUMMARY_FAILED`` is printed and the full pass runs exactly as it
+    would have without an early summary.
+    """
+    from src.config import get_config
+    config = get_config()
+    if not config.get_auto_summarize_enabled():
+        return None
+    configured_language = config.get_language()
+    text = snapshot.text_for_note
+    streamed_md, error = None, None
+    output_language = configured_language
+    try:
+        if recorder.summarizer is None:
+            recorder.summarizer = OllamaSummarizer()
+        _set_call_context(recorder.summarizer, recorder.output_dir, audio_path.stem)
+        output_language = recorder._resolve_output_language(
+            configured_language, None, transcript_text=text,
+        )
+        duration_minutes = int(snapshot.duration_seconds / 60) if snapshot.duration_seconds else 0
+        streamed_md, error = _stream_summary_markdown(
+            recorder.summarizer, text, duration_minutes, output_language,
+            refresh_notes(), emit_chunks=True,
+        )
+    except Exception as e:
+        error = e
+    if error is not None or not (streamed_md or '').strip():
+        logger.warning(
+            "Early summary from the live transcript failed (%s); the full pass will summarise",
+            error or "empty result",
+        )
+        print("EARLY_SUMMARY_FAILED", flush=True)
+        return None
+
+    session_name = name
+    title_generated = False
+    if _AUTO_NAMED_PATTERN.match(name):
+        try:
+            generated_title = _apply_chinese_variant(recorder.summarizer.generate_title(
+                streamed_md, snapshot.transcript_text, language=output_language
+            ))
+            if generated_title:
+                session_name = generated_title
+                title_generated = True
+                print(f"TITLE:{session_name}", flush=True)
+        except Exception as e:
+            logger.warning(f"Early title generation failed: {e}")
+
+    summary_path = recorder.output_dir / f"{audio_path.stem}_summary.md"
+    md_meta = {
+        'title': session_name,
+        'date': datetime.now().isoformat(),
+        'duration_seconds': int(snapshot.duration_seconds) if snapshot.duration_seconds else None,
+        'language': output_language,
+        'configured_language': configured_language,
+        'is_diarised': snapshot.is_diarised,
+        'is_live_transcript': True,
+        'refining': True,
+    }
+    md_lines = _render_frontmatter(md_meta)
+    md_lines += ['', streamed_md, '', '## Transcript', '', text]
+    notes_text = refresh_notes()
+    if notes_text:
+        md_lines += ['', '## User Notes', '', notes_text]
+    _atomic_write_text(summary_path, '\n'.join(md_lines))
+    _add_callers_to_participants(recorder.output_dir, audio_path.stem)
+    _write_original_snapshot(summary_path)
+    print(f"EARLY_SAVED:{summary_path}", flush=True)
+    return {
+        'streamed_md': streamed_md,
+        'session_name': session_name,
+        'title_generated': title_generated,
+    }
+
+
 @cli.command(name='process-streaming')
 @click.argument('audio_file', default='')
 @click.option('--name', '-n', default='Recording', help='Session name')
@@ -1254,12 +1417,16 @@ def _read_existing_user_notes(summary_path: Path):
 @click.option('--live-transcript', 'live_transcript', default=None,
               help='Path to the live transcript captured during recording, '
                    'used as a fallback if batch transcription returns empty (#207)')
+@click.option('--early-summary', 'early_summary', is_flag=True, default=False,
+              help='Summarise the --live-transcript first and save the note '
+                   '(refining: true) before the batch re-transcription, which '
+                   'then refines the transcript and notes in the background.')
 @click.option('--append-to', 'append_to', default=None,
               help='Path to an existing note to append this transcription to '
                    '(continue-recording): the new transcript is appended to the '
                    "note's Transcript section, the note is marked notes_stale, "
                    'and no summary/title generation runs.')
-def process_streaming(audio_file, name, notes, live_transcript, append_to):
+def process_streaming(audio_file, name, notes, live_transcript, append_to, early_summary=False):
     """Process audio with streaming summary output.
 
     Transcribes audio, then streams the summary as CHUNK: prefixed lines
@@ -1310,14 +1477,31 @@ def process_streaming(audio_file, name, notes, live_transcript, append_to):
         # Read the live transcript fallback (#207). The renderer accumulates
         # live segments during recording; Electron writes them to this file so
         # we can rescue a meeting whose batch transcription came back empty.
+        # The snapshot carries speakers + timestamps (v1 JSON) or, from an older
+        # app build, plain text -- see src/live_snapshot.py.
+        from src.live_snapshot import parse_live_snapshot
+        live_snapshot = None
         live_transcript_text = None
         if live_transcript:
             try:
-                live_transcript_text = Path(live_transcript).read_text(encoding='utf-8').strip()
-                if live_transcript_text:
+                live_snapshot = parse_live_snapshot(
+                    Path(live_transcript).read_text(encoding='utf-8')
+                )
+                if live_snapshot:
+                    live_transcript_text = live_snapshot.transcript_text
                     logger.info(f"Loaded live transcript fallback ({len(live_transcript_text)} chars)")
             except Exception as e:
                 logger.warning(f"Failed to read live transcript file: {e}")
+
+        # Instant transcript: notes from the live transcript first, then the
+        # batch pass below refines them. Never for a continuation (append
+        # never rewrites a note wholesale).
+        early = None
+        if early_summary and live_snapshot is not None and not append_to:
+            early = _write_early_note(
+                recorder, Path(audio_file), name, live_snapshot,
+                lambda: _refresh_edited_notes(notes_text),
+            )
 
         # Step 1: Transcribe. HEARTBEAT: lines are a liveness signal for the
         # Electron inactivity watchdog — without them a long transcription is
@@ -1411,11 +1595,15 @@ def process_streaming(audio_file, name, notes, live_transcript, append_to):
                 )
             # Rebuild transcript_data so the rest of the pipeline (summary, save)
             # uses the live transcript. Live transcripts are not channel-diarised.
+            # Keep the live You/Others labels (v1 snapshot); a legacy
+            # plain-text snapshot has none, so it stays undiarised.
             transcript_data = {
                 "transcript_text": live_transcript_text,
-                "diarised_text": None,
-                "is_diarised": False,
-                "duration_seconds": transcript_data.get("duration_seconds"),
+                "diarised_text": live_snapshot.diarised_text,
+                "is_diarised": live_snapshot.is_diarised,
+                "duration_seconds": (
+                    transcript_data.get("duration_seconds") or live_snapshot.duration_seconds
+                ),
                 "detected_language": transcript_data.get("detected_language"),
                 "transcript_file": existing_transcript_file,
             }
@@ -1492,7 +1680,9 @@ def process_streaming(audio_file, name, notes, live_transcript, append_to):
         # (reprocess), which regenerates the summary and drops notes_generated.
         from src.config import get_config
         gate_config = get_config()
-        if not gate_config.get_auto_summarize_enabled():
+        # An early note already has a summary, so a toggle flipped mid-run must
+        # not strip it back to a transcript-only note.
+        if early is None and not gate_config.get_auto_summarize_enabled():
             output_language = recorder._resolve_output_language(
                 gate_config.get_language(),
                 transcript_data.get("detected_language"),
@@ -1559,45 +1749,53 @@ def process_streaming(audio_file, name, notes, live_transcript, append_to):
             transcript_text=text_for_summary,
         )
 
-        import base64
-        streamed_chunks = []
-        # Keep the watchdog alive through model load + prompt eval — the
-        # silent stretch before the first streamed token. Stopped on the
-        # first chunk; from then on the chunks themselves are the signal.
-        summary_heartbeat = _start_summary_heartbeat()
-        _stream_error = None
-        try:
-            for chunk in recorder.summarizer.summarize_transcript_streaming(
-                text_for_summary, duration_minutes, output_language, notes_text,
-                progress_callback=_emit_progress,
-            ):
-                summary_heartbeat.set()
-                encoded = base64.b64encode(chunk.encode('utf-8')).decode('ascii')
-                sys.stdout.write(f"CHUNK:{encoded}\n")
-                sys.stdout.flush()
-                streamed_chunks.append(chunk)
-        except Exception as e:
-            _stream_error = e
-        finally:
-            summary_heartbeat.set()
-
-        # Surface a summarization failure (e.g. a long-meeting map-reduce that
-        # overflows context) as STREAM_ERROR so the renderer shows the same
-        # "try a smaller model" recommendation it shows for reprocess — instead
-        # of a generic processing failure with no guidance.
-        if _stream_error is not None:
-            logger.error(f"Summarization failed: {_stream_error}")
-            err_msg = str(_stream_error).replace('\n', ' ').replace('\r', ' ')
-            print(f"STREAM_ERROR:{err_msg}", flush=True)
-            sys.exit(1)
-
-        streamed_md = _apply_chinese_variant(''.join(streamed_chunks)) or ''
+        notes_stale = False
+        if early is not None and is_live_transcript:
+            # The batch pass was unusable and fell back to the same live
+            # transcript the early summary was made from: that summary already
+            # covers it, so don't summarise the same text twice.
+            streamed_md = early['streamed_md']
+        else:
+            # An early note is already on screen: refine its summary silently
+            # (no CHUNK stream replacing what the user is reading).
+            streamed_md, _stream_error = _stream_summary_markdown(
+                recorder.summarizer, text_for_summary, duration_minutes,
+                output_language, notes_text, emit_chunks=early is None,
+            )
+            if early is not None and (_stream_error is not None or not streamed_md.strip()):
+                # Keep the early (live-transcript) summary rather than fail a
+                # meeting that already has notes; flag it stale so the note
+                # offers "Generate notes" against the refined transcript.
+                logger.warning(f"Refine summary failed, keeping the early summary: {_stream_error or 'empty result'}")
+                streamed_md = early['streamed_md']
+                notes_stale = True
+            elif _stream_error is not None:
+                # Surface a summarization failure (e.g. a long-meeting map-reduce
+                # that overflows context) as STREAM_ERROR so the renderer shows
+                # the same "try a smaller model" recommendation it shows for
+                # reprocess — instead of a generic processing failure.
+                logger.error(f"Summarization failed: {_stream_error}")
+                err_msg = str(_stream_error).replace('\n', ' ').replace('\r', ' ')
+                print(f"STREAM_ERROR:{err_msg}", flush=True)
+                sys.exit(1)
 
         print("STREAM_COMPLETE", flush=True)
 
-        # Step 3: Generate title
+        # Step 3: Generate title (an early note already generated one)
         session_name = name
-        if _AUTO_NAMED_PATTERN.match(name):
+        if early is not None:
+            session_name = early['session_name']
+            # The early note was on screen for the whole refine pass: keep a
+            # rename the user made there instead of restoring the early title.
+            try:
+                on_disk = _parse_meeting_markdown(placeholder_note)['session_info'].get('name')
+                if on_disk:
+                    session_name = on_disk
+            except Exception as e:
+                logger.debug(f"Could not re-read the early note's title: {e}")
+        # Still auto-named only when there was no early note, or its title
+        # generation failed and the user hasn't renamed it since.
+        if _AUTO_NAMED_PATTERN.match(session_name):
             try:
                 generated_title = recorder.summarizer.generate_title(
                     streamed_md, transcript_text, language=output_language
@@ -1629,6 +1827,14 @@ def process_streaming(audio_file, name, notes, live_transcript, append_to):
         # transcript came from the live capture, not a batch transcription.
         if is_live_transcript:
             md_meta['is_live_transcript'] = True
+        if notes_stale:
+            md_meta['notes_stale'] = True
+        # The early note was readable for the whole refine pass: a space the
+        # user moved it into lives only in its frontmatter, so carry it over
+        # (the title is re-read above, My notes just below).
+        carried_folders = _read_note_edits(summary_path).get('folders')
+        if carried_folders:
+            md_meta['folders'] = carried_folders
         md_lines = _render_frontmatter(md_meta)
         md_lines.append('')
         md_lines.append(streamed_md)
@@ -2222,6 +2428,51 @@ def set_obsidian_vault_path_cmd(vault_path):
         print(json.dumps({"success": True, "obsidian_vault_path": vault_path}))
     else:
         print(json.dumps({"success": False, "error": "Failed to set vault path"}))
+
+
+def _mcp_settings_payload(config) -> dict:
+    return {
+        "mcp_folder_allowlist": config.get_mcp_folder_allowlist(),
+        "mcp_exclude_transcripts": config.get_mcp_exclude_transcripts(),
+    }
+
+
+@cli.command(name='get-mcp-settings')
+def get_mcp_settings_cmd():
+    """Get what the Steno MCP server lets AI assistants read."""
+    from src.config import get_config
+    print(json.dumps(_mcp_settings_payload(get_config())))
+
+
+@cli.command(name='set-mcp-settings')
+@click.option('--exclude-transcripts', type=bool, default=None,
+              help='Serve notes only (no transcripts) to AI assistants.')
+@click.option('--folders', 'folders_json', default=None,
+              help='JSON array of folder ids assistants may read, or "all".')
+def set_mcp_settings_cmd(exclude_transcripts, folders_json):
+    """Set the Steno MCP server's scope (folder allowlist, transcripts)."""
+    from src.config import get_config
+    config = get_config()
+    if folders_json is not None:
+        if folders_json == 'all':
+            folder_ids = None
+        else:
+            try:
+                folder_ids = json.loads(folders_json)
+            except ValueError:
+                print(json.dumps({"success": False, "error": "Invalid folder list"}))
+                return
+            if not isinstance(folder_ids, list):
+                print(json.dumps({"success": False, "error": "Invalid folder list"}))
+                return
+        if not config.set_mcp_folder_allowlist(folder_ids):
+            print(json.dumps({"success": False, "error": "Invalid folder list"}))
+            return
+    if exclude_transcripts is not None:
+        if not config.set_mcp_exclude_transcripts(exclude_transcripts):
+            print(json.dumps({"success": False, "error": "Failed to persist setting"}))
+            return
+    print(json.dumps({"success": True, **_mcp_settings_payload(config)}))
 
 
 @cli.command(name='get-silence-auto-stop')
@@ -3238,6 +3489,11 @@ def _parse_meeting_markdown(md_path):
     # the flag so the detail view shows a quiet "finishing up" affordance.
     if meta.get('processing'):
         session_info['processing'] = True
+    # An early note (instant transcript): notes written from the live
+    # transcript while the batch pass refines transcript + notes. Readable and
+    # chat-able; the detail view shows a small "Refining transcript" marker.
+    if meta.get('refining'):
+        session_info['refining'] = True
 
     return {
         'session_info': session_info,
@@ -3644,6 +3900,9 @@ def reprocess(summary_file, regenerate_title, retranscribe):
             sys.exit(1)
 
         session_name = existing_data.get('session_info', {}).get('name', 'Reprocessed')
+        # The title as the run started: a rename made while the summary
+        # streams is told apart from a title this run generates.
+        title_at_start = session_name
         duration_minutes = existing_data.get('session_info', {}).get('duration_minutes', 10)
         if duration_minutes is None:
             ds = existing_data.get('session_info', {}).get('duration_seconds')
@@ -3757,6 +4016,18 @@ def reprocess(summary_file, regenerate_title, retranscribe):
         # Save updated summary
         if summary_path.suffix == '.md':
             session_name = existing_data.get('session_info', {}).get('name', 'Reprocessed')
+            # The note stayed readable while the summary streamed: re-read the
+            # title, folders and My notes right before the write (the same
+            # idea as process_streaming's _refresh_edited_notes) instead of
+            # rebuilding them from the start-of-run snapshot.
+            edits = _read_note_edits(summary_path)
+            if edits:
+                if edits.get('title') and edits['title'] != title_at_start:
+                    # Renamed mid-run: the user's name wins over a generated one.
+                    session_name = edits['title']
+                    existing_data['session_info']['name'] = session_name
+                existing_data['folders'] = edits.get('folders', [])
+                notes_text = edits.get('user_notes')
             md_lines = ['---']
             # This rebuild intentionally omits notes_generated and notes_stale:
             # reprocessing generates a current summary, so the rewritten
@@ -4290,6 +4561,57 @@ def regen_title(summary_file):
         sys.exit(1)
 
 
+@cli.command('suggest-actions')
+@click.argument('summary_file', required=True)
+@click.option('--tools-file', required=True, help='JSON file with the enabled action tools (written by the app)')
+def suggest_actions(summary_file, tools_file):
+    """Propose MCP tool calls from a note's summary and action items.
+
+    Prints one JSON object: {"success": true, "proposals": [...], "note": {...}}. Only the
+    note's title, summary and action items reach the model; nothing runs here.
+    """
+    from pathlib import Path
+    from src import action_suggest
+
+    summary_path = Path(summary_file)
+    try:
+        if summary_path.suffix == '.md':
+            meeting = _parse_meeting_markdown(summary_path)
+        else:
+            with open(summary_path, 'r', encoding='utf-8') as f:
+                meeting = json.load(f)
+        with open(tools_file, 'r', encoding='utf-8') as f:
+            catalogue = json.load(f)
+    except Exception as e:
+        print(json.dumps({"success": False, "error_code": "read-failed", "error": f"Could not read input: {type(e).__name__}"}))
+        return
+
+    tools = catalogue.get('tools') if isinstance(catalogue, dict) else None
+    if not isinstance(tools, list):
+        print(json.dumps({"success": False, "error_code": "invalid-tools", "error": "Tool list is invalid"}))
+        return
+    max_proposals = catalogue.get('max_proposals', action_suggest.MAX_PROPOSALS)
+
+    try:
+        summarizer = None
+
+        def complete(prompt):
+            nonlocal summarizer
+            if summarizer is None:
+                summarizer = OllamaSummarizer()
+            return summarizer.complete_json(prompt, 120)
+
+        proposals = action_suggest.suggest(meeting, tools, complete, max_proposals)
+        # The note context the model saw, so the app can re-check citations
+        # and identifiers itself (app/mcp-proposals.js).
+        note = action_suggest.note_context(meeting)
+        print(json.dumps({"success": True, "proposals": proposals, "note": note}, ensure_ascii=False))
+    except Exception as e:
+        logger.error(f"suggest-actions failed: {type(e).__name__}")
+        print(json.dumps({"success": False, "error_code": "provider-failed", "error": f"Suggestion failed: {type(e).__name__}"}))
+        return
+
+
 @cli.command()
 @click.argument('transcript_file')
 @click.option('--question', '-q', required=True, help='Question to ask about the transcript')
@@ -4480,17 +4802,15 @@ def _chat_corpus_char_budget(ai_provider: str, model: str) -> int:
     return 400_000
 
 
-def _build_chat_corpus(folder=None, budget=None):
-    """Bounded saved-note context, shared by global and recording-time chat."""
-    from src.config import get_config, get_data_dirs
-    from src.reports import _item_text
+def _load_saved_notes(folder=None):
+    """Every saved note as (id, data), newest first, optionally in one folder.
 
-    config = get_config()
-    dirs = get_data_dirs()
-    output_dir = dirs["output"]
+    Reads .md (the current format) and legacy .json; the id is the file stem
+    without "_summary". Shared by cross-note chat and the chat agent's Steno
+    read tools (search_meetings / get_note)."""
+    from src.config import get_data_dirs
 
-    # Collect every summary file, preferring .md (the new format) but reading
-    # legacy .json too so users with old recordings aren't excluded.
+    output_dir = get_data_dirs()["output"]
     summaries: list[tuple[Path, dict]] = []
     seen = set()
     for f in sorted(output_dir.glob("*_summary.md")):
@@ -4510,28 +4830,30 @@ def _build_chat_corpus(folder=None, budget=None):
                 summaries.append((f, json.load(fh)))
         except (OSError, ValueError):
             continue
-
-    # Folder scoping. Each meeting record carries a 'folders' array of IDs;
-    # filter to only those that include the requested ID. Empty folder ID
-    # or 'all' explicitly means no filter.
+    # Folder scoping: each note carries a 'folders' array of ids. Empty or
+    # 'all' means no filter.
     if folder and folder != 'all':
         summaries = [
             (path, data) for (path, data) in summaries
             if isinstance(data.get('folders'), list) and folder in data['folders']
         ]
+    summaries.sort(key=lambda item: item[1].get("session_info", {}).get("processed_at") or "", reverse=True)
+    return [(path.stem.replace('_summary', ''), data) for path, data in summaries]
 
-    if not summaries:
-        return ""
 
+def _build_chat_corpus(folder=None, budget=None):
+    """Bounded saved-note context, shared by global and recording-time chat."""
+    from src.config import get_config
+    from src.reports import _item_text
+
+    config = get_config()
     # Most-recent first so the model weights newer context higher when token
     # budget is tight. Each block is kept compact (title + summary +
     # participants + key points + action items) - full transcripts would blow
     # even a 200k window.
-    def sort_key(item):
-        _, data = item
-        return data.get("session_info", {}).get("processed_at") or ""
-
-    summaries.sort(key=sort_key, reverse=True)
+    summaries = [(None, data) for _, data in _load_saved_notes(folder)]
+    if not summaries:
+        return ""
 
     # Cap the assembled corpus so a user with hundreds of meetings can't blow
     # past the active model's context window (see _chat_corpus_char_budget).
@@ -4650,6 +4972,70 @@ def chat_context_streaming():
     """Chat over explicit context. Content travels over bounded stdin, never argv."""
     from src.chat_query import run_chat_query
     run_chat_query(_parse_meeting_markdown, _build_chat_corpus, resolve_persisted_output_language)
+
+
+# A concrete, Notion-ready sample note for manually testing Suggested actions
+# and chat-as-an-agent against a real Notion connection. Development only:
+# hidden from --help and never written unless run by hand.
+DEV_NOTION_SAMPLE = {
+    "name": "Website review (sample)",
+    "summary": (
+        "We reviewed the public website. The Defence and Law enforcement pages "
+        "are too long and repeat the product overview, so we will trim them and "
+        "track the work on one Notion page."
+    ),
+    "key_points": [
+        "The Defence page repeats the product overview and needs trimming.",
+        "The Law enforcement page has three paragraphs that say the same thing.",
+    ],
+    "action_items": [
+        "Create a Notion page called 'Website content cleanup' listing the pages to trim: Defence, Law enforcement",
+        "Ask the design team for a shorter hero section on the Defence page",
+    ],
+    "participants": ["You", "Sam"],
+}
+
+
+@cli.command(name='dev-seed-notion-note', hidden=True)
+def dev_seed_notion_note():
+    """[dev] Write a sample note whose action items are concrete and Notion-ready."""
+    import datetime
+    from src.config import get_data_dirs
+
+    output_dir = get_data_dirs()["output"]
+    output_dir.mkdir(parents=True, exist_ok=True)
+    now = datetime.datetime.now()
+    stem = now.strftime("%Y%m%d_%H%M%S") + "_website-review-sample"
+    path = output_dir / f"{stem}_summary.json"
+    data = {
+        "session_info": {
+            "name": DEV_NOTION_SAMPLE["name"],
+            "summary_file": str(path),
+            "processed_at": now.isoformat(timespec="seconds"),
+            "duration_seconds": 900,
+        },
+        "summary": DEV_NOTION_SAMPLE["summary"],
+        "participants": DEV_NOTION_SAMPLE["participants"],
+        "key_points": DEV_NOTION_SAMPLE["key_points"],
+        "action_items": DEV_NOTION_SAMPLE["action_items"],
+        "transcript": "",
+    }
+    path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    print(json.dumps({"success": True, "summary_file": str(path)}))
+
+
+@cli.command(name='chat-agent-step')
+def chat_agent_step():
+    """One model call of chat-as-an-agent, with tools. Driven by app/chat-agent.js."""
+    from src.chat_agent import run_chat_agent_step
+    run_chat_agent_step(_parse_meeting_markdown, _build_chat_corpus, resolve_persisted_output_language)
+
+
+@cli.command(name='chat-tool')
+def chat_tool():
+    """Run one of Steno's read tools (search_meetings / get_note) for the chat agent."""
+    from src.chat_agent import run_chat_tool
+    run_chat_tool(_load_saved_notes)
 
 
 @cli.command()
@@ -9140,7 +9526,8 @@ def get_record_hotkey():
     enabled = config.get_record_hotkey_enabled()
 
     result = {
-        "record_hotkey_enabled": enabled
+        "record_hotkey_enabled": enabled,
+        "record_hotkey_accelerator": config.get_record_hotkey_accelerator(),
     }
 
     print(json.dumps(result, indent=2))
@@ -9161,6 +9548,19 @@ def set_record_hotkey(enabled):
     else:
         print("ERROR: Failed to save record shortcut preference")
         print(json.dumps({"success": False, "error": "Failed to save config"}))
+
+
+@cli.command()
+@click.argument('accelerator')
+def set_record_hotkey_accelerator(accelerator):
+    """Set the record shortcut (an Electron accelerator); "default" restores the platform default"""
+    from src.config import get_config
+
+    value = None if accelerator in ("", "default") else accelerator
+    if get_config().set_record_hotkey_accelerator(value):
+        print(json.dumps({"success": True, "record_hotkey_accelerator": value}))
+    else:
+        print(json.dumps({"success": False, "error": "Failed to save record shortcut"}))
 
 
 @cli.command()
@@ -9745,7 +10145,7 @@ def set_cloud_api_url(url):
 @cli.command()
 @click.argument('provider')
 def set_cloud_provider(provider):
-    """Set the cloud provider type (openai or custom)"""
+    """Set the cloud provider type (openai, anthropic, bedrock, custom or openrouter)"""
     from src.config import get_config
     config = get_config()
 
@@ -9928,10 +10328,12 @@ def test_cloud_api():
                     "success": False,
                     "error": f"Bedrock HTTP {he.code}: {detail or he.reason}",
                 }))
+        elif cloud_provider == "openrouter":
+            print(json.dumps(_test_openrouter_key(cloud_api_key)))
         else:
             from openai import OpenAI
-            base_url = cloud_api_url if cloud_provider == "custom" and cloud_api_url else None
-            client = OpenAI(api_key=cloud_api_key, base_url=base_url)
+            from src.cloud_providers import openai_client_kwargs
+            client = OpenAI(**openai_client_kwargs(cloud_provider, cloud_api_key, cloud_api_url))
             models = client.models.list()
             # Newest first so current chat models lead the Settings dropdown.
             # OpenAI returns ~50+ models in arbitrary order, mixing in
@@ -9949,7 +10351,65 @@ def test_cloud_api():
             model_ids = [m.id for m in entries[:25]]
             print(json.dumps({"success": True, "models": model_ids}))
     except Exception as e:
-        print(json.dumps({"success": False, "error": str(e)}))
+        from src.cloud_providers import classify_cloud_error
+        print(json.dumps({
+            "success": False,
+            "error": str(e),
+            "error_code": classify_cloud_error(str(e)),
+        }))
+
+
+def _test_openrouter_key(api_key, urlopen=None):
+    """Verify an OpenRouter key and pick the models to offer.
+
+    OpenRouter's /models catalogue is public, so listing it proves nothing about
+    the key. /key is authenticated: a 401 there is a bad key. The catalogue is
+    then used only to drop curated picks OpenRouter no longer serves.
+    ``urlopen`` is injectable for tests."""
+    import urllib.error
+    import urllib.request
+    from src.cloud_providers import (
+        OPENROUTER_BASE_URL,
+        OPENROUTER_HEADERS,
+        available_recommended,
+        classify_cloud_error,
+    )
+    open_url = urlopen or urllib.request.urlopen
+    headers = {"authorization": f"Bearer {api_key}", **OPENROUTER_HEADERS}
+    try:
+        req = urllib.request.Request(f"{OPENROUTER_BASE_URL}/key", headers=headers)
+        with open_url(req, timeout=15) as resp:
+            key_info = json.loads(resp.read().decode("utf-8") or "{}").get("data") or {}
+    except urllib.error.HTTPError as he:
+        detail = ""
+        try:
+            detail = he.read().decode("utf-8", errors="replace")[:300]
+        except Exception:
+            # Best-effort detail; never mask the HTTP status being reported.
+            pass
+        message = f"OpenRouter HTTP {he.code}: {detail or he.reason}"
+        return {"success": False, "error": message, "error_code": classify_cloud_error(message)}
+    except Exception as e:
+        return {"success": False, "error": str(e), "error_code": classify_cloud_error(str(e))}
+
+    live_ids = []
+    try:
+        req = urllib.request.Request(f"{OPENROUTER_BASE_URL}/models", headers=headers)
+        with open_url(req, timeout=15) as resp:
+            catalogue = json.loads(resp.read().decode("utf-8") or "{}")
+        live_ids = [m.get("id") for m in catalogue.get("data") or [] if isinstance(m, dict)]
+    except Exception:
+        # The key already checked out; a catalogue hiccup only means we offer
+        # the curated list unfiltered.
+        live_ids = []
+
+    result = {"success": True, "models": available_recommended(live_ids)}
+    remaining = key_info.get("limit_remaining") if isinstance(key_info, dict) else None
+    if isinstance(remaining, (int, float)) and remaining <= 0:
+        # The key is valid but has a spending limit already used up. Report it
+        # as a warning rather than a failure: free models still answer.
+        result["warning"] = "no_credit"
+    return result
 
 
 @cli.command()

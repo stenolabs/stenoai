@@ -42,7 +42,7 @@ vi.mock('@/hooks/useModels', async (importOriginal) => ({
   useSetDiarizationEngine: () => diarization.mutation,
 }));
 
-import { SpeakerIdentificationSetting, SpeakerSeparationSetting } from './AiTab';
+import { SpeakerIdentificationSetting, SpeakerSeparationSetting } from './ai/SpeakerSettings';
 
 describe('Speaker identification setting', () => {
   test('describes itself to assistive technology', () => {

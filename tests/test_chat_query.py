@@ -150,7 +150,11 @@ class ChatQueryTests(unittest.TestCase):
             run_chat_query(Mock(), Mock())
         lines = output.getvalue().splitlines()
         self.assertEqual(lines[-1], 'CHAT_STREAM_COMPLETE')
-        chunks = [base64.b64decode(line.split(':', 1)[1]).decode() for line in lines[:-1]]
+        # The first line says what the answer read; then the answer streams.
+        self.assertTrue(lines[0].startswith('CHAT_STEP:'))
+        step = json.loads(base64.b64decode(lines[0].split(':', 1)[1]))
+        self.assertEqual((step['source'], step['tool']), ('context', 'none'))
+        chunks = [base64.b64decode(line.split(':', 1)[1]).decode() for line in lines[1:-1]]
         self.assertEqual(''.join(chunks), '界' * 10000)
         self.assertGreater(len(chunks), 1)
         raw.seek(0)
@@ -160,3 +164,18 @@ class ChatQueryTests(unittest.TestCase):
             run_chat_query(Mock(), Mock())
         self.assertNotIn('PRIVATE', output.getvalue())
         self.assertIn('CHAT_STREAM_ERROR:', output.getvalue())
+
+
+class ContextStepTests(unittest.TestCase):
+    def test_counts_notes_and_ignores_the_omitted_footer(self):
+        from src.chat_query import context_step
+        corpus = 'A\n\n---\n\nB\n\n---\n\nC\n\n---\n\n_Note: 4 older note(s) omitted'
+        self.assertEqual(context_step('notes', corpus, {})['count'], 3)
+        self.assertEqual(context_step('notes', '', {})['count'], 0)
+
+    def test_meeting_step_carries_only_the_title(self):
+        from src.chat_query import context_step
+        step = context_step('meeting', 'TRANSCRIPT TEXT', {'session_info': {'name': 'Board sync'}, 'transcript': 'secret'})
+        self.assertEqual(step['title'], 'Board sync')
+        self.assertNotIn('secret', json.dumps(step))
+

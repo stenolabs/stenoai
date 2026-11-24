@@ -31,6 +31,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import * as SelectPrimitive from '@radix-ui/react-select';
 import { MeetingsShell } from '@/components/MeetingsShell';
 import { SpeakerReviewPanel } from '@/components/SpeakerReviewPanel';
+import { SuggestedActions } from '@/components/actions/SuggestedActions';
 import {
   Select,
   SelectContent,
@@ -46,7 +47,6 @@ import {
   useGenerateReport,
   useSetActiveReport,
   useDeleteReport,
-  useUpdateMeeting,
   useUpdateUserNotes,
   meetingsKeys,
 } from '@/hooks/useMeetings';
@@ -84,7 +84,7 @@ import {
   useCreateFolder,
 } from '@/hooks/useFolders';
 import { useActiveMeeting } from '@/lib/askBarContext';
-import { ipc, type Meeting, type Report, type Template, type UpdateMeetingPatch } from '@/lib/ipc';
+import { ipc, type Meeting, type Report, type Template } from '@/lib/ipc';
 import { buildTranscriptBundle, defaultExportFilename } from '@/lib/transcriptBundle';
 import { buildNotesCopyText, type StructuredNoteSections } from '@/lib/notesCopy';
 import { buildNotesMarkdown } from '@/lib/notesMarkdown';
@@ -104,7 +104,16 @@ import { pendingTitleRegens, streamCache, type StreamPhase } from '@/lib/meeting
 import { useReprocessBridge } from '@/hooks/reprocessBridgeStore';
 import { useRecording } from '@/hooks/useRecording';
 import { useAutoSummarizeSetting } from '@/hooks/useSettings';
-import { NoteEditor, hasUserNotesSectionBoundary, type NoteDraft } from './NoteEditor';
+import { hasUserNotesSectionBoundary, type NoteDraft } from '@/lib/noteDraft';
+import { isEditableNoteFile, noteEditLock } from '@/lib/noteEditability';
+import {
+  IDLE_SAVE_STATE,
+  InlineNote,
+  hasCachedNoteDraft,
+  type InlineEditorHandle,
+  type InlineSaveState,
+} from './InlineNote';
+import { InlineReport } from './InlineReport';
 
 import { MEETING_TRANSFER_COPY, useExportMeetingPackage } from '@/hooks/useMeetingTransfer';
 
@@ -374,29 +383,42 @@ function DetailContent({
   const reprocessErrorCode: NoteGenerationErrorCode = reprocessError ?? 'generation_failed';
   const qc = useQueryClient();
 
-  // Note editing (D9): the generated note is a document until the user asks to
-  // edit it. Declared up here because the streaming listeners below have to see
-  // it; they're registered once per meeting, so they read it through a ref
-  // rather than re-subscribing on every keystroke's re-render.
-  const [editing, setEditing] = React.useState(false);
-  // Lifted out of the editor so the navigation guard can ask whether there is
-  // anything to lose. A ref, not state: the guard reads it at the moment of
-  // navigation, so a route change right after a keystroke is still caught.
-  const noteDirtyRef = React.useRef(false);
-  const handleNoteDirtyChange = React.useCallback((dirty: boolean) => {
-    noteDirtyRef.current = dirty;
-  }, []);
-  // Where the user tried to go while the editor held unsaved changes. Non-null
-  // opens the discard confirmation; confirming continues to this route.
+  // Inline note editing: the note is always editable while nothing else is
+  // writing it (see noteEditability.ts). Whichever inline editor is mounted
+  // (the Standard note or a template report) registers here, so everything
+  // that leaves the view or rebuilds the note can flush its autosave first.
+  const editorRef = React.useRef<InlineEditorHandle | null>(null);
+  const [saveState, setSaveState] = React.useState<InlineSaveState>(IDLE_SAVE_STATE);
+  // Something on screen is not on disk yet (pending, in flight, failed, or
+  // text that cannot be saved as it stands). Exports read the saved note, so
+  // they wait for it.
+  const noteUnsaved =
+    saveState.invalid ||
+    saveState.status === 'pending' ||
+    saveState.status === 'saving' ||
+    saveState.status === 'error';
+  // Where the user tried to go when the unsaved draft could not be written
+  // (invalid text, or a failed save). Non-null opens the discard confirmation.
   const [pendingRoute, setPendingRoute] = React.useState<string | null>(null);
-  const updateMeeting = useUpdateMeeting();
-  const editingRef = React.useRef(editing);
-  // Layout effect, not a render-time assignment: it still lands before the
-  // renderer yields to the next task, so no IPC chunk can observe a stale
-  // value, and it keeps the ref out of the render path.
-  React.useLayoutEffect(() => {
-    editingRef.current = editing;
-  }, [editing]);
+  /** Write any pending inline edit. False when it could not be written. */
+  const flushEdits = React.useCallback(
+    async () => (editorRef.current ? editorRef.current.flush() : true),
+    []
+  );
+  /** Run `action` once any unsaved inline edit is on disk; synchronously when
+   *  there is none (so the rebuild guards keep their same-tick re-entrancy
+   *  check), and not at all when it cannot be written - the editor then shows
+   *  why, and nothing rebuilds over text the user still has on screen. */
+  const afterEditsSaved = React.useCallback((action: () => void) => {
+    const editor = editorRef.current;
+    if (!editor || !editor.hasUnsaved()) {
+      action();
+      return;
+    }
+    void editor.flush().then((ok) => {
+      if (ok) action();
+    });
+  }, []);
 
   // Report switch: null = the structured Standard summary, otherwise the id of
   // a generated report in meeting.reports. Seeded from the meeting's persisted
@@ -429,11 +451,6 @@ function DetailContent({
     const sessionName = info.name;
     const offChunk = ipc().on.summaryChunk((e) => {
       if (e.summaryFile !== summaryFile) return;
-      // A regenerate that finishes while the user is editing must not swap the
-      // note out from under them. Holding the stream is the conservative choice:
-      // the regenerated note is still on disk and appears as soon as they leave
-      // edit mode.
-      if (editingRef.current) return;
       // Promote from idle too (not just analyzing): an instant-stop note's
       // first-ever summary streams in with no prior reprocess to seed
       // 'analyzing', so without idle→generating the StreamingView (gated on
@@ -528,11 +545,24 @@ function DetailContent({
         setChunkProgress(null);
       }
     });
+    // Instant transcript: the early note (from the live transcript) was saved
+    // mid-job, or its summary failed and the full pass will stream one. Drop
+    // the early stream and show the note as it now is on disk.
+    const offNoteUpdated = ipc().on.noteUpdated((e) => {
+      if (e.summaryFile !== summaryFile) return;
+      setChunkProgress(null);
+      void qc.invalidateQueries({ queryKey: meetingsKeys.all }).then(() => {
+        setStreamText('');
+        setStreamPhase('idle');
+        streamCache.delete(summaryFile);
+      });
+    });
     return () => {
       offChunk();
       offComplete();
       offProcessing();
       offProgress();
+      offNoteUpdated();
     };
   }, [info.name, summaryFile, qc]);
 
@@ -540,7 +570,9 @@ function DetailContent({
   // structured summary, not an on-demand report.
   const reportTemplates = templates.filter((t) => !t.locked);
 
-  const onGenerateReport = (templateId: string) => {
+  const onGenerateReport = (templateId: string) =>
+    afterEditsSaved(() => generateReportNow(templateId));
+  const generateReportNow = (templateId: string) => {
     setStreamText('');
     setStreamPhase('analyzing');
     setChunkProgress(null);
@@ -585,19 +617,17 @@ function DetailContent({
   // streamCache is a module-level Map written synchronously by the starters
   // below, so it can't lag the way state/props can.
   //
-  // `editing` belongs here rather than on each click handler because the two
-  // rebuild paths that are NOT this component's own buttons (the floating
-  // GenerateNotesBar, which calls the published `start`, and the re-transcribe
-  // menu item) would otherwise slip through. With an open editor the stream is
-  // suppressed (editingRef), so a rebuild started here is invisible: Python
-  // rewrites the note, and the next Save patches the FRESH note with the
-  // PRE-regeneration draft, silently replacing content the user never saw. The
-  // #249 standard-backup does not rescue that - it holds the note as it was
-  // BEFORE the regenerate, not the generated text that was just overwritten.
+  // Every rebuild entry point flushes the inline editor's autosave BEFORE it
+  // gets here (startReprocess / startRetranscribe / onGenerateReport), so a
+  // rebuild never starts with an unsaved draft that a later save would write
+  // over the regenerated note. Once the stream starts the editor unmounts
+  // (noteEditLock 'streaming').
   const rebuildInFlight = () => {
     const cached = streamCache.get(summaryFile);
     return (
-      editing ||
+      // The processing pipeline still owns this note (placeholder or early
+      // note being refined); its final write would race a rebuild.
+      backgroundWriterActive ||
       reprocess.isPending ||
       streamPhase !== 'idle' ||
       cached?.phase === 'analyzing' ||
@@ -638,9 +668,17 @@ function DetailContent({
   // header icon, the retry banner and the floating GenerateNotesBar all come
   // through here, so the guard lives here rather than on each click handler:
   // one of those three is not even in this component's tree.
-  const startReprocess = () => {
+  const startReprocess = (): void => {
     if (rebuildInFlight()) return;
-    if (hasNoteEdits) {
+    // An unsaved inline edit is written first; if it cannot be (invalid text,
+    // or the write failed) the rebuild does not start and the editor says why.
+    if (editorRef.current?.hasUnsaved()) {
+      afterEditsSaved(startReprocess);
+      return;
+    }
+    // hasNoteEdits comes from the last render; an edit written by the flush
+    // above (or earlier in this visit) has not reached it yet.
+    if (hasNoteEdits || editorRef.current?.savedEditsThisSession()) {
       setConfirmRegenerate(true);
       return;
     }
@@ -656,8 +694,12 @@ function DetailContent({
   // It rewrites the note too, so it discards edits exactly like a reprocess:
   // its existing confirm below carries the warning instead of stacking a second
   // dialog on top of it.
-  const startRetranscribe = () => {
+  const startRetranscribe = (): void => {
     if (retranscribe.isPending || rebuildInFlight()) return;
+    if (editorRef.current?.hasUnsaved()) {
+      afterEditsSaved(startRetranscribe);
+      return;
+    }
     setStreamText('');
     setStreamPhase('analyzing');
     setChunkProgress(null);
@@ -808,7 +850,7 @@ function DetailContent({
 
   // Hands finished HTML to the export-note-pdf IPC, which rasterises + writes it.
   const saveNotesPdf = async () => {
-    if (editing || !canExportNotesPdf) return;
+    if (notesExportBlocked || !canExportNotesPdf) return;
     setExportError(null);
     try {
       const res = await ipc().meetings.exportNotePdf(
@@ -828,7 +870,7 @@ function DetailContent({
   // Copies whichever note is on screen: the open template report when one is
   // selected, otherwise the Standard structured note.
   const copyNotes = () => {
-    if (editing || streamPhase !== 'idle') return;
+    if (notesExportBlocked) return;
     const text = buildNotesCopyText(
       noteSections,
       activeReport ? { content: stripReasoning(activeReport.content) } : null
@@ -846,9 +888,10 @@ function DetailContent({
 
   // Notes exports are off while a summary/report stream is on screen, for the
   // same reason Copy notes is: otherwise the pre-stream note is written out
-  // while its replacement is still arriving. The same holds while the editor is
-  // open: the exports read the saved note, not the draft on screen.
-  const notesExportBlocked = editing || streamPhase !== 'idle';
+  // while its replacement is still arriving. The same holds while an inline
+  // edit is not saved yet: the exports read the saved note, not the screen.
+  // Opening the Share menu flushes the autosave, so this clears in a beat.
+  const notesExportBlocked = noteUnsaved || streamPhase !== 'idle';
 
   // Notes and transcript must not suggest the same filename. Both are .md, and
   // on the share path they land in ONE directory where the second write would
@@ -901,6 +944,7 @@ function DetailContent({
     }, 800);
   };
   const onShareOpenChange = (open: boolean) => {
+    if (open) void flushEdits();
     cancelShareClose();
     shareEpoch.current += 1;
     setShareOpen(open);
@@ -963,33 +1007,33 @@ function DetailContent({
   const summary = meeting.summary?.trim();
   // Seeded from what the read-only note actually shows, reasoning stripped.
   // Editing the summary must not resurrect a <think> block the UI hides.
-  const noteDraft: NoteDraft = {
-    summary: summary ? stripReasoning(summary) : '',
-    keyPoints: meeting.key_points ?? [],
-    actionItems: asStringArray(meeting.action_items),
-    discussionAreas: asDiscussionAreas(meeting.discussion_areas),
-  };
-  const closeEditor = () => {
-    setEditing(false);
-    handleNoteDirtyChange(false);
-  };
-  // A rejected mutation (main refuses a forged heading, or the write fails)
-  // propagates to the editor, which keeps edit mode and the typing.
-  const saveNoteEdits = async (patch: UpdateMeetingPatch) => {
-    await updateMeeting.mutateAsync({ summaryFile, patch });
-    closeEditor();
-  };
+  const noteDraft = React.useMemo<NoteDraft>(
+    () => ({
+      summary: summary ? stripReasoning(summary) : '',
+      keyPoints: meeting.key_points ?? [],
+      actionItems: asStringArray(meeting.action_items),
+      discussionAreas: asDiscussionAreas(meeting.discussion_areas),
+    }),
+    [summary, meeting.key_points, meeting.action_items, meeting.discussion_areas]
+  );
   // Every way out of this view (back button, sidebar, command palette, a deep
-  // link to another note) goes through navigate(), so while the editor holds
-  // unsaved changes one router guard stops all of them and asks first (#447).
-  React.useEffect(() => {
-    if (!editing) return undefined;
-    return setNavigationGuard((target) => {
-      if (!noteDirtyRef.current) return true;
-      setPendingRoute(target);
-      return false;
-    });
-  }, [editing]);
+  // link to another note) goes through navigate(). An unsaved inline edit is
+  // written first and the navigation continues once it lands; only when it
+  // cannot be written (invalid text, a failed save) does the user get asked
+  // whether to leave without it (#447).
+  React.useEffect(
+    () =>
+      setNavigationGuard((target) => {
+        const editor = editorRef.current;
+        if (!editor || !editor.hasUnsaved()) return true;
+        void editor.flush().then((ok) => {
+          if (ok) navigate(target, { force: true });
+          else setPendingRoute(target);
+        });
+        return false;
+      }),
+    []
+  );
   const leaveDetail = () => navigate('/');
   const participants = asStringArray(meeting.participants);
   const keyPoints = meeting.key_points ?? [];
@@ -1007,6 +1051,11 @@ function DetailContent({
   // "finishing up" affordance and suppress the Generate-notes CTA until the
   // pipeline completes (or clears the flag on failure).
   const isProcessing = meeting.session_info.processing === true;
+  // Instant transcript: notes already written from the live transcript, the
+  // batch pass is refining transcript + notes. Readable (summary, transcript,
+  // search, chat) like any note; only rewrites stay off until it lands.
+  const isRefining = meeting.session_info.refining === true && !isProcessing;
+  const backgroundWriterActive = isProcessing || isRefining;
   // While a recording is live on THIS note (resume/continue), the transcript
   // is still growing — offering "Generate notes" mid-recording would summarise
   // a moving target and strand the CTA once it finishes. Suppress it until the
@@ -1021,12 +1070,33 @@ function DetailContent({
     recording.recordingSummaryFile != null &&
     recording.recordingSummaryFile === info.summary_file;
 
-  // Empty Standard notes remain editable, but an active recording or a
-  // processing placeholder still has a background writer that would replace it.
-  const canEditNote =
-    summaryFile.endsWith('_summary.md') && !activeReport &&
-    streamPhase === 'idle' && !reprocess.isPending &&
-    !isProcessing && !isRecordingThisNote;
+  // Whether anything else is writing this note right now. One helper owns the
+  // rule (lib/noteEditability.ts); null means the note is editable in place.
+  const editLock = noteEditLock({
+    streaming: streamPhase !== 'idle',
+    rebuildPending: reprocess.isPending || retranscribe.isPending || generateReport.isPending,
+    processing: isProcessing,
+    refining: isRefining,
+    recordingThisNote: isRecordingThisNote,
+  });
+  // The Standard note renders as the inline editor whenever it may be edited
+  // and there is a note to edit: not a transcription failure, and not a
+  // transcript-only note that is still offering "Generate notes".
+  const hasStructuredNote =
+    Boolean(summary) || keyPoints.length > 0 || actionItems.length > 0 || discussionAreas.length > 0;
+  const inlineEditable =
+    isEditableNoteFile(summaryFile) &&
+    editLock === null &&
+    !transcriptionFailed &&
+    !(notesNotGenerated && !hasStructuredNote && Boolean(meeting.transcript));
+  // A draft the editor could not write before the note was locked; it is
+  // restored and saved when the lock lifts.
+  const lockedHint =
+    editLock === 'refining' || editLock === 'recording'
+      ? hasCachedNoteDraft(routeSummaryFile)
+        ? t('noteInline.readOnlyPendingHint')
+        : t('noteInline.readOnlyHint')
+      : null;
 
   // Publish this note's reprocess trigger + streaming state so the floating
   // GenerateNotesBar (mounted at App level, above the Ask bar) drives THIS
@@ -1041,7 +1111,7 @@ function DetailContent({
   const summaryPending =
     notesNotGenerated &&
     !transcriptionFailed &&
-    !isProcessing &&
+    !backgroundWriterActive &&
     !isRecordingThisNote &&
     Boolean(meeting.transcript);
   // A continued note (continue-recording appended a segment after notes were
@@ -1050,7 +1120,7 @@ function DetailContent({
   const summaryStale =
     meeting.session_info.notes_stale === true &&
     !transcriptionFailed &&
-    !isProcessing &&
+    !backgroundWriterActive &&
     !isRecordingThisNote &&
     Boolean(meeting.transcript);
   const reprocessStreaming = reprocess.isPending || streamPhase !== 'idle';
@@ -1104,7 +1174,6 @@ function DetailContent({
   const showProperties =
     tab === 'summary' &&
     !!activeReport &&
-    !editing &&
     streamPhase === 'idle' &&
     reportParts.properties.length > 0;
 
@@ -1126,22 +1195,13 @@ function DetailContent({
             {t('meeting.home')}
           </button>
           <div className="flex items-center gap-1">
-            {/* Edit the generated note (D9). Only for the Standard structured
-                note (a template report is generated output with no section
-                grammar to patch) and only while nothing else is rewriting it. */}
-            {tab === 'summary' && !editing && summaryFile.endsWith('_summary.md') && (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <ActionIconButton
-                    label={t('noteEditor.edit')}
-                    onClick={() => setEditing(true)}
-                    disabled={!canEditNote}
-                  >
-                    <PencilLine className="size-[13px]" />
-                  </ActionIconButton>
-                </TooltipTrigger>
-                <TooltipContent side="bottom">{t('noteEditor.edit')}</TooltipContent>
-              </Tooltip>
+            {tab === 'summary' && (
+              <SaveStatus
+                state={saveState}
+                onRetry={() => {
+                  void flushEdits();
+                }}
+              />
             )}
             {/* Re-runs summarisation on the existing transcript. A
                 transcription-failure note has no transcript, so reprocess
@@ -1156,13 +1216,12 @@ function DetailContent({
                     // Disable while a recording is live on THIS note — same
                     // reason the floating CTA hides: don't summarise a
                     // still-growing transcript out from under the recording.
-                    // Also off while the note editor is open: a regenerate
-                    // would discard the edit being typed.
+                    // An unsaved inline edit is flushed first (startReprocess).
                     disabled={
                       reprocess.isPending ||
                       streamPhase !== 'idle' ||
                       isRecordingThisNote ||
-                      editing
+                      backgroundWriterActive
                     }
                   >
                     <RefreshCw
@@ -1364,14 +1423,14 @@ function DetailContent({
                     style={{ color: 'var(--fg-1)' }}
                     onClick={() => exportMeeting.mutate(info.summary_file)}
                     disabled={
-                      editing ||
+                      noteUnsaved ||
                       exportMeeting.isPending ||
                       recording.isLoading ||
                       recording.reprocessingSummaryFiles.size > 0 ||
                       recording.status === 'recording' ||
                       recording.status === 'paused' ||
                       recording.status === 'processing' ||
-                      isProcessing ||
+                      backgroundWriterActive ||
                       streamPhase !== 'idle'
                     }
                   >
@@ -1397,13 +1456,7 @@ function DetailContent({
                       retranscribe.isPending ||
                       streamPhase !== 'idle' ||
                       isRecordingThisNote ||
-                      // A re-transcribe rewrites the note exactly like a
-                      // regenerate, so it gets the same editing lock as the two
-                      // Generate-notes CTAs (startRetranscribe's own
-                      // rebuildInFlight check is the authority; this only stops
-                      // the confirm dialog from opening over an editor it can
-                      // no longer act on).
-                      editing
+                      backgroundWriterActive
                     }
                   >
                     <Mic className="size-[13px] shrink-0" style={{ color: 'var(--fg-2)' }} />
@@ -1452,11 +1505,12 @@ function DetailContent({
                   type="button"
                   className="flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-left text-sm transition-colors hover:bg-[color:var(--surface-hover)] disabled:opacity-50"
                   style={{ color: 'var(--danger)' }}
-                  // Not while editing: delete is immediate, and the open
-                  // draft would either be lost or left on a deleted note.
-                  disabled={deleteMeeting.isPending || editing}
+                  disabled={deleteMeeting.isPending}
                   onClick={async () => {
                     setDeleteError(null);
+                    // The note is going away: an unsaved draft must not be
+                    // written to (or restored onto) a deleted note.
+                    editorRef.current?.discard();
                     try {
                       await deleteMeeting.mutateAsync(meeting);
                     } catch (err) {
@@ -1626,7 +1680,7 @@ function DetailContent({
             onDeleteReport={onDeleteReport}
             onGenerate={onGenerateReport}
             generating={generateReport.isPending}
-            disabled={editing}
+            disabled={false}
           />
           {showProperties && (
             <PropertiesToggle
@@ -1670,33 +1724,45 @@ function DetailContent({
                 <Button
                   className="mt-1"
                   onClick={startReprocess}
-                  // This banner renders above the editor rather than being
-                  // replaced by it, so it needs the same editing lock as the
-                  // header's Generate-notes button.
-                  disabled={reprocess.isPending || streamPhase !== 'idle' || editing}
+                  disabled={reprocess.isPending || streamPhase !== 'idle'}
                 >
                   {t('meeting.generateNotes')}
                 </Button>
               )}
             </section>
           )}
-          {editing ? (
-            <NoteEditor
-              value={noteDraft}
-              onSave={saveNoteEdits}
-              onCancel={closeEditor}
-              onDirtyChange={handleNoteDirtyChange}
-            />
-          ) : streamPhase !== 'idle' ? (
+          {lockedHint && streamPhase === 'idle' && (
+            <p
+              className="text-[13px] leading-[1.5]"
+              style={{ color: 'var(--fg-2)' }}
+              data-testid="note-readonly-hint"
+            >
+              {lockedHint}
+            </p>
+          )}
+          {streamPhase !== 'idle' ? (
             <StreamingView text={streamText} phase={streamPhase} chunkProgress={chunkProgress} />
           ) : activeReport ? (
-            <section
-              className="stream-markdown"
-              data-testid="report-content"
-              style={{ color: 'var(--fg-1)', maxWidth: '72ch' }}
-            >
-              <ReactMarkdown>{reportParts.body}</ReactMarkdown>
-            </section>
+            editLock === null ? (
+              <InlineReport
+                key={activeReport.id}
+                summaryFile={summaryFile}
+                cacheKey={routeSummaryFile}
+                reportId={activeReport.id}
+                frontmatter={reportParts.frontmatter}
+                body={reportParts.body}
+                handleRef={editorRef}
+                onStateChange={setSaveState}
+              />
+            ) : (
+              <section
+                className="stream-markdown"
+                data-testid="report-content"
+                style={{ color: 'var(--fg-1)', maxWidth: '72ch' }}
+              >
+                <ReactMarkdown>{reportParts.body}</ReactMarkdown>
+              </section>
+            )
           ) : (
             <div className="flex flex-col gap-9">
               {transcriptionFailed ? (
@@ -1760,8 +1826,32 @@ function DetailContent({
                     )}
                   </p>
                 </section>
+              ) : inlineEditable ? (
+                <InlineNote
+                  summaryFile={summaryFile}
+                  cacheKey={routeSummaryFile}
+                  value={noteDraft}
+                  handleRef={editorRef}
+                  onStateChange={setSaveState}
+                />
               ) : summary ? (
                 <section className="flex flex-col gap-3">
+                  {isRefining && (
+                    <div
+                      className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[12.5px]"
+                      style={{ color: 'var(--fg-2)' }}
+                      role="status"
+                      data-testid="note-refining"
+                    >
+                      <span className="flex items-center gap-1.5 font-medium">
+                        {t('meeting.refiningTranscript')}
+                        <span className="thinking-dot" aria-hidden="true" />
+                        <span className="thinking-dot" aria-hidden="true" />
+                        <span className="thinking-dot" aria-hidden="true" />
+                      </span>
+                      <span>{t('meeting.refiningTranscriptHint')}</span>
+                    </div>
+                  )}
                   <SectionTitle>{t('meeting.summary')}</SectionTitle>
                   <div data-testid="tab-summary-content">
                     {stripReasoning(summary)
@@ -1802,7 +1892,7 @@ function DetailContent({
                 </p>
               )}
 
-              {discussionAreas.length > 0 && (
+              {!inlineEditable && discussionAreas.length > 0 && (
                 <section className="flex flex-col gap-3">
                   <SectionTitle>{t('meeting.keyTopics')}</SectionTitle>
                   <div className="mv-topics">
@@ -1816,7 +1906,7 @@ function DetailContent({
                 </section>
               )}
 
-              {keyPoints.length > 0 && (
+              {!inlineEditable && keyPoints.length > 0 && (
                 <section className="flex flex-col gap-3">
                   <SectionTitle>{t('meeting.keyPoints')}</SectionTitle>
                   <ul className="mv-bullets">
@@ -1827,7 +1917,7 @@ function DetailContent({
                 </section>
               )}
 
-              {actionItems.length > 0 && (
+              {!inlineEditable && actionItems.length > 0 && (
                 <section className="flex flex-col gap-3">
                   <SectionTitle>{t('meeting.actionItems')}</SectionTitle>
                   <ul className="mv-bullets">
@@ -1836,6 +1926,13 @@ function DetailContent({
                     ))}
                   </ul>
                 </section>
+              )}
+
+              {!transcriptionFailed && !backgroundWriterActive && (
+                <SuggestedActions
+                  summaryFile={routeSummaryFile}
+                  hasNote={Boolean(summary) || actionItems.length > 0}
+                />
               )}
 
               {participants.length > 0 && (
@@ -1964,7 +2061,7 @@ function DetailContent({
         onConfirm={() => {
           const target = pendingRoute ?? '/';
           setPendingRoute(null);
-          closeEditor();
+          editorRef.current?.discard();
           navigate(target, { force: true });
         }}
       />
@@ -2011,8 +2108,8 @@ function NoteViewToggle({
   onDeleteReport: (reportId: string) => void;
   onGenerate: (templateId: string) => void;
   generating: boolean;
-  /** Locked while the note editor is open: every path out of this control
-   *  (switching view, generating a report) would drop unsaved edits. */
+  /** Locks the control. Inline edits flush on unmount / before a report is
+   *  generated, so nothing passes true today; kept for callers that need it. */
   disabled?: boolean;
 }) {
   const [menuOpen, setMenuOpen] = React.useState(false);
@@ -2319,6 +2416,45 @@ function MyNotesEditor({
         </div>
       )}
     </section>
+  );
+}
+
+/**
+ * The inline editor's autosave state, next to the note's actions: quiet while
+ * writing, a short "Saved" once on disk, and a retry when a write failed.
+ * Nothing at all until the first edit.
+ */
+function SaveStatus({ state, onRetry }: { state: InlineSaveState; onRetry: () => void }) {
+  const text =
+    state.status === 'saving' || state.status === 'pending'
+      ? t('noteInline.saving')
+      : state.status === 'saved'
+        ? t('noteInline.saved')
+        : null;
+  return (
+    <span
+      role="status"
+      aria-live="polite"
+      data-testid="note-save-status"
+      data-status={state.status}
+      className="mr-1 inline-flex items-center gap-1.5 text-[12px]"
+      style={{ color: state.status === 'error' ? 'var(--danger)' : 'var(--fg-2)' }}
+    >
+      {state.status === 'error' ? (
+        <>
+          <span title={state.error ?? undefined}>{t('noteInline.saveFailed')}</span>
+          <button
+            type="button"
+            onClick={onRetry}
+            className="rounded px-1 underline underline-offset-2 hover:text-[color:var(--fg-1)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--focus-ring)]"
+          >
+            {t('noteInline.retry')}
+          </button>
+        </>
+      ) : (
+        text
+      )}
+    </span>
   );
 }
 

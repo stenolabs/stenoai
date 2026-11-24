@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { t } from '@/i18n';
 import { AppShell } from '@/components/AppShell';
 import {
   Sidebar,
@@ -81,7 +82,7 @@ export function MeetingsShell({
   const [newFolderName, setNewFolderName] = React.useState('');
   const creatingFolder = React.useRef(false);
   const [folderError, setFolderError] = React.useState<string | null>(null);
-  const createFolderLabel = createFolder.isPending ? 'Creating folder…' : 'Create folder';
+  const createFolderLabel = createFolder.isPending ? t('space.create.pending') : t('space.create.action');
   const [renameTarget, setRenameTarget] = React.useState<
     { type: 'folder' | 'meeting'; id: string; current: string; itemRect: DOMRectReadOnly } | null
   >(null);
@@ -146,7 +147,7 @@ export function MeetingsShell({
       setNewFolderName('');
       setNewFolderOpen(false);
     } catch {
-      setFolderError('Could not create folder. Please try again.');
+      setFolderError(t('space.create.error'));
     } finally {
       creatingFolder.current = false;
     }
@@ -257,17 +258,13 @@ export function MeetingsShell({
       <ConfirmDialog
         open={!!deleteTarget}
         onOpenChange={(o) => !o && setDeleteTarget(null)}
-        title={deleteTarget ? `Delete folder "${deleteTarget.name}"?` : ''}
+        title={deleteTarget ? t('space.delete.title', { name: deleteTarget.name }) : ''}
         description={
-          deleteTarget && deleteTarget.meetingCount > 0 ? (
-            <>
-              {deleteTarget.meetingCount} meeting
-              {deleteTarget.meetingCount === 1 ? '' : 's'} will be moved back to All Notes. No
-              recordings or transcripts will be deleted.
-            </>
-          ) : (
-            <>No recordings or transcripts will be deleted.</>
-          )
+          deleteTarget && deleteTarget.meetingCount > 0
+            ? deleteTarget.meetingCount === 1
+              ? t('space.delete.movedOne', { count: deleteTarget.meetingCount })
+              : t('space.delete.movedOther', { count: deleteTarget.meetingCount })
+            : t('space.delete.nothingDeleted')
         }
         confirmLabel="Delete"
         destructive
@@ -283,10 +280,8 @@ export function MeetingsShell({
       }}>
         <DialogContent closeDisabled={createFolder.isPending}>
           <DialogHeader>
-            <DialogTitle>New folder</DialogTitle>
-            <DialogDescription>
-              Group related meetings together. Folder names are only visible to you.
-            </DialogDescription>
+            <DialogTitle>{t('space.create.title')}</DialogTitle>
+            <DialogDescription>{t('space.create.description')}</DialogDescription>
           </DialogHeader>
           <Input
             disabled={createFolder.isPending}

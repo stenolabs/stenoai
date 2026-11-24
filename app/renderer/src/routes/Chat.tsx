@@ -21,9 +21,15 @@ import { useGlobalStreaming } from '@/hooks/useStreamingQuery';
 import { useAiProvider } from '@/hooks/useAi';
 import { useUserName } from '@/hooks/useSettings';
 import { useOrgSession } from '@/hooks/useOrg';
-import { navigate } from '@/lib/router';
-import { GLOBAL_SCOPE, bucketKey, deriveSessionName, toBucketLabel, formatActiveModel, chatProviderReady } from '@/lib/chat';
-import { PRESETS, PresetGlyph, PRESET_COLORS } from '@/lib/chatPresets';
+import { GLOBAL_SCOPE, bucketKey, deriveSessionName, toBucketLabel, chatProviderReady } from '@/lib/chat';
+import { BUILTIN_RECIPES, PresetGlyph, PRESET_COLORS, type Recipe } from '@/lib/recipes';
+import { Mascot } from '@/components/Mascot';
+import { ModelIndicator } from '@/components/ModelIndicator';
+import { RecipeMenu } from '@/components/RecipeMenu';
+import { useRecipes } from '@/hooks/useRecipes';
+import { useSlashMenu } from '@/hooks/useSlashMenu';
+import { trackChatTurn } from '@/lib/chatTurns';
+import { getRouteParam, navigate, useRoute } from '@/lib/router';
 import { t } from '@/i18n';
 
 function TypewriterPlaceholder({ index, setIndex }: { index: number, setIndex: React.Dispatch<React.SetStateAction<number>> }) {
@@ -41,13 +47,13 @@ function TypewriterPlaceholder({ index, setIndex }: { index: number, setIndex: R
   React.useEffect(() => {
     if (prefersReducedMotion) return;
     let timeout: ReturnType<typeof setTimeout>;
-    const currentFullText = PRESETS[index].label;
+    const currentFullText = BUILTIN_RECIPES[index].label;
 
     if (isDeleting) {
       if (text === '') {
         timeout = setTimeout(() => {
           setIsDeleting(false);
-          setIndex((i) => (i + 1) % PRESETS.length);
+          setIndex((i) => (i + 1) % BUILTIN_RECIPES.length);
         }, 400);
       } else {
         timeout = setTimeout(() => {
@@ -75,7 +81,7 @@ function TypewriterPlaceholder({ index, setIndex }: { index: number, setIndex: R
     <div aria-hidden="true" className="pointer-events-none absolute left-3 top-[10px] flex items-center gap-2">
       <PresetGlyph color={presetColor} size={22} />
       <span style={{ color: 'var(--fg-muted)', fontSize: 16 }}>
-        {prefersReducedMotion ? PRESETS[index].label : text}
+        {prefersReducedMotion ? BUILTIN_RECIPES[index].label : text}
         {!prefersReducedMotion && (
           <>
             <style>{`
@@ -117,11 +123,10 @@ export function Chat() {
       ? orgSession.data.name.split(' ')[0]
       : userName.data;
 
+  const recipes = useRecipes();
   const [input, setInput] = React.useState('');
-  const [presetsOpen, setPresetsOpen] = React.useState(false);
   const [isFocused, setIsFocused] = React.useState(false);
   const [suggestedIndex, setSuggestedIndex] = React.useState(0);
-  const [selectedPresetIndex, setSelectedPresetIndex] = React.useState(0);
   // Scope: null = ask across every note. Folder ID limits the corpus
   // server-side. Default null so first-time users get the broadest
   // possible answer.
@@ -130,8 +135,6 @@ export function Chat() {
   const inputRef = React.useRef<HTMLInputElement>(null);
 
   const isAdapter = provider.data?.ai_provider === 'adapter';
-  const isLocalEngine =
-    provider.data?.ai_provider === 'local' || provider.data?.ai_provider === 'remote';
   // Cloud/local/remote readiness is the shared core (chatProviderReady); adapter
   // adds an active-org-session requirement here (a signed-out adapter user would
   // otherwise get an opaque submit failure). Local/remote answer over a
@@ -199,11 +202,12 @@ export function Chat() {
 
       // Streaming for both local AND org scope — startGlobalStream picks
       // the right backend internally based on folderId.
-      const streamId = streaming.startGlobalStream(q, scopeFolderId);
+      const streamId = streaming.startGlobalStream(q, scopeFolderId, undefined, createdSessionId);
       // Record the handoff under THIS sessionId so a fast double-submit
       // can't clobber an earlier in-flight stream before the conversation
       // page mounts and claims it.
       recordPendingNewChat({ sessionId: createdSessionId, streamId, folderId: scopeFolderId });
+      trackChatTurn({ sessionId: createdSessionId, streamId, context: scopeFolderId ?? 'notes' });
       navigate(`/chat/${encodeURIComponent(createdSessionId)}`);
     } catch (err) {
       // appendMessage / startGlobalStream / createSession can all fail
@@ -225,9 +229,22 @@ export function Chat() {
     }
   };
 
-  const onPickPreset = (prompt: string) => {
-    setInput(prompt);
-    setPresetsOpen(false);
+  // Cookbooks → Recipes → Run lands here as /chat?recipe=<id>: fill the
+  // composer with that recipe's prompt for the user to review and send.
+  const route = useRoute();
+  const recipeParam = getRouteParam(route, 'recipe');
+  const recipeToFill = recipeParam ? recipes.find((r) => r.id === recipeParam) : undefined;
+  React.useEffect(() => {
+    if (!recipeToFill) return;
+    setInput(recipeToFill.prompt);
+    inputRef.current?.focus();
+    navigate('/chat');
+  }, [recipeToFill]);
+
+  const slash = useSlashMenu({ recipes, input, setInput, enabled: ready });
+  const presetsOpen = slash.open;
+  const onPickPreset = (recipe: Recipe) => {
+    slash.pick(recipe);
     inputRef.current?.focus();
   };
 
@@ -239,9 +256,10 @@ export function Chat() {
   return (
     <MeetingsShell activeSummaryFile={null}>
       <div className="mx-auto flex w-full max-w-[640px] flex-col min-h-[calc(100vh-64px)] px-2">
-        <div className="h-[22vh] min-h-[120px] flex-shrink-0" />
+        <div className="h-[14vh] min-h-[72px] flex-shrink-0" />
 
         <div className="w-full">
+          <Mascot resting={isFocused || input !== ''} />
           <h1
           className="mb-8 text-center"
           style={{
@@ -276,10 +294,11 @@ export function Chat() {
           </div>
         )}
 
-        <Popover open={presetsOpen} onOpenChange={setPresetsOpen}>
+        <Popover open={presetsOpen} onOpenChange={(next) => !next && slash.close()}>
           <PopoverAnchor asChild>
             <form
               onSubmit={onSubmit}
+              data-tip-anchor="chat-composer"
               className="glass-input-wrapper mb-12 p-3 relative"
               style={{
                 opacity: ready ? 1 : 0.6,
@@ -294,38 +313,12 @@ export function Chat() {
                   value={input}
                   onFocus={() => setIsFocused(true)}
                   onBlur={() => setIsFocused(false)}
-                  onChange={(e) => {
-                    setInput(e.target.value);
-                    if (e.target.value !== '') setPresetsOpen(false);
-                  }}
+                  onChange={(e) => setInput(e.target.value)}
                   onKeyDown={(e) => {
-                    if (presetsOpen) {
-                      if (e.key === 'ArrowDown') {
-                        e.preventDefault();
-                        setSelectedPresetIndex((prev) => (prev + 1) % PRESETS.length);
-                        return;
-                      }
-                      if (e.key === 'ArrowUp') {
-                        e.preventDefault();
-                        setSelectedPresetIndex((prev) => (prev - 1 + PRESETS.length) % PRESETS.length);
-                        return;
-                      }
-                      if (e.key === 'Enter' && input === '') {
-                        e.preventDefault();
-                        onPickPreset(PRESETS[selectedPresetIndex].prompt);
-                        return;
-                      }
-                    }
+                    if (slash.onKeyDown(e)) return;
                     if (e.key === 'Tab' && input === '' && ready) {
                       e.preventDefault();
-                      setInput(PRESETS[suggestedIndex].prompt);
-                      setPresetsOpen(false);
-                      return;
-                    }
-                    if (e.key === '/' && input === '' && ready) {
-                      e.preventDefault();
-                      setSelectedPresetIndex(0);
-                      setPresetsOpen(true);
+                      setInput(BUILTIN_RECIPES[suggestedIndex].prompt);
                       return;
                     }
                     if (e.key === 'Enter' && !e.shiftKey) {
@@ -334,7 +327,7 @@ export function Chat() {
                     }
                   }}
                   disabled={!ready}
-                  placeholder={ready ? (isFocused && !input && !presetsOpen ? `/ ${PRESETS[suggestedIndex].label}` : '') : t('chat.home.providerRequiredPlaceholder')}
+                  placeholder={ready ? (isFocused && !input && !presetsOpen ? `/ ${BUILTIN_RECIPES[suggestedIndex].label}` : '') : t('chat.home.providerRequiredPlaceholder')}
                   className="block w-full bg-transparent px-3 pb-4 pt-2.5 outline-none disabled:cursor-not-allowed placeholder:text-[color:var(--fg-muted)]"
                   style={{ fontSize: 16, color: 'var(--fg-1)', fontFamily: 'var(--font-sans)', fontWeight: 400 }}
                 />
@@ -342,27 +335,7 @@ export function Chat() {
           <div className="flex items-center justify-between gap-2 px-2 pb-1">
             <div className="flex items-center gap-1">
               <FolderScopePicker value={scopeFolderId} onChange={setScopeFolderId} />
-              <span
-                data-testid="chat-model-indicator"
-                className="text-[12px]"
-                style={{ color: 'var(--fg-muted)' }}
-              >
-                {formatActiveModel(provider.data)}
-              </span>
-              {isLocalEngine && (
-                // Local/remote windows are smaller than cloud, so the backend
-                // caps the corpus to the most-recent notes when it's over budget.
-                // "may omit" (not "omits") since a small library fits entirely.
-                // TODO: tie to the actual per-response cap (CHAT_SCOPE_CAPPED,
-                // descoped from WS3) so the hint only shows when truncation ran.
-                <span
-                  data-testid="chat-local-scope-hint"
-                  className="text-[12px]"
-                  style={{ color: 'var(--fg-muted)' }}
-                >
-                  {t('chat.home.localScopeHint')}
-                </span>
-              )}
+              <ModelIndicator provider={provider.data} />
             </div>
             <div className="flex items-center gap-1">
               <button
@@ -386,30 +359,12 @@ export function Chat() {
             // user is mid-typing and Enter/Esc need to keep working there.
             onOpenAutoFocus={(e) => e.preventDefault()}
           >
-            <div className="px-2 pb-1 pt-0.5 text-[11px] font-medium" style={{ color: 'var(--fg-muted)' }}>
-              {t('chat.home.skills')}
-            </div>
-            <div className="flex flex-col">
-              {PRESETS.map((p, idx) => {
-                const presetColor = PRESET_COLORS[idx % PRESET_COLORS.length];
-                return (
-                <button
-                  key={p.label}
-                  type="button"
-                  onMouseEnter={() => setSelectedPresetIndex(idx)}
-                  onClick={() => onPickPreset(p.prompt)}
-                  className={`flex flex-col items-start gap-0.5 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-[color:var(--surface-hover)] ${idx === selectedPresetIndex ? 'bg-[color:var(--surface-hover)]' : ''}`}
-                >
-                  <div className="flex items-center gap-2 text-[13px]" style={{ color: 'var(--fg-1)' }}>
-                    <PresetGlyph color={presetColor} />
-                    {p.label}
-                  </div>
-                  <div className="pl-[26px] text-[12px]" style={{ color: 'var(--fg-2)' }}>
-                    {p.description}
-                  </div>
-                </button>
-              )})}
-            </div>
+            <RecipeMenu
+              recipes={slash.filtered}
+              selectedIndex={slash.selected}
+              onHover={slash.setSelected}
+              onPick={onPickPreset}
+            />
           </PopoverContent>
         </Popover>
 
@@ -443,6 +398,22 @@ export function Chat() {
                 <History className="size-4 text-muted-foreground" />
               </div>
               {t('chat.home.noPastChats')}
+              {ready && (
+                <div className="mt-4 flex justify-center">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setInput(BUILTIN_RECIPES[0].prompt);
+                      inputRef.current?.focus();
+                    }}
+                    className="inline-flex h-8 items-center gap-1.5 rounded-full border px-3.5 text-[13px] transition-colors hover:bg-[color:var(--surface-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--accent-primary)]"
+                    style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-raised)', color: 'var(--fg-1)' }}
+                  >
+                    <Sparkles aria-hidden className="size-[13px]" style={{ color: 'var(--fg-2)' }} />
+                    {t('chat.home.tryRecipe', { label: BUILTIN_RECIPES[0].label })}
+                  </button>
+                </div>
+              )}
             </div>
           ) : recentsExpanded && groupedRecents ? (
             <div className="flex flex-col">

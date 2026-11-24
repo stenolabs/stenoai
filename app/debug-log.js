@@ -19,12 +19,15 @@
  * @param {() => (import('electron').BrowserWindow | null | undefined)} deps.getMainWindow
  * @returns {(message: string) => void}
  */
+const { redactCredentials } = require('./diagnostics-filter');
+
 function createDebugLog({ getMainWindow }) {
   return function sendDebugLog(message) {
-    // Send to main window (both setup console and debug panel)
+    // Send to main window (both setup console and debug panel). Credential
+    // shapes (Bearer tokens, OAuth parameters) are masked first.
     const mainWindow = getMainWindow();
     if (mainWindow) {
-      mainWindow.webContents.send('debug-log', message);
+      mainWindow.webContents.send('debug-log', redactCredentials(message));
     }
   };
 }

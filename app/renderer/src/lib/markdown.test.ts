@@ -173,12 +173,13 @@ describe('splitFrontmatter', () => {
 
   test('the closing delimiter is a whole line, not a prefix', () => {
     for (const input of ['---\nclient: Acme\n---oops\nBody', '---\nclient: Acme\n----\nBody']) {
-      expect(splitFrontmatter(input)).toEqual({ properties: [], body: input });
+      expect(splitFrontmatter(input)).toEqual({ properties: [], body: input, frontmatter: '' });
     }
     // Trailing blanks on a delimiter line are still a delimiter.
     expect(splitFrontmatter('--- \nclient: Acme\n---\t\n\nBody')).toEqual({
       properties: [['client', 'Acme']],
       body: 'Body',
+      frontmatter: '--- \nclient: Acme\n---\t',
     });
   });
 
@@ -190,7 +191,7 @@ describe('splitFrontmatter', () => {
   test('a nested map or list leaves the frontmatter in the body', () => {
     for (const nested of ['contact: {name: Erika Mustermann}', 'steps:\n  - [restart, retry]']) {
       const input = `---\nclient: A\n${nested}\n---\n\nprose`;
-      expect(splitFrontmatter(input)).toEqual({ properties: [], body: input });
+      expect(splitFrontmatter(input)).toEqual({ properties: [], body: input, frontmatter: '' });
     }
   });
 
@@ -201,10 +202,10 @@ describe('splitFrontmatter', () => {
     const b = Array(300).fill('*s').join(', ');
     const c = Array(300).fill('*b').join(', ');
     const input = `---\ns: &s ${s}\nb: &b [${b}]\nc: [${c}]\n---\n\nprose`;
-    expect(splitFrontmatter(input)).toEqual({ properties: [], body: input });
+    expect(splitFrontmatter(input)).toEqual({ properties: [], body: input, frontmatter: '' });
     // An alias with no anchor to point at does not parse either.
     const dangling = '---\nb: [*s, *s]\n---\n\nprose';
-    expect(splitFrontmatter(dangling)).toEqual({ properties: [], body: dangling });
+    expect(splitFrontmatter(dangling)).toEqual({ properties: [], body: dangling, frontmatter: '' });
   });
 
   test('& and * inside a value are text, not anchors or aliases', () => {
@@ -222,7 +223,7 @@ describe('splitFrontmatter', () => {
     let chain = 'a0: &a0 x\n';
     for (let i = 1; i < 3000; i++) chain += `a${i}: &a${i} [*a${i - 1}]\n`;
     const input = `---\n${chain}---\n\nprose`;
-    expect(splitFrontmatter(input)).toEqual({ properties: [], body: input });
+    expect(splitFrontmatter(input)).toEqual({ properties: [], body: input, frontmatter: '' });
   });
 
   test('reads frontmatter with CRLF line endings', () => {

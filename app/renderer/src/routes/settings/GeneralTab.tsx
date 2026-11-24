@@ -20,7 +20,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { cn, isMac, shortcut } from '@/lib/utils';
+import { cn, isMac } from '@/lib/utils';
+import { DEFAULT_RECORD_ACCELERATOR, formatAccelerator } from '@/lib/accelerator';
+import { RecordShortcutRow } from './RecordShortcutRow';
 import { CallerIdRow } from './CallerIdRow';
 import { useTheme } from '@/hooks/useTheme';
 import {
@@ -58,7 +60,7 @@ import {
   useGoogleCalendarAuth,
   useOutlookCalendarAuth,
 } from '@/hooks/useCalendarEvents';
-import { COMPACT_BTN, COMPACT_INPUT, COMPACT_TRIGGER, SectionHeading, SettingRow } from './primitives';
+import { COMPACT_BTN, COMPACT_INPUT, COMPACT_TRIGGER, SectionHeading, SettingRow, SubSettings } from './primitives';
 import { t } from '@/i18n';
 import type { AutoOpenMode, AutoOpenProvider } from '@/lib/ipc';
 import { AutoRecordRow } from './AutoRecordRow';
@@ -108,7 +110,7 @@ export function GeneralTab() {
   const setAutoInstallWhenIdle = useSetAutoInstallWhenIdle();
   const recordHotkey = useRecordHotkeySetting();
   const setRecordHotkey = useSetRecordHotkey();
-  const recordAccel = shortcut('⌘⇧R', 'Ctrl+Shift+R');
+  const recordAccel = formatAccelerator(recordHotkey.data?.accelerator ?? DEFAULT_RECORD_ACCELERATOR);
   const silenceAutoStop = useSilenceAutoStopSetting();
   const setSilenceAutoStopEnabled = useSetSilenceAutoStopEnabled();
   const setSilenceAutoStopMinutes = useSetSilenceAutoStopMinutes();
@@ -353,7 +355,7 @@ export function GeneralTab() {
             ? t('settings.general.calendar.connectedTo', { account: calendarEmail || calendarProvider })
             : t('settings.general.calendar.description')
         }
-        noBorder={!calendarConnected}
+        noBorder
       >
         {calendarConnected ? (
           <Button
@@ -396,6 +398,25 @@ export function GeneralTab() {
         )}
       </SettingRow>
 
+      <OAuthPrompt
+        state={oauth}
+        onClose={cancelConnect}
+        onRetry={() => oauth && void startConnect(oauth.provider)}
+      />
+
+      <SectionHeading>{t('settings.general.whenMeetingStarts')}</SectionHeading>
+
+      <SettingRow
+        label={t('settings.general.scheduledMeetings')}
+        description={t('settings.general.showNotificationBefore')}
+      >
+        <Switch
+          checked={premeetingNotifications.data ?? true}
+          onCheckedChange={(v) => setPremeetingNotifications.mutate(v)}
+          disabled={premeetingNotifications.data === undefined}
+        />
+      </SettingRow>
+
       {calendarConnected && (
         <>
           <SettingRow
@@ -404,7 +425,6 @@ export function GeneralTab() {
               ? `${t('settings.general.openMeetings.description')} ${t('settings.general.openMeetings.guardHint')}`
               : t('settings.general.openMeetings.description')}
             descriptionId="open-meetings-description"
-            noBorder={openMode === 'off'}
           >
             <Select
               value={openMode}
@@ -427,7 +447,7 @@ export function GeneralTab() {
           </SettingRow>
 
           {openMode !== 'off' && (
-            <div className="border-l pl-4" style={{ borderColor: 'var(--border-subtle)' }}>
+            <SubSettings divider>
               <SettingRow
                 label={t('settings.general.openMeetings.when')}
                 description={t('settings.general.openMeetings.whenDescription')}
@@ -562,29 +582,10 @@ export function GeneralTab() {
                   disabled={autoOpen.data === undefined}
                 />
               </SettingRow>
-            </div>
+            </SubSettings>
           )}
         </>
       )}
-
-      <OAuthPrompt
-        state={oauth}
-        onClose={cancelConnect}
-        onRetry={() => oauth && void startConnect(oauth.provider)}
-      />
-
-      <SectionHeading>{t('settings.general.meetingNotifications')}</SectionHeading>
-
-      <SettingRow
-        label={t('settings.general.scheduledMeetings')}
-        description={t('settings.general.showNotificationBefore')}
-      >
-        <Switch
-          checked={premeetingNotifications.data ?? true}
-          onCheckedChange={(v) => setPremeetingNotifications.mutate(v)}
-          disabled={premeetingNotifications.data === undefined}
-        />
-      </SettingRow>
 
       <SettingRow
         label={t('settings.general.autoDetectedMeetings')}
@@ -605,12 +606,16 @@ export function GeneralTab() {
         />
       </SettingRow>
 
-      <AutoRecordRow
-        detectionSupported={autoDetectSupported}
-        detectionOn={autoDetectSupported && autoDetect.data === true}
-      />
+      {/* Both act on what meeting detection detects, so they sit under it. */}
+      <SubSettings>
+        <AutoRecordRow
+          detectionSupported={autoDetectSupported}
+          detectionOn={autoDetectSupported && autoDetect.data === true}
+        />
+        <CallerIdRow />
+      </SubSettings>
 
-      <CallerIdRow />
+      <SectionHeading>{t('settings.general.afterMeeting')}</SectionHeading>
 
       <SettingRow
         label={t('settings.general.postMeetingNotifications')}
@@ -796,7 +801,6 @@ export function GeneralTab() {
               )}
           </>
         }
-        noBorder
       >
         <Switch
           checked={recordHotkey.data?.enabled ?? true}
@@ -804,6 +808,7 @@ export function GeneralTab() {
           disabled={recordHotkey.data === undefined}
         />
       </SettingRow>
+      <RecordShortcutRow />
     </section>
   );
 }

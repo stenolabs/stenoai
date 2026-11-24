@@ -1,12 +1,12 @@
 import * as React from 'react';
-import { Calendar, ChevronLeft, ChevronRight, Plus, RefreshCw, Search, Square, X } from 'lucide-react';
-import { cn, isMac } from '@/lib/utils';
+import { Calendar, ChevronLeft, ChevronRight, RefreshCw, Search, X } from 'lucide-react';
+import { cn } from '@/lib/utils';
 import { MeetingsShell } from '@/components/MeetingsShell';
 import { UpcomingCard } from '@/components/home/UpcomingCard';
 import { PreviousRow } from '@/components/home/PreviousRow';
 import { Button } from '@/components/ui/button';
-import { AppIcon } from '@/components/ui/app-icon';
-import { KbdKey } from '@/components/ui/kbd';
+import { WelcomeEmpty } from '@/components/home/WelcomeEmpty';
+import { ShortcutKeys } from '@/components/ShortcutKeys';
 import { useMeetings } from '@/hooks/useMeetings';
 import { useRecording } from '@/hooks/useRecording';
 import {
@@ -16,6 +16,7 @@ import {
 } from '@/hooks/useCalendarEvents';
 import { useFolders } from '@/hooks/useFolders';
 import { useRecordHotkeySetting } from '@/hooks/useSettings';
+import { DEFAULT_RECORD_ACCELERATOR, formatAccelerator } from '@/lib/accelerator';
 import { ipc, type CalendarEvent, type Meeting } from '@/lib/ipc';
 import { pickInProgressEvent } from '@/lib/calendar';
 import { heroHeadline, heroSubtitle } from '@/lib/hero';
@@ -34,13 +35,15 @@ export function Home({ mode }: HomeProps) {
   const calendar = useCalendarEvents();
   const recording = useRecording();
   // Default ON while loading / on error so the hero copy doesn't flicker the
-  // ⌘⇧R hint off then on (back-compat: the shortcut ships enabled). Also
+  // shortcut hint off then on (back-compat: the shortcut ships enabled). Also
   // require registered !== false: when another app owns the accelerator the
   // shortcut doesn't actually work, so advertising it would strand the user
   // on dead instructions — fall back to the click-based copy instead.
   const recordHotkey = useRecordHotkeySetting();
   const hotkeyEnabled =
     (recordHotkey.data?.enabled ?? true) && recordHotkey.data?.registered !== false;
+  const hotkeyAccel = recordHotkey.data?.accelerator ?? DEFAULT_RECORD_ACCELERATOR;
+  const hotkeyLabel = formatAccelerator(hotkeyAccel);
 
   const emptyState = !meetings.data?.length;
   const isRecording = recording.status === 'recording' || recording.status === 'paused';
@@ -418,7 +421,6 @@ export function Home({ mode }: HomeProps) {
         )}
       </div>
     ) : null;
-  const emptyStateCalendarNudge = renderCalendarNudge(false);
   const homeCalendarNudge = renderCalendarNudge(true);
 
   // Hero state inputs. All recompute on the existing 60s tick — no new
@@ -455,6 +457,7 @@ export function Home({ mode }: HomeProps) {
       calendarConnected,
       now: upcomingTickMs,
       hotkeyEnabled,
+      hotkeyLabel,
     }),
     [
       recording.status,
@@ -465,6 +468,7 @@ export function Home({ mode }: HomeProps) {
       calendarConnected,
       upcomingTickMs,
       hotkeyEnabled,
+      hotkeyLabel,
     ],
   );
   const greeting = heroHeadline(heroState);
@@ -474,71 +478,28 @@ export function Home({ mode }: HomeProps) {
     month: 'long',
     day: 'numeric',
   });
-  // Keyboard-hint glyphs, not translatable copy. Hoisted out of JSX so the
-  // i18n gate does not flag the shortcut strings.
-  const quickModKey = isMac ? '⌘' : 'Ctrl';
-  const quickShiftKey = isMac ? '⇧' : 'Shift';
+  // The subtitle names the shortcut in its copy ("Press ⌃⌥R to start…");
+  // show it as readable key caps instead of bare glyphs.
+  const heroSubParts = hotkeyEnabled && heroSub.includes(hotkeyLabel) ? heroSub.split(hotkeyLabel) : null;
 
   return (
     <MeetingsShell
       activeSummaryFile={null}
-      contentAlign={emptyState ? 'center' : 'top'}
+      contentAlign="top"
     >
       {meetings.isLoading ? (
         <div className="flex min-h-[40vh] items-center justify-center text-[color:var(--fg-2)]">
           {t('home.loadingMeetings')}
         </div>
       ) : emptyState ? (
-        <div className="flex flex-col items-center gap-8 text-center">
-          <AppIcon size={56} />
-          <div className="space-y-3">
-            <h1
-              style={{
-                fontFamily: 'var(--font-serif)',
-                fontSize: 44,
-                lineHeight: 1.1,
-                letterSpacing: '-0.025em',
-                color: 'var(--fg-1)',
-              }}
-            >
-              {t('home.welcome.title')}
-            </h1>
-            <p
-              className="text-[17px] leading-[1.55]"
-              style={{ color: 'var(--fg-2)' }}
-            >
-              {t('home.welcome.tagline')}
-            </p>
-            <p className="text-sm" style={{ color: 'var(--fg-muted)' }}>
-              {t('home.welcome.consent')}
-            </p>
-          </div>
-          <div className="flex flex-col items-center gap-3">
-            <Button
-              variant={isRecording ? 'destructive' : 'default'}
-              onClick={onToggleRecording}
-              className="gap-2"
-            >
-              {isRecording ? <Square className="size-4" /> : <Plus className="size-4" />}
-              {isRecording ? t('home.stopRecording') : t('home.newNote')}
-            </Button>
-            {hotkeyEnabled && (
-              <p
-                className="flex items-center gap-1.5 text-xs"
-                style={{ color: 'var(--fg-muted)' }}
-              >
-                <span>{t('home.quickStart.label')}</span>
-                <KbdKey>{quickModKey}</KbdKey>
-                <KbdKey>{quickShiftKey}</KbdKey>
-                <KbdKey>{RECORD_HOTKEY_LETTER}</KbdKey>
-                <span>{t('home.quickStart.anywhere')}</span>
-              </p>
-            )}
-          </div>
-          {emptyStateCalendarNudge && (
-            <div className="pt-8">{emptyStateCalendarNudge}</div>
-          )}
-        </div>
+        <WelcomeEmpty
+          isRecording={isRecording}
+          onToggleRecording={onToggleRecording}
+          hotkeyAccelerator={hotkeyEnabled ? hotkeyAccel : null}
+          calendar={calendar.data?.needsAuth === true && !calendarNudgeDismissed
+            ? { pendingProvider, error: connectError, connect: startConnect, cancel: onCancelPending }
+            : null}
+        />
       ) : (
         <>
           {mode === 'home' && (
@@ -556,10 +517,17 @@ export function Home({ mode }: HomeProps) {
                 </div>
               </div>
               <p
-                className="max-w-[52ch] text-sm leading-[1.55]"
+                className="max-w-[64ch] text-sm leading-[1.7]"
                 style={{ color: 'var(--fg-2)' }}
               >
-                {heroSub}
+                {heroSubParts
+                  ? heroSubParts.map((part, i) => (
+                      <React.Fragment key={i}>
+                        {i > 0 && <ShortcutKeys accelerator={hotkeyAccel} className="mx-0.5 inline-flex items-center gap-0.5 whitespace-nowrap align-[1px]" />}
+                        {part}
+                      </React.Fragment>
+                    ))
+                  : heroSub}
               </p>
             </div>
           )}
@@ -749,10 +717,26 @@ export function Home({ mode }: HomeProps) {
             />
             {groups.length === 0 && mode === 'meetings' && search.trim() ? (
               <div
-                className="px-6 py-12 text-center text-[13px]"
-                style={{ color: 'var(--fg-2)' }}
+                data-testid="search-empty"
+                className="mt-2 flex flex-col items-center rounded-[18px] px-6 py-12 text-center"
+                style={{ border: '1px dashed var(--border-strong, var(--border-subtle))', color: 'var(--fg-2)' }}
               >
-                {t('home.search.noMatch', { query: search.trim() })}
+                <Search aria-hidden className="mb-3 size-[18px]" style={{ color: 'var(--fg-muted)' }} />
+                <p className="text-[17px]" style={{ fontFamily: 'var(--font-serif)', color: 'var(--fg-1)' }}>
+                  {t('home.search.noMatch', { query: search.trim() })}
+                </p>
+                <p className="mt-1 text-[13px]">{t('home.search.noMatchHint')}</p>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="mt-4 rounded-full px-4"
+                  onClick={() => {
+                    setSearch('');
+                    searchInputRef.current?.focus();
+                  }}
+                >
+                  {t('home.search.clear')}
+                </Button>
               </div>
             ) : (
               groups.map((g) => (
@@ -889,7 +873,6 @@ function groupPrevious(meetings: Meeting[]): Group[] {
   return order.map((label) => ({ label, items: groups[label] }));
 }
 
-const RECORD_HOTKEY_LETTER = 'R';
 
 function previousGroupDayParts(dateKey: string): { day: number; month: string; weekday: string } {
   const [y, m, d] = dateKey.split('-').map(Number);

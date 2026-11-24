@@ -45,6 +45,12 @@ export interface SessionInfo {
    *  pipeline clears it (on success by rewriting fresh; on failure/startup via
    *  a sweep). */
   processing?: boolean;
+  /** Instant transcript: notes were written from the live transcript seconds
+   *  after stop, and the batch re-transcription is refining the transcript,
+   *  speaker labels and notes in the background. The note reads normally with
+   *  a small "Refining transcript" marker; editing and regenerating stay off
+   *  until the refined note replaces it (which drops the flag). */
+  refining?: boolean;
   /** Set when the batch transcription came back empty and the note's transcript
    *  was rescued from the live capture instead (#207). Both parsers surface it;
    *  the UI can note that no batch transcript exists. */
@@ -155,6 +161,29 @@ export interface ChatRequest {
   recordingId?: string;
   file?: string;
   folder?: string | null;
+  /** The chat conversation asking: a new question declines cards an earlier turn of it still waits on. */
+  sessionId?: string;
+}
+
+/** A read tool a chat-agent turn ran ("Searched Linear…"). */
+export interface ChatToolStep {
+  id: string;
+  source: 'steno' | 'connection' | 'context' | 'notice';
+  connection: string;
+  tool: string;
+  title: string | null;
+  /** context steps: how many notes the answer read. */
+  count?: number;
+  /** connection reads on a custom URL or local command: the arguments, one bounded line. */
+  detail?: string;
+}
+
+/** What a finished chat-agent turn keeps of an action card. */
+export interface ChatActionRecord {
+  id: string;
+  sentence: string;
+  status: ActionCardStatus;
+  link?: string | null;
 }
 
 export interface ChatSessionsBlob {
@@ -163,7 +192,17 @@ export interface ChatSessionsBlob {
     name: string;
     summaryFile?: string;
     scopeFolderId?: string | null;
-    messages: Array<{ role: 'user' | 'assistant'; content: string; ts: number; context?: string }>;
+    messages: Array<{
+      role: 'user' | 'assistant';
+      content: string;
+      ts: number;
+      context?: string;
+      /** Chat-agent turns: the read steps it took and the actions it proposed. */
+      steps?: ChatToolStep[];
+      actions?: ChatActionRecord[];
+      /** A failed answer: its stable failure code (lib/aiError.ts). */
+      error?: string;
+    }>;
     createdAt: number;
     updatedAt: number;
   }>;
@@ -338,7 +377,7 @@ export type MicPermissionStatus =
   | 'unknown';
 
 export type AiProvider = 'local' | 'remote' | 'cloud' | 'adapter';
-export type CloudProvider = 'openai' | 'anthropic' | 'bedrock' | 'custom';
+export type CloudProvider = 'openai' | 'anthropic' | 'bedrock' | 'custom' | 'openrouter';
 
 // ---------- response envelopes ----------
 export type AppVersionResponse = Result<{ version: string; name: string }>;
@@ -786,8 +825,18 @@ export type GetNotificationsResponse = Result<{ notifications_enabled: boolean }
 // `enabled` is the persisted preference; `registered` is the live global-
 // shortcut registration state (false when enabled but another app owns the
 // accelerator). The setter returns the same two fields.
-export type GetRecordHotkeyResponse = Result<{ enabled: boolean; registered: boolean }>;
-export type SetRecordHotkeyResponse = Result<{ enabled: boolean; registered: boolean }>;
+export interface RecordHotkeyState {
+  enabled: boolean;
+  registered: boolean;
+  /** The accelerator in effect (the user's own, else the default). */
+  accelerator: string;
+  /** The user's own accelerator, or null when the default is in effect. */
+  customAccelerator: string | null;
+  defaultAccelerator: string;
+}
+export type GetRecordHotkeyResponse = Result<RecordHotkeyState>;
+export type SetRecordHotkeyResponse = Result<RecordHotkeyState>;
+export type SetRecordHotkeyAcceleratorResponse = Result<RecordHotkeyState>;
 export type GetTelemetryResponse = Result<{
   telemetry_enabled: boolean;
   anonymous_id?: string;
@@ -872,6 +921,170 @@ export type StoragePathResponse = Result<{
   default_path: string;
 }>;
 export type PickStorageFolderResponse = Result<{ folderPath: string }>;
+/** Steno MCP server (Connect page). */
+export type ConnectClientId = 'claudeDesktop' | 'claudeCode' | 'codex' | 'cursor';
+export type ConnectSkillAgentId = 'claudeCode' | 'codex';
+/** A recipe the user made (built-ins live in lib/recipes.ts). */
+export interface UserRecipe {
+  id: string;
+  name: string;
+  description: string;
+  prompt: string;
+  updatedAt: number;
+}
+export interface RecipeInput {
+  id?: string;
+  name: string;
+  description?: string;
+  prompt: string;
+}
+
+export type ConnectInfoResponse = Result<{
+  serverAvailable: boolean;
+  claudeBundleAvailable: boolean;
+  snippets: { claudeCode: string; codexToml: string; cursorJson: string };
+  /** What an assistant runs: the stable launcher in the user-data dir (the snippets are built from it). */
+  launch: { command: string; args: string[]; env: Record<string, string> };
+  /** Which assistants have Steno configured as an MCP server. */
+  clients: Record<ConnectClientId, boolean>;
+  /** Which coding agents have the Steno skill folder installed. */
+  skills: Record<ConnectSkillAgentId, boolean>;
+  /** When the MCP server last ran a tool, per assistant (ISO time) and overall. */
+  lastUsed?: Record<ConnectClientId | 'any', string | null> | null;
+}>;
+/** folderAllowlist: null = every meeting; an array = only these folder ids. */
+export type ConnectSettings = { folderAllowlist: string[] | null; excludeTranscripts: boolean };
+export type ConnectSettingsPatch = Partial<ConnectSettings>;
+export type ConnectSettingsResponse = Result<ConnectSettings>;
+
+/** Suggested actions: remote MCP endpoints and the action cards under a note. */
+export type ActionAuth = 'none' | 'bearer' | 'header' | 'oauth';
+export type ActionLocality = 'device' | 'network' | 'internet';
+export type ActionConnectorId = 'linear' | 'notion' | 'atlassian' | 'hubspot' | 'asana' | 'slack';
+export interface ActionTool {
+  name: string;
+  title: string | null;
+  description: string;
+  readOnly: boolean;
+}
+export interface ActionConnection {
+  id: string;
+  name: string;
+  url: string;
+  origin: string | null;
+  locality: ActionLocality;
+  kind: ActionConnectorId | 'custom' | 'local' | 'email';
+  /** http: a URL endpoint; stdio: a command on this computer; builtin: Email drafts. */
+  transport?: 'http' | 'stdio' | 'builtin';
+  builtin?: boolean;
+  /** stdio only: the command line, and the names of its environment variables. */
+  command?: string;
+  envKeys?: string[];
+  auth: ActionAuth;
+  headerName: string | null;
+  enabled: boolean;
+  account: string | null;
+  status: 'ok' | 'needs-auth' | 'error';
+  tools: ActionTool[];
+  toolsFetchedAt: number | null;
+  blockedByPolicy: boolean;
+}
+export interface ActionConnector {
+  id: ActionConnectorId;
+  name: string;
+  url: string;
+  auth: ActionAuth;
+  status: 'available' | 'needs-registration';
+}
+export interface ActionsPolicy {
+  actionsEnabled: boolean;
+  managed: boolean;
+  endpointAllowlist: string[] | null;
+  /** Local command servers; off by default once an org restricts endpoints. */
+  localCommandsAllowed?: boolean;
+  emailDraftsAllowed?: boolean;
+  reason: string | null;
+}
+export interface ActionsOverview {
+  connections: ActionConnection[];
+  connectors: ActionConnector[];
+  autoSuggest: boolean;
+  policy: ActionsPolicy;
+  secureStorage: boolean;
+}
+/** A command on this computer, run as an MCP server over stdio. */
+export interface AddLocalServerInput {
+  name: string;
+  command: string;
+  args: string[];
+  env: Record<string, string>;
+}
+export interface AddCustomEndpointInput {
+  name: string;
+  url: string;
+  auth: ActionAuth;
+  headerName?: string;
+  token?: string;
+}
+export interface ActionValidationError {
+  path: string;
+  message: string;
+}
+export type ActionCardStatus = 'proposed' | 'running' | 'done' | 'failed' | 'dismissed';
+export interface ActionCard {
+  id: string;
+  connectionId: string;
+  connectionName: string;
+  connectionAvailable: boolean;
+  origin: string | null;
+  locality: ActionLocality | null;
+  /** The connection's kind: a connector id, 'custom', 'local' (a command) or 'email' (built-in drafts). */
+  connectionKind?: ActionConnection['kind'] | null;
+  tool: string;
+  toolTitle: string | null;
+  toolDescription: string | null;
+  inputSchema: JsonSchema | null;
+  arguments: Record<string, unknown>;
+  /**
+   * A simple action (app/mcp-simple-actions.js): `arguments` are its flat
+   * fields and this template turns them into the vendor call to `tool`.
+   */
+  sendTemplate?: unknown;
+  reason: string;
+  /** The note action item this proposal carries out. */
+  actionItem?: string;
+  validationErrors: ActionValidationError[];
+  status: ActionCardStatus;
+  /** detail: the endpoint's own failure message, trimmed and redacted. */
+  result?: { status: string; link: string | null; text: string; detail?: string; clipboard?: boolean };
+  createdAt: number;
+  updatedAt: number;
+  approvedAt?: number;
+}
+/** The subset of JSON Schema the action-card form understands. */
+export interface JsonSchema {
+  type?: string | string[];
+  title?: string;
+  description?: string;
+  enum?: unknown[];
+  default?: unknown;
+  properties?: Record<string, JsonSchema>;
+  required?: string[];
+  items?: JsonSchema;
+  [key: string]: unknown;
+}
+export interface ActionAuditEntry {
+  time: string;
+  connectionId: string;
+  connectionName: string;
+  origin: string;
+  tool: string;
+  argumentsSha256: string;
+  status: string;
+  link?: string;
+  error?: string;
+}
+export type ActionsFailure = { success: false; error: string; error_code?: string; validationErrors?: ActionValidationError[] };
 export type GetObsidianSyncResponse = Result<{ obsidian_sync_enabled: boolean }>;
 export type GetObsidianVaultPathResponse = Result<{ obsidian_vault_path: string }>;
 export type ObsidianConflict = { vaultRelPath: string; detectedAt: string; reason: string };
@@ -956,6 +1169,15 @@ export interface SummaryCompleteEvent {
    *  than a reprocess. Lets the renderer suppress the reprocess/model-memory
    *  failure banner for report failures, independent of event ordering. */
   report?: boolean;
+}
+/** Main rewrote a note mid-job (instant transcript): the early note from the
+ *  live transcript was saved (`refining: true`), or its summary failed and the
+ *  full pass will stream one. Views showing that note drop any in-flight
+ *  stream and re-read it. */
+export interface NoteUpdatedEvent {
+  sessionName: string;
+  summaryFile?: string;
+  refining: boolean;
 }
 export interface ProcessingCompleteEvent {
   success: boolean;
@@ -1136,6 +1358,8 @@ export interface StenoaiBridge {
 
   app: {
     platform: 'darwin' | 'linux' | 'win32';
+    /** Whether first-run tips may show (false under e2e unless a spec opts in). */
+    firstRunTips?: boolean;
     getVersion: RequestFn<[], AppVersionResponse>;
   };
 
@@ -1277,6 +1501,11 @@ export interface StenoaiBridge {
       Result<Record<string, never>>
     >;
     deleteReport: RequestFn<[summaryFile: string, reportId: string], Result<Record<string, never>>>;
+    /** Rewrite one report's body; `frontmatter` is the block shown as properties ('' for none). */
+    updateReport: RequestFn<
+      [summaryFile: string, reportId: string, frontmatter: string, body: string],
+      Result<{ content: string }>
+    >;
   };
 
   meetingTransfer: {
@@ -1294,6 +1523,8 @@ export interface StenoaiBridge {
     askStream: SendFn<[id: string, file: string, q: string]>;
     chatGlobalStream: SendFn<[id: string, q: string, folderId?: string | null]>;
     cancel: SendFn<[id: string]>;
+    approveAction: RequestFn<[id: string, cardId: string, args: Record<string, unknown>], Result<{ card: ActionCard }> | ActionsFailure>;
+    dismissAction: RequestFn<[id: string, cardId: string], Result<{ card?: ActionCard }>>;
   };
 
   chat: {
@@ -1405,6 +1636,9 @@ export interface StenoaiBridge {
     setNotifications: RequestFn<[v: boolean], Result<Record<string, never>>>;
     getRecordHotkey: RequestFn<[], GetRecordHotkeyResponse>;
     setRecordHotkey: RequestFn<[v: boolean], SetRecordHotkeyResponse>;
+    /** null restores the default. Fails with error_code 'in-use' when another
+     *  app owns the accelerator (the old one stays), or 'invalid'. */
+    setRecordHotkeyAccelerator: RequestFn<[accel: string | null], SetRecordHotkeyAcceleratorResponse>;
     getTelemetry: RequestFn<[], GetTelemetryResponse>;
     setTelemetry: RequestFn<
       [v: boolean, source: TelemetryToggleSource],
@@ -1525,6 +1759,44 @@ export interface StenoaiBridge {
     >;
   };
 
+  recipes: {
+    list: RequestFn<[], Result<{ recipes: UserRecipe[] }>>;
+    save: RequestFn<[recipe: RecipeInput], Result<{ recipe: UserRecipe }>>;
+    remove: RequestFn<[id: string], Result<{ deleted: boolean }>>;
+  };
+
+  connect: {
+    getInfo: RequestFn<[], ConnectInfoResponse>;
+    getSettings: RequestFn<[], ConnectSettingsResponse>;
+    setSettings: RequestFn<[patch: ConnectSettingsPatch], ConnectSettingsResponse>;
+    openClaudeDesktop: RequestFn<[], Result<Record<string, never>>>;
+    openCursor: RequestFn<[], Result<Record<string, never>>>;
+  };
+
+  actions: {
+    list: RequestFn<[], Result<ActionsOverview>>;
+    addCustom: RequestFn<[input: AddCustomEndpointInput], Result<{ connection: ActionConnection }>>;
+    addLocal: RequestFn<[input: AddLocalServerInput], Result<{ connection: ActionConnection }>>;
+    connectConnector: RequestFn<[connectorId: ActionConnectorId], Result<{ connection: ActionConnection }>>;
+    authorize: RequestFn<[id: string], Result<{ connection: ActionConnection }>>;
+    cancelAuthorize: RequestFn<[], Result<{ cancelled: boolean }>>;
+    refreshTools: RequestFn<[id: string], Result<{ connection: ActionConnection }>>;
+    setEnabled: RequestFn<[id: string, enabled: boolean], Result<{ connection: ActionConnection }>>;
+    remove: RequestFn<[id: string], Result<{ removed: boolean }>>;
+    setAutoSuggest: RequestFn<[value: boolean], Result<{ autoSuggest: boolean }>>;
+    getCards: RequestFn<[summaryFile: string], Result<{ cards: ActionCard[]; available: boolean }>>;
+    suggest: RequestFn<
+      [summaryFile: string, options?: { auto?: boolean }],
+      Result<{ skipped: boolean; cards: ActionCard[] }>
+    >;
+    approve: RequestFn<
+      [summaryFile: string, cardId: string, args: Record<string, unknown>],
+      Result<{ card: ActionCard }> | ActionsFailure
+    >;
+    dismiss: RequestFn<[summaryFile: string, cardId: string], Result<{ cards: ActionCard[] }>>;
+    recent: RequestFn<[limit?: number], Result<{ entries: ActionAuditEntry[] }>>;
+  };
+
   ai: {
     getProvider: RequestFn<[], GetAiProviderResponse>;
     setProvider: RequestFn<[p: AiProvider], Result<Record<string, never>>>;
@@ -1536,7 +1808,8 @@ export interface StenoaiBridge {
     setCloudModel: RequestFn<[m: string], Result<Record<string, never>>>;
     setBedrockRegion: RequestFn<[region: string], Result<Record<string, never>>>;
     setBedrockInferenceProfile: RequestFn<[profile: string], Result<Record<string, never>>>;
-    testCloudApi: RequestFn<[], Result<{ models?: string[] }>>;
+    /** `warning: 'no_credit'`: the key works but its spending limit is used up (OpenRouter). */
+    testCloudApi: RequestFn<[], Result<{ models?: string[]; warning?: 'no_credit' }>>;
   };
 
   calendar: {
@@ -1574,6 +1847,7 @@ export interface StenoaiBridge {
     summaryTitle: Subscribe<SummaryTitleEvent>;
     summaryComplete: Subscribe<SummaryCompleteEvent>;
     processingComplete: Subscribe<ProcessingCompleteEvent>;
+    noteUpdated: Subscribe<NoteUpdatedEvent>;
     processingProgress: Subscribe<ProcessingProgressEvent>;
     queryChunk: Subscribe<QueryChunkEvent>;
     queryDone: Subscribe<QueryDoneEvent>;
@@ -1693,7 +1967,9 @@ export interface StenoaiBridge {
     handlers: {
       onChunk?: (chunk: string) => void;
       onDone?: () => void;
-      onError?: (err: Error) => void;
+      onError?: (err: Error, errorCode?: string) => void;
+      onToolStep?: (step: ChatToolStep) => void;
+      onActionCard?: (card: ActionCard) => void;
     }
   ) => () => void;
 }

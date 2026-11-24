@@ -8,14 +8,16 @@
 - Cost: free and open source (MIT license, no usage restrictions). A paid managed Enterprise deployment tier is a separate, optional offering (details coming soon). Source at https://github.com/stenolabs/stenoai
 - No meeting bot: records system audio + microphone locally; no participant is notified by Steno.
 - Transcription: two on-device engines — Parakeet (default, with a live transcript while recording; 25 European languages, including English) and Whisper (optional; 99 languages). No audio is uploaded.
-- Summarization: local models via Ollama by default (default model Gemma 4 E2B). Optional off-device alternatives -- a cloud model (OpenAI, Anthropic, AWS Bedrock, or a custom endpoint), a self-hosted "Private Server" remote Ollama instance, or an organization adapter -- receive the transcript and any typed notes only, never audio.
+- Summarization: local models via Ollama by default (default model Gemma 4 E2B). Optional off-device alternatives -- a cloud model (OpenRouter, OpenAI, Anthropic, AWS Bedrock, or a custom endpoint), a self-hosted "Private Server" remote Ollama instance, or an organization adapter -- receive the transcript and any typed notes only, never audio.
 - Privacy: recording, transcription, and summarization are on-device by default. The app has anonymous usage analytics (no meeting content, on by default) that can be turned off during setup or later in Settings.
+- Connect and actions: AI apps and coding agents can read meetings over a read-only local MCP server or the Steno skill. Connected apps (Linear, Notion, Jira and Confluence, custom MCP servers) receive only actions the user approves; email drafts open in the user's mail app and are never sent by Steno.
 - Data location: ~/Library/Application Support/stenoai/ on macOS, %APPDATA%\stenoai\ on Windows (recordings, transcripts, output).
 
 ## Getting started
 
 - [What is Steno](https://docs.stenoai.co/getting-started/what-is-steno): overview and requirements.
-- [Installation](https://docs.stenoai.co/getting-started/installation): download, permissions, setup.
+- [Installation](https://docs.stenoai.co/getting-started/installation): download, permissions, and the first-launch setup (You, How Steno thinks, Getting ready, You're ready).
+- [Get an API key](https://docs.stenoai.co/getting-started/api-key): use an OpenRouter, OpenAI or Anthropic key for cloud notes and chat; text only, never audio.
 - [Your first recording](https://docs.stenoai.co/getting-started/first-recording): the record → transcribe → summarize flow.
 
 ## Features
@@ -23,12 +25,20 @@
 - [Recording](https://docs.stenoai.co/features/recording): microphone, system audio, or both.
 - [Transcription](https://docs.stenoai.co/features/transcription): Parakeet and Whisper engines.
 - [Live transcription](https://docs.stenoai.co/features/live-transcription): real-time transcript while recording.
+- [Instant transcripts](https://docs.stenoai.co/features/instant-transcripts): with Parakeet, the transcript and an early summary are ready on Stop, then refined in the background.
 - [Summaries and notes](https://docs.stenoai.co/features/summaries): on-device summarization.
-- [Report templates](https://docs.stenoai.co/features/report-templates): editable, per-meeting note formats.
-- [Ask your meetings](https://docs.stenoai.co/features/ask-your-meetings): chat over one meeting or your whole library.
-- [Use Steno with your agent](https://docs.stenoai.co/features/agents): connect Claude Code or Codex to local meeting notes with the Steno skill.
-- [Speaker labels](https://docs.stenoai.co/features/speaker-labels): [You] / [Others] via stereo-channel diarization.
+- [Editing notes](https://docs.stenoai.co/features/editing-notes): click to edit any part of a note; autosaves.
+- [Cookbooks and recipes](https://docs.stenoai.co/features/cookbooks): note formats (formerly report templates) and saved chat prompts run with `/`.
+- [Chat](https://docs.stenoai.co/features/ask-your-meetings): ask about one meeting, all notes, a space, or no context; thinking steps, charts, and approved actions in connected apps.
+- [Speaker labels](https://docs.stenoai.co/features/speaker-labels): [You] / [Others] via stereo-channel diarization, plus optional individual speakers on macOS.
 - [Apple Shortcuts](https://docs.stenoai.co/features/apple-shortcuts): stenoai:// deep links for automation.
+
+## Connect
+
+- [Connect overview](https://docs.stenoai.co/connect/overview): read-only MCP access for Claude desktop, Cursor, Claude Code and Codex; "What assistants can see" scope controls (MCP only).
+- [Use Steno with your agent](https://docs.stenoai.co/features/agents): install the Steno skill in Claude Code or Codex.
+- [Actions](https://docs.stenoai.co/connect/actions): suggested follow-ups after each note for Linear, Notion, Jira and Confluence, and email drafts; nothing runs until you approve it.
+- [Custom MCP servers](https://docs.stenoai.co/connect/custom-mcp-servers): add any MCP server by URL (n8n, Zapier, Make) or as a command on this computer (npx, uvx).
 
 ## Guides
 

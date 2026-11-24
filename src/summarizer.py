@@ -13,6 +13,7 @@ from typing import Optional, Dict, Any
 from .models import MeetingTranscript, ActionItem, Decision
 from .config import Config, resolve_runtime_tag, BEDROCK_REGION_RE
 from . import ollama_manager
+from .ai_errors import ModelNotAvailableError, OllamaNotRunningError
 
 logger = logging.getLogger(__name__)
 
@@ -243,9 +244,15 @@ class OllamaSummarizer:
                     from openai import OpenAI
                 except ImportError:
                     raise ImportError("openai package is required for cloud mode. pip install openai")
-                base_url = cloud_api_url if self.cloud_provider == "custom" and cloud_api_url else None
-                self.cloud_client = OpenAI(api_key=cloud_api_key, base_url=base_url)
-                logger.info(f"Cloud provider initialized: model={self.model_name}")
+                # openai, custom (user base URL) and openrouter (OpenRouter's
+                # OpenAI-compatible gateway + its attribution headers).
+                from .cloud_providers import openai_client_kwargs
+                self.cloud_client = OpenAI(
+                    **openai_client_kwargs(self.cloud_provider, cloud_api_key, cloud_api_url)
+                )
+                logger.info(
+                    f"Cloud provider initialized: provider={self.cloud_provider} model={self.model_name}"
+                )
 
         elif self.ai_provider == "remote":
             # Remote mode: connect to user's Ollama on LAN
@@ -780,13 +787,13 @@ class OllamaSummarizer:
         # Step 1: Check if Ollama is running
         if not self._is_ollama_running():
             if not self._start_ollama_service():
-                raise Exception("Failed to start Ollama service")
+                raise OllamaNotRunningError("Failed to start Ollama service")
         else:
             logger.info("Ollama service is already running")
         
         # Step 2: Ensure model is available
         if not self._ensure_model_available():
-            raise Exception(f"Failed to ensure model {self.model_name} is available")
+            raise ModelNotAvailableError(f"Failed to ensure model {self.model_name} is available")
         
         logger.info(f"Ollama ready with model {self.model_name}")
         return True
@@ -1825,6 +1832,32 @@ TITLE:"""
                 self.ai_provider, self.model_name,
             )
             return None
+
+    def complete_json(self, prompt: str, timeout_seconds: int = 120) -> str:
+        """One-shot completion through the configured provider, asking for JSON.
+
+        Used by suggested actions (src/action_suggest.py). Same provider
+        dispatch as generate_title: org adapter, cloud, or Ollama (local or
+        remote) with thinking off and Ollama's JSON mode. Returns the raw reply
+        text; parsing and validation are the caller's job.
+        """
+        if self.ai_provider == "adapter":
+            return self._adapter_chat(prompt, timeout_seconds)
+        if self.ai_provider == "cloud":
+            return self._cloud_chat(prompt, timeout_seconds)
+        client = ollama.Client(
+            host=self.remote_url if self.ai_provider == "remote" else None,
+            timeout=max(timeout_seconds, 90),
+        )
+        response = self._chat_no_think(
+            client,
+            model=self.model_name,
+            messages=[{'role': 'user', 'content': prompt}],
+            # Low temperature: tool names and arguments must be copied, not paraphrased.
+            options={**self._ollama_options(), 'temperature': 0.1},
+            format='json',
+        )
+        return response['message']['content'].strip()
 
     def _build_query_prompt(self, transcript: str, question: str, language: str = "en") -> str:
         from .chat_charts import CHART_INSTRUCTIONS

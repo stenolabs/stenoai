@@ -14,7 +14,14 @@
 # preload.js + main.js package correctly on every PR, before release time.
 # Release builds continue to use the package.json config unchanged.
 
+beforePack: scripts/before-pack.js
+
 extraResources:
+  # The Steno MCP server + .mcpb (built by the beforePack hook).
+  - from: steno-mcp/dist
+    to: steno-mcp
+    filter:
+      - "**/*"
   - from: assets
     to: assets
     filter:

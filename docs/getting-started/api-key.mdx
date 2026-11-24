@@ -1,0 +1,105 @@
+---
+title: "Get an API key"
+description: "Use a cloud AI model for notes and chat. Create an OpenRouter, OpenAI or Anthropic key and paste it into Steno."
+icon: "key"
+---
+
+Steno writes notes and answers chat with a local model by default. To use a faster cloud model instead, bring your own API key from OpenRouter, OpenAI or Anthropic. Your audio still never leaves your computer.
+
+## Choose a provider
+
+| Provider | Good for |
+|----------|----------|
+| **OpenRouter** | The easiest start. One key gives you many models from different companies. |
+| **OpenAI** | GPT models, from the makers of ChatGPT. |
+| **Anthropic** | Claude models. |
+
+AWS Bedrock and custom OpenAI-compatible endpoints are also supported. Set them up in **Settings → AI**; see [Summarization models](/models/summarization-models#using-a-cloud-model).
+
+## Create a key
+
+<Tabs>
+  <Tab title="OpenRouter">
+    <Steps>
+      <Step title="Sign in">
+        Sign in or create an account at [openrouter.ai](https://openrouter.ai).
+      </Step>
+      <Step title="Add credit">
+        Add a few dollars of credit to your account.
+      </Step>
+      <Step title="Create a key">
+        Open [Keys](https://openrouter.ai/settings/keys), create a key, and copy it. It starts with `sk-or-`.
+      </Step>
+    </Steps>
+  </Tab>
+  <Tab title="OpenAI">
+    <Steps>
+      <Step title="Sign in">
+        Sign in to the [OpenAI platform](https://platform.openai.com). This is separate from a ChatGPT subscription.
+      </Step>
+      <Step title="Add credit">
+        Add credit under **Billing**.
+      </Step>
+      <Step title="Create a key">
+        Open [API keys](https://platform.openai.com/api-keys), create a secret key, and copy it. It starts with `sk-`.
+      </Step>
+    </Steps>
+  </Tab>
+  <Tab title="Anthropic">
+    <Steps>
+      <Step title="Sign in">
+        Sign in to the [Claude Console](https://console.anthropic.com). This is separate from a Claude subscription.
+      </Step>
+      <Step title="Add credit">
+        Add credit under **Billing**.
+      </Step>
+      <Step title="Create a key">
+        Open [API keys](https://console.anthropic.com/settings/keys), create a key, and copy it. It starts with `sk-ant-`.
+      </Step>
+    </Steps>
+  </Tab>
+</Tabs>
+
+<Warning>
+Treat your key like a password. Don't share it or paste it anywhere except Steno.
+</Warning>
+
+## Add the key to Steno
+
+**During setup**: on **How should Steno think?**, choose **Cloud**, pick your provider, and paste the key in **Paste your API key**. Click **Connect**.
+
+**Later**: open **Settings → AI**, set **AI provider** to **Cloud API**, choose the **Service**, and paste the key in **API key**. Click **Test connection**.
+
+During setup, Steno recognises the key from its prefix and picks the matching provider. It then checks the key with the provider. When it works you'll see **Connected · *model* ready**. If the key is rejected or the account has no credit, Steno says so; add credit or create a new key and try again.
+
+The key is stored encrypted on this device and is only ever sent to the provider you choose.
+
+## What it costs
+
+You pay the provider directly, based on how much text you send and receive. Steno adds no charge.
+
+A meeting's notes or a chat answer is usually a small amount of text, so a few dollars of credit typically goes a long way. Costs vary a lot by model, and longer meetings cost more. Check current prices before you choose a model:
+
+- [OpenRouter models and pricing](https://openrouter.ai/models)
+- [OpenAI pricing](https://openai.com/api/pricing/)
+- [Anthropic pricing](https://www.anthropic.com/pricing#api)
+
+Most providers let you set a spending limit on the key or account.
+
+## What is sent to the provider
+
+With a cloud provider, Steno sends text, never audio:
+
+- **Notes**: the transcript and any notes you typed.
+- **Chat**: your question and the meeting context you selected.
+- **Suggested actions**: the note's title, summary and action items.
+
+Recording and transcription still run on your computer.
+
+<Note>
+Settings also offers a separate cloud speech-to-text engine. That one does send audio, and Steno warns you before you turn it on. Choosing a cloud AI provider does not turn it on.
+</Note>
+
+## Switch back to local
+
+Open **Settings → AI** and set **AI provider** to **Local (on-device)**, then select a model. If the model isn't downloaded yet, Steno downloads it. Local models are private and free, and need no internet connection once downloaded.

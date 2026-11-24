@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, shell, systemPreferences, globalShortcut, Tray, Menu, nativeImage, powerMonitor, net, session } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, systemPreferences, globalShortcut, Tray, Menu, nativeImage, powerMonitor, net, session, clipboard } = require('electron');
 
 // safeStorage is accessed lazily via getSafeStorage(), NOT destructured from the
 // require above. On macOS, merely retrieving the safeStorage binding at load
@@ -75,11 +75,18 @@ const { registerPersonSampleIpc } = require('./person-sample-ipc');
 const { registerSpeakerIpc } = require('./speaker-ipc');
 const { registerObsidianSync } = require('./obsidian-sync');
 const { registerObsidianIpc } = require('./obsidian-ipc');
+const { registerStenoMcpIpc } = require('./steno-mcp-ipc');
+const { registerMcpActionsIpc } = require('./mcp-actions-ipc');
+const { registerRecipesIpc } = require('./recipes-ipc');
+const { createActionsService } = require('./mcp-actions');
+const { getLaunchSpec: getStenoMcpLaunchSpec } = require('./steno-mcp-install');
+const { ensureLauncher: ensureStenoMcpLauncherFile } = require('./steno-mcp-launcher');
 const { isSafeToAutoInstall } = require('./update-idle-gate');
 const { describeUpdateError, updateErrorPhase, isMissingUpdateFeedError } = require('./update-error-copy');
 const { isOSUpdateEligible, MIN_MACOS_FOR_AUTOUPDATE } = require('./update-os-gate');
 const processingLog = require('./processing-log');
 const { isMeetingApp, allowsDeviceLevelFallback, isMacos14Plus } = require('./meeting-detect');
+const { readConfigFile, readConfigFlag, flagFromConfig } = require('./config-flags');
 const {
   loadAutoRecordMeetingsEnabled,
   buildAutoRecordStartedOptions,
@@ -89,6 +96,7 @@ const { buildTrayRecordingTitle, buildTrayTooltip } = require('./tray-indicator'
 const { normalizeAutoOpenSettings, decideMeetingOpen, planPremeetingTimers, isOverlapping, isMicGuardAvailable, openReservationEndMs, MAX_LEAD_MINUTES } = require('./meeting-open');
 const { isLinuxLoopbackSupported, startLoopbackCapture, createFrameAligner, createSerialQueue } = require('./linux-loopback');
 const { sweepOrphanedLiveSnapshots } = require('./live-snapshot-sweep');
+const { finalLiveSegments, formatLiveTranscript, buildLiveSnapshot } = require('./live-transcript-format');
 const { shareTempDir, sweepShareTemp, SHARE_TEMP_MAX_AGE_MS } = require('./share-temp');
 const { userNotesFilePath } = require('./notes-file');
 const {
@@ -102,6 +110,7 @@ const {
 const { writeFileAtomicSync } = require('./atomic-write');
 const { createToastScheduler, toastLayering } = require('./toast-scheduler');
 const { readSnapshot, captureSnapshot, markEdited, editedFieldNames } = require('./note-snapshot');
+const { updateReportInSidecar } = require('./report-body');
 const {
   buildNoteReadyNotificationOptions,
   buildTranscriptReadyBody,
@@ -203,12 +212,20 @@ if (app.isPackaged && !process.env.STENOAI_USER_DATA_DIR) {
   });
 }
 
-// Global (system-wide) accelerator to toggle recording. CommandOrControl
-// resolves to Cmd on macOS and Ctrl on Windows/Linux, so no manual
-// process.platform split is needed. The env override lets the e2e T2 spec
+// Global (system-wide) accelerator to toggle recording. The default is
+// Control+Alt+R (⌃⌥R on macOS, Ctrl+Alt+R on Windows/Linux) and the user can
+// pick their own in Settings (config.json record_hotkey_accelerator, null =
+// default); see record-hotkey.js. The env override lets the e2e T2 spec
 // register a low-collision accelerator that can't clash with whatever the
 // real host already occupies (see e2e/specs/record-hotkey.t2.spec.ts).
-const RECORD_HOTKEY_ACCEL = process.env.STENOAI_E2E_RECORD_ACCEL || 'CommandOrControl+Shift+R';
+const recordHotkey = require('./record-hotkey');
+function recordHotkeyAccelFromDisk() {
+  const custom = recordHotkey.customAcceleratorFromConfig(readConfigFile(configJsonPath()));
+  return recordHotkey.effectiveAccelerator(custom, process.env.STENOAI_E2E_RECORD_ACCEL);
+}
+// The accelerator this process registered (null when none), so a change in
+// Settings unregisters exactly the old one and nothing else.
+let registeredRecordAccel = null;
 
 // Shared toggle-recording handler for the global shortcut — reused by the
 // startup registration and the live-apply set-record-hotkey IPC handler so
@@ -226,16 +243,7 @@ function handleRecordHotkey() {
 // untestable in T2. Absence of the key = ON (back-compat: the shortcut was
 // unconditionally registered before this setting existed).
 function recordHotkeyEnabledFromDisk() {
-  try {
-    const cfgPath = path.join(getUserDataDir(), 'config.json');
-    if (fs.existsSync(cfgPath)) {
-      const cfg = JSON.parse(fs.readFileSync(cfgPath, 'utf-8'));
-      return cfg.record_hotkey_enabled !== false;
-    }
-  } catch (e) {
-    console.warn('Failed to read record_hotkey_enabled from config:', e?.message);
-  }
-  return true;
+  return readConfigFlag(configJsonPath(), 'record_hotkey_enabled');
 }
 
 // Idempotently drive the global record hotkey to `enabled` and report the
@@ -244,15 +252,23 @@ function recordHotkeyEnabledFromDisk() {
 // repeat-enable — or an enable that races the startup registration — would
 // report a spurious failure while isRegistered() is actually true. Guarding on
 // isRegistered() keeps both call sites idempotent and the return value honest.
-function applyRecordHotkey(enabled) {
-  if (enabled) {
-    if (!globalShortcut.isRegistered(RECORD_HOTKEY_ACCEL)) {
-      globalShortcut.register(RECORD_HOTKEY_ACCEL, handleRecordHotkey);
-    }
-  } else if (globalShortcut.isRegistered(RECORD_HOTKEY_ACCEL)) {
-    globalShortcut.unregister(RECORD_HOTKEY_ACCEL);
+function applyRecordHotkey(enabled, accel = recordHotkeyAccelFromDisk()) {
+  if (registeredRecordAccel && (!enabled || registeredRecordAccel !== accel)) {
+    if (globalShortcut.isRegistered(registeredRecordAccel)) globalShortcut.unregister(registeredRecordAccel);
+    registeredRecordAccel = null;
   }
-  return globalShortcut.isRegistered(RECORD_HOTKEY_ACCEL);
+  if (enabled) {
+    if (!globalShortcut.isRegistered(accel)) {
+      try {
+        globalShortcut.register(accel, handleRecordHotkey);
+      } catch (e) {
+        console.error(`Invalid global hotkey ${accel}: ${e.message}`);
+      }
+    }
+    if (globalShortcut.isRegistered(accel)) registeredRecordAccel = accel;
+    return registeredRecordAccel === accel;
+  }
+  return false;
 }
 if (IS_E2E_MOCK_IPC) {
   require('./e2e-mock-ipc').install({ ipcMain, BrowserWindow });
@@ -378,6 +394,12 @@ function getUserDataDir() {
   }
   const base = process.env.XDG_DATA_HOME || path.join(os.homedir(), '.local', 'share');
   return path.join(base, 'stenoai');
+}
+
+// The Python-owned config.json. Sync reads of it go through config-flags.js,
+// which holds the flag defaults (mirrored from src/config.py) in one place.
+function configJsonPath() {
+  return path.join(getUserDataDir(), 'config.json');
 }
 
 // Output dir the Python pipeline reads/writes (custom storage, else user-data).
@@ -943,20 +965,16 @@ function applyLoginItemSetting(enabled) {
 // (feature ships enabled-for-everyone; users opt out in Settings), so a legacy
 // config missing the key reports true.
 function loadIdentitySuperProperties() {
-  let cfg = {};
-  try {
-    const cfgPath = path.join(getUserDataDir(), 'config.json');
-    if (fs.existsSync(cfgPath)) cfg = JSON.parse(fs.readFileSync(cfgPath, 'utf-8'));
-  } catch (_) {}
+  const cfg = readConfigFile(configJsonPath()) || {};
   let calendarConnected = false;
   try {
     calendarConnected = Boolean(loadGoogleTokens()) || Boolean(loadOutlookTokens());
   } catch (_) {}
   return {
     ai_provider: cfg.ai_provider || 'local',
-    notifications_enabled: cfg.notifications_enabled !== false,
+    notifications_enabled: flagFromConfig(cfg, 'notifications_enabled'),
     calendar_connected: calendarConnected,
-    launch_on_login: cfg.launch_on_login !== false,
+    launch_on_login: flagFromConfig(cfg, 'launch_on_login'),
   };
 }
 
@@ -2231,14 +2249,7 @@ if (!gotSingleInstanceLock) {
     // Only treat it as hidden if the setting isn't explicitly off, so a stale
     // OS login item (setting since disabled) doesn't wrongly hide the window.
     try {
-      let launchOnLoginEnabled = true;
-      try {
-        const cfgPath = path.join(getUserDataDir(), 'config.json');
-        if (fs.existsSync(cfgPath)) {
-          const cfg = JSON.parse(fs.readFileSync(cfgPath, 'utf-8'));
-          launchOnLoginEnabled = cfg.launch_on_login !== false;
-        }
-      } catch (_) {}
+      const launchOnLoginEnabled = readConfigFlag(configJsonPath(), 'launch_on_login');
       const openedAtLogin =
         process.platform === 'darwin'
           ? Boolean(app.getLoginItemSettings().wasOpenedAtLogin)
@@ -2272,6 +2283,15 @@ if (!gotSingleInstanceLock) {
       processingLog.logLine('app', `startup v${app.getVersion()} platform=${process.platform}`);
     } catch (e) {
       console.warn('processing-log init failed (non-fatal):', e?.message);
+    }
+
+    // Stable MCP launcher (<userData>/bin/steno-mcp): rewritten only when this
+    // app's executable or server path changed, e.g. after a move or update.
+    try {
+      const launcher = ensureStenoMcpLauncher();
+      if (launcher.written) processingLog.logLine('app', 'steno-mcp launcher updated');
+    } catch (e) {
+      console.warn('steno-mcp launcher write failed (non-fatal):', e?.message);
     }
 
     // Migrate the pre-safeStorage plaintext ASR credential on every launch,
@@ -2400,10 +2420,11 @@ if (!gotSingleInstanceLock) {
     // slow awaits below would report a transient registered:false as a
     // registration failure ("couldn't register" hint, hidden shortcut copy).
     if (recordHotkeyEnabledFromDisk()) {
-      if (applyRecordHotkey(true)) {
-        console.log(`Global hotkey registered: ${RECORD_HOTKEY_ACCEL}`);
+      const accel = recordHotkeyAccelFromDisk();
+      if (applyRecordHotkey(true, accel)) {
+        console.log(`Global hotkey registered: ${accel}`);
       } else {
-        console.error(`Failed to register global hotkey: ${RECORD_HOTKEY_ACCEL}`);
+        console.error(`Failed to register global hotkey: ${accel}`);
       }
     } else {
       console.log('Global record hotkey disabled by preference — not registering');
@@ -2481,13 +2502,7 @@ if (!gotSingleInstanceLock) {
     // login item on this launch), while a user who turned it off persists false
     // and stays unregistered. Idempotent; no-op under E2E / dev (see helper).
     try {
-      let launchOnLoginEnabled = true;
-      const cfgPath = path.join(getUserDataDir(), 'config.json');
-      if (fs.existsSync(cfgPath)) {
-        const cfg = JSON.parse(fs.readFileSync(cfgPath, 'utf-8'));
-        launchOnLoginEnabled = cfg.launch_on_login !== false;
-      }
-      applyLoginItemSetting(launchOnLoginEnabled);
+      applyLoginItemSetting(readConfigFlag(configJsonPath(), 'launch_on_login'));
     } catch (e) {
       console.warn('Failed to apply launch-on-login setting at startup:', e?.message);
     }
@@ -2641,6 +2656,9 @@ if (!gotSingleInstanceLock) {
   app.on('will-quit', async () => {
     globalShortcut.unregisterAll();
     destroyTray();
+    // Local MCP servers (Connect -> Custom MCP server -> Command on this
+    // computer): kill each process tree so none outlives the app.
+    try { if (mcpActionsService) mcpActionsService.shutdown(); } catch (_) {}
     // Kill Ollama on quit. The process may have been started by Electron or
     // the Python backend — both write the PID to ollama.pid in _internal/.
     // killProcessTree tears down ollama's child runner subprocesses too, so
@@ -3129,6 +3147,11 @@ function parseMeetingMarkdown(content, mdPath) {
   }
   if (meta.processing) {
     sessionInfo.processing = true;
+  }
+  // Early note (instant transcript): notes written from the live transcript
+  // while the batch pass refines the transcript and notes in the background.
+  if (meta.refining) {
+    sessionInfo.refining = true;
   }
 
   return {
@@ -3706,6 +3729,52 @@ ipcMain.handle('delete-report', async (_e, summaryFile, reportId) => {
   } catch (error) { return { success: false, error: error.message }; }
 });
 
+// Inline report editing: rewrite the BODY of one generated report in the
+// <stem>_reports.json sidecar. Done here rather than through a Python CLI
+// command because it is an autosave (one spawn per pause in typing would be
+// slow) and the edit is a pure string transform (app/report-body.js) that
+// keeps the report's frontmatter byte-for-byte and refuses a body that would
+// grow a new one. Only this report's `content` (+ `edited_at`) changes.
+ipcMain.handle('update-report', async (_e, summaryFile, reportId, frontmatter, body) => {
+  try {
+    const validated = await validateMeetingFilePath(summaryFile);
+    if (validated.error) return { success: false, error: validated.error };
+    const { realPath, allowedOutputDirs } = validated;
+    // Python appends to this same sidecar when a report generation or a
+    // regenerate (#249 backup) finishes; a write here meanwhile would race it.
+    if (isSummaryBusy(realPath)) {
+      return { success: false, error: 'Steno is still updating this note. Try again when it finishes.' };
+    }
+    const ext = path.extname(realPath);
+    const base = path.basename(realPath, ext);
+    const stem = base.endsWith('_summary') ? base.slice(0, -'_summary'.length) : base;
+    const sidecarPath = path.join(path.dirname(realPath), `${stem}_reports.json`);
+    let realSidecar;
+    try {
+      realSidecar = await fs.promises.realpath(sidecarPath);
+    } catch {
+      return { success: false, error: 'This note has no reports.' };
+    }
+    // Same containment rule as readReportsSidecar: a symlinked sidecar must
+    // not let a write escape the output tree.
+    if (!allowedOutputDirs.some((b) => b && realSidecar.startsWith(b))) {
+      return { success: false, error: 'Access denied' };
+    }
+    let sidecar;
+    try {
+      sidecar = JSON.parse(await fs.promises.readFile(realSidecar, 'utf8'));
+    } catch {
+      return { success: false, error: 'The reports file could not be read.' };
+    }
+    const result = updateReportInSidecar(sidecar, reportId, frontmatter, body);
+    if (!result.ok) return { success: false, error: result.error };
+    writeFileAtomicSync(realSidecar, JSON.stringify(result.sidecar, null, 2));
+    return { success: true, content: result.content };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
 ipcMain.handle('regen-meeting-title', async (event, summaryFile, sessionName) => {
   try {
     // Security: symlink-safe containment-check the renderer-supplied summary path
@@ -3828,7 +3897,7 @@ ipcMain.handle('query-transcript', async (event, summaryFile, question) => {
 
 const activeQueryProcs = new Map();
 const contextQueries = new Map();
-const { validateRequest: validateChatRequest, liveSnapshot, runQuery: runChatQuery } = require('./chat-query');
+const { validateRequest: validateChatRequest, liveSnapshot, runQuery: runChatQuery, aiErrorCode } = require('./chat-query');
 
 ipcMain.on('chat-context-stream', async (event, queryId, request) => {
   const sender = event.sender;
@@ -3849,12 +3918,22 @@ ipcMain.on('chat-context-stream', async (event, queryId, request) => {
   };
   if (!mainWindow || sender !== mainWindow.webContents || event.senderFrame !== sender.mainFrame) return;
   if (typeof queryId !== 'string' || !queryId || queryId.length > 256 || contextQueries.has(queryId)) return;
+  // A new question in a conversation supersedes the action cards an earlier
+  // turn of that conversation is still waiting on: they are declined and the
+  // turn ends, so a card nobody answers never holds a query slot. Checked
+  // before the cap so the slot it held is free for this question.
+  const sessionId = typeof request?.sessionId === 'string' && request.sessionId.length <= 128 ? request.sessionId : null;
+  if (sessionId) {
+    for (const other of contextQueries.values()) {
+      if (other.sender === sender && other.sessionId === sessionId && other.agent?.pending.size) other.agent.supersede();
+    }
+  }
   if (contextQueries.size >= 4) {
     send('query-done', { success: false, error: 'Wait for another answer to finish.' });
     return;
   }
   let cancelled = false;
-  const entry = { sender, cancel: () => { cancelled = true; } };
+  const entry = { sender, sessionId, cancel: () => { cancelled = true; } };
   contextQueries.set(queryId, entry);
   const onDestroyed = () => entry.cancel();
   sender.once('destroyed', onDestroyed);
@@ -3880,15 +3959,217 @@ ipcMain.on('chat-context-stream', async (event, queryId, request) => {
       payload.file = validated.realPath;
     }
     if (cancelled || sender.isDestroyed()) { cleanup(); return; }
-    const query = runChatQuery({
-      spawn: require('child_process').spawn,
-      backend: getBackendPath(), env: getBackendEnv(getAiEnv()), cwd: getBackendCwd(),
-      payload, send, onFinish: cleanup,
-    });
-    entry.cancel = query.cancel;
+    const runPlain = () => {
+      const query = runChatQuery({
+        spawn: require('child_process').spawn,
+        backend: getBackendPath(), env: getBackendEnv(getAiEnv()), cwd: getBackendCwd(),
+        payload, send, onFinish: cleanup,
+      });
+      entry.cancel = query.cancel;
+    };
+    // With an enabled actions connection and a tool-capable model, chat runs
+    // as an agent (chat-agent.js); otherwise exactly as before.
+    const agentTools = await prepareChatAgentTools(payload, send);
+    if (cancelled || sender.isDestroyed()) { cleanup(); return; }
+    if (agentTools) runChatAgent({ queryId, payload, tools: agentTools, entry, send, cleanup, runPlain });
+    else runPlain();
   } catch (error) {
     if (!cancelled) send('query-done', { success: false, error: error.message });
     cleanup();
+  }
+});
+
+// ── Chat as an agent (chat-agent.js) ────────────────────────────────────
+const chatAgent = require('./chat-agent');
+const CHAT_AGENT_ERROR = 'Unable to answer. Check your AI provider and try again.';
+
+/** The tools for this chat turn, or null to keep plain chat. */
+async function prepareChatAgentTools(payload, send = () => {}) {
+  try {
+    const cfg = readConfigFile(configJsonPath());
+    if (!chatAgent.toolCallingSupport(cfg)) {
+      // Plain chat, but say so when the user evidently wanted an app action.
+      const tools = await getMcpActionsService().chatToolset({ simpleOnly: true }).catch(() => []);
+      const step = chatAgent.toolsUnavailableStep({
+        question: payload.question,
+        connectionNames: tools.map((t) => t.connectionName),
+        model: typeof cfg.model === 'string' ? cfg.model : '',
+      });
+      if (step) send('query-tool-step', { step });
+      return null;
+    }
+    const connectionTools = await getMcpActionsService().chatToolset({ simpleOnly: chatAgent.prefersSimpleActions(cfg) });
+    if (!connectionTools.length) return null;
+    return chatAgent.buildAgentTools({ connectionTools, steno: payload.scope !== 'general' });
+  } catch (e) {
+    sendDebugLog(`[chat-agent] tools unavailable: ${e?.code || e?.name || 'error'}`);
+    return null;
+  }
+}
+
+function runChatAgent({ queryId, payload, tools, entry, send, cleanup, runPlain }) {
+  const spawn = require('child_process').spawn;
+  const env = getBackendEnv(getAiEnv());
+  const service = getMcpActionsService();
+  const chatKey = `chat-${crypto.createHash('sha256').update(String(queryId)).digest('hex').slice(0, 24)}`;
+  const procs = new Set();
+  let cancelled = false;
+  let finished = false;
+  let answered = false;
+  // The cards this turn is waiting on. One left unanswered is declined after
+  // PENDING_CARD_TIMEOUT_MS (and closed in the chat), so the turn ends instead
+  // of holding a query slot for good.
+  const pending = chatAgent.createPendingCards({
+    onDecline: (cardId, reason) => {
+      if (reason === 'finished') return;
+      service.dismiss(chatKey, cardId).then((cards) => {
+        const after = cards.find((c) => c.id === cardId);
+        if (after && !entry.sender.isDestroyed()) send('query-action-card', { card: after });
+      }).catch(() => {});
+    },
+  });
+  const finish = (success, error, errorCode) => {
+    if (finished) return;
+    finished = true;
+    pending.declineAll('finished');
+    send('query-done', { success, ...(error ? { error } : {}), ...(error && errorCode ? { errorCode } : {}) });
+    cleanup();
+  };
+  const stop = (reason) => {
+    cancelled = true;
+    for (const p of procs) { try { p.kill(); } catch (_) {} }
+    if (reason === 'superseded') pending.declineAll('superseded');
+    // Superseded with an answer already on screen: that answer stands.
+    if (reason === 'superseded' && answered) finish(true);
+    else finish(false, 'Answer stopped.');
+  };
+  entry.agent = {
+    chatKey,
+    pending,
+    service,
+    // A newer question in the same conversation while this turn waits on a card.
+    supersede: () => { if (!finished && pending.size) stop('superseded'); },
+  };
+  entry.cancel = () => stop('cancelled');
+  const backend = (command, body, prefix, errorPrefix, stream = {}) => chatAgent.runBackendJson({
+    spawn, backend: getBackendPath(), command, env, cwd: getBackendCwd(), payload: body, prefix, errorPrefix, ...stream,
+    onProc: (p) => { procs.add(p); p.on('close', () => procs.delete(p)); },
+  });
+  let firstStep = true;
+  const step = async (body, onText) => {
+    try {
+      return await backend('chat-agent-step', body, 'CHAT_AGENT:', 'CHAT_AGENT_ERROR:', {
+        deltaPrefix: 'CHAT_AGENT_DELTA:', onDelta: onText,
+        stepPrefix: 'CHAT_STEP:',
+        onStep: (step) => { if (step && step.source === 'context') send('query-tool-step', { step }); },
+      });
+    } catch (e) {
+      // The first call failing before any text (a custom endpoint or model
+      // that rejects tools, a provider hiccup) falls back to plain chat:
+      // behave exactly as today.
+      if (firstStep && !answered) e.fallback = true;
+      throw e;
+    } finally {
+      firstStep = false;
+    }
+  };
+  const runRead = async (tool, args) => {
+    if (tool.kind === 'steno') {
+      const folder = payload.scope === 'notes' && typeof payload.folder === 'string' ? payload.folder : null;
+      const result = await backend('chat-tool', { name: tool.tool, arguments: args, folder }, 'CHAT_TOOL:', 'CHAT_TOOL_ERROR:');
+      return { text: JSON.stringify(result) };
+    }
+    return service.callReadTool(tool.connectionId, tool.tool, args);
+  };
+  const proposeWrite = async (tool, args) => {
+    const proposed = await service.proposeChatAction(chatKey, { connectionId: tool.connectionId, tool: tool.tool, arguments: args, simple: tool.simple });
+    if (proposed.rejected) return { status: 'rejected', missing: proposed.missing };
+    if (cancelled) return { status: 'declined' };
+    send('query-action-card', { card: proposed.card });
+    return pending.wait(proposed.card.id);
+  };
+  const emit = (kind, data) => {
+    if (kind === 'text') {
+      answered = true;
+      send('query-chunk', { chunk: data });
+    } else if (kind === 'step') {
+      send('query-tool-step', { step: data });
+    }
+  };
+  chatAgent.runAgentTurn({
+    request: payload, tools, step, runRead, proposeWrite, emit, isCancelled: () => cancelled,
+  }).then(() => {
+    if (answered) finish(true);
+    else finish(false, CHAT_AGENT_ERROR, 'unknown');
+  }).catch((e) => {
+    if (cancelled || finished) return;
+    if (e?.fallback) {
+      sendDebugLog(`[chat-agent] falling back to plain chat (${e.code || 'error'})`);
+      entry.agent = null;
+      runPlain();
+      return;
+    }
+    sendDebugLog(`[chat-agent] turn failed (${e?.code || e?.name || 'error'})`);
+    // CHAT_AGENT_ERROR:<code> carries a stable src/ai_errors.py code (or the
+    // historical 'failed' / 'tools-unsupported', which map to 'unknown').
+    finish(false, CHAT_AGENT_ERROR, aiErrorCode(e?.code));
+  });
+}
+
+/** The pending in-chat action card `cardId` of a live agent turn, for its own window. */
+function chatAgentFor(event, queryId, cardId) {
+  const entry = contextQueries.get(queryId);
+  if (!entry || !entry.agent || entry.sender !== event.sender) return null;
+  if (typeof cardId !== 'string' || !entry.agent.pending.has(cardId)) return null;
+  return { entry, agent: entry.agent };
+}
+
+function chatActionFailure(e) {
+  if (e && e.name === 'ActionError') {
+    return { success: false, error_code: e.code, error: e.message, ...(e.validationErrors ? { validationErrors: e.validationErrors } : {}) };
+  }
+  return { success: false, error_code: 'error', error: 'Something went wrong' };
+}
+
+// Approve an action card the chat agent paused on: the same approve() as a
+// note's cards (schema validation, org policy, audit). A failure keeps the
+// card open so the user can retry or dismiss; success feeds the result back.
+ipcMain.handle('chat-action-approve', async (event, queryId, cardId, args) => {
+  const found = chatAgentFor(event, queryId, cardId);
+  if (!found) return { success: false, error_code: 'not-found', error: 'This action is no longer waiting for approval' };
+  if (!args || typeof args !== 'object' || Array.isArray(args) || Buffer.byteLength(JSON.stringify(args)) > 256 * 1024) {
+    return { success: false, error_code: 'invalid-arguments', error: 'Arguments must be an object' };
+  }
+  const { entry, agent } = found;
+  try {
+    const card = await agent.service.approve(agent.chatKey, cardId, args);
+    if (!entry.sender.isDestroyed()) entry.sender.send('query-action-card', { queryId, card });
+    if (card.status === 'done') {
+      agent.pending.settle(cardId, { status: 'done', text: [card.result?.text, card.result?.link].filter(Boolean).join('\n') });
+    }
+    return { success: true, card };
+  } catch (e) {
+    return chatActionFailure(e);
+  }
+});
+
+ipcMain.handle('chat-action-dismiss', async (event, queryId, cardId) => {
+  const found = chatAgentFor(event, queryId, cardId);
+  if (!found) return { success: false, error_code: 'not-found', error: 'This action is no longer waiting for approval' };
+  const { entry, agent } = found;
+  try {
+    const cards = await agent.service.getCards(agent.chatKey);
+    const before = cards.find((c) => c.id === cardId);
+    const after = (await agent.service.dismiss(agent.chatKey, cardId)).find((c) => c.id === cardId);
+    if (after && !entry.sender.isDestroyed()) entry.sender.send('query-action-card', { queryId, card: after });
+    // Dismissing after a failed attempt tells the model it failed, not that
+    // the user said no.
+    agent.pending.settle(cardId, before?.status === 'failed'
+      ? { status: 'failed', text: before.result?.detail || before.result?.text || '' }
+      : { status: 'declined' });
+    return { success: true, card: after };
+  } catch (e) {
+    return chatActionFailure(e);
   }
 });
 
@@ -4807,6 +5088,18 @@ ipcMain.handle('update-meeting', async (event, summaryFilePath, updates) => {
       && /^## /m.test(normalizeMarkdownForParsing(updates.user_notes));
     if (userNotesBoundary || textCandidates.some((value) => containsStructuralLine(normalizeMarkdownForParsing(value)))) {
       return { success: false, error: 'A note field may not contain a markdown heading.' };
+    }
+
+    // The generated sections are rewritten wholesale by a reprocess, the
+    // post-Stop pipeline and a continuing recording. An edit landing while one
+    // of those owns the note is either overwritten or overwrites fresher text,
+    // so refuse it; the renderer keeps the draft and retries once the note is
+    // free (noteEditability.ts is the renderer half of this rule). My notes is
+    // deliberately not included: it has always autosaved during a recording.
+    const touchesGenerated = ['summary', 'key_points', 'action_items', 'discussion_areas']
+      .some((key) => updates[key] !== undefined);
+    if (touchesGenerated && isSummaryBusy(realPath)) {
+      return { success: false, error: 'Steno is still updating this note. Try again when it finishes.' };
     }
 
     // Read existing data
@@ -5861,16 +6154,9 @@ function stopLiveTranscribe() {
 // will have had transcription_engine written on their first launch by
 // Config._migrate_transcription_engine.
 function loadTranscriptionEngine() {
-  try {
-    const cfgPath = path.join(getUserDataDir(), 'config.json');
-    if (!fs.existsSync(cfgPath)) return 'parakeet';
-    const cfg = JSON.parse(fs.readFileSync(cfgPath, 'utf-8'));
-    const engine = cfg.transcription_engine;
-    if (engine === 'whisper' || engine === 'openai-asr') return engine;
-    return 'parakeet';
-  } catch (_) {
-    return 'parakeet';
-  }
+  const engine = readConfigFile(configJsonPath())?.transcription_engine;
+  if (engine === 'whisper' || engine === 'openai-asr') return engine;
+  return 'parakeet';
 }
 
 // Sync read of the transcription engine + model + language for
@@ -5879,11 +6165,10 @@ function loadTranscriptionEngine() {
 // three separate ones on this hot path.
 function loadTranscriptionContext() {
   try {
-    const cfgPath = path.join(getUserDataDir(), 'config.json');
-    if (!fs.existsSync(cfgPath)) {
+    const cfg = readConfigFile(configJsonPath());
+    if (!cfg) {
       return { engine: 'parakeet', model: 'parakeet', language: 'auto' };
     }
-    const cfg = JSON.parse(fs.readFileSync(cfgPath, 'utf-8'));
     const rawEngine = cfg.transcription_engine;
     const engine = (rawEngine === 'whisper' || rawEngine === 'openai-asr') ? rawEngine : 'parakeet';
     let model;
@@ -5910,11 +6195,10 @@ function loadTranscriptionContext() {
 // summarization_completed's analytics properties.
 function loadSummarizationContext() {
   try {
-    const cfgPath = path.join(getUserDataDir(), 'config.json');
-    if (!fs.existsSync(cfgPath)) {
+    const cfg = readConfigFile(configJsonPath());
+    if (!cfg) {
       return { provider: 'local', model: 'unknown' };
     }
-    const cfg = JSON.parse(fs.readFileSync(cfgPath, 'utf-8'));
     const provider = cfg.ai_provider || 'local';
     return {
       provider,
@@ -5927,67 +6211,31 @@ function loadSummarizationContext() {
   }
 }
 
-// Sync read of the auto-detect-meetings setting; default ON. Reads the JSON
-// directly to avoid spawning Python during startup just to read a boolean. Wire any new defaults through the Python config so
-// the truth lives in one place.
+// Sync config.json flag reads (no Python subprocess just to read a boolean).
+// Defaults live in config-flags.js, mirrored from src/config.py.
 function loadAutoDetectMeetingsEnabled() {
-  try {
-    const cfgPath = path.join(getUserDataDir(), 'config.json');
-    if (!fs.existsSync(cfgPath)) return true;
-    const cfg = JSON.parse(fs.readFileSync(cfgPath, 'utf-8'));
-    return cfg.auto_detect_meetings_enabled !== false;
-  } catch (_) {
-    return true;
-  }
+  return readConfigFlag(configJsonPath(), 'auto_detect_meetings_enabled');
 }
 
 function loadAutoOpenSettings() {
-  try {
-    const cfgPath = path.join(getUserDataDir(), 'config.json');
-    return normalizeAutoOpenSettings(JSON.parse(fs.readFileSync(cfgPath, 'utf-8')));
-  } catch (_) {
-    return normalizeAutoOpenSettings(null);
-  }
+  return normalizeAutoOpenSettings(readConfigFile(configJsonPath()));
 }
 
 // Caller recognition (iMCP) is opt-in: only a literal true turns it on,
 // matching Config.get_caller_id_enabled.
 function loadCallerIdEnabled() {
-  try {
-    const cfgPath = path.join(getUserDataDir(), 'config.json');
-    if (!fs.existsSync(cfgPath)) return false;
-    return JSON.parse(fs.readFileSync(cfgPath, 'utf-8')).caller_id_enabled === true;
-  } catch (_) {
-    return false;
-  }
+  return readConfigFlag(configJsonPath(), 'caller_id_enabled');
 }
 
-// Same sync-read-at-startup pattern as loadAutoDetectMeetingsEnabled(), used
-// to decide whether createTray() should run at all without spawning Python.
+// Decides whether createTray() should run at all without spawning Python.
 function loadShowMenuBarIconEnabled() {
-  try {
-    const cfgPath = path.join(getUserDataDir(), 'config.json');
-    if (!fs.existsSync(cfgPath)) return true;
-    const cfg = JSON.parse(fs.readFileSync(cfgPath, 'utf-8'));
-    return cfg.show_menu_bar_icon !== false;
-  } catch (_) {
-    return true;
-  }
+  return readConfigFlag(configJsonPath(), 'show_menu_bar_icon');
 }
 
-// Sync read of the idle auto-install setting; default ON (matches the Python
-// config default). Read fresh on every gate tick so flipping the toggle in
-// Settings takes effect without a relaunch. Same no-subprocess JSON read as the
-// helpers above — the source of truth is the Python config.
+// Read fresh on every update-gate tick so flipping the toggle in Settings takes
+// effect without a relaunch.
 function loadAutoInstallWhenIdleEnabled() {
-  try {
-    const cfgPath = path.join(getUserDataDir(), 'config.json');
-    if (!fs.existsSync(cfgPath)) return true;
-    const cfg = JSON.parse(fs.readFileSync(cfgPath, 'utf-8'));
-    return cfg.auto_install_when_idle !== false;
-  } catch (_) {
-    return true;
-  }
+  return readConfigFlag(configJsonPath(), 'auto_install_when_idle');
 }
 
 // Global recording state management
@@ -6344,6 +6592,13 @@ async function processNextInQueue() {
     // so it can rescue the meeting if the batch transcription comes back empty.
     if (currentProcessingJob.liveTranscriptFile && fs.existsSync(currentProcessingJob.liveTranscriptFile)) {
       processArgs.push('--live-transcript', currentProcessingJob.liveTranscriptFile);
+      // Instant transcript: a new recording with a live transcript gets its
+      // notes from that transcript first (seconds after Stop), then the batch
+      // re-transcription refines the transcript and notes in the background.
+      // The backend prints EARLY_SAVED:<note> once the early note is on disk.
+      if (currentProcessingJob.summaryFile && !currentProcessingJob.appendTo) {
+        processArgs.push('--early-summary');
+      }
     }
     // Continue-recording: fold this segment into an existing note instead of
     // creating a new one. The backend appends the transcript, marks the note
@@ -6430,6 +6685,20 @@ async function processNextInQueue() {
               provider: summarizationCtx.provider,
               processing_bucket: durationBucket((Date.now() - summarizationStartMs) / 1000),
             });
+          } else if (line.startsWith('EARLY_SAVED:') || line === 'EARLY_SUMMARY_FAILED') {
+            // The early (live-transcript) note was written, or its summary
+            // failed and the full pass will stream one instead. Either way the
+            // note's StreamingView must drop the early stream and re-read the
+            // note from disk; the job itself keeps running (refine pass).
+            const early = line.startsWith('EARLY_SAVED:');
+            sendDebugLog(early ? 'Early note saved from the live transcript; refining in the background' : 'Early summary failed; continuing with the full pass');
+            if (mainWindow && !mainWindow.isDestroyed()) {
+              mainWindow.webContents.send('note-updated', {
+                sessionName: currentProcessingJob.sessionName,
+                summaryFile: currentProcessingJob.summaryFile,
+                refining: early,
+              });
+            }
           } else if (line.startsWith('SAVED:')) {
             savedSummaryFile = line.slice(6).trim();
             sendDebugLog(`Summary saved: ${savedSummaryFile}`);
@@ -6715,21 +6984,21 @@ async function snapshotLiveTranscriptForFallback(sessionName) {
     // would duplicate sentences in the fallback transcript. The non-final
     // tail is a preview of speech that a final segment will (or already did)
     // cover, so dropping it loses nothing but the duplication.
-    const text = (liveTranscriptState.segments || [])
-      .filter(s => s && s.isFinal && s.text)
-      .map(s => String(s.text).trim())
-      .filter(Boolean)
-      .join('\n\n')
-      .trim();
-    if (text.length < LIVE_TRANSCRIPT_FALLBACK_MIN_CHARS) {
+    // The snapshot keeps each final segment's speaker + timestamps (JSON, see
+    // live-transcript-format.js) so Python can summarise it early and, on the
+    // fallback path, save it with the same You/Others labels as the batch note.
+    const finals = finalLiveSegments(liveTranscriptState.segments);
+    const { plainText } = formatLiveTranscript(finals);
+    if (plainText.length < LIVE_TRANSCRIPT_FALLBACK_MIN_CHARS) {
       return null;
     }
     // Write to the OS temp dir (cross-platform) with a unique name so
-    // overlapping recordings can't clobber each other's snapshot.
+    // overlapping recordings can't clobber each other's snapshot. The .txt
+    // name is kept so the orphan sweep (live-snapshot-sweep.js) still matches.
     const fileName = `stenoai-live-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.txt`;
     const filePath = path.join(os.tmpdir(), fileName);
-    fs.writeFileSync(filePath, text, 'utf-8');
-    sendDebugLog(`Captured live transcript fallback (${text.length} chars): ${filePath}`);
+    fs.writeFileSync(filePath, buildLiveSnapshot(finals), 'utf-8');
+    sendDebugLog(`Captured live transcript fallback (${plainText.length} chars, ${finals.length} segments): ${filePath}`);
     return filePath;
   } catch (e) {
     sendDebugLog(`Failed to snapshot live transcript fallback: ${e.message}`);
@@ -6748,16 +7017,16 @@ function summaryFileForAudio(audioFilePath) {
   return path.join(getOutputDir(), `${stem}_summary.md`);
 }
 
-// Finalised live-transcript text for the current session (mirrors the snapshot
-// filter — final segments only, joined). '' when there's nothing usable.
-function liveTranscriptTextForPlaceholder(sessionName) {
-  if (!liveTranscriptState || liveTranscriptState.sessionName !== sessionName) return '';
-  return (liveTranscriptState.segments || [])
-    .filter((s) => s && s.isFinal && s.text)
-    .map((s) => String(s.text).trim())
-    .filter(Boolean)
-    .join('\n\n')
-    .trim();
+// Finalised live transcript for the current session, formatted like the
+// batch note's transcript (speaker labels + timestamps when both channels
+// spoke; see live-transcript-format.js). text is '' when there's nothing usable.
+function liveTranscriptForPlaceholder(sessionName) {
+  if (!liveTranscriptState || liveTranscriptState.sessionName !== sessionName) {
+    return { text: '', isDiarised: false };
+  }
+  const { plainText, diarisedText, isDiarised } =
+    formatLiveTranscript(finalLiveSegments(liveTranscriptState.segments));
+  return { text: (isDiarised ? diarisedText : plainText) || '', isDiarised };
 }
 
 // Write the instant-stop placeholder note atomically. `processing: true` marks
@@ -6765,14 +7034,14 @@ function liveTranscriptTextForPlaceholder(sessionName) {
 // drops the flag), and a failure/startup sweep clears it otherwise. Always
 // `notes_generated: false` — a valid transcript-only note is the correct
 // fallback if the batch pass never completes (the user can Generate notes).
-function writeInstantPlaceholderNote({ summaryFile, name, transcriptText, notesText }) {
+function writeInstantPlaceholderNote({ summaryFile, name, transcriptText, isDiarised, notesText }) {
   const yamlQuote = (s) =>
     '"' + String(s).replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, '\\n').replace(/\r/g, '') + '"';
   const lines = [
     '---',
     `title: ${yamlQuote(name)}`,
     `date: ${yamlQuote(new Date().toISOString())}`,
-    'is_diarised: false',
+    `is_diarised: ${isDiarised ? 'true' : 'false'}`,
     'is_live_transcript: true',
     'processing: true',
     'notes_generated: false',
@@ -6808,17 +7077,23 @@ function clearNoteProcessingFlag(summaryFile) {
     if (parts.length < 3) return;
     const frontmatter = parts[1];
     const body = parts.slice(2).join('---');
+    // `refining` is the early-note state (summary written from the live
+    // transcript, batch refine still running): clearing it leaves a valid
+    // note WITH notes, so only a cleared `processing` placeholder (which has
+    // no summary) gets notes_generated: false.
     let removed = false;
+    let removedProcessing = false;
     let sawNotesGenerated = false;
     const kept = [];
     for (const line of frontmatter.split('\n')) {
       const key = line.slice(0, line.indexOf(':')).trim();
-      if (key === 'processing') { removed = true; continue; }
+      if (key === 'processing') { removed = true; removedProcessing = true; continue; }
+      if (key === 'refining') { removed = true; continue; }
       if (key === 'notes_generated') sawNotesGenerated = true;
       kept.push(line);
     }
     if (!removed) return;
-    if (!sawNotesGenerated) {
+    if (removedProcessing && !sawNotesGenerated) {
       const at = kept[kept.length - 1] === '' ? kept.length - 1 : kept.length;
       kept.splice(at, 0, 'notes_generated: false');
     }
@@ -6848,7 +7123,7 @@ function noteFrontmatterHasProcessing(filePath) {
     if (!head.startsWith('---')) return false;
     const end = head.indexOf('\n---', 3);
     const frontmatter = end === -1 ? head : head.slice(0, end);
-    return /(^|\n)processing:\s*true\s*(\n|$)/.test(frontmatter);
+    return /(^|\n)(processing|refining):\s*true\s*(\n|$)/.test(frontmatter);
   } catch {
     return false;
   } finally {
@@ -7328,7 +7603,7 @@ ipcMain.handle('stop-recording-ui', async (event) => {
       if (currentRecordingAppendTarget) {
         instantSummaryFile = currentRecordingAppendTarget;
       } else if (loadTranscriptionEngine() === 'parakeet' && activeSysAudioSummaryFile) {
-        const transcriptText = liveTranscriptTextForPlaceholder(sessionName);
+        const { text: transcriptText, isDiarised } = liveTranscriptForPlaceholder(sessionName);
         const notesFile = userNotesFilePath(getOutputDir(), sessionName);
         let notesText = '';
         try {
@@ -7339,6 +7614,7 @@ ipcMain.handle('stop-recording-ui', async (event) => {
             summaryFile: activeSysAudioSummaryFile,
             name: sessionName,
             transcriptText,
+            isDiarised,
             notesText,
           });
           instantSummaryFile = activeSysAudioSummaryFile;
@@ -8072,7 +8348,7 @@ async function handleMicEvent(line) {
   // Auto-record (#463, opt-in): start at once instead of asking. Focus stays
   // where it is, so an unattended start doesn't pull the user out of the call
   // they are joining; the toast after capture starts says what happened.
-  if (loadAutoRecordMeetingsEnabled(path.join(getUserDataDir(), 'config.json'))) {
+  if (loadAutoRecordMeetingsEnabled(configJsonPath())) {
     // One unattended start at a time: a second detection before the first
     // recording has started would otherwise re-point auto-stop and the toast.
     if (autoStarts.begin({ appName, calendarTitle: calEvent?.title }) === null) {
@@ -8925,6 +9201,8 @@ registerFoldersIpc({
 });
 
 // Obsidian vault sync IPC (#413): config toggle + vault picker + conflicts read.
+registerRecipesIpc({ ipcMain, recipesPath: () => path.join(getUserDataDir(), 'recipes.json') });
+
 registerObsidianIpc({
   ipcMain,
   runPythonScript,
@@ -8932,6 +9210,166 @@ registerObsidianIpc({
   getMainWindow: () => mainWindow,
   obsidianSync,
   sendDebugLog,
+});
+
+// Connect page: install surfaces + scope settings for the Steno MCP server.
+const stenoMcpLaunchSpec = () => getStenoMcpLaunchSpec({
+  isPackaged: app.isPackaged,
+  execPath: process.execPath,
+  resourcesPath: process.resourcesPath,
+  appDir: __dirname,
+  userDataDir: getUserDataDir(),
+});
+// The stable launcher MCP clients run (<userData>/bin/steno-mcp[.cmd]); it
+// records this app's executable + server script, so it is (re)written whenever
+// those change. Content-compared, so an unchanged launcher is not rewritten.
+function ensureStenoMcpLauncher() {
+  const spec = stenoMcpLaunchSpec();
+  return ensureStenoMcpLauncherFile({
+    userDataDir: getUserDataDir(),
+    command: spec.command,
+    script: spec.args[0],
+    defaultUserDataDir: process.env.STENOAI_USER_DATA_DIR || null,
+  });
+}
+registerStenoMcpIpc({
+  ipcMain,
+  runPythonScript,
+  shell,
+  launchSpec: stenoMcpLaunchSpec,
+  ensureLauncher: ensureStenoMcpLauncher,
+  getUserDataDir,
+});
+
+// Suggested actions (Connect page -> Turn meetings into actions, and the
+// action cards under a note): remote MCP endpoints the user connects, called
+// only after an explicit Approve. See mcp-actions.js. Created lazily: it
+// needs the user-data dir and safeStorage, which are only safe after ready.
+//
+// Org control hook: a signed-in org's adapter /policy may carry
+//   mcp_actions_enabled: false          -> the feature is off for everyone
+//   mcp_endpoint_allowlist: [url, ...]  -> only these origins / URL prefixes
+//   mcp_local_commands_enabled: bool    -> local stdio servers (default: on, off with an allowlist)
+//   mcp_email_drafts_enabled: false     -> no built-in Email drafts
+// All are re-checked before every call. With a session but no
+// reachable policy, the last good policy (24 h) applies, else actions are
+// off: an org that may have disabled them is never assumed to allow them.
+const ACTIONS_POLICY_TTL_MS = 60 * 1000;
+const ACTIONS_POLICY_STALE_MS = 24 * 60 * 60 * 1000;
+let actionsPolicyCache = null; // { at, value }
+async function getActionsPolicy() {
+  if (!loadOrgSession()) {
+    actionsPolicyCache = null;
+    return { actionsEnabled: true, endpointAllowlist: null, managed: false };
+  }
+  const nowMs = Date.now();
+  if (actionsPolicyCache && nowMs - actionsPolicyCache.at < ACTIONS_POLICY_TTL_MS) return actionsPolicyCache.value;
+  try {
+    const p = await fetchOrgPolicy();
+    const value = {
+      actionsEnabled: p?.mcp_actions_enabled !== false,
+      endpointAllowlist: Array.isArray(p?.mcp_endpoint_allowlist) ? p.mcp_endpoint_allowlist.filter((e) => typeof e === 'string') : null,
+      // Local command servers: allowed unless the org says no; with an
+      // endpoint allowlist they are off unless it says yes (mcp-actions.js).
+      ...(typeof p?.mcp_local_commands_enabled === 'boolean' ? { localCommandsAllowed: p.mcp_local_commands_enabled } : {}),
+      emailDraftsAllowed: p?.mcp_email_drafts_enabled !== false,
+      managed: true,
+    };
+    actionsPolicyCache = { at: nowMs, value };
+    return value;
+  } catch (_) {
+    if (actionsPolicyCache && nowMs - actionsPolicyCache.at < ACTIONS_POLICY_STALE_MS) return actionsPolicyCache.value;
+    return { actionsEnabled: false, endpointAllowlist: [], localCommandsAllowed: false, emailDraftsAllowed: false, managed: true, reason: 'policy-unavailable' };
+  }
+}
+
+// The browser half of an OAuth sign-in. Under e2e (STENOAI_E2E_MCP_OAUTH_AUTOFOLLOW)
+// the mock authorization server redirects straight back, so follow that
+// redirect here instead of opening a browser.
+async function openMcpAuthorizeUrl(authorizeUrl) {
+  if (process.env.STENOAI_E2E === '1' && process.env.STENOAI_E2E_MCP_OAUTH_AUTOFOLLOW === '1') {
+    // Node's fetch, not net.fetch: Chromium hides Location on a manual redirect.
+    const res = await fetch(authorizeUrl, { redirect: 'manual' });
+    const location = res.headers.get('location');
+    if (!location || !location.startsWith('http://127.0.0.1:')) throw new Error('authorize did not redirect to loopback');
+    await fetch(location);
+    return;
+  }
+  await shell.openExternal(authorizeUrl);
+}
+
+function parseLastJsonLine(text) {
+  const lines = String(text || '').split('\n').map((l) => l.trim()).filter((l) => l.startsWith('{'));
+  for (let i = lines.length - 1; i >= 0; i -= 1) {
+    try { return JSON.parse(lines[i]); } catch (_) { /* keep looking */ }
+  }
+  return null;
+}
+
+let mcpActionsService = null;
+function getMcpActionsService() {
+  if (mcpActionsService) return mcpActionsService;
+  mcpActionsService = createActionsService({
+    userDataDir: getUserDataDir(),
+    safeStorage: () => getSafeStorage(),
+    // net.fetch honours the system proxy and trust store, like the adapter calls.
+    fetch: (url, init = {}) => net.fetch(url, { ...init, credentials: 'omit' }),
+    openAuthorizeUrl: openMcpAuthorizeUrl,
+    runSuggest: async (summaryPath, toolsFile) => {
+      // getAiEnv: the configured provider's credentials (cloud key / org
+      // adapter), passed by env exactly like chat and title generation.
+      const out = await runPythonScript('simple_recorder.py', ['suggest-actions', summaryPath, '--tools-file', toolsFile], true, getAiEnv());
+      return parseLastJsonLine(out);
+    },
+    getPolicy: getActionsPolicy,
+    log: (message) => {
+      console.log(message);
+      sendDebugLog(message);
+    },
+    clientInfo: { name: 'Steno', version: app.getVersion() },
+    // Email drafts: only a mailto: URL built by mcp-email.js ever reaches the
+    // OS from here; the renderer never supplies it.
+    openMailto: async (url) => {
+      const parsed = new URL(url);
+      if (parsed.protocol !== 'mailto:' || /[\r\n]/.test(url)) throw new Error('not a mail link');
+      await shell.openExternal(url);
+    },
+    writeClipboard: async (text) => clipboard.writeText(String(text)),
+    confirmLocalCommand,
+  });
+  return mcpActionsService;
+}
+
+// A local MCP server runs a program with the user's permissions, so adding
+// one is confirmed in a native dialog the renderer cannot draw or click: a
+// compromised page cannot turn "add server" into running a program.
+async function confirmLocalCommand({ name, command, args, env }) {
+  // An e2e seam only: a packaged build ignores it whatever it is started with
+  // (ALLOW_E2E_PATH_SEAMS), so an env var can never skip this confirmation.
+  if (ALLOW_E2E_PATH_SEAMS && process.env.STENOAI_E2E_CONFIRM_LOCAL_COMMAND === '1') return true;
+  // Every argument and each variable's value, nothing truncated away silently
+  // (local-command-confirm.js): what the user confirms is what will run.
+  const { message, detail } = require('./local-command-confirm').describeLocalCommand({ name, command, args, env });
+  const options = {
+    type: 'warning',
+    buttons: ['Cancel', 'Run on this computer'],
+    defaultId: 0,
+    cancelId: 0,
+    noLink: true,
+    message,
+    detail,
+  };
+  const { response } = mainWindow && !mainWindow.isDestroyed()
+    ? await dialog.showMessageBox(mainWindow, options)
+    : await dialog.showMessageBox(options);
+  return response === 1;
+}
+
+registerMcpActionsIpc({
+  ipcMain,
+  getService: getMcpActionsService,
+  validateMeetingFilePath,
+  log: sendDebugLog,
 });
 
 ipcMain.handle('get-ai-prompts', async () => {
@@ -9752,11 +10190,19 @@ ipcMain.handle('set-notifications', async (event, enabled) => {
 // Both the persisted preference AND the live registration state — the UI needs
 // to know if the shortcut is enabled but failed to register (another app owns
 // the accelerator) so it can surface a hint.
-ipcMain.handle('get-record-hotkey', () => ({
-  success: true,
-  enabled: recordHotkeyEnabledFromDisk(),
-  registered: globalShortcut.isRegistered(RECORD_HOTKEY_ACCEL),
-}));
+function recordHotkeyState() {
+  const custom = recordHotkey.customAcceleratorFromConfig(readConfigFile(configJsonPath()));
+  const accelerator = recordHotkey.effectiveAccelerator(custom, process.env.STENOAI_E2E_RECORD_ACCEL);
+  return {
+    enabled: recordHotkeyEnabledFromDisk(),
+    registered: registeredRecordAccel === accelerator && globalShortcut.isRegistered(accelerator),
+    accelerator,
+    customAccelerator: custom,
+    defaultAccelerator: recordHotkey.effectiveAccelerator(null, process.env.STENOAI_E2E_RECORD_ACCEL),
+  };
+}
+
+ipcMain.handle('get-record-hotkey', () => ({ success: true, ...recordHotkeyState() }));
 
 ipcMain.handle('set-record-hotkey', async (event, enabled) => {
   try {
@@ -9778,15 +10224,48 @@ ipcMain.handle('set-record-hotkey', async (event, enabled) => {
     // Live-apply so the change takes effect without a relaunch. Idempotent and
     // never unregisterAll() — see applyRecordHotkey (guards on isRegistered() so
     // a repeat-enable can't report a spurious failure, and only ever touches
-    // this specific accelerator).
+    // this app's own accelerator).
     const registered = applyRecordHotkey(enabled);
     if (enabled && !registered) {
-      console.error(`Failed to register global hotkey: ${RECORD_HOTKEY_ACCEL}`);
+      console.error(`Failed to register global hotkey: ${recordHotkeyAccelFromDisk()}`);
     }
-    return { success: true, enabled, registered };
+    return { success: true, ...recordHotkeyState(), enabled, registered };
   } catch (error) {
     sendDebugLog(`Error setting record hotkey: ${error.message}`);
     return { success: false, error: error.message };
+  }
+});
+
+// Change the record shortcut (null = the platform default). The new
+// accelerator is validated here, then registered BEFORE it is saved: when
+// another app already owns it, the old shortcut stays registered and saved and
+// the renderer shows "already in use". With the shortcut turned off it is only
+// saved, since nothing is registered to test it against.
+ipcMain.handle('set-record-hotkey-accelerator', async (event, value) => {
+  try {
+    let accel = null;
+    if (value !== null) {
+      accel = recordHotkey.normalizeAccelerator(value);
+      if (!accel) return { success: false, error_code: 'invalid', error: 'Use at least one modifier key, like Control or Alt, plus one other key.' };
+    }
+    const target = recordHotkey.effectiveAccelerator(accel, process.env.STENOAI_E2E_RECORD_ACCEL);
+    const enabled = recordHotkeyEnabledFromDisk();
+    const previous = recordHotkeyAccelFromDisk();
+    if (enabled && !applyRecordHotkey(true, target)) {
+      applyRecordHotkey(true, previous);
+      return { success: false, error_code: 'in-use', error: 'That shortcut is already in use by another app.', ...recordHotkeyState() };
+    }
+    const result = await runPythonScript('simple_recorder.py', ['set-record-hotkey-accelerator', accel || 'default']);
+    const jsonMatch = result.match(/\{.*\}/s);
+    const persisted = jsonMatch ? JSON.parse(jsonMatch[0]) : null;
+    if (!persisted || persisted.success !== true) {
+      if (enabled) applyRecordHotkey(true, previous);
+      return { success: false, error_code: 'save-failed', error: 'Could not save the record shortcut.' };
+    }
+    return { success: true, ...recordHotkeyState() };
+  } catch (error) {
+    sendDebugLog(`Error setting record shortcut: ${error.message}`);
+    return { success: false, error_code: 'save-failed', error: 'Could not save the record shortcut.' };
   }
 });
 

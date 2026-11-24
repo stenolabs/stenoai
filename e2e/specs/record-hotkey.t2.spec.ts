@@ -27,12 +27,19 @@ type StenoWindow = Window & {
       setRecordHotkey: (
         v: boolean,
       ) => Promise<{ success: boolean; enabled?: boolean; registered?: boolean }>;
+      setRecordHotkeyAccelerator: (accel: string | null) => Promise<{
+        success: boolean;
+        error_code?: string;
+        accelerator?: string;
+        customAccelerator?: string | null;
+        registered?: boolean;
+      }>;
     };
   };
 };
 
-const isRegistered = (app: import('@playwright/test').ElectronApplication) =>
-  app.evaluate(({ globalShortcut }, accel) => globalShortcut.isRegistered(accel), ACCEL);
+const isRegistered = (app: import('@playwright/test').ElectronApplication, accel = ACCEL) =>
+  app.evaluate(({ globalShortcut }, a) => globalShortcut.isRegistered(a), accel);
 
 test('record_hotkey_enabled gates the real global-shortcut registration; toggle live-applies + persists; real dir untouched', async ({
   launchApp,
@@ -72,4 +79,41 @@ test('record_hotkey_enabled gates the real global-shortcut registration; toggle 
 
   // Keystone: the real user-data dir is byte-for-byte untouched.
   expect(fileSig(realUserDataDir())).toBe(realDirBefore);
+});
+
+test('a custom record shortcut re-registers live, persists, rejects junk, and Reset restores the default', async ({
+  launchApp,
+  userDataDir,
+}) => {
+  const CUSTOM = 'CommandOrControl+Alt+Shift+F10';
+  writeUserConfig(userDataDir, {});
+  const { app, page } = await launchApp({ env: { STENOAI_E2E_RECORD_ACCEL: ACCEL } });
+  expect(await isRegistered(app)).toBe(true);
+
+  const changed = await page.evaluate(
+    (a) => (window as StenoWindow).stenoai.settings.setRecordHotkeyAccelerator(a),
+    CUSTOM,
+  );
+  expect(changed).toMatchObject({ success: true, accelerator: CUSTOM, customAccelerator: CUSTOM, registered: true });
+  expect(await isRegistered(app, CUSTOM)).toBe(true);
+  expect(await isRegistered(app)).toBe(false); // the old one is released
+  await expect.poll(() => readUserConfig(userDataDir).record_hotkey_accelerator).toBe(CUSTOM);
+
+  // No modifier (or Shift only) is refused before anything is touched.
+  for (const bad of ['F10', 'Shift+R', 'Control+Nope']) {
+    const res = await page.evaluate(
+      (a) => (window as StenoWindow).stenoai.settings.setRecordHotkeyAccelerator(a),
+      bad,
+    );
+    expect(res).toMatchObject({ success: false, error_code: 'invalid' });
+  }
+  expect(await isRegistered(app, CUSTOM)).toBe(true);
+
+  const reset = await page.evaluate(() =>
+    (window as StenoWindow).stenoai.settings.setRecordHotkeyAccelerator(null),
+  );
+  expect(reset).toMatchObject({ success: true, accelerator: ACCEL, customAccelerator: null, registered: true });
+  expect(await isRegistered(app)).toBe(true);
+  expect(await isRegistered(app, CUSTOM)).toBe(false);
+  await expect.poll(() => readUserConfig(userDataDir).record_hotkey_accelerator).toBe(null);
 });

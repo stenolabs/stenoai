@@ -1,0 +1,63 @@
+---
+title: "Editing notes"
+description: "Click any part of a note to edit it. Changes save automatically, and bullets behave the way you expect."
+icon: "pen"
+---
+
+Every note Steno writes is editable in place. There is no edit mode and no Save button: click a section, type, and Steno saves your changes as you go.
+
+## Edit a note
+
+<Steps>
+  <Step title="Open the note">
+    Open a meeting from the sidebar.
+  </Step>
+  <Step title="Click what you want to change">
+    Click the **Summary**, a topic under **Key topics**, a bullet under **Key points**, or an item under **Action items**. The field highlights while you edit it.
+  </Step>
+  <Step title="Type">
+    Your changes save automatically. Next to the note's actions you'll see **Saving…**, then **Saved**.
+  </Step>
+</Steps>
+
+If a save fails, Steno shows **Couldn't save** with a **Retry** button.
+
+## Bullets and topics
+
+In **Key points** and **Action items**:
+
+- **Enter** starts a new bullet. If the cursor is mid-bullet, the text after it moves to the new bullet.
+- **Backspace** at the start of an empty bullet removes it. At the start of a bullet with text, it joins the bullet onto the one above.
+- **Pasting several lines** creates one bullet per line. Existing markers such as `-`, `*`, `•` or `1.` are removed.
+
+In **Key topics**, click **Add topic** to add one. Enter in a topic title moves to its notes. Backspace in a topic with an empty title and empty notes removes it. Every topic needs a title before it can be saved.
+
+Note fields can't contain Markdown headings, and single-line fields can't contain line breaks. Steno tells you if a change can't be saved for this reason.
+
+## Your own notes
+
+The **My notes** tab holds the notes you typed yourself, during or after the meeting. It is always editable and saves automatically, separately from the AI-written note.
+
+## Reports from cookbooks
+
+A report generated from a [cookbook](/features/cookbooks) other than Standard is edited as one block of Markdown. Click the report (or focus it and press Enter) to edit it; click away to see it rendered again. It saves automatically like the rest of the note.
+
+## Regenerating after you edit
+
+If you click **Regenerate notes** on a note you've edited, Steno asks before replacing your edits. Choose **Keep my edits** to cancel. If you go ahead, your edited version stays available as "Standard" with a timestamp, in the menu next to Summary.
+
+## When a note is read-only
+
+You can't edit a note while Steno is still writing it:
+
+- while notes or a report are being generated or regenerated;
+- while the transcript is being re-transcribed or refined (see [Instant transcripts](/features/instant-transcripts));
+- while a recording is still adding to the note.
+
+Steno shows "Steno is still updating this note. You can edit it once that finishes." If you have unsaved changes when this happens, they are saved as soon as Steno finishes.
+
+---
+
+<Accordion title="Where are my edits saved?">
+In the note's Markdown file in Steno's data folder, the same file Steno wrote. Edits stay on your device.
+</Accordion>
