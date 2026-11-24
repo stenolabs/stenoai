@@ -2,6 +2,7 @@
 import '../index.css'
 import '../enterprise.css'
 import '../responsive.css'
+import '../epilogue.css'
 
 const {
   title,
@@ -13,6 +14,8 @@ const {
 } = Astro.props
 
 const isHome = Astro.url.pathname === '/'
+// Inter and JetBrains Mono only feed the drawn app screen on the home page.
+const fontsUrl = 'https://fonts.googleapis.com/css2?family=Epilogue:wght@400..600' + (isHome ? '&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500' : '') + '&display=swap'
 
 const softwareApplicationJsonLd = {
   '@context': 'https://schema.org',
@@ -77,18 +80,18 @@ const allStructuredData = isHome ? [websiteJsonLd, softwareApplicationJsonLd, ..
     <link
       rel="preload"
       as="style"
-      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;450;500;600&family=JetBrains+Mono:wght@400;500&display=swap"
+      href={fontsUrl}
     />
     <link
       rel="stylesheet"
-      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;450;500;600&family=JetBrains+Mono:wght@400;500&display=swap"
+      href={fontsUrl}
       media="print"
       onload="this.media='all'"
     />
     <noscript>
       <link
         rel="stylesheet"
-        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;450;500;600&family=JetBrains+Mono:wght@400;500&display=swap"
+        href={fontsUrl}
       />
     </noscript>
 

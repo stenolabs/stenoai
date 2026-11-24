@@ -61,8 +61,8 @@
   --shadow-demo: 0 0 0 1px rgba(27, 27, 25, 0.06), 0 0 40px rgba(27, 27, 25, 0.12), 0 16px 40px -8px rgba(27, 27, 25, 0.16);
 
   --font-serif: 'Ovo', Georgia, serif;
-  --font-sans:  'Inter', -apple-system, 'Segoe UI', 'Helvetica Neue', sans-serif;
-  --font-mono:  'JetBrains Mono', 'SF Mono', 'Menlo', 'Consolas', monospace;
+  --font-sans:  'Epilogue', 'Epilogue Fallback', -apple-system, 'Segoe UI', 'Helvetica Neue', sans-serif;
+  --font-mono:  'Epilogue', 'Epilogue Fallback', -apple-system, 'Segoe UI', 'Helvetica Neue', sans-serif;
 
   --ease: cubic-bezier(0.2, 0, 0, 1);
   --dur-fast: 120ms;
