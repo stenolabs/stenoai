@@ -4,7 +4,8 @@
 // smaller side, d = progress at which the zone settles to data-later (the level earlier zones keep once the next one is on).
 // Progress follows the same rules as scroll-seq.js: inside a pinned .stage it follows the stage's scroll length; otherwise (phones, short windows,
 // figures that are not pinned) it follows the element's own travel through the screen (data-flow-end = fraction of the viewport the element's bottom
-// reaches, or the bottom of data-flow-target). data-items + zone index: step highlight of the matching cards (is-lit, is-done).
+// reaches, or the bottom of data-flow-target). data-flow-end-top lets the artwork finish while its top is still in view.
+// The matching cards continue to highlight against data-flow-target (is-lit, is-done).
 // Reduced motion and data saver: no canvas, the fully lit picture (the <img>) stays. Nothing is fetched before 1.5 viewports; it decodes off the main thread.
 import { FLOW, PHONE, REDUCED, MAXPX, checkFit, clamp, decodeBlob, fitTests, still, syncMode, whenNear } from './scroll-env.js';
 
@@ -15,10 +16,12 @@ function init(el) {
   const canvas = el.querySelector('canvas'), ctx = canvas.getContext('2d');
   const stage = el.closest('.stage'), sec = el.closest('section');
   let zones = JSON.parse(el.dataset.zones); const later = el.dataset.later === undefined ? 1 : +el.dataset.later;
+  const flowEndTop = el.dataset.flowEndTop;
   const items = el.dataset.items ? [...sec.querySelectorAll(el.dataset.items)] : [];
   const A = (k) => (PHONE.matches && el.dataset[k + 'Phone']) || el.dataset[k];
   let dark = null, lit = null, tiles = [], started = false, visible = false, near = false, loadedKey = '', loadP = null;
   let ground = null, cur = 0, target = 0, raf = 0, last = 0, drawn = -1, W = 0, H = 0, dpr = 1, dx = 0, dy = 0, dw = 0, dh = 0;
+  let activeItem = -2;
   const M = { pin: false, sTop: 0, sH: 0, pH: 1, top: 0, end: 0, vh: 1 };
 
   function releaseTiles() {
@@ -47,6 +50,7 @@ function init(el) {
       M.pH = stage.firstElementChild?.offsetHeight || innerHeight;
     }
     reserve();
+    activeItem = -2;
     W = r.width; H = r.height;
     dpr = Math.min(devicePixelRatio || 1, 2, Math.sqrt(MAXPX / Math.max(1, W * H)));
     const cw = Math.round(W * dpr), ch = Math.round(H * dpr);
@@ -94,10 +98,11 @@ function init(el) {
       },
     });
   }
-  function progress() {
+  function progress(forItems = false) {
     if (M.pin) return clamp((scrollY - M.sTop) / Math.max(1, M.sH - M.pH));
     const f = +(el.dataset.flowStart || 0.85), e = +(el.dataset.flowEnd || 0.45);
-    const s0 = M.top - f * M.vh, s1 = M.end - e * M.vh;
+    const s0 = M.top - f * M.vh;
+    const s1 = flowEndTop !== undefined && !forItems ? M.top - Number(flowEndTop) * M.vh : M.end - e * M.vh;
     return clamp((scrollY - s0) / (s1 - s0));
   }
   function layout() { // the picture's rectangle inside the canvas (CSS px)
@@ -141,6 +146,8 @@ function init(el) {
     if (!items.length) return;
     let k = M.pin ? 0 : -1;
     zones.forEach((z, i) => { if (p >= z.a + (z.b - z.a) * 0.4) k = i; });
+    if (!M.pin && k === activeItem) return;
+    activeItem = k;
     items.forEach((e, i) => {
       e.classList.toggle('is-lit', i === k);
       e.classList.toggle('is-done', i < k);
@@ -149,7 +156,7 @@ function init(el) {
   }
   function paint(force) {
     const p = cur;
-    syncItems(p);
+    if (flowEndTop === undefined || M.pin) syncItems(p);
     if (!dark || !lit || !W || !H || !canvas.width || !canvas.height) return;
     const key = p.toFixed(4) + '|' + W + 'x' + H; if (!force && key === drawn) return; drawn = key;
     ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -175,7 +182,13 @@ function init(el) {
     if (Math.abs(target - cur) < 0.0004) { cur = target; raf = 0; paint(); return; } // settled: the loop stops
     paint(); raf = requestAnimationFrame(tick);
   }
-  function onScroll() { if (!visible || still()) return; target = progress(); if (!raf) { last = performance.now(); raf = requestAnimationFrame(tick); } }
+  function onScroll() {
+    if (still()) return;
+    if (flowEndTop !== undefined && !M.pin) syncItems(progress(true));
+    if (!visible) return;
+    target = progress();
+    if (!raf) { last = performance.now(); raf = requestAnimationFrame(tick); }
+  }
   function load() {
     const k = (PHONE.matches ? 'p' : 'd') + A('dark');
     if (loadedKey === k && (dark || loadP)) return loadP || Promise.resolve();
@@ -200,8 +213,8 @@ function init(el) {
   function remeasure() {
     measure();
     if (still()) { reserve(false); return; }
+    if (items.length && (!visible || (flowEndTop !== undefined && !M.pin))) syncItems(progress(true));
     if (visible && dark) { target = progress(); if (!raf) { cur = target; paint(true); } }
-    else if (items.length) syncItems(progress());
   }
 
   if (items.length && !still()) items[0].classList.add('is-lit');
