@@ -24,6 +24,9 @@
 .ent-flow svg { display: block; width: 100%; height: auto; overflow: visible; }
 .ent-flow .ph { display: none; }
 .ent-flow rect, .ent-flow path { fill: none; stroke: var(--fg-1); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.ent-flow [data-flow-line] { stroke: var(--fg-2); }
+.ent-flow .flow-highlight { stroke-width: 2; stroke-dasharray: 1; stroke-dashoffset: 1; }
+@media (prefers-reduced-motion: reduce) { .ent-flow .flow-highlight { display: none; } }
 .ent-flow .dash { stroke: var(--fg-2); stroke-dasharray: 3 6; }
 .ent-flow text { fill: var(--fg-1); font-family: var(--font-sans); }
 .ent-flow .tm { font: 11px var(--font-mono); letter-spacing: .1em; text-transform: uppercase; fill: var(--fg-2); }

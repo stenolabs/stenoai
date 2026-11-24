@@ -3,8 +3,6 @@ import BaseLayout from '../layouts/BaseLayout.astro';
 import { Nav } from '../sections/Nav';
 import Footer from '../sections/Footer.astro';
 import { ArrowDown, ArrowUpRight } from 'lucide-react';
-import AppleIcon from '../components/icons/AppleIcon.astro';
-import WindowsIcon from '../components/icons/WindowsIcon.astro';
 import { MAC_DMG_URL, WINDOWS_EXE_URL } from '../lib/downloads';
 const title = 'Download StenoAI: macOS & Windows';
 const description = 'Choose StenoAI for Apple Silicon macOS or Windows. Free, open-source meeting notes with local AI processing.';
@@ -18,14 +16,12 @@ const description = 'Choose StenoAI for Apple Silicon macOS or Windows. Free, op
       <p class="download-intro">The open-source app. On your own device.<br />Choose your platform to get started.</p>
       <div class="download-options">
         <article>
-          <AppleIcon size={30} />
           <h2>macOS</h2>
           <p>Apple Silicon · macOS 14.4 or later</p>
           <a href={MAC_DMG_URL} class="mission-button mission-button-dark" data-track="download" data-location="download_page" data-arch="arm64">Download for macOS <ArrowDown size={16} aria-hidden="true" /></a>
           <span>For M1 and later Macs.</span>
         </article>
         <article>
-          <WindowsIcon size={30} />
           <h2>Windows <span>Alpha</span></h2>
           <p>Windows 10 / 11 · x64</p>
           <a href={WINDOWS_EXE_URL} class="mission-button mission-button-dark" data-track="download" data-location="download_page" data-arch="win-x64">Download for Windows <ArrowDown size={16} aria-hidden="true" /></a>
@@ -63,7 +59,7 @@ const description = 'Choose StenoAI for Apple Silicon macOS or Windows. Free, op
   .download-intro { margin-top: 25px; font-size: 16px; color: var(--fg-2); line-height: 1.7; }
   .download-options { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; margin-top: 45px; }
   .download-options article { border: 1px solid var(--border-strong); padding: 30px; background: var(--surface-sunken); }
-  .download-options h2 { font-size: 30px; margin-top: 25px; display: flex; align-items: center; gap: 15px; }
+  .download-options h2 { font-size: 30px; display: flex; align-items: center; gap: 15px; }
   .download-options h2 span { font: 9px var(--font-mono); text-transform: uppercase; letter-spacing: .1em; border: 1px solid var(--border-strong); padding: 6px 8px; }
   .download-options p { color: var(--fg-2); font-size: 13px; margin: 15px 0 25px; }
   .download-options article > span { display: block; margin-top: 18px; font-size: 11px; color: var(--fg-2); }

@@ -12,8 +12,9 @@ if (!document.getElementById('pc-css')) {
 }
 const REDUCED = matchMedia('(prefers-reduced-motion: reduce)');
 const main = document.querySelector('main');
-const first = main?.querySelector('.mission-section-top')?.closest('section'); // the first section after the hero
-if (main && first && !navigator.connection?.saveData) {
+const first = main?.querySelector('#readers');
+const heading = first?.querySelector('h2');
+if (main && first && heading && !navigator.connection?.saveData) {
   // Asset pixels: plug 380x79 lying right (cable axis row 42.36, tip x 374.7, 21px lead), side-view socket 250x200 (housing lip x 1.78, housing centre row 99.8; the plug's boot shoulder is at x 242.3),
   // wall clip 86x96 (cable axis x 43).
   const A = { plugLen: 380, plugH: 79, axis: 42.36, tip: 374.7, lead: 21, sockW: 250, sockH: 200, lip: 1.78, row: 99.82, shoulder: 242.3, clipH: 96, clipW: 86, clipAxis: 43 };
@@ -87,7 +88,7 @@ if (main && first && !navigator.connection?.saveData) {
     const kp = (phone ? 120 : tablet ? 160 : 220) / A.plugLen, cw = phone ? 6.6 : tablet ? 8.8 : 12, kc = cw / 44, R = phone ? 36 : tablet ? 44 : 60;
     const cx = Math.round(phone ? 10 : L - gut / 2);
     const yStart = Math.round(abs(main).t);
-    const bandTop = prev ? contentBottom(prev) : yStart, eye = first.querySelector('.mission-section-top'), bandBot = abs(eye).t, line = abs(first).t, yb = Math.round(line > bandTop + 30 && line < bandBot - 30 ? line : (bandTop + bandBot) / 2); // the cable meets the plate on the band's tone-change line
+    const bandTop = prev ? contentBottom(prev) : yStart, bandBot = abs(heading).t, line = abs(first).t, yb = Math.round(line > bandTop + 30 && line < bandBot - 30 ? line : (bandTop + bandBot) / 2); // the cable meets the plate on the band's tone-change line
     const mKey = `${innerWidth}:${vh}:${Math.round(L)}:${yStart}:${yb}:${Math.round(bandTop)}:${Math.round(bandBot)}`;
     if (G && G.mKey === mKey) return;
     // No clear band: no cable rather than a crowded one.

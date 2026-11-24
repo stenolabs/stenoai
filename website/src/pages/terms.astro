@@ -1,5 +1,7 @@
 ---
 import BaseLayout from "../layouts/BaseLayout.astro";
+import { Nav } from "../sections/Nav";
+import Footer from "../sections/Footer.astro";
 ---
 
 <BaseLayout
@@ -8,25 +10,6 @@ import BaseLayout from "../layouts/BaseLayout.astro";
   canonical="https://stenoai.co/terms/"
 >
   <style>
-    nav.legal-nav {
-      position: sticky; top: 0; z-index: 40;
-      border-bottom: 1px solid var(--border-subtle);
-      background: var(--page);
-    }
-    nav.legal-nav .inner {
-      max-width: 800px; margin: 0 auto;
-      padding: 16px 24px;
-      display: flex; align-items: center; justify-content: space-between;
-    }
-    .brand { display: flex; align-items: center; gap: 10px; text-decoration: none; color: var(--fg-1); }
-    .brand-mark { width: 20px; height: 20px; }
-    .brand-name {
-      font-family: var(--font-serif);
-      font-size: 17px; font-weight: 400;
-      letter-spacing: -0.01em;
-    }
-    .back { font-size: 13px; color: var(--fg-2); text-decoration: none; }
-    .back:hover { color: var(--fg-1); opacity: 1; }
     main.legal { max-width: 800px; margin: 0 auto; padding: 56px 24px 80px; }
     main.legal h1 {
       font-family: var(--font-sans);
@@ -46,26 +29,9 @@ import BaseLayout from "../layouts/BaseLayout.astro";
     main.legal strong { color: var(--fg-1); font-weight: 600; }
     main.legal ul { color: var(--fg-2); padding-left: 20px; display: flex; flex-direction: column; gap: 6px; }
     main.legal a { text-decoration: underline; }
-    footer.legal-footer {
-      border-top: 1px solid var(--border-subtle);
-      padding: 24px;
-      text-align: center;
-      font-size: 13px;
-      color: var(--fg-muted);
-    }
   </style>
 
-  <nav class="legal-nav">
-    <div class="inner">
-      <a href="/" class="brand">
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 450 450" class="brand-mark" fill="none" stroke="currentColor" stroke-width="12" aria-hidden="true">
-          <path d="M209.447 166.845C216.663 178.772 218.44 193.966 219.417 213.035C219.422 213.129 219.42 213.225 219.412 213.319C214.789 263.829 206.174 314.234 212.902 339.223C216.552 352.776 220.264 365.163 222.752 376.169C223.295 378.571 226.99 378.494 227.504 376.086C230.284 363.077 235.173 350.435 238.631 339.223C244.283 320.903 234.784 262.669 231.647 213.178C232.645 196.737 231.398 182.538 241.126 166.845M198.971 149.906C168.786 114.986 141.601 89.6233 93.21 90.3707C44.8194 91.1182 56.9695 115.86 74.0034 131.971C91.0372 148.081 141.627 159.331 184.18 158.423C165.298 159.389 201.563 157.91 131.124 159.87C60.7551 161.828 59.9172 224.098 127.681 209.733C127.81 209.705 127.945 209.663 128.065 209.611C168.511 192.126 188.231 177.43 218.676 143.678M231.647 125.494C278.527 72.0571 171.372 66.055 217.429 124.498C240.809 154.72 227.634 146.076 285.026 191.257C342.419 236.437 456.639 176.062 271.806 158.873C290.471 159.304 302.167 161.07 317.703 157.628C434.433 128.215 403.63 47.4569 282.532 121.508C268.291 131.274 261.97 137.712 252.35 150.155" />
-        </svg>
-        <span class="brand-name">StenoAI</span>
-      </a>
-      <a href="/" class="back">&larr; Back to home</a>
-    </div>
-  </nav>
+  <Nav client:load />
 
   <main id="main-content" class="legal">
     <h1>Terms of Service</h1>
@@ -104,5 +70,5 @@ import BaseLayout from "../layouts/BaseLayout.astro";
     </div>
   </main>
 
-  <footer class="legal-footer">&copy; 2026 StenoAI</footer>
+  <Footer />
 </BaseLayout>

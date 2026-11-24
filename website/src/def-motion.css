@@ -1,12 +1,13 @@
 /* Defence page scroll motion (preview). Every picture has its own clear space at full brightness, never behind text.
    Everything is gated on html[data-ss] ("on", or "still" for reduced motion and data saver), which is absent without JavaScript: the plain page stays. */
 .def-pic { display: none; }
-html[data-ss] .def-pic { display: block; position: relative; pointer-events: none; width: min(100%, 720px); aspect-ratio: 16 / 10; margin: 0 auto 28px; }
+html[data-ss] .def-pic, .def-pic:has(noscript img) { display: block; position: relative; pointer-events: none; width: min(100%, 720px); aspect-ratio: 16 / 10; margin: 0 auto 28px; }
 .def-pic-in { position: relative; width: 100%; height: 100%;
   -webkit-mask-image: linear-gradient(to right, transparent 0, transparent 3px, #000 8%, #000 92%, transparent calc(100% - 3px), transparent 100%), linear-gradient(to bottom, transparent 0, transparent 3px, #000 8%, #000 90%, transparent calc(100% - 3px), transparent 100%);
   -webkit-mask-composite: source-in;
   mask-image: linear-gradient(to right, transparent 0, transparent 3px, #000 8%, #000 92%, transparent calc(100% - 3px), transparent 100%), linear-gradient(to bottom, transparent 0, transparent 3px, #000 8%, #000 90%, transparent calc(100% - 3px), transparent 100%); mask-composite: intersect; }
-.def-pic canvas { display: block; width: 100%; height: 100%; }
+.def-pic:has(noscript img) canvas { display: none; }
+.def-pic :is(canvas, noscript img) { display: block; width: 100%; height: 100%; object-fit: contain; }
 
 /* D1 flow layout (phones, tablets in portrait, short screens, text that does not fit, reduced motion): the model sits above the cards. */
 @media (max-width: 767px) { html[data-ss] .def-terrain { width: calc(100% + 40px); margin: 0 -20px 20px; aspect-ratio: 390 / 280; } }

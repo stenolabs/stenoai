@@ -267,7 +267,7 @@ export function Nav() {
           <a href={CTA_BRIEFING} className="mission-button mission-button-light nav-briefing" data-track="demo_request" data-location="nav">
             Request a briefing <ArrowUpRight size={15} aria-hidden="true" />
           </a>
-          <button ref={trigger} className="mission-menu-toggle" hidden={!path} type="button" onClick={() => setOpen(!open)} aria-expanded={open} aria-controls="mission-mobile-menu" aria-label={open ? "Close menu" : "Open menu"}>
+          <button ref={trigger} className="mission-menu-toggle" data-pending={path ? undefined : ""} type="button" onClick={() => setOpen(!open)} aria-expanded={open} aria-controls="mission-mobile-menu" aria-label={open ? "Close menu" : "Open menu"}>
             {open ? <X size={24} aria-hidden="true" /> : <Menu size={24} aria-hidden="true" />}
           </button>
         </div>

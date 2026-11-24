@@ -1,10 +1,8 @@
 ---
-import { Check, Minus, X, Plus, ArrowRight } from "lucide-react";
+import { Check, Minus, X, Plus, ArrowRight, ArrowDown } from "lucide-react";
 import { Nav } from "../sections/Nav";
 import Footer from "../sections/Footer.astro";
 import CTAFooter from "../sections/CTAFooter.astro";
-import AppleIcon from "./icons/AppleIcon.astro";
-import WindowsIcon from "./icons/WindowsIcon.astro";
 import { ALL, VERIFIED } from "../content/comparisons.data.js";
 
 const { data } = Astro.props;
@@ -63,18 +61,18 @@ function toneIconMarkup(tone) {
           data-track="download"
           data-location={`vs_${data.slug}`}
           data-arch="arm64"
-          class="btn-base btn-primary inline-flex items-center gap-2 no-underline hover:no-underline"
+          class="mission-button mission-button-dark"
         >
-          <AppleIcon size={15} /> Download for macOS
+          Download for macOS <ArrowDown size={15} aria-hidden="true" />
         </a>
         <a
           href={DOWNLOAD_WIN}
           data-track="download"
           data-location={`vs_${data.slug}`}
           data-arch="win-x64"
-          class="btn-base btn-ghost inline-flex items-center gap-2 no-underline hover:no-underline"
+          class="mission-button mission-button-outline"
         >
-          <WindowsIcon size={15} /> Windows (alpha)
+          Windows (alpha) <ArrowDown size={15} aria-hidden="true" />
         </a>
       </div>
     </div>

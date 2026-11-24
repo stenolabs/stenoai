@@ -11,7 +11,7 @@ const { incident, index, variant } = Astro.props;
 const limitation = incident.what.match(/The claims are unproven and Otter\.ai disputes them\.$/)?.[0];
 ---
 <ReadCard id={`case-file-${index + 1}`} title={incident.title} class={variant}>
-  <p class="mission-eyebrow"><span class="mission-small-index">Case 0{index + 1}</span> {incident.meta}</p>
+  <p class="mission-eyebrow"><span class="mission-small-index whitespace-nowrap">Case 0{index + 1}</span> {incident.meta}</p>
   <h3>{incident.title}</h3>
   {limitation && <p class="rm-card-preview">{limitation}</p>}
   <p class:list={[`${variant}-what`, "rm-card-detail"]}>{incident.what}</p>

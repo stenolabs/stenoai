@@ -1,5 +1,9 @@
 ---
+import { ArrowUpRight } from "lucide-react";
 import BaseLayout from "../layouts/BaseLayout.astro";
+import { Nav } from "../sections/Nav";
+import Footer from "../sections/Footer.astro";
+import { CTA_BRIEFING } from "../content/industries.data";
 ---
 
 <BaseLayout
@@ -7,7 +11,8 @@ import BaseLayout from "../layouts/BaseLayout.astro";
   description="The page you're looking for doesn't exist."
   noindex
 >
-  <main id="main-content" class="container-site" style="min-height: 60vh; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; gap: 16px;">
+  <Nav client:load />
+  <main id="main-content" class="mission-site mission-wrap" style="min-height: 60vh; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; gap: 16px;">
     <h1
       style={{
         fontFamily: "var(--font-sans)",
@@ -19,9 +24,12 @@ import BaseLayout from "../layouts/BaseLayout.astro";
     >
       Page not found
     </h1>
-    <p class="text-fg-2 text-lg">The page you're looking for doesn't exist or has moved.</p>
-    <a href="/" class="btn-base btn-primary inline-flex items-center gap-2 no-underline hover:no-underline mt-4">
-      Back to home
-    </a>
+    <p class="text-fg-2 text-lg">The page you’re looking for doesn’t exist or has moved.</p>
+    <div class="mission-actions mt-4 justify-center">
+      <a href="/download/?src=404" class="mission-button mission-button-dark">Download StenoAI <ArrowUpRight size={16} aria-hidden="true" /></a>
+      <a href={CTA_BRIEFING} class="mission-text-link">Request a briefing <ArrowUpRight size={16} aria-hidden="true" /></a>
+      <a href="/" class="mission-text-link">Back to home</a>
+    </div>
   </main>
+  <Footer />
 </BaseLayout>

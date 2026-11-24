@@ -141,7 +141,7 @@ const num = (id) => String(order.indexOf(id) + 1).padStart(2, "0");
         </div>
         <GW {...(motion?.corridor ? { class: "sector-cases-wrap", "data-light-wrap": "" } : {})}>
         {motion?.corridor && <div class="sector-corridor"><LightRoom {...motion.corridor} cards=".sector-case" /></div>}
-        {mo && <div class="def-pic def-terrain" aria-hidden="true" data-def-terrain data-src="/scroll/def" data-src-phone="/scroll/def/m" data-route={JSON.stringify(terrainRoute)}><div class="def-pic-in"><canvas></canvas></div></div>}
+        {mo && <div class="def-pic def-terrain" aria-hidden="true" data-def-terrain data-src="/scroll/def" data-src-phone="/scroll/def/m" data-route={JSON.stringify(terrainRoute)}><div class="def-pic-in"><noscript><picture><source media="(max-width: 767px)" srcset="/scroll/def/m/terrain-lit.webp" /><img src="/scroll/def/terrain-lit.webp" alt="" loading="lazy" decoding="async" /></picture></noscript><canvas></canvas></div></div>}
         <ol class="sector-cases">
           {data.useCases.map((u, i) => (
             <li class="sector-case">
@@ -190,7 +190,7 @@ const num = (id) => String(order.indexOf(id) + 1).padStart(2, "0");
 
   <section id="cloud" class="mission-section sector-section" aria-labelledby="cloud-heading">
     <div class="mission-wrap">
-      <div class="sector-cloud">
+      <div class:list={["sector-cloud", { "sector-cloud-balanced": mo }]}>
         <div>
           <h2 id="cloud-heading">Why cloud tools don’t fit.</h2>
           <ul class="sector-pains">{data.pains.map((p) => <li>{p}</li>)}</ul>
@@ -198,7 +198,7 @@ const num = (id) => String(order.indexOf(id) + 1).padStart(2, "0");
         <div class="sector-cloud-right">
           {motion?.papers && <TakeStill {...motion.papers} class="take-still-side" />}
           <div class="sector-points">
-          {mo && <div class="def-pic def-mast" aria-hidden="true" data-def-mast data-src="/scroll/def" data-src-phone="/scroll/def/m" data-region={JSON.stringify(mastRegion)}><div class="def-pic-in"><canvas></canvas></div></div>}
+          {mo && <div class="def-pic def-mast" aria-hidden="true" data-def-mast data-src="/scroll/def" data-src-phone="/scroll/def/m" data-region={JSON.stringify(mastRegion)}><div class="def-pic-in"><noscript><picture><source media="(max-width: 767px)" srcset="/scroll/def/m/mast-start.webp" /><img src="/scroll/def/mast-start.webp" alt="" loading="lazy" decoding="async" /></picture></noscript><canvas></canvas></div></div>}
           {data.points.map((pt, i) => (
             <div>
               <h3><Check size={15} strokeWidth={2.2} aria-hidden="true" />{pt.h}</h3>
@@ -221,7 +221,7 @@ const num = (id) => String(order.indexOf(id) + 1).padStart(2, "0");
           <h2 id="policy-heading">{data.policy.heading}</h2>
           <p>{data.policy.intro}</p>
         </div>
-        {motion?.book && <div class="le-bd le-band" data-le="book" aria-hidden="true"><canvas></canvas></div>}
+        {motion?.book && <div class="le-bd le-band" data-le="book" aria-hidden="true"><noscript><picture><source media="(max-width: 767px)" srcset="/scroll/rec/le-poster-m.webp" /><img src="/scroll/rec/le-poster-d.webp" alt="" loading="lazy" decoding="async" /></picture></noscript><canvas></canvas></div>}
         {pictures?.library && <SectorPicture picture={pictures.library} class="sector-banner-picture" />}
         <ReadCards id="policy-cards" class="sector-policy" subject="Law and policy" count={data.policy.cards.length}>
           {data.policy.cards.map((c, i) => (
@@ -299,7 +299,7 @@ const num = (id) => String(order.indexOf(id) + 1).padStart(2, "0");
           <h2 id="not-for-heading">What it is not for.</h2>
           <p>Lines StenoAI does not cross, and is never presented as crossing.</p>
         </div>
-        {motion?.recorder && <div class="le-bd le-band le-band-rec" data-le="recorder" aria-hidden="true"><canvas></canvas></div>}
+        {motion?.recorder && <div class="le-bd le-band le-band-rec" data-le="recorder" aria-hidden="true"><noscript><picture><source media="(max-width: 767px)" srcset="/scroll/le/recorder3-dark-m.webp" /><img src="/scroll/le/recorder3-dark-d.webp" alt="" loading="lazy" decoding="async" /></picture></noscript><canvas></canvas></div>}
         <div class="sector-notfor">
           {data.notFor.map((n) => (
             <div>
@@ -352,7 +352,7 @@ const num = (id) => String(order.indexOf(id) + 1).padStart(2, "0");
     </div>
   </section>
 
-  <CTAFooter stage={!!motion?.doors || mo} />
+  <CTAFooter settled />
 </main>
 
 <Footer />

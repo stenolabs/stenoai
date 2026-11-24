@@ -39,10 +39,6 @@
 .industry-hero-col { min-width: 0; }
 .industry-hero-media { position: relative; }
 .industry-hero-media .industry-hero-image { display: block; }
-.sector-loop-toggle { min-width: 44px; min-height: 44px; background: none; border: 0; padding: 0; margin-top: 6px; color: inherit; font-family: inherit; cursor: pointer; }
-html:not([data-ss]) .sector-loop-toggle { display: none; }
-.sector-loop-toggle[data-pending] { visibility: hidden; }
-.sector-loop-toggle:focus-visible { outline: 2px solid var(--focus-ring, currentColor); outline-offset: 3px; }
 
 @media (max-width: 1099px) {
   .sector-page .mission-text-link { min-height: 44px; }

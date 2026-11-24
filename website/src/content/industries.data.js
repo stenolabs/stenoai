@@ -384,18 +384,17 @@ Object.assign(lawEnforcement, {
   },
 });
 
-// Scroll motion on the page (preview): corridor lights (use-cases), papers and drawer take stills, doors stage (closing banner).
+// Scroll motion on the page (preview): corridor lights (use-cases), papers and drawer take stills.
 Object.assign(government, {
   motion: {
     corridor: { base: "/scroll/gov/rooms", ratio: "1592 / 672", windows: [[0.01131, 0.0, 0.27638, 0.52976], [0.2701, 0.0, 0.24121, 0.52976], [0.49372, 0.0, 0.24309, 0.52976], [0.71922, 0.0, 0.26759, 0.52976], [0.01131, 0.4881, 0.27638, 0.50446], [0.2701, 0.4881, 0.24121, 0.50446], [0.49372, 0.4881, 0.24309, 0.50446], [0.71922, 0.4881, 0.26759, 0.50446]] },
     papers: { src: "/scroll/gov/papers-start-d.webp", phone: "/scroll/gov/papers-start-p.webp", ratio: "1152 / 480", stillW: 1152, stillH: 480, width: 960, take: { key: "papers", d: "/scroll/gov/take-papers-d", p: "/scroll/gov/take-papers-p", frames: 61 } },
     drawer: { src: "/scroll/gov/drawer-start-d.webp", phone: "/scroll/gov/drawer-start-p.webp", ratio: "750 / 700", stillW: 750, stillH: 700, width: 720, take: { key: "drawer", d: "/scroll/gov/take-drawer-d", p: "/scroll/gov/take-drawer-p", frames: 55 } },
-    doors: true,
   },
 });
 
 // Scroll motion on the page (preview): rooms lit one by one (use-cases), the archive box take beside the case-files heading, the recorder row (not-for),
-// the log book row (policy) and the doors stage (closing banner). recorder and book are played by scripts/scroll-le.js.
+// the log book row (policy). Recorder and book are played by scripts/scroll-le.js.
 Object.assign(lawEnforcement, {
   motion: {
     corridor: { base: "/scroll/le/rooms", ratio: "1672 / 800", blend: true, windows: [[0.0622, 0.12, 0.21651, 0.365], [0.28708, 0.12, 0.20933, 0.365], [0.50598, 0.12, 0.21053, 0.365], [0.72488, 0.12, 0.21531, 0.365], [0.0622, 0.4975, 0.21651, 0.3425], [0.28708, 0.4975, 0.20933, 0.3425], [0.50598, 0.4975, 0.21053, 0.3425], [0.72488, 0.4975, 0.21531, 0.3425]] },
@@ -403,7 +402,6 @@ Object.assign(lawEnforcement, {
     drawer: { src: "/scroll/le/drawer-start-d.webp", phone: "/scroll/le/drawer-start-p.webp", ratio: "960 / 720", stillW: 960, stillH: 720, width: 720, take: { key: "archive", d: "/scroll/le/take-d", p: "/scroll/le/take-p", frames: 55 } },
     recorder: true,
     book: true,
-    doors: true,
   },
 });
 
