@@ -241,6 +241,107 @@ const seedReportContent = {};
 const withReportEdits = (report) =>
   seedReportContent[report.id] !== undefined ? { ...report, content: seedReportContent[report.id] } : report;
 
+// README demo tour (e2e/specs/zz-demo-tour.t1.spec.ts): a small, clearly
+// fictional workspace. Seeded only when STENOAI_E2E_DEMO=1, so no other spec
+// sees it. Dates are relative to launch so Home reads "today" / "yesterday".
+const DEMO = process.env.STENOAI_E2E_DEMO === '1';
+const demoAgo = (days, hour, minute = 0) => {
+  const d = new Date();
+  d.setDate(d.getDate() - days);
+  d.setHours(hour, minute, 0, 0);
+  return d.toISOString();
+};
+const demoMeeting = (name, file, when, minutes, folder, body) => ({
+  session_info: {
+    name,
+    summary_file: file,
+    processed_at: when,
+    updated_at: when,
+    duration_seconds: minutes * 60,
+    transcription_failed: false,
+    folders: [folder],
+  },
+  folders: [folder],
+  transcript: '',
+  is_diarised: false,
+  participants: [],
+  key_points: [],
+  action_items: [],
+  discussion_areas: [],
+  ...body,
+});
+const DEMO_FOLDERS = [
+  { id: 'f-product', name: 'Product', color: '#6366f1', icon: 'folder', order: 0 },
+  { id: 'f-customers', name: 'Customers', color: '#0ea5e9', icon: 'folder', order: 1 },
+  { id: 'f-hiring', name: 'Hiring', color: '#f59e0b', icon: 'folder', order: 2 },
+];
+const DEMO_MEETINGS = DEMO
+  ? [
+      demoMeeting('Q1 roadmap review', 'q1-roadmap-review_summary.md', demoAgo(0, 10, 30), 42, 'f-product', {
+        participants: ['Maya Okafor', 'Tomas Lindqvist', 'Priya Raman', 'Jonah Eze'],
+        transcript:
+          '[00:04] [You] Let us lock the three bets for Q1.\n[00:11] [Others] Onboarding first, it unblocks the Brightwater rollout.',
+        is_diarised: true,
+        summary:
+          'The team locked the Q1 roadmap around three bets: self-serve onboarding, the mobile beta and usage-based billing. Onboarding ships first.',
+        key_points: [
+          'Self-serve onboarding is the top priority and ships by 24 January.',
+          'The mobile beta opens to 50 design partners in February.',
+          'Usage-based billing slips two weeks for a pricing review.',
+          'One senior backend engineer is approved for the billing work.',
+        ],
+        action_items: [
+          'Maya to draft the onboarding spec by Friday.',
+          'Tomas to scope the mobile beta invite flow.',
+          'Priya to share the pricing model with finance.',
+          'Jonah to open the backend engineer role.',
+        ],
+        discussion_areas: [
+          {
+            title: 'Onboarding',
+            analysis: 'A guided setup should cut the time to a first report from four days to one.',
+          },
+        ],
+      }),
+      demoMeeting('Brightwater kickoff', 'brightwater-kickoff_summary.md', demoAgo(1, 15, 0), 35, 'f-customers', {
+        summary:
+          'Kickoff with the Brightwater operations team. They want 120 seats live by March and a single sign-on setup before the pilot starts.',
+        key_points: ['Pilot starts with the operations team in February.', 'Single sign-on is a hard requirement.'],
+        action_items: ['Send the pilot plan to Brightwater.', 'Book the single sign-on setup call.', 'Share the security overview.'],
+      }),
+      demoMeeting('Design critique: mobile beta', 'design-critique-mobile-beta_summary.md', demoAgo(2, 11, 0), 28, 'f-product', {
+        summary:
+          'Reviewed the mobile beta flows. The capture screen is ready; the invite flow needs one more pass on empty states.',
+        key_points: ['Capture screen approved.', 'Invite flow needs clearer empty states.'],
+        action_items: ['Revise the invite flow empty states.', 'Prepare the beta feedback form.'],
+      }),
+      demoMeeting('Weekly standup', 'weekly-standup_summary.md', demoAgo(3, 9, 30), 14, 'f-product', {
+        summary: 'No blockers. The onboarding prototype is on track and the billing migration is waiting on the pricing review.',
+        key_points: ['Onboarding prototype on track.'],
+        action_items: ['Unblock the billing migration after the pricing review.'],
+      }),
+      demoMeeting('Halden Freight renewal call', 'halden-freight-renewal_summary.md', demoAgo(4, 14, 0), 31, 'f-customers', {
+        summary:
+          'Halden Freight will renew for two years if reporting exports arrive this quarter. They asked for a named contact during the migration.',
+        key_points: ['Two-year renewal is on the table.', 'Reporting exports are the deciding feature.'],
+        action_items: [
+          'Confirm the export timeline with product.',
+          'Send the renewal proposal.',
+          'Assign a migration contact.',
+          'Schedule the quarterly review.',
+          'Share the reporting roadmap.',
+        ],
+      }),
+      demoMeeting('Backend engineer debrief', 'backend-engineer-debrief_summary.md', demoAgo(6, 16, 0), 22, 'f-hiring', {
+        summary:
+          'Debrief after the system design interview. Strong on data modelling and clear communication; the panel recommends moving to the final round.',
+        key_points: ['Panel recommends the final round.'],
+        action_items: ['Schedule the final round.'],
+      }),
+    ]
+  : [];
+const DEMO_HERO_FILE = 'q1-roadmap-review_summary.md';
+
 const seededMeeting = () => {
   const meeting = process.env.STENOAI_E2E_SEED_DIARISED_EXPORT === '1'
     ? {
@@ -765,6 +866,45 @@ function install({ ipcMain }) {
       },
     ];
   }
+  // README demo tour: Linear and Notion connected, one suggestion each on the
+  // hero note (get-cards answers per note there, so the other notes stay quiet).
+  if (DEMO) {
+    const linear = mockConnection({
+      name: 'Linear', url: 'https://mcp.linear.app/mcp', origin: 'https://mcp.linear.app', locality: 'internet',
+      kind: 'linear', auth: 'oauth', account: 'Larkspur',
+    });
+    const notion = mockConnection({
+      name: 'Notion', url: 'https://mcp.notion.com/mcp', origin: 'https://mcp.notion.com', locality: 'internet',
+      kind: 'notion', auth: 'oauth', account: 'Larkspur', tools: NOTION_TOOLS,
+    });
+    actionsState.connections.push(linear, notion);
+    actionsState.cards = [
+      mockCard(
+        linear,
+        'create_issue',
+        { title: 'Draft the self-serve onboarding spec', priority: 'high' },
+        '',
+        'Maya to draft the onboarding spec by Friday.',
+      ),
+      {
+        ...mockCard(
+          notion,
+          'notion-create-pages',
+          { title: 'Q1 roadmap decisions', content: 'Onboarding ships by 24 January.\nMobile beta opens in February.\nBilling slips two weeks.' },
+          '',
+          'Priya to share the pricing model with finance.',
+        ),
+        toolTitle: 'Create page',
+        inputSchema: {
+          type: 'object',
+          properties: { title: { type: 'string', minLength: 1 }, content: { type: 'string' } },
+          required: ['title'],
+          additionalProperties: false,
+        },
+        sendTemplate: { pages: [{ properties: { title: '{{title}}' }, content: '{{content}}' }] },
+      },
+    ];
+  }
   // The built-in Email drafts (app/mcp-email.js): always listed, on by default.
   const emailTool = require('./mcp-email');
   const emailConnection = {
@@ -855,9 +995,9 @@ function install({ ipcMain }) {
       actionsState.autoSuggest = value;
       return { success: true, autoSuggest: value };
     },
-    'actions-get-cards': async () => ({
+    'actions-get-cards': async (_event, summaryFile) => ({
       success: true,
-      cards: actionsState.cards,
+      cards: DEMO && summaryFile !== DEMO_HERO_FILE ? [] : actionsState.cards,
       // Email drafts alone make every note offer actions in the real app; the
       // mock keeps other specs' notes quiet unless a spec seeds actions.
       available: actionsState.connections.some((c) => c.enabled) || (process.env.STENOAI_E2E_SEED_ACTIONS === 'email' && emailConnection.enabled),
@@ -1330,6 +1470,7 @@ function install({ ipcMain }) {
     // lives in MOCKS, which shadows DEFAULTS, so it is the single source for the
     // channel.
     'list-meetings': async () => {
+      if (DEMO) return { success: true, meetings: DEMO_MEETINGS.map(applyOverlay) };
       if (process.env.STENOAI_E2E_MEETING_TRANSFER === '1') {
         return { success: true, meetings: [TRANSFER_MEETING] };
       }
@@ -1403,6 +1544,10 @@ function install({ ipcMain }) {
     // by filtering list-meetings — answer it with the same seeded meeting so the
     // transcript-export detail route resolves and renders the transcript actions.
     'get-meeting': async (_event, summaryFile) => {
+      if (DEMO) {
+        const demo = DEMO_MEETINGS.find((x) => x.session_info.summary_file === summaryFile);
+        return demo ? { success: true, meeting: applyOverlay(demo) } : { success: false, error: 'meeting not found' };
+      }
       if (
         process.env.STENOAI_E2E_MEETING_TRANSFER === '1' &&
         summaryFile === TRANSFER_MEETING.session_info.summary_file
@@ -2186,7 +2331,7 @@ function install({ ipcMain }) {
     // Seeded only for specs that need folders (connect.t1); others stay empty.
     'list-folders': () => ({
       success: true,
-      folders: process.env.STENOAI_E2E_SEED_FOLDERS === '1'
+      folders: DEMO ? DEMO_FOLDERS : process.env.STENOAI_E2E_SEED_FOLDERS === '1'
         ? [
           { id: 'f-sales', name: 'Sales', color: '#6366f1', icon: 'folder', order: 0 },
           { id: 'f-eng', name: 'Engineering', color: '#6366f1', icon: 'folder', order: 1 },
@@ -2516,8 +2661,10 @@ function install({ ipcMain }) {
           // Word by word, holding before the last word until __finishChat.
           const words = reply.split(/(?<= )/);
           const send = (c, d) => { if (!event.sender.isDestroyed()) event.sender.send(c, { queryId, ...d }); };
-          send('query-tool-step', { step: { id: 'context', source: 'context', connection: '', tool: 'notes', count: 3, title: null } });
-          words.slice(0, -1).forEach((w, i) => setTimeout(() => send('query-chunk', { chunk: w }), 400 + 20 * i));
+          send('query-tool-step', { step: { id: 'context', source: 'context', connection: '', tool: 'notes', count: DEMO ? DEMO_MEETINGS.length : 3, title: null } });
+          // STENOAI_E2E_CHAT_STREAM_MS slows the stream to a readable pace (demo tour).
+          const stepMs = Number(process.env.STENOAI_E2E_CHAT_STREAM_MS) || 20;
+          words.slice(0, -1).forEach((w, i) => setTimeout(() => send('query-chunk', { chunk: w }), 400 + stepMs * i));
           global.__finishChat = () => {
             send('query-chunk', { chunk: words[words.length - 1] });
             send('query-done', { success: true });

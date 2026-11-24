@@ -22,7 +22,8 @@ export function Connect() {
   const nothingConnected =
     overview.isSuccess &&
     overview.data?.policy?.actionsEnabled !== false &&
-    !(overview.data?.connections ?? []).some((c) => c.status === 'ok');
+    // The built-in Email action is always present; it is not an app the user connected.
+    !(overview.data?.connections ?? []).some((c) => c.status === 'ok' && !c.builtin);
   const jumpToActions = () => {
     const heading = document.getElementById('connect-actions-heading');
     heading?.scrollIntoView({
