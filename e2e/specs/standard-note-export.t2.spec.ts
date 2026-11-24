@@ -19,7 +19,11 @@ test('Standard note exports use the saved summary language', async ({ launchApp,
     transcript: 'Der Termin steht.',
   });
   const original = readFileSync(note, 'utf8');
-  writeUserConfig(userDataDir, { language: 'en' });
+  writeUserConfig(userDataDir, {
+    language: 'en',
+    privacy_notice_seen: true,
+    telemetry_enabled: false,
+  });
   const exported = path.join(userDataDir, 'standard-notes-export');
   const { page } = await launchApp({ env: { STENOAI_E2E_EXPORT_PATH: exported } });
   await page.evaluate((file) => {
