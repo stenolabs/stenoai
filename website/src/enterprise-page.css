@@ -82,7 +82,6 @@ html[data-ss] .ent-card-fig img, html[data-ss] .ent-fleet img { display: none; }
   .ent-card-fig { justify-self: end; }
 }
 @media (max-width: 1099px) {
-  .ent-card-fig { margin-top: 8px; }
   .ent-card-fig img { -webkit-mask-image: linear-gradient(to bottom, transparent, #000 18%, #000 66%, transparent), linear-gradient(to right, transparent, #000 24%, #000 76%, transparent); mask-image: linear-gradient(to bottom, transparent, #000 18%, #000 66%, transparent), linear-gradient(to right, transparent, #000 24%, #000 76%, transparent); }
 }
 .ent-fleet { position: relative; margin: 0 0 40px; aspect-ratio: 1178 / 608; overflow: visible; mix-blend-mode: screen; }

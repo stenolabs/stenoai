@@ -13,7 +13,7 @@ html[data-ss] [data-scroll-seq] { display: block; }
 
 /* Keep the scrolling waveform in a separate visual area beside the platform introduction. */
 .platform-heading-layout { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); align-items: start; gap: var(--section-content-gap); margin-bottom: var(--section-content-gap); }
-.platform-heading-layout > .mission-section-heading { margin-bottom: 0; }
+.mission-platform .platform-heading-layout > .mission-section-heading { margin-bottom: 0; }
 .platform-heading-layout .mission-text-link { margin-top: var(--section-content-gap); }
 .platform-visual { position: relative; overflow: hidden; height: clamp(100px, 13vw, 174px); }
 .platform-visual :is(img, [data-scroll-seq]) {
