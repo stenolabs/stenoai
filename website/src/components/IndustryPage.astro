@@ -111,7 +111,6 @@ const num = (id) => String(order.indexOf(id) + 1).padStart(2, "0");
   {data.loop && (
     <section id="app" class="mission-section sector-section sector-loop" aria-labelledby="app-heading">
       <div class="mission-wrap">
-        <div class="mission-section-top"><p class="mission-eyebrow">{num("app")} / In the app</p></div>
         <div class:list={["sector-loop-grid", { "sector-loop-with-picture": pictures?.app }]}>
           <div>
             <h2 id="app-heading">{data.loop.heading}</h2>
@@ -135,7 +134,7 @@ const num = (id) => String(order.indexOf(id) + 1).padStart(2, "0");
       <Stage on={mo} ownFit class="stage-uses">
       <GW {...(motion?.corridor ? { class: "cases-stage" } : {})}><GW {...(motion?.corridor ? { class: "cases-panel" } : {})}>
       <div class:list={["mission-wrap", { "stage-text": mo }]}>
-        <div class="mission-section-top"><p class="mission-eyebrow">{num("use-cases")} / Where it is used</p><span class="mission-eyebrow">Illustrative settings · {data.useCases.length}</span></div>
+        <div class="mission-section-top"><span class="mission-eyebrow">Illustrative settings</span></div>
         <div class="mission-section-heading">
           <h2 id="use-cases-heading">Where it is used,<br />room by room.</h2>
           <p>Settings where the conversation can’t be handed to a cloud vendor, and the record StenoAI produces in each, on your device or your infrastructure.</p>
@@ -146,7 +145,7 @@ const num = (id) => String(order.indexOf(id) + 1).padStart(2, "0");
         <ol class="sector-cases">
           {data.useCases.map((u, i) => (
             <li class="sector-case">
-              <div class="sector-case-top"><span class="mission-small-index">{u.code}</span><span class="sector-tag">{u.env}</span></div>
+              <div class="sector-case-top"><span class="sector-tag">{u.env}</span></div>
               <h3>{u.title}</h3>
               <p class="sector-case-outcome">{u.outcome}</p>
               <p class="sector-case-for" id={`use-case-for-${i + 1}`} data-rm-fold="room"><span class="mission-eyebrow">For</span>{u.for}</p>
@@ -165,7 +164,7 @@ const num = (id) => String(order.indexOf(id) + 1).padStart(2, "0");
   {data.whyNow && (
     <section id="why-now" class="mission-section sector-section sector-sunken" aria-labelledby="why-now-heading">
       <div class="mission-wrap">
-        <div class="mission-section-top"><p class="mission-eyebrow">{num("why-now")} / Why now · Public record</p><span class="mission-eyebrow">Verified {SECTOR_VERIFIED}</span></div>
+        <div class="mission-section-top"><span class="mission-eyebrow">Verified {SECTOR_VERIFIED}</span></div>
         <div class="mission-section-heading">
           <h2 id="why-now-heading">{data.whyNow.heading}</h2>
           <p>{data.whyNow.intro}</p>
@@ -191,7 +190,6 @@ const num = (id) => String(order.indexOf(id) + 1).padStart(2, "0");
 
   <section id="cloud" class="mission-section sector-section" aria-labelledby="cloud-heading">
     <div class="mission-wrap">
-      <div class="mission-section-top"><p class="mission-eyebrow">{num("cloud")} / Structural risk</p><span class="mission-eyebrow">{data.pains.length} points</span></div>
       <div class="sector-cloud">
         <div>
           <h2 id="cloud-heading">Why cloud tools don’t fit.</h2>
@@ -218,7 +216,7 @@ const num = (id) => String(order.indexOf(id) + 1).padStart(2, "0");
   {data.policy && (
     <section id="policy" class="mission-section sector-section sector-dark" aria-labelledby="policy-heading">
       <div class="mission-wrap">
-        <div class="mission-section-top"><p class="mission-eyebrow">{num("policy")} / Law & policy</p><span class="mission-eyebrow">Verified {SECTOR_VERIFIED}</span></div>
+        <div class="mission-section-top"><span class="mission-eyebrow">Verified {SECTOR_VERIFIED}</span></div>
         <div class="mission-section-heading">
           <h2 id="policy-heading">{data.policy.heading}</h2>
           <p>{data.policy.intro}</p>
@@ -249,10 +247,12 @@ const num = (id) => String(order.indexOf(id) + 1).padStart(2, "0");
   {data.breaches && (
     <section id="case-files" class="mission-section sector-section" aria-labelledby="case-files-heading">
       <div class="mission-wrap">
-        <div class="mission-section-top"><p class="mission-eyebrow">{num("case-files")} / Case files · Public record</p><span class="mission-eyebrow">Verified {BREACHES_VERIFIED}</span></div>
-        <div class:list={["mission-section-heading", { "sector-heading-take": !!motion?.drawer }]}>
-          <h2 id="case-files-heading">{data.breaches.heading}</h2>
-          <p>{data.breaches.intro}</p>
+        <div class="mission-section-top"><span class="mission-eyebrow">Verified {BREACHES_VERIFIED}</span></div>
+        <div class:list={["mission-section-heading", { "section-heading-with-picture": !!motion?.drawer }]}>
+          <div>
+            <h2 id="case-files-heading">{data.breaches.heading}</h2>
+            <p>{data.breaches.intro}</p>
+          </div>
           {motion?.drawer && <TakeStill {...motion.drawer} class="take-still-side" />}
         </div>
         <ReadCards id="case-file-cards" class="sector-cases-files" subject="Case files" count={data.breaches.items.length}>
@@ -266,7 +266,6 @@ const num = (id) => String(order.indexOf(id) + 1).padStart(2, "0");
   {data.postures && (
     <section id="postures" class="mission-section sector-section sector-sunken" aria-labelledby="postures-heading">
       <div class="mission-wrap">
-        <div class="mission-section-top"><p class="mission-eyebrow">{num("postures")} / Deployment postures</p><span class="mission-eyebrow">Device → network → tenancy</span></div>
         <div class="mission-section-heading">
           <h2 id="postures-heading">Deployment postures<br />at the edge.</h2>
           <p>One application, three ways to run it. The product doesn’t change; the network around it does, and so does exactly what we can claim.</p>
@@ -296,7 +295,6 @@ const num = (id) => String(order.indexOf(id) + 1).padStart(2, "0");
   {data.notFor && (
     <section id="not-for" class="mission-section sector-section sector-sunken" aria-labelledby="not-for-heading">
       <div class="mission-wrap">
-        <div class="mission-section-top"><p class="mission-eyebrow">{num("not-for")} / Not for</p><span class="mission-eyebrow">{data.notFor.length} lines</span></div>
         <div class="mission-section-heading">
           <h2 id="not-for-heading">What it is not for.</h2>
           <p>Lines StenoAI does not cross, and is never presented as crossing.</p>
@@ -328,24 +326,23 @@ const num = (id) => String(order.indexOf(id) + 1).padStart(2, "0");
 
   <section id="faq" class="mission-faq mission-section" aria-labelledby="faq-heading">
     <div class="mission-wrap mission-faq-layout">
-      <div><p class="mission-eyebrow">{num("questions")} / Questions</p><h2 id="faq-heading">Questions your<br />security team will ask.</h2>
+      <div><h2 id="faq-heading">Questions your<br />security team will ask.</h2>
         {pictures?.questions && <SectorPicture picture={pictures.questions} class="sector-questions-picture" />}
       </div>
       <div class="mission-faq-items">
-        {data.faqs.map((f, index) => <details><summary><span class="mission-faq-number">0{index + 1}</span><span>{f.q}</span><span class="mission-faq-symbol" aria-hidden="true"></span></summary><p>{f.a}</p></details>)}
+        {data.faqs.map((f) => <details><summary><span>{f.q}</span><span class="mission-faq-symbol" aria-hidden="true"></span></summary><p>{f.a}</p></details>)}
       </div>
     </div>
   </section>
 
   <section class="sector-section sector-related" aria-labelledby="related-heading">
     <div class="mission-wrap">
-      <div class="mission-section-top"><p class="mission-eyebrow" id="related-heading">Related briefings</p><span class="mission-eyebrow">Also built for</span></div>
+      <div class="mission-section-top"><p class="mission-eyebrow" id="related-heading">Related briefings</p></div>
       <div class="sector-related-grid">
         {others.map((c) => (
           <a class="sector-related-card" href={`/enterprise/${c.slug}/`}>
             <img src={`/images/enterprise/${c.image}.webp`} alt="" width="1200" height="800" loading="lazy" decoding="async" />
             <div>
-              <p class="mission-eyebrow">{c.eyebrow}</p>
               <h3>{c.name} <ArrowUpRight size={20} aria-hidden="true" /></h3>
               <p>{c.h1}</p>
             </div>

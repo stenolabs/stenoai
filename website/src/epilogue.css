@@ -137,7 +137,7 @@
 
 /* Measures set in ch: the Epilogue "0" is a little narrower than the text it sets, so give each measure back 12 percent. */
 :root { --chx: 1.12; }
-:root:root:root .mission-section-heading > p { max-width: calc(43ch * var(--chx)); }
+:root:root:root .mission-films .mission-section-heading > p { max-width: calc(43ch * var(--chx)); }
 :root:root:root .mission-hero-description { max-width: calc(43ch * var(--chx)); }
 :root:root:root .mission-sector-body p { max-width: calc(49ch * var(--chx)); }
 :root:root:root .mission-deploy-mode p { max-width: calc(42ch * var(--chx)); }

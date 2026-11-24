@@ -20,7 +20,6 @@ const ICONS = {
   "list-checks": ListChecks, "trending-up": TrendingUp, "cloud-off": CloudOff, scale: Scale, "file-warning": FileWarning,
   "message-circle-question": MessageCircleQuestion, map: MapIcon, "book-open-text": BookOpenText, radar: Radar, ban: Ban,
 };
-const pad = (n) => String(n).padStart(2, "0");
 
 // The page this link belongs to (sector pages and /enterprise/ by path). Platform is a section of the homepage,
 // not a page, so it is never marked current.
@@ -66,7 +65,7 @@ function MegaPanel({ href, m, open, loaded, onEnter, onLeave }) {
                 </video>
               ) : <img src={`/images/nav/${it.img}.webp`} alt="" width="800" height="533" decoding="async" />}
               <figcaption>
-                <span className="mega-fk">{k === 0 ? m.kicker : `${pad(k)} · ${it.label}`}</span>
+                <span className="mega-fk">{k === 0 ? m.kicker : it.label}</span>
                 <span className="mega-ft">{k === 0 ? m.title : it.line}</span>
               </figcaption>
             </figure>
@@ -86,7 +85,6 @@ function MegaPanel({ href, m, open, loaded, onEnter, onLeave }) {
                     onMouseEnter={() => setLayer(k + 1)} onFocus={() => setLayer(k + 1)}>
                     <span className="mega-ic"><Icon size={16} strokeWidth={1.6} aria-hidden="true" /></span>
                     <span className="mega-tx"><b>{it.label}</b><span>{it.line}</span></span>
-                    <span className="mega-n" aria-hidden="true">{pad(k + 1)}</span>
                   </a>
                 </li>
               );

@@ -11,6 +11,13 @@ html { scroll-behavior: smooth; scroll-padding-top: 125px; }
 .mission-section-top { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding-bottom: 27px; border-bottom: 1px solid var(--border-strong); margin-bottom: 46px; }
 .mission-section-heading { display: grid; grid-template-columns: 1.35fr 1fr; gap: 80px; align-items: end; margin-bottom: 58px; }
 .mission-section-heading > p { max-width: 43ch; justify-self: end; color: var(--fg-2); font-size: 16px; line-height: 1.7; }
+section:not(.mission-films) .mission-section-heading { display: block; }
+section:not(.mission-films) .mission-section-heading p { max-width: 58ch; margin-top: 18px; color: var(--fg-2); font-size: 16px; line-height: 1.7; }
+section:not(.mission-films) .section-heading-with-picture { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); align-items: center; gap: clamp(24px, 5vw, 72px); }
+section:not(.mission-films, .sector-film) .mission-section-top { border: 0; padding-bottom: 0; margin-bottom: 18px; }
+@media (max-width: 899px) {
+  section:not(.mission-films) .section-heading-with-picture { grid-template-columns: minmax(0, 1fr); }
+}
 .mission-button { display: inline-flex; align-items: center; justify-content: space-between; gap: 32px; min-height: 49px; padding: 15px 20px; font-family: var(--font-mono); font-size: 10px; letter-spacing: .06em; line-height: 1.5; text-transform: uppercase; border: 1px solid transparent; transition: background .18s, color .18s; text-decoration: none; }
 .mission-button-light { background: var(--mission-paper); color: #1b1b19; }
 .mission-button-light:hover { background: #deded3; }
@@ -63,14 +70,12 @@ html { scroll-behavior: smooth; scroll-padding-top: 125px; }
 .mega-open { position: absolute; left: 20px; bottom: 16px; z-index: 2; display: inline-flex; align-items: center; gap: 8px; font: 10px var(--font-mono); letter-spacing: .1em; text-transform: uppercase; }
 .mega-feat:hover .mega-open, .mega-feat:focus-visible .mega-open { text-decoration: underline; text-underline-offset: 5px; }
 .mega-list { display: grid; gap: 2px; margin: 0; padding: 0; list-style: none; }
-.mega-list a { display: grid; grid-template-columns: 34px minmax(0, 1fr) auto; gap: 14px; align-items: center; padding: 10px 12px; color: #faf9f5; border: 1px solid transparent; transition: background .25s, border-color .25s; }
+.mega-list a { display: grid; grid-template-columns: 34px minmax(0, 1fr); gap: 14px; align-items: center; padding: 10px 12px; color: #faf9f5; border: 1px solid transparent; transition: background .25s, border-color .25s; }
 .mega-list a:hover, .mega-list a:focus-visible, .mega-list a.is-on { background: #ffffff08; border-color: #ffffff28; }
 .mega-ic { display: grid; place-items: center; width: 34px; height: 34px; color: #b9bcb3; background: #ffffff06; border: 1px solid #ffffff28; transition: color .25s, border-color .25s; }
 .mega-list a:hover .mega-ic, .mega-list a:focus-visible .mega-ic, .mega-list a.is-on .mega-ic { color: #faf9f5; border-color: #ffffff70; }
 .mega-tx b { display: block; font-weight: 500; font-size: 14px; }
 .mega-tx span { display: block; overflow: hidden; font-size: 12.5px; color: #b9bcb3; white-space: nowrap; text-overflow: ellipsis; }
-.mega-n { font: 10px var(--font-mono); color: #a4a99c; }
-.mega-list a.is-on .mega-n { color: #faf9f5; }
 .mega-side { display: flex; flex-direction: column; gap: 18px; padding-left: 24px; border-left: 1px solid #ffffff20; }
 .mega-ro { display: grid; gap: 10px; margin: 0; }
 .mega-ro div { display: grid; gap: 3px; padding-bottom: 10px; border-bottom: 1px dashed #ffffff28; }
@@ -208,7 +213,7 @@ html { scroll-behavior: smooth; scroll-padding-top: 125px; }
 .mission-sector-image::after { content: ''; position: absolute; inset: 0; z-index: -1; background: linear-gradient(180deg, #0005, transparent 35%, #0009); }
 .mission-sector-image img { position: absolute; z-index: -2; inset: 0; width: 100%; height: 100%; object-fit: cover; filter: saturate(.5); transition: transform .6s; }
 .mission-sector:hover img { transform: scale(1.025); }
-.mission-sector-image-label { padding: 24px 27px; display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.mission-sector-image-label { padding: 24px 27px; display: flex; align-items: center; justify-content: flex-end; gap: 16px; }
 .mission-sector-image h3 { position: absolute; bottom: 22px; left: 27px; right: 27px; font-size: 42px; line-height: 1; letter-spacing: -.045em; font-weight: 400; }
 .mission-sector-body { padding: 29px 0 0; }
 .mission-sector-body h4 { font-size: 25px; font-weight: 400; line-height: 1.2; letter-spacing: -.03em; }
@@ -274,7 +279,6 @@ html { scroll-behavior: smooth; scroll-padding-top: 125px; }
 .mission-assurance .mission-text-link { margin-top: 31px; }
 .mission-principles > div { display: flex; gap: 22px; padding: 22px 0; border-top: 1px solid var(--border-strong); }
 .mission-principles > div:first-child { padding-top: 0; border: 0; }
-.mission-principles > div > span { font: 10px var(--font-mono); color: #b9bcb3; padding-top: 4px; }
 .mission-principles h3 { font-size: 17px; line-height: 1.35; font-weight: 400; letter-spacing: -.02em; }
 .mission-principles p { color: var(--fg-2); font-size: 12px; line-height: 1.8; margin-top: 9px; }
 .mission-boundary { margin-top: 56px; border: 1px solid #ffffff38; position: relative; background-image: radial-gradient(#ffffff18 .5px, transparent .5px); background-size: 12px 12px; }
@@ -304,13 +308,12 @@ html { scroll-behavior: smooth; scroll-padding-top: 125px; }
 .mission-faq-items details:last-child { border-bottom: 1px solid var(--border-strong); }
 .mission-faq-items summary { list-style: none; padding: 25px 0; display: flex; align-items: center; gap: 20px; font-size: 14px; cursor: pointer; }
 .mission-faq-items summary::-webkit-details-marker { display: none; }
-.mission-faq-number { font: 9px var(--font-mono); color: var(--fg-2); flex-shrink: 0; }
 .mission-faq-symbol { width: 12px; height: 12px; margin-left: auto; position: relative; flex-shrink: 0; }
 .mission-faq-symbol::before, .mission-faq-symbol::after { content: ''; position: absolute; background: currentColor; }
 .mission-faq-symbol::before { left: 0; top: 5px; width: 11px; height: 1px; }
 .mission-faq-symbol::after { left: 5px; top: 0; height: 11px; width: 1px; }
 .mission-faq-items [open] .mission-faq-symbol::after { display: none; }
-.mission-faq-items details > p { padding: 0 28px 25px 33px; color: var(--fg-2); font-size: 13px; line-height: 1.8; }
+.mission-faq-items details > p { padding: 0 28px 25px 0; color: var(--fg-2); font-size: 13px; line-height: 1.8; }
 /* A shared enterprise-first closing and footer. */
 .mission-cta { --focus-ring: #faf9f5; background: #232620; color: var(--mission-paper); padding: 65px 0 0; }
 .mission-cta > .mission-wrap > .mission-eyebrow, .mission-cta > .stage > .stage-panel > .mission-wrap > .mission-eyebrow { color: #b9bcb3; }
@@ -472,7 +475,6 @@ html { scroll-behavior: smooth; scroll-padding-top: 125px; }
   .mission-egress dl { grid-template-columns: 1fr; }
   .mission-faq-layout { grid-template-columns: 1fr; gap: 35px; }
   .mission-faq-items summary { padding-block: 22px; gap: 14px; font-size: 13px; }
-  .mission-faq-items details > p { padding-left: 27px; }
   .mission-cta { padding-top: 47px; }
   .mission-cta-content { grid-template-columns: 1fr; gap: 32px; padding: 30px 0 45px; }
   .mission-cta h2 { font-size: clamp(52px, 12vw, 70px); }

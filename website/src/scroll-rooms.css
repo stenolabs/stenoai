@@ -51,13 +51,12 @@ html[data-ss=on] .light-room.is-near .lr-dark, html[data-ss=on] .light-room.is-n
   html[data-ss=on] .cases-stage:not([data-nofit]) .sector-corridor .light-room { width: 100%; }
   /* Every row keeps its closed height and lower rows shift with transform (0 CLS); .sector-cases holds exact room for the tallest open card so the corridor never shifts. */
   html[data-ss=on] .cases-stage:not([data-nofit]) .sector-cases { grid-column: 1; grid-row: 1; display: block; align-self: start; overflow: hidden; border-bottom: 1px solid var(--border-strong); }
-  html[data-ss=on] .cases-stage:not([data-nofit]) .sector-case, html[data-ss=on] .cases-stage:not([data-nofit]) .sector-case:not(:nth-child(4n + 1)) { display: grid; grid-template-columns: 78px minmax(0, 1fr); align-content: start; box-sizing: border-box; padding: 10px 0; border-left: 0; border-bottom: 0; opacity: .74; transition: opacity .2s ease, transform .22s cubic-bezier(.2, 0, 0, 1); }
+  html[data-ss=on] .cases-stage:not([data-nofit]) .sector-case, html[data-ss=on] .cases-stage:not([data-nofit]) .sector-case:not(:nth-child(4n + 1)) { display: grid; grid-template-columns: minmax(0, 1fr); align-content: start; box-sizing: border-box; padding: 10px 0; border-left: 0; border-bottom: 0; opacity: .74; transition: opacity .2s ease, transform .22s cubic-bezier(.2, 0, 0, 1); }
   html[data-ss=on] .cases-stage:not([data-nofit]) .sector-case + .sector-case { border-top: 1px solid var(--border-strong); padding-bottom: 10px; }
-  html[data-ss=on] .cases-stage:not([data-nofit]) .sector-case > * { grid-column: 2; }
+  html[data-ss=on] .cases-stage:not([data-nofit]) .sector-case > * { grid-column: 1; }
   html[data-ss=on] .cases-stage:not([data-nofit]) .sector-case-top { display: contents; }
-  html[data-ss=on] .cases-stage:not([data-nofit]) .sector-case-top > .mission-small-index { grid-column: 1; grid-row: 1; align-self: baseline; padding-top: 3px; line-height: 1; }
-  html[data-ss=on] .cases-stage:not([data-nofit]) .sector-case-top > .sector-tag { grid-column: 2; grid-row: 2; justify-self: start; margin-top: 8px; padding: 3px 8px; }
-  html[data-ss=on] .cases-stage:not([data-nofit]) .sector-case h3 { grid-column: 2; grid-row: 1; margin-top: 0; font-size: 18px; line-height: 22px; }
+  html[data-ss=on] .cases-stage:not([data-nofit]) .sector-case-top > .sector-tag { grid-column: 1; grid-row: 2; justify-self: start; margin-top: 8px; padding: 3px 8px; }
+  html[data-ss=on] .cases-stage:not([data-nofit]) .sector-case h3 { grid-column: 1; grid-row: 1; margin-top: 0; font-size: 18px; line-height: 22px; }
   html[data-ss=on] .cases-stage:not([data-nofit]) .sector-case-outcome { grid-row: 3; margin-top: 8px; }
   html[data-ss=on] .cases-stage:not([data-nofit]) .sector-case-for { grid-row: 4; margin-top: 8px; }
   html[data-ss=on] .cases-stage:not([data-nofit]) .sector-case-outputs { grid-row: 5; padding-top: 8px; }
@@ -81,15 +80,10 @@ html[data-ss=on] .light-room.is-near .lr-dark, html[data-ss=on] .light-room.is-n
 .take-still img { display: block; width: 100%; height: 100%; object-fit: contain; }
 .take-still-side { width: 100%; }
 .sector-cloud-right { display: flex; flex-direction: column; gap: 28px; min-width: 0; }
-.sector-heading-take { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-areas: "h pic" "p pic"; align-items: center; row-gap: 22px; }
-.sector-heading-take > h2 { grid-area: h; align-self: end; }
-.sector-heading-take > p { grid-area: p; justify-self: start; align-self: start; }
-.sector-heading-take > .take-still { grid-area: pic; }
 @media (max-width: 1099px) { .sector-cloud-right .take-still { margin-bottom: 8px; } }
-@media (max-width: 899px) { .sector-heading-take { grid-template-columns: 1fr; grid-template-areas: "h" "p" "pic"; } }
 @media (max-width: 767px) { .take-still-side { width: calc(100% + 40px); margin-left: -20px; } }
-@media (max-width: 899px) { .sector-heading-take > .take-still { width: min(100%, 440px); margin: 0 auto; } }
-@media (max-width: 767px) { .sector-heading-take > .take-still { width: min(100%, 340px); margin: 0 auto; } }
+@media (max-width: 899px) { .section-heading-with-picture > .take-still { width: min(100%, 440px); margin: 0 auto; } }
+@media (max-width: 767px) { .section-heading-with-picture > .take-still { width: min(100%, 340px); margin: 0 auto; } }
 
 /* Takes as scroll sequences (papers, drawer): the frames are plain black where there is no object, so screen-blending them over the page leaves the page colour untouched (no box).
    Without JavaScript the start still stays; the player draws the settled last frame under reduced motion and data saver. */

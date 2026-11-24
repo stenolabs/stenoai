@@ -135,7 +135,6 @@ const flowAlt = 'Diagram. Endpoints record, and transcribe by default, on each l
 
     <section id="readers" class="mission-section sector-section sector-sunken" aria-labelledby="readers-heading">
       <div class="mission-wrap">
-        <div class="mission-section-top"><p class="mission-eyebrow">01 / Who it is for</p><span class="mission-eyebrow">Large companies · Private companies</span></div>
         <div class="mission-section-heading">
           <h2 id="readers-heading">The same app.<br />Set up to fit you.</h2>
           <p>A large company and a private company need different things from it. Here is what each one gets.</p>
@@ -158,7 +157,7 @@ const flowAlt = 'Diagram. Endpoints record, and transcribe by default, on each l
     <section id="rooms" class="mission-section sector-section has-stage" aria-labelledby="rooms-heading">
       <Stage on ownFit class="stage-rooms">
       <div class="mission-wrap stage-text">
-        <div class="mission-section-top"><p class="mission-eyebrow">02 / Where it is used</p><span class="mission-eyebrow">Illustrative settings · {rooms.length}</span></div>
+        <div class="mission-section-top"><span class="mission-eyebrow">Illustrative settings</span></div>
         <div class="mission-section-heading">
           <h2 id="rooms-heading">Six rooms where<br />it earns its place.</h2>
           <p>Meetings you cannot hand to a cloud vendor, and the record StenoAI makes in each, on your device or your infrastructure.</p>
@@ -167,7 +166,7 @@ const flowAlt = 'Diagram. Endpoints record, and transcribe by default, on each l
         <ol class="sector-cases ent-cases">
           {rooms.map((u, i) => (
             <li class="sector-case">
-              <div class="sector-case-top"><span class="mission-small-index">{u.code}</span><span class="sector-tag">{u.env}</span></div>
+              <div class="sector-case-top"><span class="sector-tag">{u.env}</span></div>
               <h3>{u.title}</h3>
               <p class="sector-case-outcome">{u.outcome}</p>
               <p class="sector-case-for" id={`room-for-${i + 1}`} data-rm-fold="room"><span class="mission-eyebrow">For</span>{u.for}</p>
@@ -183,10 +182,11 @@ const flowAlt = 'Diagram. Endpoints record, and transcribe by default, on each l
 
     <section id="adds" class="mission-section sector-section sector-sunken" aria-labelledby="adds-heading">
       <div class="mission-wrap">
-        <div class="mission-section-top"><p class="mission-eyebrow">03 / Community and Enterprise</p><span class="mission-eyebrow">Same app. Your systems.</span></div>
-        <div class="mission-section-heading ent-adds-head">
-          <h2 id="adds-heading">What Enterprise<br />adds.</h2>
-          <p>Community is the free app on a laptop. Enterprise connects the same app to your organisation’s own systems.</p>
+        <div class="mission-section-heading section-heading-with-picture">
+          <div>
+            <h2 id="adds-heading">What Enterprise<br />adds.</h2>
+            <p>Community is the free app on a laptop. Enterprise connects the same app to your organisation’s own systems.</p>
+          </div>
           <div class="ent-card-fig" aria-hidden="true"><img src="/scroll/ent/card2-start-d.webp" srcset="/scroll/ent/card2-start-p.webp 640w, /scroll/ent/card2-start-d.webp 960w" sizes="(max-width: 767px) 100vw, 420px" alt="" width="960" height="540" loading="lazy" decoding="async" /><ScrollSeq src="/scroll/ent-card-d" src-phone="/scroll/ent-card-p" frames="48" start=".92" centre=".55" /></div>
         </div>
         <table class="ent-compare">
@@ -216,7 +216,6 @@ const flowAlt = 'Diagram. Endpoints record, and transcribe by default, on each l
 
     <section id="where" class="mission-section sector-section" aria-labelledby="where-heading">
       <div class="mission-wrap">
-        <div class="mission-section-top"><p class="mission-eyebrow">04 / Where everything lives</p><span class="mission-eyebrow">Your tenancy, your routes</span></div>
         <div class="mission-section-heading">
           <h2 id="where-heading">No meeting content<br />on StenoAI servers.</h2>
           <p>StenoAI runs no server that receives meeting content. The adapter, the AI route and shared notes sit in your tenancy.</p>
@@ -271,7 +270,6 @@ const flowAlt = 'Diagram. Endpoints record, and transcribe by default, on each l
 
     <section id="rollout" class="mission-section sector-section sector-sunken" aria-labelledby="rollout-heading">
       <div class="mission-wrap">
-        <div class="mission-section-top"><p class="mission-eyebrow">05 / Rollout</p><span class="mission-eyebrow">Brief · Pilot · Assure · Deploy</span></div>
         <div class="mission-section-heading">
           <h2 id="rollout-heading">From briefing<br />to deployment.</h2>
           <p>When your organisation is ready, we take you through four steps, from the first briefing to the rollout.</p>
@@ -292,9 +290,9 @@ const flowAlt = 'Diagram. Endpoints record, and transcribe by default, on each l
 
     <section id="faq" class="mission-faq mission-section" aria-labelledby="faq-heading">
       <div class="mission-wrap mission-faq-layout">
-        <div><p class="mission-eyebrow">06 / Questions</p><h2 id="faq-heading">Questions your<br />security team will ask.</h2></div>
+        <div><h2 id="faq-heading">Questions your<br />security team will ask.</h2></div>
         <div class="mission-faq-items">
-          {faqs.map((f, index) => <details><summary><span class="mission-faq-number">0{index + 1}</span><span>{f.q}</span><span class="mission-faq-symbol" aria-hidden="true"></span></summary><p>{f.a}</p></details>)}
+          {faqs.map((f) => <details><summary><span>{f.q}</span><span class="mission-faq-symbol" aria-hidden="true"></span></summary><p>{f.a}</p></details>)}
         </div>
       </div>
     </section>

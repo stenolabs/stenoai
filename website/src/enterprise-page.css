@@ -74,8 +74,6 @@ html[data-ss] .ent-card-fig img, html[data-ss] .ent-fleet img { display: none; }
 .ent-card-fig { position: relative; display: block; width: min(100%, 380px); aspect-ratio: 860 / 648; mix-blend-mode: screen; }
 .ent-card-fig img { display: block; width: 100%; height: auto; -webkit-mask-image: linear-gradient(to bottom, transparent, #000 12%, #000 70%, transparent), linear-gradient(to right, transparent, #000 16%, #000 84%, transparent); -webkit-mask-composite: source-in; mask-image: linear-gradient(to bottom, transparent, #000 12%, #000 70%, transparent), linear-gradient(to right, transparent, #000 16%, #000 84%, transparent); mask-composite: intersect; }
 @media (min-width: 1100px) {
-  .ent-adds-head { grid-template-columns: 1.2fr 1fr 1.05fr; gap: 48px; align-items: center; }
-  .ent-adds-head > p { justify-self: start; }
   .ent-card-fig { justify-self: end; }
 }
 @media (max-width: 1099px) {

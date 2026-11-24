@@ -69,7 +69,7 @@ export function MissionPlatform() {
   return (
     <section id="how" className="mission-platform mission-section" aria-labelledby="platform-heading">
       <div className="mission-wrap">
-        <div className="mission-section-top"><p className="mission-eyebrow">01 / The app</p><a href="/download/?src=platform" className="mission-text-link">Try it on your device <ArrowUpRight size={15} aria-hidden="true" /></a></div>
+        <div className="mission-section-top"><a href="/download/?src=platform" className="mission-text-link">Try it on your device <ArrowUpRight size={15} aria-hidden="true" /></a></div>
         <div className="mission-section-heading">
           <h2 id="platform-heading">Less note-taking.<br />More situational clarity.</h2>
           <p>From the first word to the next decision. One private workflow for recording, understanding and returning to the conversations that matter.</p>
