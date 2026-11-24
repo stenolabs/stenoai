@@ -25,12 +25,14 @@ html[data-ss=on] .light-room.is-ready { opacity: 1; transition: opacity .6s; }
 html[data-ss=on] .light-room.is-near .lr-dark, html[data-ss=on] .light-room.is-near .lr-l { display: block; }
 @media (prefers-reduced-motion: reduce) { html[data-ss=on] .light-room.is-ready { transition: none; } }
 
-/* Government use-cases. Flow layout (phones, tablets, short windows): the corridor sits above the cards (cards unchanged); on phones it stays under the header while the cards pass. */
+/* Government and Law enforcement use-cases. The corridor sits above the cards in flow layout and sticks below the header on taller phones. */
 .sector-corridor { width: 100%; margin: 0 0 28px; }
 .sector-corridor .light-room { width: min(100%, 620px); margin: 0 auto; }
 @media (max-width: 767px) {
   .sector-corridor { width: calc(100% + 40px); margin: 0 -20px 20px; }
   .sector-corridor .light-room { width: calc(100% - 40px); }
+}
+@media (max-width: 767px) and (orientation: portrait), (max-width: 767px) and (min-height: 501px) {
   html[data-ss=on] .sector-corridor { position: sticky; top: var(--hdr, 72px); z-index: 4; background: #121311; padding-bottom: 6px; }
   html[data-ss=on] .sector-corridor::after { content: ""; position: absolute; left: 0; right: 0; bottom: -18px; height: 18px; pointer-events: none; background: linear-gradient(#121311, rgba(18, 19, 17, 0)); }
 }
