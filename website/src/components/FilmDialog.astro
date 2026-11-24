@@ -3,9 +3,28 @@ import { X } from "lucide-react";
 import "../films.css";
 ---
 <dialog id="film-dialog" class="film-dialog" aria-label="Film">
+  <div class="film-dialog-bar">
+    <button type="button" class="film-close" aria-label="Close the film" autofocus><X size={20} aria-hidden="true" /></button>
+  </div>
   <video controls playsinline preload="none" crossorigin="anonymous" width="720" height="1280"></video>
-  <button type="button" class="film-close" aria-label="Close the film" autofocus><X size={20} aria-hidden="true" /></button>
 </dialog>
+<style>
+  @media (max-width: 767px), (pointer: coarse) {
+    .film-dialog {
+      --film-height: min(calc(100svh - 60px), calc(94vw * 16 / 9));
+      width: min(94vw, calc(var(--film-height) * 9 / 16));
+      height: calc(var(--film-height) + 44px);
+      max-height: none;
+      aspect-ratio: auto;
+    }
+    .film-dialog-bar { display: flex; justify-content: flex-end; background: #121311; }
+    .film-dialog video { height: var(--film-height); }
+    .film-close { position: static; }
+  }
+  @media (orientation: landscape) and (max-height: 500px) and (pointer: coarse) {
+    .film-dialog { min-width: min(94vw, 320px); }
+  }
+</style>
 <script>
   import { films } from "../content/films.js";
   const dlg = document.getElementById('film-dialog');
