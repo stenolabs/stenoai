@@ -14,11 +14,11 @@ const DOWNLOAD_ARM = "https://github.com/stenolabs/stenoai/releases/latest/downl
 const DOWNLOAD_WIN = "https://github.com/stenolabs/stenoai/releases/latest/download/stenoAI-windows-x64.exe";
 
 const H2_STYLE = {
-  fontFamily: "var(--font-serif)",
-  fontWeight: 400,
-  fontSize: "clamp(28px, 3.6vw, 40px)",
+  fontFamily: "var(--font-sans)",
+  fontWeight: 500,
+  fontSize: "clamp(26px, 3.33vw, 37px)",
   lineHeight: 1.1,
-  letterSpacing: "-0.02em",
+  letterSpacing: "-0.035em",
   color: "var(--fg-1)",
 };
 
@@ -42,18 +42,19 @@ function toneIconMarkup(tone) {
       </p>
       <h1
         style={{
-          fontFamily: "var(--font-serif)",
-          fontWeight: 400,
-          fontSize: "clamp(36px, 5vw, 58px)",
+          fontFamily: "var(--font-sans)",
+          fontWeight: 500,
+          fontSize: "clamp(33.2px, 4.63vw, 53.6px)",
           lineHeight: 1.05,
-          letterSpacing: "-0.025em",
+          letterSpacing: "-0.045em",
+          wordSpacing: "-0.06em",
           color: "var(--fg-1)",
-          maxWidth: "24ch",
+          maxWidth: "27ch",
         }}
       >
         {data.h1}
       </h1>
-      <p class="text-fg-2 text-lg leading-[1.6] mt-6" style="max-width: 66ch">
+      <p class="text-fg-2 text-lg leading-[1.6] mt-6" style="max-width: 74ch">
         {data.intro}
       </p>
       <div class="flex gap-[10px] flex-wrap mt-8">
@@ -118,7 +119,7 @@ function toneIconMarkup(tone) {
           </tbody>
         </table>
       </div>
-      <p class="text-fg-muted text-[13px] mt-4" style="max-width: 70ch">
+      <p class="text-fg-muted text-[13px] mt-4" style="max-width: 78ch">
         {data.name} details taken from its public website and documentation, verified {VERIFIED}. Pricing
         and features change; check their site for current terms.
       </p>
@@ -130,13 +131,13 @@ function toneIconMarkup(tone) {
       <blockquote class="m-0 py-2 pl-6 md:pl-8" style="border-left: 2px solid var(--fg-1)">
         <p
           style={{
-            fontFamily: "var(--font-serif)",
+            fontFamily: "var(--font-sans)",
             fontWeight: 400,
-            fontSize: "clamp(20px, 2.6vw, 26px)",
+            fontSize: "clamp(18.5px, 2.4vw, 24px)",
             lineHeight: 1.4,
-            letterSpacing: "-0.01em",
+            letterSpacing: "-0.025em",
             color: "var(--fg-1)",
-            maxWidth: "52ch",
+            maxWidth: "64ch",
           }}
         >
           {data.verdict}
@@ -194,7 +195,7 @@ function toneIconMarkup(tone) {
               </span>
             </button>
             <div class="faq-panel overflow-hidden" style="height: 0">
-              <p class="text-fg-2 text-[15px] leading-[1.6] pb-6" style="max-width: 62ch">{f.a}</p>
+              <p class="text-fg-2 text-[15px] leading-[1.6] pb-6" style="max-width: 69ch">{f.a}</p>
             </div>
           </div>
         ))}
