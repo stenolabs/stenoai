@@ -20,14 +20,18 @@ html[data-ss=on] .film-strip { transition: transform .55s cubic-bezier(.22, .8, 
 .film-close:focus-visible, .film-controls :is(button, a):focus-visible, .sector-film-button:focus-visible { outline: 2px solid #9DB88D; outline-offset: 3px; }
 .film-watch { cursor: pointer; }
 .film-length-inline { opacity: .92; white-space: nowrap; }
-.film-length-inline::before { content: '·'; margin-right: 8px; }
 .film-reel:not([data-film-ready]) .film-watch { margin-top: 20px; }
 
 @media (min-width: 768px) {
+  /* Land the reel below the sticky header after accounting for section padding. */
+  #films { scroll-margin-top: calc(82px - 125px - 80px); }
   .film-stage .mission-section-top { align-self: start; margin-bottom: 24px; padding-bottom: 20px; }
   .film-stage .mission-section-heading { display: block; margin-bottom: 24px; }
   .film-stage .mission-section-heading > p { justify-self: start; margin-top: 18px; }
   .film-screen, .film-controls { align-self: end; }
+}
+@media (min-width: 1100px) {
+  #films { scroll-margin-top: calc(82px - 125px - 106px); }
 }
 @media (min-width: 900px) and (min-height: 720px) {
   html[data-ss=on]:not([data-nofit]) .film-reel[data-film-ready]::after { content: ''; display: block; height: 85svh; }
