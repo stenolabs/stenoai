@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ArrowUpRight, AudioLines, Check, FileText, HardDrive, MessageSquare, Mic, Search } from 'lucide-react';
 import { StenoMark } from './Brand';
 
@@ -10,12 +10,31 @@ const STEPS = [
 ];
 const BARS = Array.from({ length: 65 }, (_, i) => 12 + Math.abs(Math.sin(i * 1.7) * Math.cos(i * 0.31)) * 65);
 
+// Words appear one by one (CSS, .platform-word); the text is in the page from the start. at and step are in ms.
+function Words({ text, at = 0, step = 55, strong }) {
+  const Tag = strong ? 'strong' : 'span';
+  return text.split(' ').map((w, i) => <Tag key={i} className="platform-word" style={{ '--at': `${at + i * step}ms` }}>{w} </Tag>);
+}
+
+const at = (ms) => ({ '--at': `${ms}ms` });
+const clock = (s) => [s / 3600, (s / 60) % 60, s % 60].map((n) => String(Math.floor(n)).padStart(2, '0')).join(':');
+
+function Timer() {
+  const [s, setS] = useState(872); // 00:14:32
+  useEffect(() => {
+    if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    const id = setInterval(() => setS((n) => n + 1), 1000);
+    return () => clearInterval(id);
+  }, []);
+  return <span className="platform-timer">{clock(s)}</span>;
+}
+
 function DemoContent({ stage }) {
   if (stage === 'capture') return (
     <div className="platform-capture">
       <span className="platform-record-label"><span className="platform-record-dot" /> Capturing on this device</span>
-      <div className="platform-wave" aria-hidden="true">{BARS.map((height, i) => <span key={i} style={{ height: `${height}%` }} />)}</div>
-      <span className="platform-timer">00:14:32</span>
+      <div className="platform-wave" aria-hidden="true">{BARS.map((height, i) => <span key={i} style={{ height: `${height}%`, '--d': `${-((i * 137) % 1600)}ms`, '--t': `${900 + ((i * 53) % 700)}ms` }} />)}</div>
+      <Timer />
       <div className="platform-audio-sources"><span><Mic size={13} aria-hidden="true" /> Microphone</span><span><AudioLines size={13} aria-hidden="true" /> System audio</span></div>
       <p>Your meeting. No extra participant.</p>
     </div>
@@ -23,28 +42,28 @@ function DemoContent({ stage }) {
   if (stage === 'transcribe') return (
     <div className="platform-transcript">
       <p className="platform-content-label">Transcript <span>On-device</span></p>
-      <div><span className="platform-speaker">You <time>00:13:48</time></span><p>Let’s confirm the readiness review for Thursday. We need the equipment checks and the updated briefing pack.</p></div>
-      <div><span className="platform-speaker">Others <time>00:14:06</time></span><p>I’ll circulate the briefing pack by Wednesday. The equipment checks are already complete.</p></div>
-      <div><span className="platform-speaker">You <time>00:14:24</time></span><p>Agreed. We’ll review the outstanding actions together on Thursday morning.</p></div>
+      <div className="platform-rise" style={at(150)}><span className="platform-speaker">You <time>00:13:48</time></span><p><Words at={350} text="Let’s confirm the readiness review for Thursday. We need the equipment checks and the updated briefing pack." /></p></div>
+      <div className="platform-rise" style={at(1700)}><span className="platform-speaker">Others <time>00:14:06</time></span><p><Words at={1900} text="I’ll circulate the briefing pack by Wednesday. The equipment checks are already complete." /></p></div>
+      <div className="platform-rise" style={at(3000)}><span className="platform-speaker">You <time>00:14:24</time></span><p><Words at={3200} text="Agreed. We’ll review the outstanding actions together on Thursday morning." /></p></div>
     </div>
   );
   if (stage === 'summarise') return (
     <div className="platform-summary">
       <p className="platform-content-label">Meeting summary <span>Generated locally</span></p>
-      <p>The team confirmed preparations for Thursday’s readiness review. Equipment checks are complete; the briefing pack will be circulated ahead of the meeting.</p>
-      <h4>Key decisions</h4>
-      <p className="platform-decision"><Check size={15} aria-hidden="true" /> Readiness review confirmed for Thursday morning.</p>
-      <h4>Action items</h4>
-      <div className="platform-action"><span className="platform-checkbox" aria-hidden="true" />Circulate the updated briefing pack.<span>Wednesday</span></div>
-      <div className="platform-action"><span className="platform-checkbox" aria-hidden="true" />Review the outstanding actions.<span>Thursday</span></div>
+      <p><Words at={150} step={45} text="The team confirmed preparations for Thursday’s readiness review. Equipment checks are complete; the briefing pack will be circulated ahead of the meeting." /></p>
+      <h4 className="platform-rise" style={at(1350)}>Key decisions</h4>
+      <p className="platform-decision platform-rise" style={at(1600)}><Check className="platform-draw" style={at(1850)} size={15} aria-hidden="true" /> Readiness review confirmed for Thursday morning.</p>
+      <h4 className="platform-rise" style={at(2300)}>Action items</h4>
+      <div className="platform-action platform-rise" style={at(2550)}><span className="platform-checkbox" aria-hidden="true" />Circulate the updated briefing pack.<span>Wednesday</span></div>
+      <div className="platform-action platform-rise" style={at(2950)}><span className="platform-checkbox" aria-hidden="true" />Review the outstanding actions.<span>Thursday</span></div>
     </div>
   );
   return (
     <div className="platform-chat">
       <p className="platform-content-label">Ask your notes <span>Local model</span></p>
-      <div className="platform-question">What needs to happen before the readiness review?</div>
-      <div className="platform-answer"><StenoMark size={26} /><div><p>The <strong>updated briefing pack</strong> needs to be circulated by Wednesday. Equipment checks are already complete.</p><p>The team will review outstanding actions together on Thursday morning.</p><span className="platform-citation"><FileText size={12} aria-hidden="true" /> Operational readiness review</span></div></div>
-      <p className="platform-chat-hint"><Search size={13} aria-hidden="true" /> Find the answer in your own record.</p>
+      <div className="platform-question platform-rise" style={at(150)}><Words at={300} step={70} text="What needs to happen before the readiness review?" /></div>
+      <div className="platform-answer platform-rise" style={at(1300)}><StenoMark size={26} /><div><p><Words at={1600} text="The" /><Words at={1660} strong text="updated briefing pack" /><Words at={1830} text="needs to be circulated by Wednesday. Equipment checks are already complete." /></p><p><Words at={2700} text="The team will review outstanding actions together on Thursday morning." /></p><span className="platform-citation platform-rise" style={at(3500)}><FileText size={12} aria-hidden="true" /> Operational readiness review</span></div></div>
+      <p className="platform-chat-hint platform-rise" style={at(3800)}><Search size={13} aria-hidden="true" /> Find the answer in your own record.</p>
     </div>
   );
 }

@@ -64,14 +64,14 @@ const PULSES = [
 </section>
 
 <style>
-  .mission-hero-toggle { position: absolute; right: 56px; bottom: 74px; }
+  .mission-hero > .mission-hero-toggle { position: absolute !important; right: 56px; bottom: 74px; top: auto !important; margin: 0; }
   .mission-hero:not([data-playing]) .hero-pulse,
   .mission-hero:not([data-playing]) .hero-radar-scan::after { animation-play-state: paused; }
   @media (max-width: 1199px) {
-    .mission-hero-toggle { right: 32px; }
+    .mission-hero > .mission-hero-toggle { right: 32px; }
   }
   @media (max-width: 767px) {
-    .mission-hero-toggle { top: calc(86vw - 32px); bottom: auto; right: 20px; }
+    .mission-hero > .mission-hero-toggle { top: calc(86vw - 40px) !important; bottom: auto; right: 20px; }
   }
 
   /* Radar layer: a hairline grid blended into the film, light pulses running along its lines and a slow amber
@@ -147,7 +147,7 @@ const PULSES = [
       mask-composite: intersect;
     }
     .mission-hero-shade, .mission-hero-caption { display: none; }
-    .mission-hero-toggle { top: auto; bottom: 60px; right: 20px; }
+    .mission-hero > .mission-hero-toggle { top: auto !important; bottom: 60px; right: 20px; }
     .hero-radar, .hero-radar-grid { left: 60%; }
     .mission-hero-content { padding-block: 18px; }
     .mission-hero-content > .mission-eyebrow { margin-bottom: 4px; line-height: 1.1; }

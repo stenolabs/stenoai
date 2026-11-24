@@ -13,10 +13,9 @@ import "../films.css";
     <ul class="film-gallery" role="list">
       {films.map((film) => (
         <li class="film-card">
-          <img src={film.still} alt={film.alt} width="1024" height="1536" loading="lazy" decoding="async" />
+          <span class="film-poster"><img src={film.still} alt={film.alt} width="1024" height="1536" loading="lazy" decoding="async" /><span class="film-play" aria-hidden="true"><Play size={22} fill="currentColor" strokeWidth={0} /></span></span>
           <h3>{film.name}</h3>
           <a class="film-gallery-watch" href={film.src} data-film-open={film.slug} aria-label={`Watch video: ${film.name}, ${film.length}`}>
-            <Play size={14} fill="currentColor" aria-hidden="true" />
             <span>Watch video</span>
             <span class="film-length">{film.length}</span>
           </a>

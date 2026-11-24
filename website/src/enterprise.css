@@ -192,6 +192,19 @@ html:not([data-ss]) .sector-loop-toggle { display: none; }
 .platform-answer > svg { flex-shrink: 0; }
 .platform-answer p + p { margin-top: 10px; }
 .platform-citation { display: inline-flex; gap: 5px; align-items: center; margin-top: 10px; font-size: 9px; color: var(--fg-2); }
+/* Each app screen plays when its tab is shown (a shown panel restarts its CSS animations); text is always in the page. */
+@media (prefers-reduced-motion: no-preference) {
+  .platform-record-dot { animation: platform-dot 1.6s ease-in-out infinite; }
+  .platform-wave > span { transform-origin: center; animation: platform-bar var(--t) ease-in-out var(--d) infinite alternate; }
+  .platform-demo-content .platform-word { animation: platform-word .28s ease-out var(--at) both; }
+  .platform-demo-content .platform-rise { animation: platform-rise .45s cubic-bezier(.23, 1, .32, 1) var(--at) both; }
+  .platform-demo-content .platform-draw path { stroke-dasharray: 24; animation: platform-draw .45s ease-out var(--at) both; }
+}
+@keyframes platform-dot { 50% { opacity: .25; } }
+@keyframes platform-bar { from { transform: scaleY(.28); } to { transform: scaleY(1); } }
+@keyframes platform-word { from { opacity: 0; } }
+@keyframes platform-rise { from { opacity: 0; transform: translateY(8px); } }
+@keyframes platform-draw { from { stroke-dashoffset: 24; } }
 .platform-chat-hint { margin-top: 20px; border-top: 1px solid var(--border); padding-top: 12px; display: flex; gap: 8px; align-items: center; color: var(--fg-2); font-size: 10px; }
 .platform-status { padding: 11px 18px; display: flex; justify-content: space-between; align-items: center; gap: 12px; border-top: 1px solid var(--border); color: var(--fg-2); font: 8px var(--font-mono); text-transform: uppercase; }
 .platform-status > span { display: flex; align-items: center; gap: 7px; }

@@ -1,5 +1,5 @@
 ---
-import { Check, ArrowUpRight, X } from "lucide-react";
+import { Check, ArrowUpRight, X, Play } from "lucide-react";
 import { Nav } from "../sections/Nav";
 import Footer from "../sections/Footer.astro";
 import CTAFooter from "../sections/CTAFooter.astro";
@@ -96,7 +96,7 @@ const num = (id) => String(order.indexOf(id) + 1).padStart(2, "0");
             <h2 id="film-heading">See it in the room.</h2>
             <p>A short video on how StenoAI keeps {data.name.toLowerCase()} conversations on hardware you control.</p>
           </div>
-          <img class="sector-film-picture" src={film.still} alt={film.alt} width="1024" height="1536" loading="lazy" decoding="async" />
+          <a class="film-poster sector-film-picture" href={film.src} data-film-open={film.slug} tabindex="-1" aria-hidden="true"><img src={film.still} alt="" width="1024" height="1536" loading="lazy" decoding="async" /><span class="film-play"><Play size={22} fill="currentColor" strokeWidth={0} /></span></a>
           <a class="mission-button mission-button-light sector-film-button" href={film.src} data-film-open={film.slug}>Watch video, {film.length}</a>
         </div>
       </div>
