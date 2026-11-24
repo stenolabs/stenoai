@@ -25,6 +25,9 @@
 const MAX_STEPS = 6;
 const MAX_TOOL_OUTPUT = 6000;
 const MAX_TOOL_NAME = 64;
+// A card nobody answers is declined after this long, so the turn waiting on
+// it ends instead of holding one of the few concurrent query slots forever.
+const PENDING_CARD_TIMEOUT_MS = 30 * 60 * 1000;
 
 /**
  * Whether the configured provider/model is trusted with tool calls. Cloud
@@ -170,6 +173,45 @@ function compactArguments(args, max = MAX_STEP_DETAIL) {
   }
   const line = parts.join(', ');
   return line.length > max ? `${line.slice(0, max - 1)}…` : line;
+}
+
+/**
+ * The action cards one chat-agent turn is waiting on: card id → resolve(outcome).
+ *   wait(id)            a promise for the card's outcome; declined after timeoutMs
+ *   settle(id, outcome) the user answered (approve / dismiss); false if not pending
+ *   declineAll(reason)  decline the rest: the turn ended, or a newer question
+ *                       in the same conversation superseded it
+ * `onDecline(id, reason)` runs for every decline made here ('timeout' or the
+ * declineAll reason), so the caller can close the card in the chat as well.
+ */
+function createPendingCards({ timeoutMs = PENDING_CARD_TIMEOUT_MS, onDecline = () => {}, timers = { setTimeout, clearTimeout } } = {}) {
+  const waiting = new Map();
+  const settle = (id, outcome) => {
+    const entry = waiting.get(id);
+    if (!entry) return false;
+    waiting.delete(id);
+    timers.clearTimeout(entry.timer);
+    entry.resolve(outcome);
+    return true;
+  };
+  return {
+    get size() { return waiting.size; },
+    has: (id) => waiting.has(id),
+    wait(id) {
+      return new Promise((resolve) => {
+        const timer = timers.setTimeout(() => {
+          if (settle(id, { status: 'declined' })) onDecline(id, 'timeout');
+        }, timeoutMs);
+        waiting.set(id, { resolve, timer });
+      });
+    },
+    settle,
+    declineAll(reason = 'finished') {
+      for (const id of [...waiting.keys()]) {
+        if (settle(id, { status: 'declined' })) onDecline(id, reason);
+      }
+    },
+  };
 }
 
 function clip(text, max = MAX_TOOL_OUTPUT) {
@@ -331,7 +373,9 @@ function runBackendJson({ spawn, backend, command, env, cwd, payload, prefix, er
 
 module.exports = {
   MAX_STEPS,
+  PENDING_CARD_TIMEOUT_MS,
   AgentCancelled,
+  createPendingCards,
   toolCallingSupport,
   prefersSimpleActions,
   toolsUnavailableStep,

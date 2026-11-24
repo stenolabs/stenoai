@@ -108,6 +108,7 @@ export function useStreamingQuery() {
     question: string,
     folderId?: string | null,
     history?: Array<{ role: 'user' | 'assistant'; content: string }>,
+    sessionId?: string,
   ): string => {
     const id = newId();
     setStreams((prev) => ({
@@ -181,7 +182,13 @@ export function useStreamingQuery() {
         }
       })();
     } else {
-      ipc().query.chatContext(id, { scope: folderId === GENERAL_SCOPE ? 'general' : 'notes', question, folder: folderId === GENERAL_SCOPE ? undefined : folderId, history: history ?? [] });
+      ipc().query.chatContext(id, {
+        scope: folderId === GENERAL_SCOPE ? 'general' : 'notes',
+        question,
+        folder: folderId === GENERAL_SCOPE ? undefined : folderId,
+        history: history ?? [],
+        ...(sessionId ? { sessionId } : {}),
+      });
     }
     return id;
   }, []);

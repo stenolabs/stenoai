@@ -161,6 +161,8 @@ export interface ChatRequest {
   recordingId?: string;
   file?: string;
   folder?: string | null;
+  /** The chat conversation asking: a new question declines cards an earlier turn of it still waits on. */
+  sessionId?: string;
 }
 
 /** A read tool a chat-agent turn ran ("Searched Linear…"). */

@@ -202,7 +202,7 @@ export function Chat() {
 
       // Streaming for both local AND org scope — startGlobalStream picks
       // the right backend internally based on folderId.
-      const streamId = streaming.startGlobalStream(q, scopeFolderId);
+      const streamId = streaming.startGlobalStream(q, scopeFolderId, undefined, createdSessionId);
       // Record the handoff under THIS sessionId so a fast double-submit
       // can't clobber an earlier in-flight stream before the conversation
       // page mounts and claims it.

@@ -203,7 +203,7 @@ export function ChatConversation({ sessionId }: ChatConversationProps) {
 
       // Follow-ups include only bounded history from the selected context.
       const history = boundedChatHistory(session.messages ?? [], scopeFolderId ?? 'notes', 'notes');
-      const streamId = streaming.startGlobalStream(q, scopeFolderId, history);
+      const streamId = streaming.startGlobalStream(q, scopeFolderId, history, session.id);
       trackChatTurn({ sessionId: session.id, streamId, context: scopeFolderId ?? 'notes' });
     } catch (err) {
       // Disk write / IPC / streaming setup can all fail. Surface the error.
@@ -226,7 +226,7 @@ export function ChatConversation({ sessionId }: ChatConversationProps) {
     const at = list.map((m) => m.role).lastIndexOf('user');
     if (at === -1) return;
     const history = boundedChatHistory(list.slice(0, at), scopeFolderId ?? 'notes', 'notes');
-    const streamId = streaming.startGlobalStream(list[at].content, scopeFolderId, history);
+    const streamId = streaming.startGlobalStream(list[at].content, scopeFolderId, history, session.id);
     trackChatTurn({ sessionId: session.id, streamId, context: scopeFolderId ?? 'notes' });
   };
 

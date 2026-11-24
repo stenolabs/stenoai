@@ -3918,12 +3918,22 @@ ipcMain.on('chat-context-stream', async (event, queryId, request) => {
   };
   if (!mainWindow || sender !== mainWindow.webContents || event.senderFrame !== sender.mainFrame) return;
   if (typeof queryId !== 'string' || !queryId || queryId.length > 256 || contextQueries.has(queryId)) return;
+  // A new question in a conversation supersedes the action cards an earlier
+  // turn of that conversation is still waiting on: they are declined and the
+  // turn ends, so a card nobody answers never holds a query slot. Checked
+  // before the cap so the slot it held is free for this question.
+  const sessionId = typeof request?.sessionId === 'string' && request.sessionId.length <= 128 ? request.sessionId : null;
+  if (sessionId) {
+    for (const other of contextQueries.values()) {
+      if (other.sender === sender && other.sessionId === sessionId && other.agent?.pending.size) other.agent.supersede();
+    }
+  }
   if (contextQueries.size >= 4) {
     send('query-done', { success: false, error: 'Wait for another answer to finish.' });
     return;
   }
   let cancelled = false;
-  const entry = { sender, cancel: () => { cancelled = true; } };
+  const entry = { sender, sessionId, cancel: () => { cancelled = true; } };
   contextQueries.set(queryId, entry);
   const onDestroyed = () => entry.cancel();
   sender.once('destroyed', onDestroyed);
@@ -4003,24 +4013,44 @@ function runChatAgent({ queryId, payload, tools, entry, send, cleanup, runPlain 
   const service = getMcpActionsService();
   const chatKey = `chat-${crypto.createHash('sha256').update(String(queryId)).digest('hex').slice(0, 24)}`;
   const procs = new Set();
-  const pending = new Map(); // cardId -> resolve(outcome)
   let cancelled = false;
   let finished = false;
   let answered = false;
+  // The cards this turn is waiting on. One left unanswered is declined after
+  // PENDING_CARD_TIMEOUT_MS (and closed in the chat), so the turn ends instead
+  // of holding a query slot for good.
+  const pending = chatAgent.createPendingCards({
+    onDecline: (cardId, reason) => {
+      if (reason === 'finished') return;
+      service.dismiss(chatKey, cardId).then((cards) => {
+        const after = cards.find((c) => c.id === cardId);
+        if (after && !entry.sender.isDestroyed()) send('query-action-card', { card: after });
+      }).catch(() => {});
+    },
+  });
   const finish = (success, error, errorCode) => {
     if (finished) return;
     finished = true;
-    for (const resolve of pending.values()) resolve({ status: 'declined' });
-    pending.clear();
+    pending.declineAll('finished');
     send('query-done', { success, ...(error ? { error } : {}), ...(error && errorCode ? { errorCode } : {}) });
     cleanup();
   };
-  entry.agent = { chatKey, pending, service };
-  entry.cancel = () => {
+  const stop = (reason) => {
     cancelled = true;
     for (const p of procs) { try { p.kill(); } catch (_) {} }
-    finish(false, 'Answer stopped.');
+    if (reason === 'superseded') pending.declineAll('superseded');
+    // Superseded with an answer already on screen: that answer stands.
+    if (reason === 'superseded' && answered) finish(true);
+    else finish(false, 'Answer stopped.');
   };
+  entry.agent = {
+    chatKey,
+    pending,
+    service,
+    // A newer question in the same conversation while this turn waits on a card.
+    supersede: () => { if (!finished && pending.size) stop('superseded'); },
+  };
+  entry.cancel = () => stop('cancelled');
   const backend = (command, body, prefix, errorPrefix, stream = {}) => chatAgent.runBackendJson({
     spawn, backend: getBackendPath(), command, env, cwd: getBackendCwd(), payload: body, prefix, errorPrefix, ...stream,
     onProc: (p) => { procs.add(p); p.on('close', () => procs.delete(p)); },
@@ -4056,7 +4086,7 @@ function runChatAgent({ queryId, payload, tools, entry, send, cleanup, runPlain 
     if (proposed.rejected) return { status: 'rejected', missing: proposed.missing };
     if (cancelled) return { status: 'declined' };
     send('query-action-card', { card: proposed.card });
-    return new Promise((resolve) => pending.set(proposed.card.id, resolve));
+    return pending.wait(proposed.card.id);
   };
   const emit = (kind, data) => {
     if (kind === 'text') {
@@ -4115,9 +4145,7 @@ ipcMain.handle('chat-action-approve', async (event, queryId, cardId, args) => {
     const card = await agent.service.approve(agent.chatKey, cardId, args);
     if (!entry.sender.isDestroyed()) entry.sender.send('query-action-card', { queryId, card });
     if (card.status === 'done') {
-      const resolve = agent.pending.get(cardId);
-      agent.pending.delete(cardId);
-      resolve?.({ status: 'done', text: [card.result?.text, card.result?.link].filter(Boolean).join('\n') });
+      agent.pending.settle(cardId, { status: 'done', text: [card.result?.text, card.result?.link].filter(Boolean).join('\n') });
     }
     return { success: true, card };
   } catch (e) {
@@ -4134,11 +4162,9 @@ ipcMain.handle('chat-action-dismiss', async (event, queryId, cardId) => {
     const before = cards.find((c) => c.id === cardId);
     const after = (await agent.service.dismiss(agent.chatKey, cardId)).find((c) => c.id === cardId);
     if (after && !entry.sender.isDestroyed()) entry.sender.send('query-action-card', { queryId, card: after });
-    const resolve = agent.pending.get(cardId);
-    agent.pending.delete(cardId);
     // Dismissing after a failed attempt tells the model it failed, not that
     // the user said no.
-    resolve?.(before?.status === 'failed'
+    agent.pending.settle(cardId, before?.status === 'failed'
       ? { status: 'failed', text: before.result?.detail || before.result?.text || '' }
       : { status: 'declined' });
     return { success: true, card: after };

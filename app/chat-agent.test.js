@@ -122,6 +122,45 @@ test('a read on a custom or local server shows what it asked for; credentials st
   assert.ok(!JSON.stringify(events).includes('sk-live-1'));
 });
 
+test('pending cards: answered cards settle, forgotten ones are declined on time, the rest on declineAll', async () => {
+  const { createPendingCards } = require('./chat-agent');
+  const timers = new Map();
+  let nextTimer = 1;
+  const fake = {
+    setTimeout: (fn, ms) => { const id = nextTimer++; timers.set(id, { fn, ms }); return id; },
+    clearTimeout: (id) => timers.delete(id),
+  };
+  const declined = [];
+  const pending = createPendingCards({ timeoutMs: 1000, onDecline: (id, reason) => declined.push([id, reason]), timers: fake });
+
+  const a = pending.wait('a');
+  const b = pending.wait('b');
+  const c = pending.wait('c');
+  assert.equal(pending.size, 3);
+  assert.equal(timers.size, 3);
+  assert.ok([...timers.values()].every((t) => t.ms === 1000));
+
+  // Approved: settled by the user, its timer cleared, no decline callback.
+  assert.equal(pending.settle('a', { status: 'done', text: 'Created REL-2' }), true);
+  assert.deepEqual(await a, { status: 'done', text: 'Created REL-2' });
+  assert.equal(pending.settle('a', { status: 'done' }), false, 'settling twice is a no-op');
+  assert.equal(pending.has('a'), false);
+
+  // Forgotten: the timer declines it and tells the caller why.
+  timers.get(2).fn(); // b's timer (a=1 was cleared when it settled)
+  assert.deepEqual(await b, { status: 'declined' });
+  assert.deepEqual(declined, [['b', 'timeout']]);
+
+  // Superseded by a newer question: everything left is declined at once.
+  pending.declineAll('superseded');
+  assert.deepEqual(await c, { status: 'declined' });
+  assert.deepEqual(declined, [['b', 'timeout'], ['c', 'superseded']]);
+  assert.equal(pending.size, 0);
+  assert.equal(timers.size, 0, 'no timers left running');
+  pending.declineAll('finished');
+  assert.equal(declined.length, 2, 'nothing to decline is silent');
+});
+
 test('compactArguments is one bounded line', () => {
   const { compactArguments } = require('./chat-agent');
   assert.equal(compactArguments({}), '');
