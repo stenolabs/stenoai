@@ -200,8 +200,11 @@ function init(el) {
   }
   function settle() { measure(); target = still() ? 1 : progress(); cur = target; paint(true); }
   function remeasure() { measure(); if (visible && loadedKey) { target = still() ? 1 : progress(); if (!raf) { cur = target; paint(true); } } }
-  function startNow() {
+  function cancelScheduledLoad() {
     if (stItem) { stItem.cancelled = true; stItem = null; }
+  }
+  function startNow() {
+    cancelScheduledLoad();
     started = true;
     visible = true;
     measure();
@@ -249,15 +252,15 @@ function init(el) {
   }
   if (items.length) setLit(0, lit);
 
-  whenNear(el, () => { started = true; scheduleLoad(); }, el.dataset.near || '150% 0px');
+  whenNear(el, () => { near = started = true; scheduleLoad(); }, el.dataset.near || '150% 0px', () => {
+    near = false;
+    cancelScheduledLoad();
+  });
   // More than 2 viewports away: the encoded frames are dropped too (fetched again from the cache on return).
   new IntersectionObserver((es) => {
-    near = es[es.length - 1].isIntersecting;
-    if (!started || still()) return;
-    if (near && !loadedKey) scheduleLoad();
-    else if (!near) {
-      if (stItem) { stItem.cancelled = true; stItem = null; }
-      if (loadedKey) { release(); blobs = []; prio = []; seen = new Set(); loadedKey = ''; }
+    if (es[es.length - 1].isIntersecting || still()) return;
+    if (loadedKey) {
+      release(); blobs = []; prio = []; seen = new Set(); loadedKey = '';
     }
   }, { rootMargin: '200% 0px' }).observe(el);
   new IntersectionObserver((es) => {

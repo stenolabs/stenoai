@@ -29,9 +29,17 @@ export function decodeBlob(blob) {
 }
 // Nothing is fetched until the element is within 1.5 viewports (or custom margin), and not before the page has loaded and gone idle.
 export const idle = (fn) => ('requestIdleCallback' in window ? requestIdleCallback(fn, { timeout: 2000 }) : setTimeout(fn, 200));
-export function whenNear(el, fn, rootMargin = '150% 0px') {
-  const go = () => (document.readyState === 'complete' ? idle(fn) : addEventListener('load', () => idle(fn), { once: true }));
-  const io = new IntersectionObserver((es) => { if (es[es.length - 1].isIntersecting) { io.disconnect(); go(); } }, { rootMargin });
+export function whenNear(el, fn, rootMargin = '150% 0px', onLeave) {
+  let inside = false;
+  const run = () => { if (inside) fn(); };
+  const go = () => (document.readyState === 'complete' ? idle(run) : addEventListener('load', () => idle(run), { once: true }));
+  const io = new IntersectionObserver((es) => {
+    inside = es[es.length - 1].isIntersecting;
+    if (inside) {
+      if (!onLeave) io.disconnect();
+      go();
+    } else onLeave?.();
+  }, { rootMargin });
   io.observe(el);
 }
 

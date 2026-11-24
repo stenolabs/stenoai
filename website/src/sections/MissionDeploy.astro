@@ -39,6 +39,10 @@ const localModels = [
       ))}
     </div>
     <div class="mission-deploy-models">
+      <div class="deploy-model-media" aria-hidden="true">
+        <noscript><img src="/scroll/deploy-model/0035.webp" alt="" width="840" height="600" loading="lazy" decoding="async" /></noscript>
+        <ScrollSeq src="/scroll/deploy-model" src-phone="/scroll/deploy-model" frames={36} start=".95" centre=".52" />
+      </div>
       <p class="mission-eyebrow">Open-weight models on the device</p>
       <ul>{localModels.map((m) => <li><strong>{m.name}</strong> <span>{m.size}</span></li>)}</ul>
       <p class="mission-deploy-models-note">Downloaded once during setup, then they run offline. Or point it at your own endpoint.</p>

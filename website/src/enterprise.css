@@ -221,9 +221,13 @@ html { scroll-behavior: smooth; scroll-padding-top: 125px; }
 .deploy-media { position: relative; width: 100%; aspect-ratio: 960 / 600; margin: -6px 0 14px; }
 .deploy-media picture { display: block; width: 100%; height: 100%; }
 .mission-deploy-mode:first-child .deploy-media { width: calc(100% - 31px); }
-.deploy-still { display: block; width: 100%; height: 100%; mix-blend-mode: screen; }
+.deploy-still { display: block; width: 100%; height: 100%; }
 .deploy-mark { position: absolute; left: 0; top: 50%; width: 1px; height: 1px; pointer-events: none; }
-.seq-plain, html[data-ss] .seq-plain { mix-blend-mode: screen; /* frames are black where there is no object, so screen over the page leaves the page colour untouched: no box */ -webkit-mask-image: linear-gradient(to right, transparent, #000 2.5%, #000 97.5%, transparent), linear-gradient(to bottom, transparent, #000 2.5%, #000 97.5%, transparent); -webkit-mask-composite: source-in;
+/* Lift the black floor to the page colour while keeping white at full brightness. */
+.deploy-still, .deploy-media .seq-plain { filter: contrast(.868) brightness(1.071); }
+.seq-plain { mix-blend-mode: screen; }
+.deploy-media .seq-plain { mix-blend-mode: normal; }
+.seq-plain, html[data-ss] .seq-plain { -webkit-mask-image: linear-gradient(to right, transparent, #000 2.5%, #000 97.5%, transparent), linear-gradient(to bottom, transparent, #000 2.5%, #000 97.5%, transparent); -webkit-mask-composite: source-in;
   mask-image: linear-gradient(to right, transparent, #000 2.5%, #000 97.5%, transparent), linear-gradient(to bottom, transparent, #000 2.5%, #000 97.5%, transparent); mask-composite: intersect; }
 .mission-deploy-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 44px; }
 .mission-deploy-mode h3 { font-size: 25px; font-weight: 400; line-height: 1.2; letter-spacing: -.03em; }
@@ -231,7 +235,10 @@ html { scroll-behavior: smooth; scroll-padding-top: 125px; }
 .mission-deploy-mode .mission-sector-tags { margin-top: auto; padding-top: 19px; }
 .mission-deploy-mode p + .mission-sector-tags { margin-top: 26px; }
 /* Editions. */
-.mission-editions-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 30px; }
+.editions-wake { position: relative; width: 100%; aspect-ratio: 7 / 3; margin-bottom: 38px; }
+.editions-wake picture, .editions-wake img { display: block; width: 100%; height: 100%; }
+.editions-wake [data-scroll-seq], .deploy-model-media [data-scroll-seq] { -webkit-mask-image: none; mask-image: none; }
+.mission-editions-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 30px; }
 .mission-edition { display: flex; flex-direction: column; align-items: flex-start; border: 1px solid var(--border-strong); padding: 34px; }
 .mission-edition-featured { --fg-1: #faf9f5; --fg-2: #b9bcb3; --focus-ring: #faf9f5; background: var(--mission-dark); color: var(--fg-1); border-color: var(--mission-dark); }
 .mission-edition .mission-eyebrow { color: var(--fg-2); }
@@ -241,12 +248,16 @@ html { scroll-behavior: smooth; scroll-padding-top: 125px; }
 .mission-edition li:last-child { border-bottom: 1px solid var(--border-strong); }
 .mission-edition > a { margin-top: auto; }
 .mission-edition-path { list-style: none; padding: 0; margin: 26px 0 34px; width: 100%; }
-.mission-edition-path li { display: grid; grid-template-columns: 28px 1fr; gap: 10px; padding: 13px 0; border-top: 1px solid var(--border-strong); }
+.editions-community-photo { display: block; width: 100%; height: auto; margin-top: 22px; }
+.mission-edition-path li { display: grid; grid-template-columns: 28px minmax(0, 1fr) min(38%, 220px); align-items: center; gap: 10px; padding: 13px 0; border-top: 1px solid var(--border-strong); }
+.editions-step-photo { display: block; width: 100%; height: auto; }
 .mission-edition-path li:last-child { border-bottom: 1px solid var(--border-strong); }
 .mission-edition-path strong { font-size: 15px; font-weight: 500; }
 .mission-edition-path p { font-size: 13px; line-height: 1.6; color: var(--fg-2); margin-top: 4px; }
 .mission-edition-path .mission-small-index { padding-top: 4px; }
-.mission-deploy-models { margin-top: 44px; padding-top: 24px; border-top: 1px solid var(--border-strong); display: grid; grid-template-columns: 220px 1fr; gap: 14px 40px; align-items: baseline; }
+.mission-deploy-models { margin-top: 44px; padding-top: 24px; border-top: 1px solid var(--border-strong); display: grid; grid-template-columns: 220px minmax(0, 1fr) clamp(280px, 24vw, 340px); gap: 14px 40px; align-items: baseline; }
+.deploy-model-media { position: relative; aspect-ratio: 7 / 5; grid-column: 3; grid-row: 1 / span 2; align-self: start; }
+.deploy-model-media img { display: block; width: 100%; height: 100%; }
 .mission-deploy-models .mission-eyebrow { color: var(--fg-2); }
 .mission-deploy-models ul { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 10px 28px; }
 .mission-deploy-models li { font-size: 14px; }
@@ -356,7 +367,8 @@ html { scroll-behavior: smooth; scroll-padding-top: 125px; }
   .mission-deploy-mode:first-child .deploy-media { width: calc(100% - 21px); }
   .mission-egress { grid-template-columns: 1fr; gap: 20px; }
   .mission-threat-grid { grid-template-columns: 1fr 1fr; }
-  .mission-deploy-models { grid-template-columns: 1fr; }
+  .mission-deploy-models { grid-template-columns: minmax(0, 1fr) min(36%, 340px); }
+  .deploy-model-media { grid-column: 2; grid-row: 1 / span 3; }
   .mission-deploy-models-note { grid-column: 1; }
   .mission-egress dl { grid-template-columns: 1fr 1fr; }
   .mission-faq-layout { gap: 48px; }
@@ -430,9 +442,14 @@ html { scroll-behavior: smooth; scroll-padding-top: 125px; }
   .mission-deploy-mode:first-child .deploy-media { width: 100%; }
   .mission-deploy-top { margin-bottom: 24px; }
   .mission-deploy-mode h3 { font-size: 22px; }
+  .mission-deploy-models { grid-template-columns: minmax(0, 1fr); }
+  .deploy-model-media { grid-column: 1; grid-row: 1; }
+  .editions-wake { aspect-ratio: 7 / 4; margin-bottom: 24px; }
   .mission-editions-grid { grid-template-columns: 1fr; gap: 20px; }
   .mission-edition { padding: 26px 22px; }
   .mission-edition h3 { font-size: 25px; }
+  .mission-edition-path li { grid-template-columns: 28px minmax(0, 1fr); align-items: start; }
+  .editions-step-photo { grid-column: 1 / -1; }
   .mission-egress dl { grid-template-columns: 1fr; gap: 18px; }
   .mission-assurance-layout { grid-template-columns: 1fr; gap: 40px; }
   .mission-assurance .mission-section-top { margin-bottom: 35px; }
