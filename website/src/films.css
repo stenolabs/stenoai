@@ -32,5 +32,7 @@ html.film-open { overflow: hidden; }
 @media (max-width: 767px) {
   .films-grid { display: flex; gap: 16px; margin-inline: -20px; padding-inline: 20px; overflow-x: auto; scroll-snap-type: x mandatory; scroll-padding-inline: 20px; overscroll-behavior-x: contain; scrollbar-width: none; }
   .films-grid::-webkit-scrollbar { display: none; }
+  /* Safari gives the scroller its own layer, so the frames' screen blend finds no backdrop there and their black shows: the box carries the page colour itself. */
+  .films-grid .teaser-box { isolation: isolate; background: var(--page); }
   .film { flex: 0 0 66%; max-width: none; scroll-snap-align: start; }
 }
