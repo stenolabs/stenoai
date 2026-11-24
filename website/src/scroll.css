@@ -28,11 +28,11 @@ html[data-ss] [data-scroll-seq] { display: block; }
   .platform-visual img { left: -5.71%; width: 111.43%; transform: translateY(-87.86%); }
 }
 
-/* Cable and doors: the section takes the page colour so the footage floor (#121311) meets it exactly. */
-html[data-ss] .has-stage { background: #121311; }
+/* Cable and doors: the section takes the page colour so the footage floor (#000) meets it exactly. */
+html[data-ss] .has-stage { background: #000; }
 .stage-m { display: none; }
 .stage-m > [data-scroll-seq] { -webkit-mask-image: none; mask-image: none; }
-html[data-ss] .stage-m, .stage-m:has(> noscript img) { display: block; position: relative; background: #121311; width: min(100%, 640px); aspect-ratio: 1024 / 720; margin: 0 auto 24px; }
+html[data-ss] .stage-m, .stage-m:has(> noscript img) { display: block; position: relative; background: #000; width: min(100%, 640px); aspect-ratio: 1024 / 720; margin: 0 auto 24px; }
 .stage-m > noscript img { display: block; width: 100%; height: 100%; object-fit: contain; }
 html[data-ss] .stage-m-doors { width: min(100%, 420px); aspect-ratio: 1; }
 
@@ -56,7 +56,7 @@ html[data-ss=on] .mission-cta.has-stage h2 > span { color: color-mix(in srgb, #F
   html[data-ss=on]:not([data-nofit]) .has-stage:has(> .stage:not([data-nofit])) { padding-top: 0; scroll-margin-top: -125px; }
   html[data-ss=on]:not([data-nofit]) .stage:not([data-own-fit]) { position: relative; height: calc(100vh + 180vh); height: calc(100svh + 180svh); } /* vh first for browsers without svh */
   html[data-ss=on]:not([data-nofit]) .stage-cable { height: calc(100vh + 240vh); height: calc(100svh + 240svh); }
-  html[data-ss=on]:not([data-nofit]) .stage:not([data-own-fit]) .stage-panel { position: sticky; top: 0; height: 100vh; height: 100svh; overflow: hidden; background: #121311; }
+  html[data-ss=on]:not([data-nofit]) .stage:not([data-own-fit]) .stage-panel { position: sticky; top: 0; height: 100vh; height: 100svh; overflow: hidden; background: #000; }
   html[data-ss=on]:not([data-nofit]) .stage:not([data-own-fit]) .stage-m { position: absolute; inset: 0; z-index: -1; width: auto; aspect-ratio: auto; margin: 0; }
   html[data-ss=on]:not([data-nofit]) .stage:not([data-own-fit]) .stage-text { height: 100%; display: flex; flex-direction: column; justify-content: center; padding-top: 92px; box-sizing: border-box; }
   html[data-ss=on]:not([data-nofit]) .stage-after { padding-top: 56px; }

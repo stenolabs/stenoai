@@ -74,13 +74,13 @@
    Semantic tokens - dark mode
    ═══════════════════════════════════════════════════ */
 .dark {
-  --page:                #121311;
-  --surface:             #121311;
-  --surface-raised:      #1B1D1A;
-  --surface-sunken:      #0C0D0B;
-  --surface-hover:       #1B1D1A;
+  --page:                #000;
+  --surface:             #000;
+  --surface-raised:      #0A0B0A;
+  --surface-sunken:      #000;
+  --surface-hover:       #141513;
   --surface-active:      #242722;
-  --surface-translucent: rgba(18, 19, 17, 0.82);
+  --surface-translucent: rgba(0, 0, 0, 0.82);
 
   --fg-1:      #FFFFFF;
   --fg-2:      #B4B8AF;

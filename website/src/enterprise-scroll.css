@@ -31,7 +31,7 @@ html[data-ss=on] .ent-cases > li.is-lit .sector-tag { color: var(--green-text); 
 @media (min-width: 912px) and (min-height: 720px) {
   html[data-ss=on] #rooms:has(> .stage-rooms:not([data-nofit])) { padding-top: 0; scroll-margin-top: -125px; }
   html[data-ss=on] .stage-rooms:not([data-nofit]) { position: relative; height: calc(100vh + 120vh); height: calc(100svh + 120svh); }
-  html[data-ss=on] .stage-rooms:not([data-nofit]) .stage-panel { position: sticky; top: 0; height: 100vh; height: 100svh; overflow: hidden; background: #121311; }
+  html[data-ss=on] .stage-rooms:not([data-nofit]) .stage-panel { position: sticky; top: 0; height: 100vh; height: 100svh; overflow: hidden; background: #000; }
   html[data-ss=on] .stage-rooms:not([data-nofit]) .stage-text { position: relative; height: 100%; display: flex; flex-direction: column; justify-content: flex-start; padding-top: 96px; box-sizing: border-box; }
   html[data-ss=on] .stage-rooms:not([data-nofit]) .stage-m-rooms { position: absolute; z-index: -1; top: 0; bottom: 0; left: calc(min(34%, 460px) + 24px); right: 0; width: auto; aspect-ratio: auto; margin: 0; mix-blend-mode: lighten; }
   html[data-ss=on] .stage-rooms:not([data-nofit]) .mission-section-heading { --section-content-gap: 30px; }

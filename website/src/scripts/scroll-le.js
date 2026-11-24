@@ -10,7 +10,7 @@ const REC = { cx: 0.34, cy: 0.425, top: 0.2, span: 0.62, ky: 0.5 }; // the recor
 const BOOK = { sy: 0.725, sx0: 0.1206, sx1: 0.8735, d: { N: 48, cols: 8, fw: 562, fh: 400 }, m: { N: 32, cols: 8, fw: 349, fh: 248 } }; // scroll-records.js META.le; frame 0 closed .. N-1 open
 
 const ss = (x) => x * x * (3 - 2 * x);
-const bgOf = (el) => { for (let e = el; e; e = e.parentElement) { const c = getComputedStyle(e).backgroundColor, m = c.match(/[\d.]+/g); if (m && (m.length < 4 || +m[3] > 0.9)) return `rgb(${m[0]},${m[1]},${m[2]})`; } return '#121311'; };
+const bgOf = (el) => { for (let e = el; e; e = e.parentElement) { const c = getComputedStyle(e).backgroundColor, m = c.match(/[\d.]+/g); if (m && (m.length < 4 || +m[3] > 0.9)) return `rgb(${m[0]},${m[1]},${m[2]})`; } return '#000'; };
 const mk = (w, h) => { const c = document.createElement('canvas'); c.width = w; c.height = h; return c; };
 const dropCanvas = (c) => { if (c) { c.width = 0; c.height = 0; } };
 function feather(ctx, w, h, f) { // edges fade to transparent
@@ -31,7 +31,7 @@ const load = async (url) => { const r = await fetch(url); if (!r.ok) throw new E
 
 function init(el) {
   const kind = el.dataset.le, sec = el.closest('section'), canvas = el.querySelector('canvas'), ctx = canvas.getContext('2d');
-  let imgs = null, mode = '', fetchP = null, started = false, visible = false, cur = 0, target = 0, raf = 0, last = 0, W = 0, H = 0, dpr = 1, bg = '#121311', drawn = '', comp = null, mask = null;
+  let imgs = null, mode = '', fetchP = null, started = false, visible = false, cur = 0, target = 0, raf = 0, last = 0, W = 0, H = 0, dpr = 1, bg = '#000', drawn = '', comp = null, mask = null;
 
   function releaseAll() {
     if (raf) { cancelAnimationFrame(raf); raf = 0; }

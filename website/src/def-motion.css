@@ -20,7 +20,7 @@ html[data-ss] .def-pic, .def-pic:has(noscript img) { display: block; position: r
 @media (min-width: 1024px) and (min-height: 720px) {
   html[data-ss=on] #use-cases:has(.stage-uses:not([data-nofit])) { padding-top: 0; scroll-margin-top: -125px; }
   html[data-ss=on] .stage-uses:not([data-nofit]) { position: relative; height: calc(100vh + 140vh); height: calc(100svh + 140svh); }
-  html[data-ss=on] .stage-uses:not([data-nofit]) .stage-panel { position: sticky; top: 0; height: 100vh; height: 100svh; overflow: hidden; background: #121311; }
+  html[data-ss=on] .stage-uses:not([data-nofit]) .stage-panel { position: sticky; top: 0; height: 100vh; height: 100svh; overflow: hidden; background: #000; }
   html[data-ss=on] .stage-uses:not([data-nofit]) .stage-text { height: 100%; display: grid; grid-template-columns: minmax(0, .78fr) minmax(0, 1.22fr); grid-template-rows: auto auto 1fr; column-gap: 56px; align-content: start; justify-content: stretch; padding-top: 96px; box-sizing: border-box; }
   html[data-ss=on] .stage-uses:not([data-nofit]) .mission-section-top { grid-column: 1 / -1; margin-bottom: 24px; padding-bottom: 20px; }
   html[data-ss=on] .stage-uses:not([data-nofit]) .mission-section-heading { grid-column: 1 / -1; --section-content-gap: 26px; }
@@ -58,12 +58,11 @@ html[data-ss] .def-pic, .def-pic:has(noscript img) { display: block; position: r
 @media (max-width: 1099px) { html[data-ss] .sector-points > .def-mast { aspect-ratio: 4 / 3; } }
 
 /* D3: deployment posture takes (the home page "Where it runs" frame sets, scroll-driven), at full brightness above each posture.
-   Lift the black floor to the sunken section colour while keeping white at full brightness. */
+   The frames are black where there is no object, like the page. */
 .def-posture-media { position: relative; width: 100%; aspect-ratio: 960 / 600; margin: 0 0 8px; }
 .def-posture-media picture { display: block; width: 100%; height: 100%; }
 .sector-posture:first-child .def-posture-media { width: calc(100% - 29px); } /* the first column has no left padding or border: same width as the others, left edge on the column text */
 .def-posture-still { display: block; width: 100%; height: 100%; }
-.def-posture-still, .def-seq { filter: contrast(.91) brightness(1.047); }
 .def-seq, html[data-ss] .def-seq {
   -webkit-mask-image: linear-gradient(to right, transparent, #000 2.5%, #000 97.5%, transparent), linear-gradient(to bottom, transparent, #000 2.5%, #000 97.5%, transparent); -webkit-mask-composite: source-in;
   mask-image: linear-gradient(to right, transparent, #000 2.5%, #000 97.5%, transparent), linear-gradient(to bottom, transparent, #000 2.5%, #000 97.5%, transparent); mask-composite: intersect; }
