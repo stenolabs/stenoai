@@ -255,20 +255,41 @@ overrides an agent's own test-level defaults.
     **parakeet** windowing path (`PARAKEET_CHUNK_DURATION_S` = 60 s, a hard constant) and
     asserts the pipeline completes. parakeet-only — whisper.cpp doesn't use that path; it
     `skip`s on whisper. Exercises the long-file chunking **plumbing**, NOT the MLX/Metal OOM
-    (that needs a GPU runner — tracked follow-up). Too slow for per-PR, so it lives in the
-    nightly workflow, not `e2e.yml`.
+    (that needs a GPU runner — tracked follow-up). Too slow for per-PR: the job is defined
+    in `e2e.yml` (`long-meeting-windows`) but gated on the `run_long_meeting` input, which
+    only the nightly and the release gate pass, so a PR run skips it.
 - **Isolation keystone:** every test sets `STENOAI_USER_DATA_DIR` to a temp dir, which
   both `getUserDataDir()` (main.js) and `get_user_data_dir()` (`src/config.py`) honor,
   so a test can never read/write the real `~/Library/Application Support/stenoai`. The
   launch fixture (`e2e/fixtures/electron.ts`) waits on `[data-app-ready]` (no fixed timeouts)
   and force-kills the app process tree if a graceful close hangs on teardown (Windows).
 - **CI:** `.github/workflows/e2e.yml` runs per PR. T1 on Ubuntu/xvfb plus the macOS T2 and
-  pipeline jobs are required checks for `main`; Windows T2 remains advisory.
-  The protected T1 job runs the privacy scan, Electron main-process ESLint and the pinned
-  Ruff ratchet as unconditional steps, so any of those failures makes the required T1 check fail.
-  `.github/workflows/e2e-nightly.yml` (scheduled) reuses that suite via
-  `workflow_call` for flake/drift detection and adds the T3 long-meeting job. A CI-only
-  Playwright `globalSetup` kills a stray Ollama + waits for a clean 11434 before the run.
+  pipeline jobs are required checks for `main`; Windows and Linux T2 remain advisory.
+  The Playwright runs are **sharded** (`--shard=i/N`, one runner per shard, still
+  `workers: 1` because every spec launches a real Electron app): T1 into 4 shards, each
+  model-free T2 lane (macOS/Windows/Linux) into 3. The required-check **names are stable**
+  and belong to small aggregate jobs that `needs:` their shards and fail if any did not
+  succeed: `T1 (renderer + mock IPC)` (needs the 4 T1 shards + `T1 gates`, which runs the
+  privacy scan, Electron main-process ESLint and the pinned Ruff ratchet once, so any of
+  those failures still fails the required T1 check), `T2 (real backend + mock adapter)`
+  (the 3 macOS shards) and `T2 pipeline (transcribe + summarize)` (unsharded, short).
+  Branch protection should keep requiring exactly those three; never require a shard job.
+  Each shard uploads its own failure report (`e2e-<lane>-report-shard-<i>`).
+  The PyInstaller backend bundles are **cached per OS** (`actions/cache`, key =
+  `backend-bundle-<version>-<os>-<arch>-py311[-gpupruned]-img<runner image>-<hash of
+  simple_recorder.py, src/**, stenoai.spec, requirements.txt, scripts/**, and on macOS
+  diarize-sidecar/** + native-audio-helper/**>`); a hit skips the build and every T2 job
+  restores from the cache, falling back to the uploaded artifact only on a miss. Bump
+  `BACKEND_CACHE_VERSION` in `e2e.yml` to invalidate. The CI-only Linux bundle is built
+  with `STENOAI_PRUNE_OLLAMA_GPU=1`, which drops Ollama's cuda/vulkan runners (~3.3 GB
+  that a GPU-less runner can never use) and is verified with
+  `scripts/verify_ollama_gpu_bundle.py --expect-pruned`; release builds
+  (`build-linux.yml`) never set it.
+  `.github/workflows/e2e-nightly.yml` (scheduled) and `e2e-release-gate.yml` reuse that
+  suite via `workflow_call` with `run_long_meeting: true` (adds the T3 job alongside the
+  T2 shards); the nightly also passes `rebuild_backend: true` so bundle drift is still
+  caught daily. A CI-only Playwright `globalSetup` kills a stray Ollama + waits for a
+  clean 11434 before the run.
 
 ## Interface copy and i18n
 

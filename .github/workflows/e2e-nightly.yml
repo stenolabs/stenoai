@@ -9,7 +9,9 @@ name: e2e-nightly
 #      per-PR suite. It drives a multi-minute WAV through the REAL parakeet-onnx
 #      windowing path (PARAKEET_CHUNK_DURATION_S) on Windows CPU and asserts the
 #      pipeline completes — exercising the long-file CHUNKING PLUMBING, NOT the
-#      MLX/Metal OOM (that needs a GPU runner; tracked follow-up).
+#      MLX/Metal OOM (that needs a GPU runner; tracked follow-up). The job
+#      itself is defined in e2e.yml (long-meeting-windows, gated on the
+#      run_long_meeting input) so it can run alongside the T2 shards.
 #
 # Non-blocking, like e2e.yml. Manually triggerable (workflow_dispatch) so the
 # long-meeting job can be validated without waiting for the cron.
@@ -23,95 +25,18 @@ permissions:
   contents: read
 
 jobs:
-  # Flake/drift re-run of the exact per-PR suite (T1 + macOS/Windows T2).
+  # Flake/drift re-run of the exact per-PR suite (T1 + macOS/Windows/Linux T2 +
+  # @pipeline), plus the T3 @long-meeting chunking smoke, which e2e.yml runs
+  # off its own Windows bundle when asked (`run_long_meeting`). PRs restore the
+  # PyInstaller bundles from an input-hash cache; the nightly rebuilds them
+  # (`rebuild_backend`) so pip resolution, the Ollama download and the runner
+  # image are exercised fresh once a day — that drift is this run's purpose.
   suite:
     name: Full suite (nightly re-run)
     uses: ./.github/workflows/e2e.yml
-
-  # Long-meeting chunking smoke. Reuses the Windows backend bundle the suite just
-  # built (download-artifact across the reusable-workflow boundary) and the
-  # parakeet-onnx model the suite cached, so this adds no extra build/download.
-  # Tradeoff: `needs: suite` couples this to the WHOLE suite passing (you can't
-  # depend on a single job inside a called workflow), so an unrelated flake skips
-  # it. If the suite's flake rate ever makes this un-runnable, inline a
-  # self-contained Windows build like e2e.yml's build-backend-windows does.
-  long-meeting-windows:
-    name: T3 long-meeting (parakeet onnx, Windows)
-    runs-on: windows-latest
-    needs: suite
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-          cache: 'npm'
-          cache-dependency-path: app/package-lock.json
-
-      - name: Download backend bundle
-        uses: actions/download-artifact@v4
-        with:
-          name: e2e-backend-windows
-          path: dist/stenoai
-
-      - name: Ensure no stray Ollama
-        shell: pwsh
-        run: Stop-Process -Name ollama -Force -ErrorAction SilentlyContinue
-
-      # Same key as t2-pipeline-windows, so the model the suite downloaded this
-      # run restores here instead of pulling the ~670 MB snapshot again.
-      - name: Cache parakeet ONNX model
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/huggingface/hub/models--istupakov--parakeet-tdt-0.6b-v3-onnx
-          key: parakeet-onnx-${{ runner.os }}-tdt-0.6b-v3
-
-      - name: Install Electron dependencies
-        working-directory: app
-        run: npm ci
-
-      - name: Build renderer
-        working-directory: app
-        run: npm run build:renderer
-
-      - name: Ensure parakeet model present
-        shell: pwsh
-        run: |
-          ./dist/stenoai/stenoai.exe download-parakeet-model
-          $status = ./dist/stenoai/stenoai.exe parakeet-status | ConvertFrom-Json
-          if (-not $status.installed) {
-            Write-Error "Parakeet ONNX model not installed after download"
-            exit 1
-          }
-
-      # Assert the tagged spec is selected (Playwright exits 0 on a zero-match
-      # --grep). Capture first, then grep — `grep -q`'s early pipe-close crashes
-      # the node writer with EPIPE on Windows.
-      - name: Guard — @long-meeting test is selected
-        shell: bash
-        working-directory: app
-        run: |
-          out=$(npm run test:e2e -- --project=t3 --grep @long-meeting --list)
-          echo "$out" | grep -q '@long-meeting'
-
-      - name: Run T3 long-meeting (parakeet onnx)
-        working-directory: app
-        env:
-          STENOAI_E2E_ENGINE: parakeet
-        run: npm run test:e2e -- --project=t3 --grep '@long-meeting'
-
-      - name: Upload report on failure
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: e2e-t3-long-meeting-report
-          path: |
-            app/playwright-report
-            app/test-results
-          retention-days: 7
-          if-no-files-found: ignore
+    with:
+      rebuild_backend: true
+      run_long_meeting: true
 
   # Real-summarization smoke (@summarize-real, #382). NIGHTLY-ONLY: it drives a
   # REAL small Ollama model (llama3.2:1b, CPU) through the actual `reprocess`
