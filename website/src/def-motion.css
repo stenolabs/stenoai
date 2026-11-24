@@ -60,6 +60,7 @@ html[data-ss] .def-pic { display: block; position: relative; pointer-events: non
 /* D3: deployment posture takes (the home page "Where it runs" frame sets, scroll-driven), at full brightness above each posture.
    The frames are black where there is no object, so screen over the section colour leaves it untouched: no box. */
 .def-posture-media { position: relative; width: 100%; aspect-ratio: 960 / 600; margin: 0 0 8px; }
+.def-posture-media picture { display: block; width: 100%; height: 100%; }
 .sector-posture:first-child .def-posture-media { width: calc(100% - 29px); } /* the first column has no left padding or border: same width as the others, left edge on the column text */
 .def-posture-still { display: block; width: 100%; height: 100%; mix-blend-mode: screen; }
 .def-seq, html[data-ss] .def-seq { mix-blend-mode: screen;
@@ -67,3 +68,4 @@ html[data-ss] .def-pic { display: block; position: relative; pointer-events: non
   mask-image: linear-gradient(to right, transparent, #000 2.5%, #000 97.5%, transparent), linear-gradient(to bottom, transparent, #000 2.5%, #000 97.5%, transparent); mask-composite: intersect; }
 .def-posture-mark { position: absolute; left: 0; top: 50%; width: 1px; height: 1px; pointer-events: none; }
 @media (max-width: 1099px) { .sector-posture:first-child .def-posture-media { width: 100%; } }
+@media (max-width: 767px) { .def-posture-media { aspect-ratio: 35 / 31; } }

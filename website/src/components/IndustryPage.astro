@@ -272,7 +272,7 @@ const num = (id) => String(order.indexOf(id) + 1).padStart(2, "0");
             <article class="sector-posture">
               {mo && (() => { const m = postureSeq[i]; return (
                 <div class="def-posture-media" aria-hidden="true">
-                  <noscript><img class="def-posture-still" src={`/scroll/deploy-${m.k}-still.webp`} alt="" width={m.sw} height={m.sh} /></noscript>
+                  <noscript><picture><source media="(max-width: 767px)" srcset={`/scroll/deploy-${m.k}-still-p.webp`} /><img class="def-posture-still" src={`/scroll/deploy-${m.k}-still.webp`} alt="" width={m.sw} height={m.sh} /></picture></noscript>
                   <ScrollSeq class="def-seq" src={`/scroll/deploy-${m.k}-d`} src-phone={`/scroll/deploy-${m.k}-p`} frames={m.frames} start={m.start} end={m.end} target={`#dpm-${m.k}`} />
                   <i class="def-posture-mark" id={`dpm-${m.k}`}></i>
                 </div>); })()}

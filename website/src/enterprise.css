@@ -219,6 +219,7 @@ html { scroll-behavior: smooth; scroll-padding-top: 125px; }
 .mission-deploy-mode { display: flex; flex-direction: column; padding: 30px 30px 0 0; }
 .mission-deploy-mode + .mission-deploy-mode { padding-left: 30px; border-left: 1px solid var(--border-strong); }
 .deploy-media { position: relative; width: 100%; aspect-ratio: 960 / 600; margin: -6px 0 14px; }
+.deploy-media picture { display: block; width: 100%; height: 100%; }
 .mission-deploy-mode:first-child .deploy-media { width: calc(100% - 31px); }
 .deploy-still { display: block; width: 100%; height: 100%; mix-blend-mode: screen; }
 .deploy-mark { position: absolute; left: 0; top: 50%; width: 1px; height: 1px; pointer-events: none; }
@@ -425,6 +426,7 @@ html { scroll-behavior: smooth; scroll-padding-top: 125px; }
   .mission-sector-tags { font-size: 8px; }
   .mission-deploy-grid { grid-template-columns: 1fr; border-top: 0; }
   .mission-deploy-mode, .mission-deploy-mode + .mission-deploy-mode { padding: 24px 0 28px; border-left: 0; border-top: 1px solid var(--border-strong); }
+  .deploy-media { aspect-ratio: 35 / 31; }
   .mission-deploy-mode:first-child .deploy-media { width: 100%; }
   .mission-deploy-top { margin-bottom: 24px; }
   .mission-deploy-mode h3 { font-size: 22px; }

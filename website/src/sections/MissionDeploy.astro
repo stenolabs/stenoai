@@ -27,7 +27,7 @@ const localModels = [
       {modes.map(({ media, frames, sw, sh, start, end, index, icon: Icon, name, body, tags }) => (
         <div class="mission-deploy-mode">
           <div class="deploy-media" aria-hidden="true">
-            <noscript><img class="deploy-still" src={`/scroll/deploy-${media}-still.webp`} alt="" width={sw} height={sh} /></noscript>
+            <noscript><picture><source media="(max-width: 767px)" srcset={`/scroll/deploy-${media}-still-p.webp`} /><img class="deploy-still" src={`/scroll/deploy-${media}-still.webp`} alt="" width={sw} height={sh} /></picture></noscript>
             <ScrollSeq class="seq-plain" src={`/scroll/deploy-${media}-d`} src-phone={`/scroll/deploy-${media}-p`} frames={frames} start={start} end={end} target={`#dm-${media}`} />
             <i class="deploy-mark" id={`dm-${media}`} aria-hidden="true"></i>
           </div>
