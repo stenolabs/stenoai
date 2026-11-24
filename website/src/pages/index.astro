@@ -14,6 +14,7 @@ import MissionFAQ from "../sections/MissionFAQ.astro";
 import CTAFooter from "../sections/CTAFooter.astro";
 import Footer from "../sections/Footer.astro";
 import ScrollSeq from "../components/ScrollSeq.astro";
+import "../scroll.css";
 
 const title = "StenoAI — Private Meeting Notes for Government, Defence & Law Enforcement";
 const description =
@@ -52,6 +53,6 @@ const description =
     import("../scripts/scroll-seq.js");
     import("../scripts/scroll-records.js");
   };
-  if (document.readyState === 'complete') boot();
+  if (document.readyState === 'complete' || location.hash) boot();
   else addEventListener('load', boot, { once: true });
 </script>

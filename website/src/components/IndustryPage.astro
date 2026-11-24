@@ -9,6 +9,7 @@ import { ALL, COMPLIANCE_BODY, CTA_BRIEFING, BREACHES_VERIFIED, SECTOR_VERIFIED 
 import FilmTeaser from "./FilmTeaser.astro";
 import FilmDialog from "./FilmDialog.astro";
 import { films } from "../content/films.js";
+import "../scroll.css";
 import "../sector.css";
 import LightRoom from "./LightRoom.astro";
 import TakeStill from "./TakeStill.astro";
@@ -346,7 +347,7 @@ const num = (id) => String(order.indexOf(id) + 1).padStart(2, "0");
     if (document.querySelector('[data-le]')) import("../scripts/scroll-le.js");
     if (document.querySelector('[data-def-terrain], [data-def-mast]')) import("../scripts/scroll-def.js");
   };
-  if (document.readyState === 'complete') boot();
+  if (document.readyState === 'complete' || location.hash) boot();
   else addEventListener('load', boot, { once: true });
 </script>
 

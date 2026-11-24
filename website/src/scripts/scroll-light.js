@@ -6,13 +6,6 @@
 // figures that are not pinned) it follows the element's own travel through the screen (data-flow-end = fraction of the viewport the element's bottom
 // reaches, or the bottom of data-flow-target). data-items + zone index: step highlight of the matching cards (is-lit, is-done).
 // Reduced motion and data saver: no canvas, the fully lit picture (the <img>) stays. Nothing is fetched before 1.5 viewports; it decodes off the main thread.
-import entScrollCss from '../enterprise-scroll.css?inline';
-if (!document.getElementById('ent-ss-css')) {
-  const s = document.createElement('style');
-  s.id = 'ent-ss-css';
-  s.textContent = entScrollCss;
-  document.head.append(s);
-}
 import { FLOW, PHONE, REDUCED, MAXPX, checkFit, clamp, decodeBlob, fitTests, still, syncMode, whenNear } from './scroll-env.js';
 
 const TAU = 65; // ms, as scroll-seq.js: 95% settled in about 200 ms
@@ -24,19 +17,21 @@ function init(el) {
   let zones = JSON.parse(el.dataset.zones); const later = el.dataset.later === undefined ? 1 : +el.dataset.later;
   const items = el.dataset.items ? [...sec.querySelectorAll(el.dataset.items)] : [];
   const A = (k) => (PHONE.matches && el.dataset[k + 'Phone']) || el.dataset[k];
-  let dark = null, lit = null, tiles = [], started = false, visible = false, near = false, loadedKey = '';
+  let dark = null, lit = null, tiles = [], started = false, visible = false, near = false, loadedKey = '', loadP = null;
   let ground = null, cur = 0, target = 0, raf = 0, last = 0, drawn = -1, W = 0, H = 0, dpr = 1, dx = 0, dy = 0, dw = 0, dh = 0;
   const M = { pin: false, sTop: 0, sH: 0, pH: 1, top: 0, end: 0, vh: 1 };
 
   function releaseTiles() {
-    tiles.forEach(({ t }) => { t.width = t.height = 0; });
+    tiles.forEach((entry) => { if (entry) entry.t.width = entry.t.height = 0; });
     tiles = [];
   }
   function releaseAll() {
+    if (raf) { cancelAnimationFrame(raf); raf = 0; }
     dark?.close?.(); lit?.close?.();
     dark = lit = null;
     releaseTiles();
     loadedKey = '';
+    loadP = null;
     drawn = -1;
   }
 
@@ -55,7 +50,7 @@ function init(el) {
     W = r.width; H = r.height;
     dpr = Math.min(devicePixelRatio || 1, 2, Math.sqrt(MAXPX / Math.max(1, W * H)));
     const cw = Math.round(W * dpr), ch = Math.round(H * dpr);
-    if (canvas.width !== cw || canvas.height !== ch) { canvas.width = cw; canvas.height = ch; drawn = -1; buildTiles(); }
+    if (canvas.width !== cw || canvas.height !== ch || (lit && !tiles.length)) { canvas.width = cw; canvas.height = ch; drawn = -1; buildTiles(); }
   }
   // Pinned list (0 CLS, no card overlap): every row keeps its closed height and lower rows move with transform; the list reserves exact room for the tallest open card and clips above .sector-note.
   function reserve(pinned = M.pin) {
@@ -125,6 +120,7 @@ function init(el) {
       const [zx, zy, zw, zh] = z.r, f = (z.f ?? 0.12) * Math.min(zw * dw, zh * dh);
       const x = Math.floor((dx + zx * dw - f) * dpr), y = Math.floor((dy + zy * dh - f) * dpr);
       const w = Math.ceil((zw * dw + 2 * f) * dpr), h = Math.ceil((zh * dh + 2 * f) * dpr), fp = f * dpr;
+      if (w <= 0 || h <= 0) { tiles.push(null); continue; }
       const t = document.createElement('canvas'); t.width = w; t.height = h; const c = t.getContext('2d');
       c.drawImage(lit, dx * dpr - x, dy * dpr - y, dw * dpr, dh * dpr);
       c.globalCompositeOperation = 'destination-in';
@@ -154,11 +150,11 @@ function init(el) {
   function paint(force) {
     const p = cur;
     syncItems(p);
-    if (!dark || !lit || !W || !H) return;
+    if (!dark || !lit || !W || !H || !canvas.width || !canvas.height) return;
     const key = p.toFixed(4) + '|' + W + 'x' + H; if (!force && key === drawn) return; drawn = key;
     ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.drawImage(dark, dx * dpr, dy * dpr, dw * dpr, dh * dpr);
-    zones.forEach((z, i) => { const v = level(z, p); if (v > 0.002 && tiles[i]) { ctx.globalAlpha = v; ctx.drawImage(tiles[i].t, tiles[i].x, tiles[i].y); } });
+    zones.forEach((z, i) => { const v = level(z, p), tile = tiles[i]; if (v > 0.002 && tile && tile.t.width > 0 && tile.t.height > 0) { ctx.globalAlpha = v; ctx.drawImage(tile.t, tile.x, tile.y); } });
     ctx.globalAlpha = 1;
     // Fade the picture's bottom (floor reflection), the box's bottom edge, and (when pinned) the left edge so the floor line never hard-clips next to the text column.
     ctx.globalCompositeOperation = 'destination-in';
@@ -180,16 +176,25 @@ function init(el) {
     paint(); raf = requestAnimationFrame(tick);
   }
   function onScroll() { if (!visible || still()) return; target = progress(); if (!raf) { last = performance.now(); raf = requestAnimationFrame(tick); } }
-  async function load() {
-    const k = (PHONE.matches ? 'p' : 'd') + A('dark'); if (loadedKey === k) return;
+  function load() {
+    const k = (PHONE.matches ? 'p' : 'd') + A('dark');
+    if (loadedKey === k && (dark || loadP)) return loadP || Promise.resolve();
     releaseAll();
     loadedKey = k;
     zones = JSON.parse(A('zones'));
     const get = async (u) => { const r = await fetch(u); if (!r.ok) throw new Error(u); return decodeBlob(await r.blob()); };
-    const [dBmp, lBmp] = await Promise.all([get(A('dark')), get(A('lit'))]);
-    if (loadedKey !== k) { dBmp.close?.(); lBmp.close?.(); return; }
-    dark = dBmp; lit = lBmp;
-    buildTiles();
+    const p = (async () => {
+      try {
+        const [dBmp, lBmp] = await Promise.all([get(A('dark')), get(A('lit'))]);
+        if (loadedKey !== k) { dBmp.close?.(); lBmp.close?.(); return; }
+        dark = dBmp; lit = lBmp;
+        buildTiles();
+      } finally {
+        if (loadP === p) loadP = null;
+      }
+    })();
+    loadP = p;
+    return p;
   }
   function settle() { measure(); target = progress(); cur = target; paint(true); }
   function remeasure() {
@@ -222,7 +227,13 @@ function init(el) {
   }, { rootMargin: '20% 0px' }).observe(el);
   addEventListener('scroll', onScroll, { passive: true });
   addEventListener('resize', remeasure, { passive: true });
-  addEventListener('pageshow', (e) => { if (e.persisted) remeasure(); });
+  addEventListener('pageshow', (e) => {
+    if (!e.persisted) return;
+    remeasure();
+    if (started && !still() && (near || visible) && !dark) {
+      load().then(() => { el.classList.add('is-ready'); if (visible) settle(); }).catch(() => { loadedKey = ''; });
+    }
+  });
   new ResizeObserver(remeasure).observe(document.documentElement);
   PHONE.addEventListener('change', () => {
     if (started && !still() && (near || visible)) {

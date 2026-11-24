@@ -61,7 +61,7 @@ function unloadPoster(c) { c.pgen++; c.pReq = false; c.poster = null; c.drawn = 
 function drawObj(c, pos) {
   const sq = c.m.seq[c.mode], idx = Math.round(clamp(pos) * (sq.N - 1)), key = `${idx}:${c.atlas ? 1 : 0}:${c.poster ? 1 : 0}`;
   if (key === c.drawn) return; c.drawn = key;
-  if (c.cv.width !== sq.fw) { c.cv.width = sq.fw; c.cv.height = sq.fh; }
+  if (c.cv.width !== sq.fw || c.cv.height !== sq.fh) { c.cv.width = sq.fw; c.cv.height = sq.fh; }
   c.ctx.clearRect(0, 0, sq.fw, sq.fh);
   if (c.atlas) c.ctx.drawImage(c.atlas, (idx % sq.cols) * sq.fw, ((idx / sq.cols) | 0) * sq.fh, sq.fw, sq.fh, 0, 0, sq.fw, sq.fh);
   else if (c.poster) c.ctx.drawImage(c.poster, 0, 0, sq.fw, sq.fh);

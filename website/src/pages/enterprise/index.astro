@@ -10,6 +10,8 @@ import { CTA_BRIEFING, enterpriseHero } from '../../content/industries.data';
 import { ArrowUpRight, ArrowRight, Check } from 'lucide-react';
 import '../../sector-base.css';
 import '../../enterprise-page.css';
+import '../../scroll.css';
+import '../../enterprise-scroll.css';
 
 // Policy: src/content/README.md (no certifications, no customers, no numbers, no prices).
 const title = 'StenoAI for Enterprise — Meeting Notes Your Organisation Controls';
@@ -315,7 +317,7 @@ const flowAlt = 'Diagram. Endpoints record, and transcribe by default, on each l
     import('../../scripts/scroll-seq.js');
     import('../../scripts/page-cable.js');
   };
-  if (document.readyState === 'complete') boot();
+  if (document.readyState === 'complete' || location.hash) boot();
   else addEventListener('load', boot, { once: true });
 </script>
 

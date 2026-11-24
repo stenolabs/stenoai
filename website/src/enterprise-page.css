@@ -69,7 +69,6 @@ html[data-ss=on] [data-scroll-light] picture, html[data-ss=on] [data-scroll-ligh
 .sector-points .ent-obj + h3 { margin-top: 0; }
 @media (max-width: 767px) { .ent-obj { aspect-ratio: 4 / 3; } }
 .ent-obj img { -webkit-mask-image: linear-gradient(to bottom, #000 86%, transparent 99.5%), linear-gradient(to right, transparent, #000 12%, #000 88%, transparent); -webkit-mask-composite: source-in; mask-image: linear-gradient(to bottom, #000 86%, transparent 99.5%), linear-gradient(to right, transparent, #000 12%, #000 88%, transparent); mask-composite: intersect; }
-@media (min-width: 912px) and (min-height: 720px) { html[data-ss=on] #rooms { scroll-margin-top: -125px; } }
 .stage-m-rooms { display: none; mix-blend-mode: screen; }
 html[data-ss] .ent-card-fig img, html[data-ss] .ent-fleet img { display: none; }
 .ent-card-fig { position: relative; display: block; width: min(100%, 380px); aspect-ratio: 860 / 648; mix-blend-mode: screen; }

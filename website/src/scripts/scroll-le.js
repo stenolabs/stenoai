@@ -31,9 +31,10 @@ const load = async (url) => { const r = await fetch(url); if (!r.ok) throw new E
 
 function init(el) {
   const kind = el.dataset.le, sec = el.closest('section'), canvas = el.querySelector('canvas'), ctx = canvas.getContext('2d');
-  let imgs = null, mode = '', started = false, visible = false, cur = 0, target = 0, raf = 0, last = 0, W = 0, H = 0, dpr = 1, bg = '#121311', drawn = '', comp = null, mask = null;
+  let imgs = null, mode = '', fetchP = null, started = false, visible = false, cur = 0, target = 0, raf = 0, last = 0, W = 0, H = 0, dpr = 1, bg = '#121311', drawn = '', comp = null, mask = null;
 
   function releaseAll() {
+    if (raf) { cancelAnimationFrame(raf); raf = 0; }
     if (imgs) {
       imgs.atlas?.close?.();
       dropCanvas(imgs.frame);
@@ -43,6 +44,7 @@ function init(el) {
     }
     dropCanvas(comp); dropCanvas(mask);
     comp = mask = null;
+    fetchP = null;
     drawn = '';
   }
 
@@ -59,7 +61,7 @@ function init(el) {
     const dh = H, dw = dh * iw / ih; return [(W - dw) / 2, 0, dw, dh];
   }
   function draw(p) {
-    if (!imgs) return; const key = p + '|' + W + 'x' + H; if (key === drawn) return; drawn = key;
+    if (!imgs || !W || !H || !canvas.width || !canvas.height) return; const key = p + '|' + W + 'x' + H; if (key === drawn) return; drawn = key;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, W, H);
     if (kind === 'book') {
       const m = PHONE.matches ? BOOK.m : BOOK.d, fw = m.fw, fh = m.fh, idx = imgs.poster ? m.N - 1 : Math.round((1 - clamp(p / 0.88)) * (m.N - 1)), q = imgs.poster ? 0 : p;
@@ -92,35 +94,42 @@ function init(el) {
   function onScroll() { if (!visible || still()) return; target = progress(); if (!raf) { last = performance.now(); raf = requestAnimationFrame(tick); } }
   function settle() { size(); target = still() ? settledState() : progress(); cur = target; drawn = ''; draw(cur); }
 
-  async function fetchAll() {
-    const k = PHONE.matches ? 'm' : 'd', key = k + (still() ? 's' : ''); if (mode === key) return;
+  function fetchAll() {
+    const k = PHONE.matches ? 'm' : 'd', key = k + (still() ? 's' : '');
+    if (mode === key && (imgs || fetchP)) return fetchP || Promise.resolve();
     releaseAll();
     mode = key;
     bg = bgOf(sec);
-    try {
-      if (kind === 'book') {
-        const a = await load(`/scroll/rec/le-${still() ? 'poster-' : ''}${k}.webp`);
-        if (mode !== key) { a.close?.(); return; }
-        imgs = { atlas: a, poster: still() }; // still: the 5 KB open-case poster, not the atlas
-      } else {
-        const got = await Promise.all(['dark', 'lit'].map((n) => load(`/scroll/le/recorder3-${n}-${k}.webp`)));
-        if (mode !== key) { got.forEach((im) => im.close?.()); return; }
-        imgs = {};
-        ['dark', 'lit'].forEach((n, i) => { imgs[n] = grade(got[i], bg, 0.05); got[i].close?.(); });
+    const p = (async () => {
+      try {
+        if (kind === 'book') {
+          const a = await load(`/scroll/rec/le-${still() ? 'poster-' : ''}${k}.webp`);
+          if (mode !== key) { a.close?.(); return; }
+          imgs = { atlas: a, poster: still() }; // still: the 5 KB open-case poster, not the atlas
+        } else {
+          const got = await Promise.all(['dark', 'lit'].map((n) => load(`/scroll/le/recorder3-${n}-${k}.webp`)));
+          if (mode !== key) { got.forEach((im) => im.close?.()); return; }
+          imgs = {};
+          ['dark', 'lit'].forEach((n, i) => { imgs[n] = grade(got[i], bg, 0.05); got[i].close?.(); });
+        }
+      } catch {
+        releaseAll();
+        mode = '';
+      } finally {
+        if (fetchP === p) fetchP = null;
       }
-    } catch {
-      releaseAll();
-      mode = '';
-    }
+    })();
+    fetchP = p;
+    return p;
   }
   const start = () => { started = true; fetchAll().then(() => visible && settle()); };
   whenNear(el, start);
-  new IntersectionObserver((es) => { visible = es[es.length - 1].isIntersecting; if (visible && started) { if (!imgs) fetchAll().then(settle); else settle(); } }, { rootMargin: '20% 0px' }).observe(el);
+  new IntersectionObserver((es) => { visible = es[es.length - 1].isIntersecting; if (visible && started) { if (!imgs) fetchAll().then(() => visible && settle()); else settle(); } }, { rootMargin: '20% 0px' }).observe(el);
   new IntersectionObserver((es) => { const on = es[es.length - 1].isIntersecting; if (!on && imgs) { releaseAll(); mode = ''; } else if (on && started && !imgs) fetchAll().then(() => visible && settle()); }, { rootMargin: '300% 0px' }).observe(el);
   const remeasure = () => { if (visible && imgs) { size(); drawn = ''; target = still() ? settledState() : progress(); cur = target; draw(cur); } };
   addEventListener('scroll', onScroll, { passive: true });
   addEventListener('resize', remeasure, { passive: true });
-  addEventListener('pageshow', (e) => { if (e.persisted) remeasure(); });
+  addEventListener('pageshow', (e) => { if (!e.persisted) return; if (imgs) remeasure(); else if (started && visible) fetchAll().then(() => visible && settle()); });
   new ResizeObserver(remeasure).observe(document.documentElement);
   PHONE.addEventListener('change', () => { if (started) fetchAll().then(() => visible && settle()); });
   REDUCED.addEventListener('change', () => { mode = ''; if (started) fetchAll().then(() => visible && settle()); });

@@ -14,15 +14,43 @@ import { PHONE, FLOW, REDUCED, MAXPX, clamp, decodeBlob, still, syncMode, whenNe
 
 const TAU = 65; // ms; 95% settled in about 200 ms
 // Several sets can be near at once (films and deploy are about a screen apart): bitmaps are decoded one at a time across all sets, off the main thread,
-// and sets start fetching 450 ms apart, so a slow phone or a 4x-throttled laptop never gets one long task.
-let lock = Promise.resolve();
-const serial = (fn) => { const p = lock.then(fn, fn); lock = p.then(() => {}, () => {}); return p; };
-let nextAt = 0;
+// and off-screen sets start fetching 450 ms apart, so a slow phone or a 4x-throttled laptop never gets one long task.
+// Sets in the viewport skip the queue and draw their current frame (or nearest available frame) at once.
+const decHi = [], decLo = [];
+let decBusy = false;
+function runDec() {
+  if (decBusy) return;
+  const job = decHi.shift() || decLo.shift();
+  if (!job) return;
+  decBusy = true;
+  Promise.resolve().then(job.fn).then(job.res, job.rej).finally(() => { decBusy = false; runDec(); });
+}
+const serial = (fn, urgent = false) => new Promise((res, rej) => {
+  (urgent ? decHi : decLo).push({ fn, res, rej });
+  runDec();
+});
+const offQ = [];
+let offTimer = 0, lastOff = 0;
+function pumpOff() {
+  offTimer = 0;
+  while (offQ.length) {
+    const item = offQ.shift();
+    if (item.cancelled) continue;
+    lastOff = performance.now();
+    item.fn();
+    if (offQ.length) offTimer = setTimeout(pumpOff, 450);
+    return;
+  }
+}
 const stagger = (fn, now_ = false) => {
-  if (now_) { fn(); return 0; }
-  const now = performance.now();
-  nextAt = Math.max(nextAt, now) + 450;
-  return setTimeout(fn, nextAt - now - 450);
+  if (now_) { fn(); return null; }
+  const item = { fn, cancelled: false };
+  offQ.push(item);
+  if (!offTimer) {
+    const wait = Math.max(0, 450 - (performance.now() - lastOff));
+    offTimer = setTimeout(pumpOff, wait);
+  }
+  return item;
 };
 
 function init(el) {
@@ -32,7 +60,7 @@ function init(el) {
   const A = (k) => (FLOW.matches && el.dataset[k + 'Phone'] !== undefined ? el.dataset[k + 'Phone'] : el.dataset[k]);
   const dir = () => (PHONE.matches ? el.dataset.srcPhone : el.dataset.src);
   const url = (i) => `${dir()}/${String(i).padStart(4, '0')}.webp`;
-  let blobs = [], bmps = new Map(), pending = new Set(), loadedKey = '', started = false, visible = false, near = false, stTimer = 0;
+  let blobs = [], bmps = new Map(), pending = new Set(), prio = [], seen = new Set(), loadedKey = '', started = false, visible = false, inView = false, near = false, stItem = null;
   let cur = 0, target = 0, raf = 0, last = 0, drawn = -1, rects = [];
   const M = { x0: 0, pin: false, sTop: 0, sH: 0, pH: 1, top: 0, end: 0, vh: 1, w: 0, h: 0, dpr: 1, s: 0, ox: 0, oy: 0 };
 
@@ -79,25 +107,42 @@ function init(el) {
     return clamp((scrollY - s0) / (s1 - s0));
   }
 
-  async function decode(i) {
+  function wantFrame(p = cur) {
+    if (still()) return N - 1;
+    const mp = (A('map') || '0,1').split(',').map(Number);
+    return Math.round(clamp((p - mp[0]) / (mp[1] - mp[0])) * (N - 1));
+  }
+  async function decode(i, urgent = false) {
     if (bmps.has(i) || !blobs[i]) return;
     const k = loadedKey;
     const blob = blobs[i];
-    const b = await serial(() => decodeBlob(blob));
+    const b = await serial(() => (k !== loadedKey || (!visible && !still()) ? null : decodeBlob(blob)), urgent);
+    if (!b) return;
     if (k !== loadedKey || (!visible && !still())) { b.close?.(); return; } // stale, or arrived while off screen (the settled still is kept)
     bmps.set(i, b);
   }
-  const release = () => { bmps.forEach((b) => b.close?.()); bmps = new Map(); pending.clear(); drawn = -1; }; // far off screen: frames are decoded again on return
+  const release = () => { if (raf) { cancelAnimationFrame(raf); raf = 0; } bmps.forEach((b) => b.close?.()); bmps = new Map(); pending.clear(); drawn = -1; }; // far off screen: frames are decoded again on return
   function nearest(i) { // closest decoded frame; scrubbing never shows a blank canvas
     for (let d = 0; d < N; d++) { if (bmps.has(i - d)) return i - d; if (bmps.has(i + d)) return i + d; }
     return -1;
   }
+  function nearestBlob(i) { // closest already-fetched blob when no bitmap is decoded yet
+    for (let d = 0; d < N; d++) { if (blobs[i - d]) return i - d; if (blobs[i + d]) return i + d; }
+    return -1;
+  }
+  const WIN = [0, 1, -1, 2, -2, 3, -3, 4, 5, 6];
   function paint(force) {
-    const mp = (A('map') || '0,1').split(',').map(Number), want = still() ? N - 1 : Math.round(clamp((cur - mp[0]) / (mp[1] - mp[0])) * (N - 1));
+    const want = wantFrame(cur);
     onProgress(cur);
+    if (!M.w || !M.h || !canvas.width || !canvas.height) return;
     if (want === drawn && !force) return;
-    for (let d = -3; d <= 6; d++) { const j = want + d; if (j >= 0 && j < N && !bmps.has(j) && blobs[j] && !pending.has(j)) { pending.add(j); decode(j).then(() => { pending.delete(j); if (visible) paint(true); }).catch(() => {}); } } // a bad frame stays in pending: never retried
-    const f = nearest(want); if (f < 0) return;
+    for (const d of WIN) { const j = want + d; if (j >= 0 && j < N && !bmps.has(j) && blobs[j] && !pending.has(j)) { pending.add(j); decode(j, d === 0 && drawn < 0).then(() => { pending.delete(j); if (visible) paint(true); }).catch(() => {}); } } // a bad frame stays in pending: never retried
+    const f = nearest(want);
+    if (f < 0) {
+      const bj = nearestBlob(want);
+      if (bj >= 0 && !pending.has(bj)) { pending.add(bj); decode(bj, true).then(() => { pending.delete(bj); if (visible) paint(true); }).catch(() => {}); }
+      return;
+    }
     const b = bmps.get(f), W = M.w, H = M.h, ar = b.width / b.height, place = still() && stage ? 'center' : A('place');
     let dx = 0, dy = 0, dw = W, dh = W / ar;
     if (M.s) { dw = b.width * M.s; dh = b.height * M.s; dx = M.ox; dy = M.oy; }
@@ -120,34 +165,64 @@ function init(el) {
     target = progress();
     if (!raf) { last = performance.now(); raf = requestAnimationFrame(tick); }
   }
+  function prioritize(i) {
+    if (i < 0 || i >= N || blobs[i] || prio.includes(i)) return;
+    prio.push(i);
+  }
+  async function fetchOne(i, k, urgent = false) {
+    try {
+      const r = await fetch(url(i), urgent ? { priority: 'high' } : undefined); if (k !== loadedKey) return; if (!r.ok) throw new Error(String(r.status)); blobs[i] = await r.blob();
+      if (k !== loadedKey) return;
+      if (still() || (visible && (drawn < 0 || Math.abs(i - wantFrame()) < 4))) {
+        await decode(i, drawn < 0);
+        if (visible && k === loadedKey) { if (still()) cur = target = 1; paint(true); }
+      }
+    } catch { /* a missing frame is skipped: the nearest decoded one is shown */ }
+  }
   async function load() {
     const k = PHONE.matches ? 'phone' : 'desktop'; if (loadedKey === k) return;
-    loadedKey = k; blobs = []; release();
+    loadedKey = k; blobs = []; seen = new Set(); release();
     const order = [...Array(N).keys()];
     if (still()) order.splice(0, order.length, N - 1); // one settled frame
     else order.sort((a, b) => (a % 8 ? (a % 4 ? (a % 2 ? 3 : 2) : 1) : 0) - (b % 8 ? (b % 4 ? (b % 2 ? 3 : 2) : 1) : 0) || a - b); // coarse frames first
     let q = 0;
+    const nextFrame = () => {
+      while (prio.length) { const i = prio.shift(); if (!seen.has(i)) { seen.add(i); return { i, urgent: true }; } }
+      while (q < order.length) { const i = order[q++]; if (!seen.has(i)) { seen.add(i); return { i, urgent: false }; } }
+      return null;
+    };
     const worker = async () => {
-      while (q < order.length) {
-        const i = order[q++];
-        try {
-          const r = await fetch(url(i)); if (k !== loadedKey) return; if (!r.ok) throw new Error(String(r.status)); blobs[i] = await r.blob();
-          if (still() || Math.abs(i - Math.round(cur * (N - 1))) < 4) { await decode(i); if (visible) { if (still()) cur = target = 1; paint(true); } }
-        } catch { /* a missing frame is skipped: the nearest decoded one is shown */ }
-      }
+      for (let item = nextFrame(); item && k === loadedKey; item = nextFrame()) await fetchOne(item.i, k, item.urgent);
     };
     await Promise.all([worker(), worker(), worker()]);
   }
   function settle() { measure(); target = still() ? 1 : progress(); cur = target; paint(true); }
   function remeasure() { measure(); if (visible && loadedKey) { target = still() ? 1 : progress(); if (!raf) { cur = target; paint(true); } } }
+  function startNow() {
+    if (stItem) { stItem.cancelled = true; stItem = null; }
+    started = true;
+    visible = true;
+    measure();
+    target = still() ? 1 : progress();
+    cur = target;
+    const w = wantFrame(cur);
+    if (!loadedKey) {
+      prioritize(w);
+      load().then(() => visible && settle());
+    } else {
+      settle();
+      if (drawn < 0 && !blobs[w] && !seen.has(w)) { seen.add(w); fetchOne(w, loadedKey, true); }
+    }
+  }
   function scheduleLoad() {
-    if (stTimer || loadedKey) return;
-    stTimer = stagger(() => {
-      stTimer = 0;
+    if (inView) { startNow(); return; }
+    if (stItem || loadedKey) return;
+    stItem = stagger(() => {
+      stItem = null;
       if (!near && !visible && !still()) return;
       measure();
       load().then(() => visible && settle());
-    }, visible);
+    }, false);
   }
 
   // Step highlight (cable; in flow layout it follows the list's own travel) and "Keep control." light (doors) follow the settled progress.
@@ -179,17 +254,23 @@ function init(el) {
     if (!started || still()) return;
     if (near && !loadedKey) scheduleLoad();
     else if (!near) {
-      if (stTimer) { clearTimeout(stTimer); stTimer = 0; }
-      if (loadedKey) { release(); blobs = []; loadedKey = ''; }
+      if (stItem) { stItem.cancelled = true; stItem = null; }
+      if (loadedKey) { release(); blobs = []; prio = []; seen = new Set(); loadedKey = ''; }
     }
   }, { rootMargin: '200% 0px' }).observe(el);
   new IntersectionObserver((es) => {
     visible = es[es.length - 1].isIntersecting;
-    if (visible) { measure(); if (loadedKey) settle(); } else release();
+    if (visible) { measure(); if (loadedKey) settle(); else if (inView) startNow(); } else release();
   }, { rootMargin: '20% 0px' }).observe(el);
+  new IntersectionObserver((es) => {
+    inView = es[es.length - 1].isIntersecting;
+    if (inView) startNow();
+  }, { rootMargin: '0px' }).observe(el);
+  const r0 = el.getBoundingClientRect();
+  if (r0.height > 0 && r0.bottom > 0 && r0.top < innerHeight) { inView = true; startNow(); }
   addEventListener('scroll', onScroll, { passive: true });
   addEventListener('resize', remeasure, { passive: true });
-  addEventListener('pageshow', (e) => { if (e.persisted) remeasure(); });
+  addEventListener('pageshow', (e) => { if (!e.persisted) return; remeasure(); if (inView && !loadedKey) startNow(); });
   new ResizeObserver(remeasure).observe(document.documentElement);
   PHONE.addEventListener('change', () => { if (started && (near || visible || still())) load().then(() => visible && settle()); });
   FLOW.addEventListener('change', remeasure);

@@ -20,14 +20,27 @@ function player(el, draw, busy) {
     const r = canvas.getBoundingClientRect(); W = r.width; H = r.height;
     dpr = Math.min(devicePixelRatio || 1, 2, Math.sqrt(MAXPX / Math.max(1, W * H)));
     const cw = Math.round(W * dpr), ch = Math.round(H * dpr);
-    if (canvas.width !== cw || canvas.height !== ch) { canvas.width = mask.width = cw; canvas.height = mask.height = ch; }
+    if (canvas.width !== cw || canvas.height !== ch || mask.width !== cw || mask.height !== ch) {
+      canvas.width = mask.width = cw;
+      canvas.height = mask.height = ch;
+    }
   };
   const release = () => {
+    if (raf) { cancelAnimationFrame(raf); raf = 0; }
     if (imgs) imgs.forEach((im) => im?.close?.());
     imgs = null;
     mask.width = mask.height = 0;
   };
-  const paint = () => { if (!imgs || !W) return; ctx.setTransform(dpr, 0, 0, dpr, 0, 0); mctx.setTransform(dpr, 0, 0, dpr, 0, 0); draw({ ctx, mctx, mask, imgs, W, H, p: cur, el }); };
+  const paint = () => {
+    if (!imgs || !W || !H) return;
+    if (canvas.width <= 0 || canvas.height <= 0 || mask.width <= 0 || mask.height <= 0) {
+      size();
+      if (canvas.width <= 0 || canvas.height <= 0 || mask.width <= 0 || mask.height <= 0) return;
+    }
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    mctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    draw({ ctx, mctx, mask, imgs, W, H, p: cur, el });
+  };
   const tick = (now) => {
     const dt = Math.min(now - last, 64); last = now;
     cur += (target - cur) * (1 - Math.exp(-dt / TAU));
@@ -46,7 +59,7 @@ function player(el, draw, busy) {
 function terrain(el) {
   const sec = el.closest('section'), cards = [...sec.querySelectorAll('.sector-case')], route = JSON.parse(el.dataset.route), N = cards.length;
   const stage = el.closest('.stage'), M = { pin: false, sTop: 0, sH: 0, pH: 1 };
-  let pulse = null, loading = false, near = false, loadGen = 0; // the active point flares once when its card opens: 0.8 s, then it stops
+  let pulse = null, loadingGen = 0, near = false, loadGen = 0; // the active point flares once when its card opens: 0.8 s, then it stops
   const pl = player(el, ({ ctx, mctx, mask, imgs, W, H, p }) => {
     const [dark, lit] = imgs, s = Math.max(W / dark.width, H / dark.height) * 1.2;
     const dw = dark.width * s, dh = dark.height * s, dx = (W - dw) / 2, dy = (H - dh) / 2; // zoomed so the model, not its black surround, fills the box
@@ -120,16 +133,16 @@ function terrain(el) {
   const settle = () => { measure(); const t = still() ? N - 1 : prog(); open(t); if (pl.imgs) { pl.size(); pl.go(t, true); } };
   const url = (n) => `${PHONE.matches ? el.dataset.srcPhone : el.dataset.src}/${n}.webp`;
   const fetchImgs = async () => {
-    if (loading || pl.imgs) return;
-    loading = true;
+    if (pl.imgs || (loadingGen && loadingGen === loadGen)) return;
     const g = ++loadGen;
+    loadingGen = g;
     try {
       const got = await Promise.all([load(url('terrain-dark')), load(url('terrain-lit'))]);
       if (g !== loadGen) { got.forEach((im) => im?.close?.()); return; }
       pl.imgs = got;
       if (pl.visible) settle();
     } catch { /* cards still pin and open even if decorative terrain image fails */ }
-    finally { loading = false; }
+    finally { if (loadingGen === g) loadingGen = 0; }
   };
 
   whenNear(el, () => { pl.start(); fetchImgs(); });
@@ -148,7 +161,11 @@ function terrain(el) {
   }, { rootMargin: '10% 0px' }).observe(stage || el);
   addEventListener('scroll', onScroll, { passive: true });
   addEventListener('resize', () => { if (pl.visible) settle(); else measure(); }, { passive: true });
-  addEventListener('pageshow', (e) => { if (e.persisted) settle(); });
+  addEventListener('pageshow', (e) => {
+    if (!e.persisted) return;
+    if (pl.imgs) settle();
+    else { measure(); open(still() ? N - 1 : prog()); if (pl.started && (near || pl.visible)) fetchImgs(); }
+  });
   new ResizeObserver(() => { if (pl.visible) settle(); else measure(); }).observe(el);
   FLOW.addEventListener('change', () => { shown = -2; settle(); });
   REDUCED.addEventListener('change', () => { shown = -2; settle(); if (pl.started && near && !pl.imgs) fetchImgs(); });
@@ -160,7 +177,7 @@ function terrain(el) {
 // ---- D2: the mast lamp goes out, the case keeps its green seam ----
 function mast(el) {
   const m = JSON.parse(el.dataset.region); // [cx, cy, rx, ry] normalised to the image
-  let loading = false, near = false, loadGen = 0;
+  let loadingGen = 0, near = false, loadGen = 0;
   const pl = player(el, ({ ctx, mctx, mask, imgs, W, H, p }) => {
     const [a, b] = imgs, s = Math.max(W / a.width, H / a.height) * (W > 600 ? 1.2 : 1), dw = a.width * s, dh = a.height * s;
     const dx = Math.min(0, Math.max(W - dw, W / 2 - 0.46 * dw)), dy = (H - dh) / 2; // the mast and the case fill the box: lamp and seam read at 1440
@@ -180,9 +197,9 @@ function mast(el) {
   const url = (n) => `${PHONE.matches ? el.dataset.srcPhone : el.dataset.src}/${n}.webp`;
   const fetchImgs = async () => {
     const needBoth = !still();
-    if (loading || (pl.imgs && (!needBoth || pl.imgs[1]))) return;
-    loading = true;
+    if ((pl.imgs && (!needBoth || pl.imgs[1])) || (loadingGen && loadingGen === loadGen)) return;
     const g = ++loadGen;
+    loadingGen = g;
     try {
       if (pl.imgs && !pl.imgs[1] && needBoth) {
         const endBmp = await load(url('mast-end'));
@@ -197,7 +214,7 @@ function mast(el) {
       }
       if (pl.visible) settle();
     } catch { /* decorative mast image unavailable */ }
-    finally { loading = false; }
+    finally { if (loadingGen === g) loadingGen = 0; }
   };
 
   whenNear(el, () => { pl.start(); fetchImgs(); });
@@ -215,11 +232,17 @@ function mast(el) {
     }
   }, { rootMargin: '10% 0px' }).observe(el);
   addEventListener('scroll', onScroll, { passive: true });
-  addEventListener('pageshow', (e) => { if (e.persisted) settle(); });
+  addEventListener('pageshow', (e) => {
+    if (!e.persisted) return;
+    if (pl.imgs) settle();
+    else if (pl.started && (near || pl.visible)) fetchImgs();
+  });
   new ResizeObserver(() => { if (pl.visible && pl.imgs) settle(); }).observe(el);
   REDUCED.addEventListener('change', () => {
-    if (!still() && pl.started && (near || pl.visible)) fetchImgs();
-    else settle();
+    if (!still() && pl.started && (near || pl.visible)) {
+      if (!pl.imgs?.[1]) loadGen++;
+      fetchImgs();
+    } else settle();
   });
 }
 

@@ -1,11 +1,4 @@
 // Shared by the scroll players (frame sequences and record cards).
-import scrollCss from '../scroll.css?inline';
-if (!document.getElementById('ss-css')) {
-  const s = document.createElement('style');
-  s.id = 'ss-css';
-  s.textContent = scrollCss;
-  document.head.append(s);
-}
 export const PHONE = matchMedia('(max-width: 767px)');
 export const MAXPX = 12e6; // canvas pixels per element, well under the 16.7 MP iOS limit
 // Flow layout: the footage sits in a box above the text. Otherwise the stage is pinned (tablets 800px tall and laptops 720px tall, mirrored in scroll.css),
