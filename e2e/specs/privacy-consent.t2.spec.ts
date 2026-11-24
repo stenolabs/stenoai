@@ -35,6 +35,12 @@ function seedUpgraderConfig(userDataDir: string): void {
  */
 async function waitForConsentModal(page: import('@playwright/test').Page) {
   await settleSetupGate(page);
+  // A launch that never redirected sits on index.html with no hash at all
+  // (seen on the Windows runner); '' and '#/' are both neutral routes, so
+  // force the explicit one the assertions below key on.
+  await page.evaluate(() => {
+    window.location.hash = '#/';
+  });
   await expect(page).toHaveURL(/#\/$/);
   await expect(page.locator(MODAL), 'privacy consent modal should appear for an upgrader on a neutral route').toBeVisible({
     // The privacy gate query resolves after the backend config migration; on a
