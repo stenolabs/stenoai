@@ -107,15 +107,19 @@ html:not([data-ss]) .sector-loop-toggle { display: none; }
 .mission-mobile-menu a { display: flex; align-items: center; gap: 20px; padding: 15px 0; border-bottom: 1px solid #ffffff18; font-size: 18px; }
 .mission-mobile-menu a > svg { margin-left: auto; }
 /* Cinematic hero. */
-.mission-hero { --focus-ring: #faf9f5; position: relative; color: #faf9f5; background: #14110d; isolation: isolate; overflow: hidden; }
-.mission-hero-image { position: absolute; inset: 0; width: 100%; height: 100%; }
+.mission-hero { --focus-ring: #faf9f5; position: relative; min-height: 730px; height: min(850px, calc(100svh - 112px)); color: #faf9f5; background: #14110d; isolation: isolate; overflow: hidden; display: flex; flex-direction: column; }
+.mission-hero-image, .mission-hero-shade { position: absolute; inset: 0; width: 100%; height: 100%; z-index: -1; }
+.mission-hero-image { object-fit: cover; object-position: 80% center; }
+.mission-hero-shade { background: linear-gradient(90deg, rgba(12,10,8,.86), rgba(12,10,8,.45) 45%, rgba(12,10,8,.05) 72%), linear-gradient(0deg, rgba(12,10,8,.75), transparent 40%); }
 .mission-hero-content { padding-top: clamp(65px, 8vh, 108px); padding-bottom: 52px; }
 .mission-hero-content > .mission-eyebrow { color: #d4d7cb; margin-bottom: 29px; }
 .mission-hero h1 { font-family: var(--font-sans); font-weight: 450; font-size: clamp(60px, 6.15vw, 98px); line-height: .99; letter-spacing: -.06em; max-width: 13ch; }
 .mission-hero h1 > span { color: #c9cfc5; }
 .mission-hero-description { max-width: 43ch; margin-top: 28px; font-size: 16px; color: #e1e3db; line-height: 1.65; }
 .mission-hero .mission-actions { margin-top: 31px; }
-.mission-hero-bottom { margin-top: auto; display: grid; grid-template-columns: repeat(3, 1fr); align-items: center; padding-block: 25px; gap: 20px; }
+.mission-hero-caption { white-space: nowrap; position: absolute; right: 56px; top: 64px; text-transform: uppercase; font: 9px/1.8 var(--font-mono); letter-spacing: .1em; color: #e0e4d8; display: flex; flex-direction: column; gap: 10px; border-left: 1px solid #ffffff60; padding-left: 15px; }
+.mission-hero-caption > span:first-child { font-size: 8px; color: #aeb6ac; }
+.mission-hero-bottom { margin-top: auto; border-top: 1px solid #ffffff38; display: grid; grid-template-columns: 1fr 1fr 1fr 24px; align-items: center; padding-block: 25px; gap: 20px; }
 .mission-hero-bottom > span { display: flex; gap: 18px; align-items: center; font: 10px var(--font-mono); letter-spacing: .055em; text-transform: uppercase; }
 .mission-small-index { font-size: 9px; color: #b1b8ad; }
 /* Case files. */
@@ -380,7 +384,9 @@ html[data-ss] .cta-stage-fallback { display: none; }
   .mission-pipeline { padding-inline: 12px; }
   .mission-pipeline-step { gap: 10px; padding-inline: 12px; }
   .mission-pipeline-step > svg { width: 22px; }
+  .mission-hero { min-height: 740px; }
   .mission-hero h1 { font-size: clamp(66px, 7.5vw, 83px); }
+  .mission-hero-caption { right: 32px; }
   .industry-hero { gap: 35px; }
 }
 @media (max-width: 767px) {
@@ -402,12 +408,18 @@ html[data-ss] .cta-stage-fallback { display: none; }
   .mission-section-heading > p { justify-self: start; font-size: 14px; }
   .mission-site h2 { font-size: clamp(32px, 7.9vw, 44px); }
   .mission-eyebrow { font-size: 8px; }
+  .mission-hero { min-height: 710px; height: auto; }
+  .mission-hero-image { object-position: 72% center; }
+  .mission-hero-shade { background: linear-gradient(180deg, rgba(12,10,8,.55), rgba(12,10,8,.88) 55%, rgba(12,10,8,.92)); }
+  .mission-hero-content { padding-top: 66px; padding-bottom: 38px; }
   .mission-hero-content > .mission-eyebrow { margin-bottom: 30px; }
   .mission-hero h1 { font-size: clamp(48px, 10.2vw, 76px); line-height: 1.03; letter-spacing: -.055em; }
   .mission-hero-description { font-size: 14px; margin-top: 25px; max-width: 36ch; }
   .mission-hero .mission-actions { gap: 25px; align-items: flex-start; flex-direction: column; margin-top: 27px; }
+  .mission-hero-caption { display: none; }
   .mission-hero-bottom { grid-template-columns: 1fr 1fr; gap: 17px; padding-block: 23px; }
   .mission-hero-bottom > span { gap: 9px; font-size: 8px; letter-spacing: .025em; }
+  .mission-hero-bottom > a { justify-self: end; }
   .mission-workflow { grid-template-columns: 1fr; gap: 30px; }
   .mission-workflow-tabs button { padding-block: 18px; grid-template-columns: 22px minmax(0, 1fr); gap: 10px; }
   .mission-workflow-tabs strong { font-size: 17px; }

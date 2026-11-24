@@ -1,5 +1,5 @@
 ---
-import { ArrowUpRight } from "lucide-react";
+import { ArrowUpRight, ArrowDown } from "lucide-react";
 import { CTA_BRIEFING } from "../content/industries.data";
 
 // Radar layer over the film: light pulses travelling along the 88px grid lines.
@@ -16,98 +16,80 @@ const PULSES = [
 ---
 
 <section class="mission-hero" aria-labelledby="hero-heading">
+  <!-- The StenoAI window stays in place while real rooms change around it. The portrait framing puts the window above the copy. -->
+  <video class="mission-hero-image" muted loop playsinline preload="none" disablepictureinpicture disableremoteplayback aria-hidden="true" tabindex="-1" data-hero-film>
+    <source src="/video/hero-film-m.mp4" type="video/mp4" media="(max-width: 767px) and (orientation: portrait), (max-width: 767px) and (min-height: 501px), (max-width: 767px) and (pointer: fine)" />
+    <source src="/video/hero-film.mp4" type="video/mp4" />
+  </video>
+  <noscript><img class="mission-hero-image" src="/images/enterprise/hero-film.webp" alt="" width="1920" height="1080" /></noscript>
+  <script is:inline>
+    (() => {
+      const video = document.querySelector('[data-hero-film]');
+      const portrait = matchMedia(video.querySelector('source[media]').media);
+      const setPoster = () => { video.poster = portrait.matches ? '/images/enterprise/hero-film-m.webp' : '/images/enterprise/hero-film.webp'; };
+      setPoster();
+      portrait.addEventListener('change', () => {
+        const playing = !video.paused;
+        setPoster();
+        video.load();
+        if (playing) video.play().catch(() => {});
+      });
+    })();
+  </script>
+  <div class="mission-hero-shade" aria-hidden="true"></div>
+  <div class="hero-radar-grid" aria-hidden="true"></div>
+  <div class="hero-radar" aria-hidden="true">
+    <div class="hero-radar-pulses">
+      {PULSES.map((p) => <i class:list={["hero-pulse", `hero-pulse-${p.d}`, { "hero-pulse-amber": p.a }]} style={`--n:${p.n};--dur:${p.t}s;--del:${p.del}s`}></i>)}
+    </div>
+    <div class="hero-radar-scan"></div>
+  </div>
   <div class="mission-wrap mission-hero-content">
     <p class="mission-eyebrow"><span class="mission-status-dot"></span> Government, defence & law enforcement</p>
     <h1 id="hero-heading">The record stays<br /><span>in the room.</span></h1>
     <p class="mission-hero-description">AI meeting notes for conversations that can’t be handed to a vendor. Run it on the device, or on infrastructure you control. No meeting bot. Open source.</p>
     <div class="mission-actions">
       <a href={CTA_BRIEFING} class="mission-button mission-button-light" data-track="demo_request" data-location="hero">Request a briefing <ArrowUpRight size={17} aria-hidden="true" /></a>
-      <a href="#how" class="mission-text-link">Explore the platform</a>
+      <a href="#how" class="mission-text-link">Explore the platform <ArrowDown size={16} aria-hidden="true" /></a>
     </div>
   </div>
-  <div class="mission-hero-media">
-    <picture>
-      <source media="(max-width: 767px)" srcset="/images/enterprise/hero-film-m.webp" width="1080" height="1920" />
-      <img class="mission-hero-image" src="/images/enterprise/hero-film.webp" alt="" width="1920" height="1080" fetchpriority="high" />
-    </picture>
-    <video class="mission-hero-image" muted loop playsinline preload="none" disablepictureinpicture disableremoteplayback aria-hidden="true" tabindex="-1" data-hero-film>
-      <source src="/video/hero-film-m.mp4" type="video/mp4" media="(max-width: 767px)" />
-      <source src="/video/hero-film.mp4" type="video/mp4" />
-    </video>
-    <div class="hero-radar-grid" aria-hidden="true"></div>
-    <div class="hero-radar" aria-hidden="true">
-      <div class="hero-radar-pulses">
-        {PULSES.map((p) => <i class:list={["hero-pulse", `hero-pulse-${p.d}`, { "hero-pulse-amber": p.a }]} style={`--n:${p.n};--dur:${p.t}s;--del:${p.del}s`}></i>)}
-      </div>
-      <div class="hero-radar-scan"></div>
-    </div>
-  </div>
-  <div class="mission-hero-controls">
-    <span>Illustrative footage · Local mode</span>
-    <button type="button" class="mission-text-link sector-loop-toggle" data-pending data-home-hero-toggle aria-label="Play illustrative footage">Play</button>
-  </div>
+  <div class="mission-hero-caption" aria-hidden="true"><span>Illustrative footage · Local mode</span></div>
+  <button type="button" class="mission-text-link sector-loop-toggle mission-hero-toggle" data-pending data-home-hero-toggle aria-label="Pause illustrative footage">Pause</button>
   <div class="mission-hero-bottom mission-wrap">
     <span>On your device</span>
     <span>On your infrastructure</span>
     <span>Open & inspectable</span>
+    <a href="#how" aria-label="Explore how StenoAI works"><ArrowDown size={20} aria-hidden="true" /></a>
   </div>
 </section>
 
 <style>
-  .mission-hero {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(0, .99fr);
-    grid-template-rows: minmax(0, 1fr) auto auto;
-    min-height: 730px;
-    height: min(850px, calc(100svh - 112px));
+  .mission-hero-toggle { position: absolute; right: 56px; top: 80px; }
+  .mission-hero:not([data-playing]) .hero-pulse,
+  .mission-hero:not([data-playing]) .hero-radar-scan::after { animation-play-state: paused; }
+  @media (max-width: 1199px) {
+    .mission-hero-toggle { right: 32px; }
   }
-  .mission-hero-content {
-    grid-column: 1;
-    grid-row: 1 / 3;
-    width: auto;
-    margin: 0;
-    padding-left: max(56px, calc((100vw - 1440px) / 2));
-    padding-right: clamp(10px, 1.3vw, 24px);
-    align-self: start;
-    padding-top: clamp(110px, 17vh, 166px);
+  @media (max-width: 767px) {
+    .mission-hero-toggle { top: calc(86vw - 40px); right: 20px; }
   }
-  .mission-hero-media {
-    position: relative;
-    grid-column: 2;
-    grid-row: 1;
-    overflow: hidden;
-    mask-image: linear-gradient(to right, transparent, #000 9%), linear-gradient(to bottom, #000 91%, transparent);
-    mask-composite: intersect;
-  }
-  .mission-hero-media .mission-hero-image {
-    z-index: 0;
-    object-fit: cover;
-    object-position: 84% center;
-  }
-  .mission-hero-media video:not([data-started]) { opacity: 0; }
-  .mission-hero-controls {
-    grid-column: 2;
-    grid-row: 2;
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    justify-content: end;
-    gap: 8px 16px;
-    padding: 0 max(56px, calc((100vw - 1440px) / 2)) 0 16px;
-    min-height: 44px;
-    font-size: 12px;
-  }
-  .mission-hero-controls .sector-loop-toggle { margin: 0; }
-  .mission-hero-bottom { grid-column: 1 / -1; grid-row: 3; }
-  .hero-radar, .hero-radar-grid, .hero-radar-pulses, .hero-radar-scan { position: absolute; inset: 0; pointer-events: none; }
+
+  /* Radar layer: a hairline grid blended into the film, light pulses running along its lines and a slow amber
+     sweep with faint scan lines. All of it sits over the film and under the copy. */
+  .hero-radar { position: absolute; inset: 0; z-index: -1; pointer-events: none; }
+  .hero-radar-pulses, .hero-radar-scan { position: absolute; inset: 0; }
+  /* The grid is its own layer beside the film (not inside .hero-radar, whose z-index makes a separate stacking
+     context), so its overlay blend mixes with the film and the lines stay as quiet as in the original design. */
   .hero-radar-grid {
+    position: absolute; inset: 0; z-index: -1; pointer-events: none;
     background-image:
-      linear-gradient(to right, rgba(236, 234, 227, .13) 1px, transparent 1px),
-      linear-gradient(to bottom, rgba(236, 234, 227, .13) 1px, transparent 1px);
+      linear-gradient(to right, rgba(236, 234, 227, .32) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(236, 234, 227, .32) 1px, transparent 1px);
     background-size: 88px 88px;
+    mix-blend-mode: overlay;
     mask-image: radial-gradient(ellipse 80% 70% at 50% 42%, #000 30%, transparent 80%);
+    -webkit-mask-image: radial-gradient(ellipse 80% 70% at 50% 42%, #000 30%, transparent 80%);
   }
-  .mission-hero:not([data-playing]) .hero-pulse, .mission-hero:not([data-playing]) .hero-radar-scan::after { animation-play-state: paused; }
   .hero-radar-pulses {
     overflow: hidden;
     mask-image: radial-gradient(ellipse 80% 70% at 50% 42%, #000 30%, transparent 80%);
@@ -128,23 +110,56 @@ const PULSES = [
   @keyframes hero-sweep { 0% { transform: translateY(0); } 60%, 100% { transform: translateY(470%); } }
   @media (prefers-reduced-motion: reduce) { .hero-radar-pulses { display: none; } .hero-radar-scan::after { animation: none; display: none; } }
 
-  @media (min-width: 1000px) and (max-width: 1320px) {
-    .mission-hero-content { padding-left: 36px; }
-    .mission-hero-controls { padding-right: 36px; }
-  }
-  @media (max-width: 999px) {
-    .mission-hero { display: flex; flex-direction: column; height: auto; min-height: 0; }
-    .mission-hero-media { order: -2; aspect-ratio: 16 / 9; mask-image: linear-gradient(to bottom, #000 91%, transparent); }
-    .mission-hero-media .mission-hero-image { object-position: center top; }
-    .mission-hero-controls { order: -1; padding-inline: 32px; }
-    .mission-hero-content { align-self: stretch; padding: 20px 32px 40px; }
-  }
-  @media (max-width: 767px) {
-    .mission-hero-media { aspect-ratio: 100 / 86; }
-    .mission-hero-controls, .mission-hero-content { padding-inline: 20px; }
-    .mission-hero-controls { justify-content: space-between; }
+  /* Landscape tablets and small laptops: the film sits further right so the copy stays clear of the laptop. */
+  @media (min-width: 768px) and (max-width: 1199px) and (min-aspect-ratio: 1/1) {
+    .mission-hero-image { object-position: 35% 50%; }
   }
 
+  /* Portrait tablets: the landscape film runs full width across the top and the copy follows below it (laid over the
+     film, the copy sat on the app window). */
+  @media (min-width: 768px) and (max-width: 1099px) and (max-aspect-ratio: 1/1) {
+    .mission-hero { height: auto; min-height: 0; }
+    .mission-hero-image { bottom: auto; height: auto; aspect-ratio: 16 / 9; object-position: 50% 50%; }
+    .mission-hero-shade { background: linear-gradient(180deg, rgba(12, 10, 8, .2) 0, rgba(12, 10, 8, 0) 14vw, rgba(12, 10, 8, .1) 36vw, rgba(12, 10, 8, .88) 52vw, #14110d 57vw); }
+    .mission-hero-content { padding-top: calc(56.25vw + 12px); }
+    .hero-radar-grid, .hero-radar-pulses {
+      mask-image: linear-gradient(180deg, #000 0, #000 40vw, transparent 55vw);
+      -webkit-mask-image: linear-gradient(180deg, #000 0, #000 40vw, transparent 55vw);
+    }
+  }
+
+  /* Phones: the portrait film sits at the top with the app window in view, the copy follows below it. */
+  @media (max-width: 767px) {
+    .mission-hero-image { bottom: auto; height: auto; aspect-ratio: 9 / 16; object-position: 50% 0; }
+    .mission-hero-shade { background: linear-gradient(180deg, rgba(12, 10, 8, .18) 0, rgba(12, 10, 8, 0) 24vw, rgba(12, 10, 8, .1) 62vw, rgba(12, 10, 8, .86) 86vw, #14110d 104vw); }
+    .mission-hero-content { padding-top: calc(86vw + 8px); }
+    .hero-radar-grid, .hero-radar-pulses {
+      mask-image: linear-gradient(180deg, #000 0, #000 60vw, transparent 84vw);
+      -webkit-mask-image: linear-gradient(180deg, #000 0, #000 60vw, transparent 84vw);
+    }
+  }
+
+  @media (orientation: landscape) and (max-height: 500px) and (pointer: coarse) {
+    .mission-hero { min-height: 0; height: auto; }
+    .mission-hero-image {
+      left: auto; bottom: auto; width: 40%; height: auto; aspect-ratio: 16 / 9; object-position: right center;
+      mask-image: linear-gradient(to right, transparent, #000 18%), linear-gradient(to bottom, #000 86%, transparent);
+      mask-composite: intersect;
+    }
+    .mission-hero-shade, .mission-hero-caption { display: none; }
+    .mission-hero-toggle { top: auto; bottom: 60px; right: 20px; }
+    .hero-radar, .hero-radar-grid { left: 60%; }
+    .mission-hero-content { padding-block: 4px 18px; }
+    .mission-hero-content > .mission-eyebrow { margin-bottom: 4px; line-height: 1.1; }
+    :root:root:root .mission-hero h1 { font-size: clamp(32px, 5vw, 42px); line-height: .98; }
+    :root:root:root .mission-hero-description { width: 60%; max-width: none; margin-top: 4px; font-size: 13px; line-height: 1.25; }
+    .mission-hero .mission-actions { width: 60%; flex-direction: row; align-items: center; gap: 6px 16px; margin-top: 4px; }
+    .mission-hero .mission-actions .mission-button { min-height: 44px; padding-block: 10px; }
+    @media (max-height: 310px) {
+      .mission-hero-content { display: flex; flex-direction: column; }
+      .mission-hero-description { order: 1; }
+    }
+  }
 </style>
 
 <script>
@@ -162,7 +177,6 @@ const PULSES = [
     };
     film.addEventListener('play', sync);
     film.addEventListener('pause', sync);
-    film.addEventListener('playing', () => { film.dataset.started = ''; }, { once: true });
     sync();
     toggle.removeAttribute('data-pending');
     toggle.addEventListener('click', () => {
