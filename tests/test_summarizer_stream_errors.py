@@ -156,8 +156,26 @@ class CloudStreamErrorTests(unittest.TestCase):
         s.cloud_provider = "bedrock"
         with mock.patch.object(s, "_ensure_ollama_ready"):
             with mock.patch.object(
-                s, "_bedrock_chat", side_effect=RuntimeError("AccessDeniedException")
+                s, "_bedrock_stream", _gen_raising(RuntimeError("AccessDeniedException"))
             ):
+                with self.assertRaises(RuntimeError) as ctx:
+                    list(s.summarize_transcript_streaming("Speaker: hi."))
+        self.assertIn("AccessDeniedException", str(ctx.exception))
+
+    def test_bedrock_converse_fallback_error_propagates(self):
+        """A failure in the non-streaming fallback still raises out of the stream."""
+        from src.summarizer import BedrockStreamingUnsupported
+
+        s = _make_summarizer()
+        s.ai_provider = "cloud"
+        s.cloud_provider = "bedrock"
+        s.bedrock_api_key = "k"
+        s.bedrock_region = "us-east-1"
+        with mock.patch(
+            "src.summarizer.bedrock_converse_stream_events",
+            _gen_raising(BedrockStreamingUnsupported(400, "ValidationException")),
+        ):
+            with mock.patch.object(s, "_bedrock_chat", side_effect=RuntimeError("AccessDeniedException")):
                 with self.assertRaises(RuntimeError) as ctx:
                     list(s.summarize_transcript_streaming("Speaker: hi."))
         self.assertIn("AccessDeniedException", str(ctx.exception))

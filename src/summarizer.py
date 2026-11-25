@@ -62,8 +62,12 @@ def _openai_content_text(content) -> str:
     return "".join(parts)
 
 
-def bedrock_converse_url(region: str, target_id: str) -> str:
+def bedrock_converse_url(region: str, target_id: str, stream: bool = False) -> str:
     """Build the Bedrock Converse REST URL for a region + model/profile id.
+
+    ``stream=True`` targets the ``converse-stream`` operation (same auth,
+    same request body, binary event-stream response — see
+    ``bedrock_converse_stream_events``).
 
     Centralised so the live summarisation path (``_bedrock_chat``) and the
     Settings → Test connection path (``simple_recorder.test_cloud_api``)
@@ -97,7 +101,112 @@ def bedrock_converse_url(region: str, target_id: str) -> str:
         raise ValueError(f"Invalid Bedrock region: {region!r}")
     import urllib.parse
     encoded = urllib.parse.quote(target_id, safe="")
-    return f"https://bedrock-runtime.{region}.amazonaws.com/model/{encoded}/converse"
+    operation = "converse-stream" if stream else "converse"
+    return f"https://bedrock-runtime.{region}.amazonaws.com/model/{encoded}/{operation}"
+
+
+# HTTP statuses on ``converse-stream`` that mean "this request cannot stream
+# here" rather than "this request is wrong": a model or inference profile
+# without streaming support (400 ValidationException), a key granted
+# bedrock:InvokeModel but not bedrock:InvokeModelWithResponseStream (403),
+# an endpoint/profile that does not route the streaming operation (404/405).
+# For these the caller re-sends through plain ``converse``; if that fails
+# too, its own error handling reports the real problem. 401 (bad key) and
+# 429 (throttled) are deliberately excluded: a second request would only
+# repeat the failure.
+BEDROCK_STREAM_FALLBACK_STATUSES = frozenset({400, 403, 404, 405})
+
+
+class BedrockStreamingUnsupported(Exception):
+    """``converse-stream`` was refused with a status in
+    ``BEDROCK_STREAM_FALLBACK_STATUSES``; retry via ``converse``."""
+
+    def __init__(self, status: int, error_type: str = ""):
+        self.status = status
+        self.error_type = error_type
+        super().__init__(f"Bedrock converse-stream unavailable (HTTP {status})")
+
+
+def bedrock_http_error_message(code: int, region: str, target_id: str) -> str:
+    """A user-facing message for a Bedrock HTTP failure. Never includes the
+    response body: Bedrock error bodies can quote the request."""
+    if code in (401, 403):
+        return (
+            f"Bedrock rejected the API key ({code}). "
+            f"Verify the key has bedrock:InvokeModel access in {region}."
+        )
+    if code == 404:
+        return (
+            f"Bedrock could not find model '{target_id}' in {region}. "
+            f"Check the model id and region, or set a cross-region inference profile."
+        )
+    if code == 429:
+        return "Bedrock is throttling requests (429). Try again in a moment."
+    return f"Bedrock HTTP {code}"
+
+
+def bedrock_converse_stream_events(
+    region: str,
+    target_id: str,
+    api_key: str,
+    body: dict,
+    timeout_seconds: int,
+):
+    """POST ``body`` to Bedrock ``converse-stream`` and yield
+    ``(event_type, payload)`` pairs as the event stream arrives.
+
+    ``timeout_seconds`` bounds each socket wait (connect and every read), so
+    a stalled stream fails instead of hanging. The HTTP request is issued on
+    the first ``next()``; a refusal in ``BEDROCK_STREAM_FALLBACK_STATUSES``
+    raises ``BedrockStreamingUnsupported`` before any event is yielded so the
+    caller can fall back to ``converse`` without duplicating output. Other
+    HTTP failures raise ``RuntimeError`` chained to the ``HTTPError`` (so
+    ``src.ai_errors`` classifies by status) with no response body in the
+    message. Mid-stream ``exception`` frames surface as
+    ``src.aws_eventstream.EventStreamError``.
+    """
+    import urllib.error
+    import urllib.request
+    import json as _json
+
+    from .aws_eventstream import iter_events
+
+    url = bedrock_converse_url(region, target_id, stream=True)
+    headers = {
+        "content-type": "application/json",
+        "accept": "application/vnd.amazon.eventstream",
+        "authorization": f"Bearer {api_key}",
+    }
+    req = urllib.request.Request(
+        url, data=_json.dumps(body).encode("utf-8"), headers=headers, method="POST"
+    )
+    try:
+        resp = urllib.request.urlopen(req, timeout=timeout_seconds)
+    except urllib.error.HTTPError as e:
+        # x-amzn-ErrorType is a machine-readable class name, not body text.
+        error_type = ""
+        try:
+            error_type = (e.headers.get("x-amzn-ErrorType") or "").split(":")[0]
+        except Exception:
+            pass
+        if e.code in BEDROCK_STREAM_FALLBACK_STATUSES:
+            raise BedrockStreamingUnsupported(e.code, error_type) from e
+        logger.error(f"Bedrock converse-stream failed: HTTP {e.code} {error_type}")
+        raise RuntimeError(bedrock_http_error_message(e.code, region, target_id)) from e
+    with resp:
+        yield from iter_events(resp)
+
+
+def bedrock_stream_text(events):
+    """Reduce ``converse-stream`` events to the assistant's text deltas."""
+    for kind, payload in events:
+        if kind != "contentBlockDelta" or not isinstance(payload, dict):
+            continue
+        delta = payload.get("delta")
+        if isinstance(delta, dict):
+            text = delta.get("text")
+            if text:
+                yield text
 
 
 # Ollama applies a small default context window (num_ctx ~4K) regardless of the
@@ -1006,17 +1115,7 @@ class OllamaSummarizer:
         # can't drift.
         target_id = self.bedrock_inference_profile or self.model_name
         url = bedrock_converse_url(self.bedrock_region, target_id)
-        body = _json.dumps({
-            "messages": [
-                {
-                    "role": "user",
-                    "content": [{"text": prompt}],
-                }
-            ],
-            # Same ceiling as the Anthropic direct path. Bedrock caps per-
-            # model; if the model has a lower max it'll truncate, not error.
-            "inferenceConfig": {"maxTokens": 8192},
-        }).encode("utf-8")
+        body = _json.dumps(self._bedrock_request_body(prompt)).encode("utf-8")
         headers = {
             "content-type": "application/json",
             "authorization": f"Bearer {self.bedrock_api_key}",
@@ -1076,6 +1175,51 @@ class OllamaSummarizer:
                 if attempt == max_retries - 1:
                     raise
         raise RuntimeError("Bedrock chat failed after all retries")
+
+    def _bedrock_request_body(self, prompt: str, max_tokens: int = 8192) -> dict:
+        return {
+            "messages": [{"role": "user", "content": [{"text": prompt}]}],
+            # Same ceiling as the Anthropic direct path. Bedrock caps per-
+            # model; if the model has a lower max it'll truncate, not error.
+            "inferenceConfig": {"maxTokens": max_tokens},
+        }
+
+    def _bedrock_stream(self, prompt: str, timeout_seconds: int = 300):
+        """Stream a chat response via Bedrock ``converse-stream``, yielding
+        text pieces as they arrive.
+
+        Same auth and body as ``_bedrock_chat``; the response is an AWS
+        event stream decoded by ``src.aws_eventstream``. When the streaming
+        operation is refused for this model/profile/key (see
+        ``BEDROCK_STREAM_FALLBACK_STATUSES``) the request is re-sent through
+        the non-streaming ``converse`` path and the whole answer is yielded
+        at once, so Bedrock keeps working even where streaming does not.
+        """
+        if not self.bedrock_api_key:
+            raise RuntimeError("Bedrock API key is not configured.")
+        if not self.bedrock_region:
+            raise RuntimeError("Bedrock region is not configured.")
+        target_id = self.bedrock_inference_profile or self.model_name
+        body = self._bedrock_request_body(prompt)
+        got_text = False
+        try:
+            events = bedrock_converse_stream_events(
+                self.bedrock_region, target_id, self.bedrock_api_key, body, timeout_seconds
+            )
+            for text in bedrock_stream_text(events):
+                got_text = True
+                yield text
+        except BedrockStreamingUnsupported as e:
+            logger.info(
+                "Bedrock converse-stream unavailable (HTTP %s %s); using converse",
+                e.status, e.error_type or "-",
+            )
+            text = self._bedrock_chat(prompt, timeout_seconds=timeout_seconds)
+            if text:
+                yield text
+            return
+        if not got_text:
+            raise RuntimeError("Bedrock returned empty response")
 
     def _create_permissive_prompt(self, transcript: str, language: str = "en", notes: str = None) -> str:
         """
@@ -1512,8 +1656,7 @@ TRANSCRIPT:
         """Stream a single completion for ``prompt`` through whichever provider is
         active: adapter, cloud (anthropic / bedrock / openai-compatible), or local/
         remote Ollama. Shared by the free-form template path and the markdown
-        summary path so a provider only has to be wired up in one place. Bedrock has
-        no eventstream parser yet, so it yields the whole answer as a single chunk.
+        summary path so a provider only has to be wired up in one place.
         """
         logger.info(f"Starting streaming summary with {self.ai_provider} model: {self.model_name}")
 
@@ -1538,20 +1681,10 @@ TRANSCRIPT:
                     logger.error(f"Anthropic streaming failed: {e}")
                     raise
             elif self.cloud_provider == "bedrock":
-                # Bedrock's /converse-stream uses amazon eventstream framing
-                # (binary, length-prefixed), which would need a dedicated
-                # parser to unwrap without boto3. For the initial Bedrock
-                # release we fall back to non-streaming Converse and yield
-                # the full response as a single chunk — the user sees the
-                # whole answer arrive at once instead of token-by-token.
-                # Acceptable for summarisation (already a long batch op);
-                # follow-up PR can add proper streaming.
                 try:
-                    text = self._bedrock_chat(prompt, timeout_seconds=7200)
-                    if text:
-                        yield text
+                    yield from self._bedrock_stream(prompt, timeout_seconds=7200)
                 except Exception as e:
-                    logger.error(f"Bedrock summarisation failed: {e}")
+                    logger.error(f"Bedrock streaming failed: {e}")
                     raise
             else:
                 try:
@@ -1912,11 +2045,7 @@ ANSWER:"""
                 ) as stream:
                     yield from stream.text_stream
             elif self.cloud_provider == "bedrock":
-                # Bedrock streaming needs an eventstream parser; match the
-                # existing query path by yielding one bounded-time response.
-                text = self._bedrock_chat(prompt, timeout_seconds=300)
-                if text:
-                    yield text
+                yield from self._bedrock_stream(prompt, timeout_seconds=300)
             else:
                 response = self.cloud_client.chat.completions.create(
                     model=self.model_name,
