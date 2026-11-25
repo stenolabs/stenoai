@@ -180,5 +180,19 @@ class ChatProtocolTests(unittest.TestCase):
             self.assertNotIn('PRIVATE', out)
 
 
+
+class BedrockEventStreamErrorTests(unittest.TestCase):
+    """Bedrock's machine-readable exception types classify without any body text."""
+
+    def test_exception_types_by_name(self):
+        from src.aws_eventstream import EventStreamError
+        for name, expected in (('throttlingException', 'rate-limit'), ('serviceUnavailableException', 'rate-limit'),
+                               ('modelTimeoutException', 'timeout'), ('accessDeniedException', 'auth'),
+                               ('resourceNotFoundException', 'model-missing'), ('modelStreamErrorException', 'unknown')):
+            exc = EventStreamError(name)
+            self.assertEqual(classify_ai_error(exc, 'cloud'), expected, name)
+            self.assertNotIn(PRIVATE, str(exc))
+
+
 if __name__ == '__main__':
     unittest.main()
