@@ -7,6 +7,7 @@ import {
   useAuthorizeConnection,
   useRefreshConnection,
   useRemoveConnection,
+  useSetConnectionAutoApprove,
   useSetConnectionEnabled,
 } from '@/hooks/useActions';
 import { actionErrorMessage } from '@/lib/actionErrors';
@@ -21,15 +22,22 @@ export function localityLabel(locality: ActionLocality | null): string {
   return t('actions.locality.internet');
 }
 
-/** One connected endpoint: status, enable toggle, tools, refresh / sign in / disconnect. */
+/**
+ * One connected endpoint: status, enable toggle, tools, "Run actions without
+ * asking" (the per-app "Always allow"), refresh / sign in / disconnect.
+ */
 export function ActionConnectionCard({
   connection: c,
   disabled,
+  autoApproveAllowed = true,
 }: {
   connection: ActionConnection;
   disabled: boolean;
+  /** Whether the org lets the user skip approval per app. */
+  autoApproveAllowed?: boolean;
 }) {
   const setEnabled = useSetConnectionEnabled();
+  const setAutoApprove = useSetConnectionAutoApprove();
   const refresh = useRefreshConnection();
   const authorize = useAuthorizeConnection();
   const remove = useRemoveConnection();
@@ -127,6 +135,25 @@ export function ActionConnectionCard({
         {t('actions.separator')}
         {localityLabel(c.locality)}
       </p>
+      {autoApproveAllowed && (
+        <div className="mt-3 flex items-center justify-between gap-4">
+          <div className="min-w-0">
+            <p className="text-[13px]">{t('connect.actions.connection.autoApprove')}</p>
+            <p className="text-[12px] leading-snug" style={{ color: 'var(--fg-muted)' }}>
+              {t('connect.actions.connection.autoApproveDescription')}
+            </p>
+          </div>
+          <Switch
+            checked={c.autoApprove === true}
+            disabled={disabled || !c.enabled}
+            aria-label={t('connect.actions.connection.autoApproveAria', { name: c.name })}
+            onCheckedChange={(v) => {
+              setError('');
+              setAutoApprove.mutate([c.id, v], { onError: (e) => setError(actionErrorMessage(e)) });
+            }}
+          />
+        </div>
+      )}
       <div className="mt-3 flex flex-wrap gap-2">
         {c.auth === 'oauth' && c.status === 'needs-auth' ? (
           <Button

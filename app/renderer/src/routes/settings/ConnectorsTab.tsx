@@ -53,7 +53,11 @@ export function ConnectorsTab() {
             <ul className="mt-4 flex flex-col gap-3">
               {connections.map((c) => (
                 <li key={c.id}>
-                  <ActionConnectionCard connection={c} disabled={disabled} />
+                  <ActionConnectionCard
+                    connection={c}
+                    disabled={disabled}
+                    autoApproveAllowed={data?.policy?.autoApproveAllowed !== false}
+                  />
                 </li>
               ))}
             </ul>

@@ -46,7 +46,9 @@ export function RecentActions() {
               </span>
             </span>
             <span className="shrink-0" style={{ color: 'var(--fg-2)' }}>
-              {statusLabel(e.status)}
+              {e.autoApproved
+                ? t('connect.actions.recent.autoApproved', { status: statusLabel(e.status) })
+                : statusLabel(e.status)}
             </span>
             {e.link && (
               <button
