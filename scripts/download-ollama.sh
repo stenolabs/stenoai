@@ -71,30 +71,41 @@ case "$(uname -s)" in
         cd - > /dev/null
         ;;
     Linux)
-        # Use static build for Linux
-        FFMPEG_URL="https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz"
+        # Static builds for Linux. The primary host has been unreachable from
+        # CI before (it blocked the v0.9.0 Linux build), so fall back to the
+        # BtbN builds on GitHub, which Actions can always reach. Either archive
+        # holds a single ffmpeg binary, at <dir>/ffmpeg or <dir>/bin/ffmpeg.
+        FFMPEG_URLS=(
+            "https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz"
+            "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linux64-gpl.tar.xz"
+        )
         mkdir -p "$BIN_DIR"
         # Some upstream/proxy failures return HTTP 200 with an error page,
-        # which curl's HTTP retries cannot detect. Retry invalid archives too.
+        # which curl's HTTP retries cannot detect. Retry invalid archives too,
+        # and give up on a dead host quickly instead of hanging for minutes.
         archive_ready=false
-        for attempt in 1 2 3; do
-            if curl --fail --retry 3 --retry-delay 2 --retry-all-errors -L "$FFMPEG_URL" -o "$BIN_DIR/ffmpeg.tar.xz" \
-                && tar -tJf "$BIN_DIR/ffmpeg.tar.xz" > "$BIN_DIR/ffmpeg-archive-contents.txt" 2>/dev/null \
-                && archive_member=$(grep -m 1 -E '^[^/]+/ffmpeg$' "$BIN_DIR/ffmpeg-archive-contents.txt"); then
-                archive_ready=true
-                break
-            fi
-            echo "Linux ffmpeg download attempt $attempt/3 failed or returned an invalid archive" >&2
-            if [ "$attempt" -lt 3 ]; then sleep 2; fi
+        for FFMPEG_URL in "${FFMPEG_URLS[@]}"; do
+            for attempt in 1 2 3; do
+                if curl --fail --connect-timeout 20 --max-time 300 --retry 3 --retry-delay 2 --retry-all-errors -L "$FFMPEG_URL" -o "$BIN_DIR/ffmpeg.tar.xz" \
+                    && tar -tJf "$BIN_DIR/ffmpeg.tar.xz" > "$BIN_DIR/ffmpeg-archive-contents.txt" 2>/dev/null \
+                    && archive_member=$(grep -m 1 -E '^[^/]+(/bin)?/ffmpeg$' "$BIN_DIR/ffmpeg-archive-contents.txt"); then
+                    archive_ready=true
+                    break 2
+                fi
+                echo "Linux ffmpeg download attempt $attempt/3 from $FFMPEG_URL failed or returned an invalid archive" >&2
+                if [ "$attempt" -lt 3 ]; then sleep 2; fi
+            done
+            echo "Falling back to the next ffmpeg source" >&2
         done
         rm -f "$BIN_DIR/ffmpeg-archive-contents.txt"
         if [ "$archive_ready" != true ]; then
-            echo "Could not download a valid Linux ffmpeg archive after 3 attempts" >&2
+            echo "Could not download a valid Linux ffmpeg archive from any source" >&2
             exit 1
         fi
         cd "$BIN_DIR"
-        tar -xf ffmpeg.tar.xz --strip-components=1 "$archive_member"
-        rm ffmpeg.tar.xz
+        tar -xJf ffmpeg.tar.xz "$archive_member"
+        mv "$archive_member" ffmpeg
+        rm -rf "${archive_member%%/*}" ffmpeg.tar.xz
         chmod +x ffmpeg
         assert_binary ffmpeg "$MIN_FFMPEG_BYTES"
         echo "ffmpeg downloaded"
