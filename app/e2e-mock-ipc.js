@@ -228,7 +228,8 @@ const SEED_FRONTMATTER_REPORT = {
     '---\ntitle: "Erika Mustermann: Empty Bcc field"\ndate: 2026-06-19\n'
     + 'client: Erika Mustermann\norganisation: Example Ltd\nissue: Empty Bcc field\n'
     + 'symptoms:\n  - Bcc stays empty on send\nresolved: true\n---\n\n'
-    + '## Summary\nThe Bcc field stayed empty until the signature was recreated.',
+    + '## Summary\nThe Bcc field stayed empty until the signature was recreated.\n\n'
+    + '| Step | Result |\n| --- | --- |\n| Recreate signature | Bcc kept |\n| Send test mail | Delivered |',
   created_at: '2026-06-19T13:00:00Z',
 };
 

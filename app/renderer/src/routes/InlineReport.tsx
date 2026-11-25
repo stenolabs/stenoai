@@ -1,7 +1,7 @@
 import { t } from '@/i18n';
 import * as React from 'react';
-import ReactMarkdown from 'react-markdown';
 import { useUpdateReportBody } from '@/hooks/useMeetings';
+import { NoteMarkdown } from '@/lib/markdown';
 import { createSaveQueue, type SaveQueue } from '@/lib/saveQueue';
 import { validateReportBody } from '@/lib/noteDraft';
 import { IDLE_SAVE_STATE, type InlineEditorHandle, type InlineSaveState } from './InlineNote';
@@ -209,7 +209,7 @@ export function InlineReport({
           onFocus={startEditing}
         >
           {text.trim() ? (
-            <ReactMarkdown>{text}</ReactMarkdown>
+            <NoteMarkdown>{text}</NoteMarkdown>
           ) : (
             <p style={{ color: 'var(--fg-2)' }}>{t('noteInline.reportPlaceholder')}</p>
           )}

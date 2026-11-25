@@ -1,6 +1,13 @@
 import { describe, test, expect } from 'vitest';
+import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { ReportProperties, renderMarkdown, splitFrontmatter, stripReasoning } from '@/lib/markdown';
+import {
+  NoteMarkdown,
+  ReportProperties,
+  renderMarkdown,
+  splitFrontmatter,
+  stripReasoning,
+} from '@/lib/markdown';
 
 /**
  * Unit coverage for stripReasoning — the guard that removes `<think>` /
@@ -244,4 +251,32 @@ describe('ReportProperties', () => {
     expect(cells([['resolved', true], ['checks', [true, false]]])).toEqual(['yes', 'yesno']);
   });
 
+});
+
+describe('NoteMarkdown', () => {
+  const table = [
+    '### Refinement',
+    '',
+    '| Ticket | Estimate | Ready? |',
+    '| :--- | :--- | :---: |',
+    '| HEFO release | 2 SP | yes |',
+    '| Components render inconsistent | 3 SP | no |',
+  ].join('\n');
+
+  test('renders a GFM pipe table as a table, one row per line', () => {
+    const html = renderToStaticMarkup(createElement(NoteMarkdown, null, table));
+    expect(html).toContain('<table>');
+    expect(html.match(/<tr>/g)).toHaveLength(3);
+    expect(html).toContain('<th style="text-align:center">Ready?</th>');
+    expect(html).toContain('<td style="text-align:left">HEFO release</td>');
+    expect(html).not.toContain('| :---');
+  });
+
+  test('still renders plain markdown and leaves raw HTML uninterpreted', () => {
+    const html = renderToStaticMarkup(
+      createElement(NoteMarkdown, null, '**Decision**: ship it <b>now</b>'),
+    );
+    expect(html).toContain('<strong>Decision</strong>');
+    expect(html).not.toContain('<b>now</b>');
+  });
 });
