@@ -272,11 +272,13 @@ describe('NoteMarkdown', () => {
     expect(html).not.toContain('| :---');
   });
 
-  test('still renders plain markdown and leaves raw HTML uninterpreted', () => {
+  test('still renders plain markdown and shows raw HTML as text', () => {
     const html = renderToStaticMarkup(
       createElement(NoteMarkdown, null, '**Decision**: ship it <b>now</b>'),
     );
     expect(html).toContain('<strong>Decision</strong>');
+    // The tag is escaped and shown as text, not interpreted and not dropped.
+    expect(html).toContain('ship it &lt;b&gt;now&lt;/b&gt;');
     expect(html).not.toContain('<b>now</b>');
   });
 });
