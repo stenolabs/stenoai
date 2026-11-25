@@ -30,6 +30,12 @@ const HEIGHT = 800;
 const GIF_WIDTH = 1200;
 const GIF_FPS = Number(process.env.STENOAI_DEMO_GIF_FPS) || 12;
 const HERO_NOTE = 'q1-roadmap-review_summary.md';
+// The README ships the dark theme; STENOAI_DEMO_THEME=light records the other.
+const THEME: 'dark' | 'light' = process.env.STENOAI_DEMO_THEME === 'light' ? 'light' : 'dark';
+// Pointer colours: ink on paper, paper on ink (CLAUDE.md brand colours).
+const CURSOR = THEME === 'dark'
+  ? { fill: '#EDEAE0', stroke: '#1A1A18', ring: 'rgba(237,234,224,0.28)' }
+  : { fill: '#1B1B19', stroke: '#ffffff', ring: 'rgba(27,27,25,0.22)' };
 
 const CHART = {
   type: 'bar',
@@ -63,7 +69,7 @@ type Launch = (opts?: {
   env?: Record<string, string>;
 }) => Promise<{ app: ElectronApplication; page: Page }>;
 
-/** Fixed window, light theme, tips dismissed, motion on. */
+/** Fixed window, the chosen theme, tips dismissed, motion on. */
 async function launchDemo(launchApp: Launch) {
   const { app, page } = await launchApp({ mockIpc: true, releaseHighlightsSeen: true, env: ENV });
   await app.evaluate(
@@ -72,13 +78,15 @@ async function launchDemo(launchApp: Launch) {
     },
     [WIDTH, HEIGHT],
   );
-  await page.evaluate(() => {
-    localStorage.setItem('steno-theme', 'light');
+  await page.evaluate((theme) => {
+    // What Settings > General > Theme persists (hooks/useTheme.ts).
+    localStorage.setItem('steno-theme', theme);
     localStorage.setItem('steno-tips-dismissed', JSON.stringify(['chat-slash', 'connect-actions', 'note-edit']));
-  });
-  await page.emulateMedia({ colorScheme: 'light', reducedMotion: 'no-preference' });
+  }, THEME);
+  await page.emulateMedia({ colorScheme: THEME, reducedMotion: 'no-preference' });
   await page.reload();
   await page.waitForSelector('[data-app-ready]');
+  await expect(page.locator('html')).toHaveAttribute('data-theme', THEME);
   await page.evaluate(() => {
     window.location.hash = '#/';
   });
@@ -90,7 +98,7 @@ async function launchDemo(launchApp: Launch) {
 /** A pointer drawn in the page, since a screencast has no OS cursor. */
 async function installCursor(page: Page, x: number, y: number) {
   await page.evaluate(
-    ([startX, startY]) => {
+    ([startX, startY, fill, stroke, ring]) => {
       const cursor = document.createElement('div');
       cursor.id = 'demo-cursor';
       Object.assign(cursor.style, {
@@ -102,10 +110,10 @@ async function installCursor(page: Page, x: number, y: number) {
         pointerEvents: 'none',
         zIndex: '2147483647',
         filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.35))',
-        transform: `translate(${startX! - 5}px, ${startY! - 3}px)`,
+        transform: `translate(${Number(startX) - 5}px, ${Number(startY) - 3}px)`,
       });
       cursor.innerHTML =
-        '<svg width="26" height="26" viewBox="0 0 24 24"><path d="M5 3l13.5 8.6-5.9 1.2 3.6 6.8-2.6 1.4-3.6-6.8L5.6 18.6z" fill="#1B1B19" stroke="#ffffff" stroke-width="1.4" stroke-linejoin="round"/></svg>';
+        `<svg width="26" height="26" viewBox="0 0 24 24"><path d="M5 3l13.5 8.6-5.9 1.2 3.6 6.8-2.6 1.4-3.6-6.8L5.6 18.6z" fill="${fill}" stroke="${stroke}" stroke-width="1.4" stroke-linejoin="round"/></svg>`;
       document.documentElement.appendChild(cursor);
       window.addEventListener(
         'mousemove',
@@ -125,7 +133,7 @@ async function installCursor(page: Page, x: number, y: number) {
             width: '32px',
             height: '32px',
             borderRadius: '50%',
-            background: 'rgba(27,27,25,0.22)',
+            background: String(ring),
             pointerEvents: 'none',
             zIndex: '2147483646',
           });
@@ -143,7 +151,7 @@ async function installCursor(page: Page, x: number, y: number) {
         true,
       );
     },
-    [x, y],
+    [x, y, CURSOR.fill, CURSOR.stroke, CURSOR.ring] as const,
   );
 }
 
