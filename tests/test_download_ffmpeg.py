@@ -30,6 +30,11 @@ class LinuxFfmpegDownloadTests(unittest.TestCase):
                 entry = tarfile.TarInfo('ffmpeg-static/ffmpeg')
                 entry.size = len(payload)
                 archive.addfile(entry, io.BytesIO(payload))
+            # The fallback source (BtbN builds) nests the binary under bin/.
+            with tarfile.open(root / 'valid-bin.tar.xz', 'w:xz') as archive:
+                entry = tarfile.TarInfo('ffmpeg-master-latest-linux64-gpl/bin/ffmpeg')
+                entry.size = len(payload)
+                archive.addfile(entry, io.BytesIO(payload))
             with tarfile.open(root / 'missing.tar.xz', 'w:xz') as archive:
                 entry = tarfile.TarInfo('ffmpeg-static/README')
                 archive.addfile(entry, io.BytesIO(b''))
@@ -52,6 +57,14 @@ case "$FIXTURE_MODE" in
             printf '<html>upstream unavailable</html>' > "$output"
         else
             cp "$FIXTURE_ROOT/valid.tar.xz" "$output"
+        fi ;;
+    fallback)
+        # The primary source fails every attempt; the second source serves a
+        # valid archive in the other layout.
+        if [ "$count" -le 3 ]; then
+            printf '<html>upstream unavailable</html>' > "$output"
+        else
+            cp "$FIXTURE_ROOT/valid-bin.tar.xz" "$output"
         fi ;;
     valid) cp "$FIXTURE_ROOT/valid.tar.xz" "$output" ;;
 esac
@@ -85,6 +98,14 @@ esac
             with self.subTest(mode=mode):
                 result, calls, extracted = self.run_download(mode)
                 self.assertNotEqual(result.returncode, 0)
-                self.assertEqual(calls, 3)
+                # Three attempts per source, two sources.
+                self.assertEqual(calls, 6)
                 self.assertFalse(extracted)
-                self.assertIn('after 3 attempts', result.stderr)
+                self.assertIn('from any source', result.stderr)
+
+    def test_falls_back_to_the_second_source(self):
+        result, calls, extracted = self.run_download('fallback')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(calls, 4)
+        self.assertTrue(extracted)
+        self.assertIn('Falling back to the next ffmpeg source', result.stderr)
