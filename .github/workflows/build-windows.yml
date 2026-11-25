@@ -209,7 +209,9 @@ jobs:
           # of the release users actually download (a 404 on the website link).
           # build-release.yml now passes --publish=never so no such draft should
           # exist, but matching non-draft-only here makes that guarantee robust.
-          for i in $(seq 1 60); do
+          # The macOS release workflow runs the full T1 smoke before it creates
+          # the release (~60 min end to end), so wait up to 2 hours, not 30 min.
+          for i in $(seq 1 240); do
             if gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${TAG}" >/dev/null 2>&1; then
               echo "Published release $TAG exists — uploading Windows auto-update assets."
               gh release upload "$TAG" \
@@ -221,8 +223,8 @@ jobs:
               echo "Uploaded Windows assets to release $TAG."
               exit 0
             fi
-            echo "Published release $TAG not created yet (attempt $i/60) — waiting 30s…"
+            echo "Published release $TAG not created yet (attempt $i/240) — waiting 30s…"
             sleep 30
           done
-          echo "Published release $TAG never appeared after ~30 min — failing so we notice."
+          echo "Published release $TAG never appeared after ~2 h — failing so we notice."
           exit 1
