@@ -6,6 +6,7 @@ from scripts.verify_ollama_gpu_bundle import (
     ollama_gpu_family,
     should_prune_ollama_gpu_path,
     verify_ollama_gpu_bundle,
+    verify_ollama_gpu_pruned,
 )
 
 
@@ -34,6 +35,17 @@ class OllamaGpuPathTests(unittest.TestCase):
         path = "lib/ollama/cuda_v12/libggml-cuda.so"
         self.assertFalse(should_prune_ollama_gpu_path(path, platform="linux"))
         self.assertFalse(should_prune_ollama_gpu_path(path, platform="darwin"))
+
+    def test_ci_prune_all_drops_gpu_payloads_on_linux_but_never_cpu_libs(self):
+        gpu = "lib/ollama/cuda_v13/libggml-cuda.so"
+        vulkan = "lib/ollama/vulkan/libggml-vulkan.so"
+        cpu = "lib/ollama/libggml-cpu-haswell.so"
+        self.assertTrue(should_prune_ollama_gpu_path(gpu, platform="linux", prune_all=True))
+        self.assertTrue(should_prune_ollama_gpu_path(vulkan, platform="linux", prune_all=True))
+        self.assertFalse(should_prune_ollama_gpu_path(cpu, platform="linux", prune_all=True))
+        self.assertFalse(should_prune_ollama_gpu_path("ollama", platform="linux", prune_all=True))
+        # The default stays release-safe: without the flag Linux keeps GPU libs.
+        self.assertFalse(should_prune_ollama_gpu_path(gpu, platform="linux"))
 
 
 class OllamaGpuBundleTests(unittest.TestCase):
@@ -132,6 +144,68 @@ class OllamaGpuBundleTests(unittest.TestCase):
 
         with self.assertRaisesRegex(FileNotFoundError, "required GPU families: cuda"):
             verify_ollama_gpu_bundle(self.source, self.bundle)
+
+
+class OllamaGpuPrunedBundleTests(unittest.TestCase):
+    """CI lane: the download carries GPU payloads, the bundle must not."""
+
+    def setUp(self):
+        self.temp_dir = tempfile.TemporaryDirectory()
+        root = Path(self.temp_dir.name)
+        self.source = root / "source"
+        self.bundle = root / "bundle"
+        self.target = self.bundle / "_internal" / "ollama"
+        for relative_path in (
+            "lib/ollama/cuda_v12/libggml-cuda.so",
+            "lib/ollama/vulkan/libggml-vulkan.so",
+        ):
+            source_path = self.source / relative_path
+            source_path.parent.mkdir(parents=True, exist_ok=True)
+            source_path.write_bytes(b"source payload")
+        for relative_path in (
+            "ollama",
+            "lib/ollama/libggml-base.so",
+            "lib/ollama/libggml-cpu-haswell.so",
+        ):
+            for root_dir in (self.source, self.target):
+                path = root_dir / relative_path
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(b"cpu payload")
+
+    def tearDown(self):
+        self.temp_dir.cleanup()
+
+    def test_accepts_bundle_without_gpu_payloads(self):
+        result = verify_ollama_gpu_pruned(self.source, self.bundle)
+
+        self.assertEqual(result["pruned_families"], ("cuda", "vulkan"))
+        self.assertEqual(result["cpu_runner_count"], 1)
+
+    def test_rejects_bundle_that_still_carries_a_gpu_payload(self):
+        leaked = self.target / "lib/ollama/cuda_v12/libggml-cuda.so"
+        leaked.parent.mkdir(parents=True)
+        leaked.write_bytes(b"leaked")
+
+        with self.assertRaisesRegex(FileNotFoundError, "still carries GPU payloads.*cuda_v12"):
+            verify_ollama_gpu_pruned(self.source, self.bundle)
+
+    def test_rejects_bundle_whose_cpu_runner_was_pruned_too(self):
+        (self.target / "lib/ollama/libggml-cpu-haswell.so").unlink()
+
+        with self.assertRaisesRegex(FileNotFoundError, "no CPU runner"):
+            verify_ollama_gpu_pruned(self.source, self.bundle)
+
+    def test_still_rejects_a_broken_download(self):
+        (self.source / "lib/ollama/cuda_v12/libggml-cuda.so").write_bytes(b"")
+
+        with self.assertRaisesRegex(FileNotFoundError, "Downloaded.*invalid.*empty"):
+            verify_ollama_gpu_pruned(self.source, self.bundle)
+
+    def test_still_requires_cuda_in_the_download(self):
+        (self.source / "lib/ollama/cuda_v12/libggml-cuda.so").unlink()
+
+        with self.assertRaisesRegex(FileNotFoundError, "required GPU families: cuda"):
+            verify_ollama_gpu_pruned(self.source, self.bundle)
 
 
 if __name__ == "__main__":
