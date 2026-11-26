@@ -279,6 +279,7 @@ function renderDocument(title: string, meta: string | undefined, sections: strin
   .report table { width: 100%; border-collapse: collapse; margin: 0 0 10px; font-size: 9.5pt; }
   .report th, .report td {
     border: 1px solid var(--rule); padding: 5px 7px; text-align: left; vertical-align: top;
+    overflow-wrap: anywhere;
   }
   .report th { background: var(--paper-1); font-weight: 600; }
   .report hr { border: none; border-top: 1px solid var(--rule); margin: 14px 0; }

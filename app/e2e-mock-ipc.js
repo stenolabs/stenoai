@@ -211,7 +211,8 @@ const SEED_REPORT = {
   // Leading <think> block: the copy path must strip reasoning like the
   // rendered view does, so the spec can assert it never reaches the clipboard.
   content:
-    '<think>secret chain of thought</think>\n## Status Report\n\n- Pipeline healthy\n- Next: open the reqs',
+    '<think>secret chain of thought</think>\n## Status Report\n\n- Pipeline healthy\n- Next: open the reqs\n\n'
+    + '| Identifier | Result |\n| --- | --- |\n| `' + 'M'.repeat(128) + '` | Passed |',
   created_at: '2026-06-19T13:00:00Z',
 };
 
