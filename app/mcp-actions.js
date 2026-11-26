@@ -16,7 +16,11 @@
  *   audit        <userData>/mcp-actions-audit.jsonl (mcp-audit-log.js)
  *
  * Rules this module enforces, whatever the renderer asks for:
- *   - Nothing runs without approve(); there is no auto-run path.
+ *   - Nothing runs without approve(). The one way round the card is a
+ *     connection the user marked "Always allow" (autoApprove): its proposals
+ *     go through the same approve() right away, and only when the org policy
+ *     allows that, the connection is enabled and allowed, and the arguments
+ *     validate; anything else still gets a card (see autoRunnable()).
  *   - approve() sends exactly the arguments it is given, after validating
  *     them against the tool's schema, to a tool the enabled connection
  *     actually listed. Dismiss sends nothing.
@@ -153,6 +157,7 @@ function publicConnection(c, policy) {
     auth: c.auth,
     headerName: c.headerName || null,
     enabled: c.enabled === true,
+    autoApprove: c.autoApprove === true,
     account: c.account || null,
     status: c.status || 'ok',
     tools: (c.tools || []).map((t) => ({ name: t.name, title: t.title || null, description: t.description || '', readOnly: t.readOnly === true })),
@@ -219,13 +224,15 @@ function createActionsService({
         // programs either, unless it says so.
         localCommandsAllowed: p?.localCommandsAllowed === true || (p?.localCommandsAllowed !== false && !endpointAllowlist),
         emailDraftsAllowed: p?.emailDraftsAllowed !== false,
+        // "Always allow" per app: on unless a managed org turns it off.
+        autoApproveAllowed: p?.autoApproveAllowed !== false,
         managed: p?.managed === true,
         reason: p?.reason || null,
       };
     } catch (_) {
       // getPolicy is expected to fail closed itself; this is the backstop.
       return {
-        actionsEnabled: false, endpointAllowlist: [], localCommandsAllowed: false, emailDraftsAllowed: false, managed: true, reason: 'policy-unavailable',
+        actionsEnabled: false, endpointAllowlist: [], localCommandsAllowed: false, emailDraftsAllowed: false, autoApproveAllowed: false, managed: true, reason: 'policy-unavailable',
       };
     }
   }
@@ -259,6 +266,7 @@ function createActionsService({
       kind: email.EMAIL_KIND,
       auth: 'none',
       enabled: connections.getBuiltinEnabled(email.EMAIL_KIND),
+      autoApprove: connections.getBuiltinAutoApprove(email.EMAIL_KIND),
       status: 'ok',
       account: null,
       tools: [email.EMAIL_TOOL],
@@ -404,6 +412,7 @@ function createActionsService({
         endpointAllowlist: p.endpointAllowlist,
         localCommandsAllowed: p.localCommandsAllowed,
         emailDraftsAllowed: p.emailDraftsAllowed,
+        autoApproveAllowed: p.autoApproveAllowed,
         reason: p.reason,
       },
       secureStorage: secrets.available(),
@@ -630,6 +639,45 @@ function createActionsService({
     return publicConnection(c, await policy());
   }
 
+  /**
+   * "Always allow" for one app: its actions run without a card from now on
+   * (autoRunnable decides each time). Turning it on is refused while the org
+   * policy forbids it, so a managed org's setting cannot be undone from the
+   * renderer; turning it off always works.
+   */
+  async function setAutoApprove(id, value) {
+    const on = value === true;
+    if (on) {
+      const p = await policy();
+      if (!p.actionsEnabled) throw new ActionError('disabled-by-org', 'Your organisation has turned off actions');
+      if (!p.autoApproveAllowed) throw new ActionError('auto-approve-not-allowed', 'Your organisation requires approving each action');
+    }
+    if (id === email.EMAIL_CONNECTION_ID) {
+      connections.setBuiltinAutoApprove(email.EMAIL_KIND, on);
+      return publicConnection(emailConnection(), await policy());
+    }
+    const c = connections.update(id, { autoApprove: on });
+    if (!c) throw new ActionError('not-found', 'Connection not found');
+    log(`[actions] ${logLabel(c)} always allow ${on ? 'on' : 'off'}`);
+    return publicConnection(c, await policy());
+  }
+
+  /**
+   * Whether a proposal on this connection may run without a card: the user
+   * chose "Always allow" for it, the org allows that, the connection is on
+   * and allowed, and the card has no validation problems. Destructive tools
+   * never reach a card in the first place.
+   */
+  function autoRunnable(connection, card, p) {
+    return Boolean(connection)
+      && connection.autoApprove === true
+      && connection.enabled === true
+      && p.actionsEnabled
+      && p.autoApproveAllowed !== false
+      && connectionAllowed(connection, p)
+      && (!Array.isArray(card.validationErrors) || card.validationErrors.length === 0);
+  }
+
   function remove(id) {
     if (id === email.EMAIL_CONNECTION_ID) throw new ActionError('invalid-state', 'Turn Email drafts off instead');
     tokenManagers.delete(id);
@@ -687,7 +735,27 @@ function createActionsService({
       toolTitle: simple ? simple.title : tool?.title || null,
       toolDescription: simple ? simple.description || null : tool?.description || null,
       sendTemplate: simple ? simple.template : null,
+      // "Always allow for <app>" is offered until the user chooses it, and never where the org forbids it.
+      autoApproveOffered: Boolean(connection) && connection.autoApprove !== true && p.actionsEnabled && p.autoApproveAllowed !== false,
+      autoApproved: card.autoApproved === true,
     };
+  }
+
+  /**
+   * Run the fresh proposals of connections marked "Always allow", each
+   * through approve() (same checks, same audit line, marked autoApproved). A
+   * run that cannot happen (connection gone, tool missing) leaves its card
+   * proposed, so the user still sees it.
+   */
+  async function autoRun(key, cards, p) {
+    for (const card of cards) {
+      if (card.status !== 'proposed' || !autoRunnable(getConnection(card.connectionId), card, p)) continue;
+      try {
+        await approve(key, card.id, card.arguments, { auto: true });
+      } catch (e) {
+        log(`[actions] auto-run skipped (${e?.code || e?.name || 'error'})`);
+      }
+    }
   }
 
   async function getCards(summaryPath) {
@@ -884,7 +952,8 @@ function createActionsService({
     const droppedTotal = Object.values(dropped).reduce((a, b) => a + b, 0);
     log(`[actions] suggested ${fresh.length} action(s) from ${proposals.length} proposal(s)`
       + (droppedTotal ? `; dropped ${droppedTotal} (uncited ${dropped.uncited}, placeholder ${dropped.placeholder}, invented id ${dropped['ungrounded-id']}, invented email ${dropped['ungrounded-email']})` : ''));
-    return { skipped: false, cards: cards.map((c) => enrichCard(c, p)) };
+    await autoRun(summaryPath, fresh, p);
+    return { skipped: false, cards: await getCards(summaryPath) };
   }
 
   function updateCard(summaryPath, cardId, patch) {
@@ -907,8 +976,13 @@ function createActionsService({
   /**
    * Run one approved action with exactly `args`. Re-checks policy, the
    * connection, that the tool is one it listed, and the schema.
+   *   alwaysAllow  the user chose "Always allow for <app>": the connection is
+   *                marked autoApprove once the arguments validate (and only
+   *                where the org allows it), then this action runs as usual.
+   *   auto         internal: the run was started by autoRun(), so the card
+   *                and the audit line say so.
    */
-  async function approve(summaryPath, cardId, args) {
+  async function approve(summaryPath, cardId, args, { alwaysAllow = false, auto = false } = {}) {
     const card = readCards(summaryPath).find((c) => c.id === cardId);
     if (!card) throw new ActionError('not-found', 'Action not found');
     if (card.status !== 'proposed' && card.status !== 'failed') throw new ActionError('invalid-state', 'This action has already run');
@@ -930,9 +1004,11 @@ function createActionsService({
       err.validationErrors = errors;
       throw err;
     }
+    if (alwaysAllow === true) await setAutoApprove(connection.id, true);
 
     running.add(cardId);
-    updateCard(summaryPath, cardId, { status: 'running', arguments: args, validationErrors: [] });
+    // A manual retry of a run that started automatically is the user's own approval.
+    updateCard(summaryPath, cardId, { status: 'running', arguments: args, validationErrors: [], autoApproved: auto === true });
     let outcome;
     try {
       const res = await callToolOf(connection, tool.name, callArgs);
@@ -955,8 +1031,9 @@ function createActionsService({
       status: outcome.result.status,
       link: outcome.result.link,
       noteId: path.basename(cardsFile(summaryPath), '.json'),
+      autoApproved: auto === true,
     });
-    log(`[actions] ${logLabel(connection)} ${tool.name} -> ${outcome.result.status}`);
+    log(`[actions] ${logLabel(connection)} ${tool.name} -> ${outcome.result.status}${auto ? ' (always allow)' : ''}`);
     updateCard(summaryPath, cardId, { ...outcome, approvedAt: now() });
     return (await getCards(summaryPath)).find((c) => c.id === cardId);
   }
@@ -1049,7 +1126,9 @@ function createActionsService({
   /**
    * Turn a model's write call into an action card under `chatKey`. Required
    * arguments that are missing or placeholders are refused (the model is told
-   * to ask the user) rather than shown as a card.
+   * to ask the user) rather than shown as a card. On a connection marked
+   * "Always allow" the card runs straight away (autoRun) and comes back
+   * finished with `auto: true`; the caller then need not wait on it.
    */
   async function proposeChatAction(chatKey, { connectionId, tool: toolName, arguments: args, reason, simple: simpleId }) {
     const p = await policy();
@@ -1099,11 +1178,16 @@ function createActionsService({
       updatedAt: now(),
     };
     writeCards(chatKey, [...readCards(chatKey), card]);
+    if (autoRunnable(connection, card, p)) {
+      await autoRun(chatKey, [card], p);
+      const ran = readCards(chatKey).find((c) => c.id === card.id);
+      if (ran && ran.status !== 'proposed') return { card: enrichCard(ran, p), auto: true };
+    }
     return { card: enrichCard(card, p) };
   }
 
   return {
-    list, addCustom, addLocal, shutdown, connectConnector, authorize, cancelAuthorize, refreshTools, setEnabled, remove, setAutoSuggest,
+    list, addCustom, addLocal, shutdown, connectConnector, authorize, cancelAuthorize, refreshTools, setEnabled, remove, setAutoSuggest, setAutoApprove,
     getCards, suggest, approve, dismiss, recent, hasUsableConnections,
     chatToolset, callReadTool, proposeChatAction,
     // exposed for tests

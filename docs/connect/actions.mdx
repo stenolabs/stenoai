@@ -1,10 +1,10 @@
 ---
 title: "Actions"
-description: "Connect Linear, Notion, Jira and Confluence, or any MCP server. After each meeting Steno suggests follow-ups, and nothing runs until you approve it."
+description: "Connect Linear, Notion, Jira and Confluence, or any MCP server. After each meeting Steno suggests follow-ups. Approve each one, or approve an app once and let its actions run."
 icon: "bolt"
 ---
 
-Actions turn a meeting's action items into work in the apps you use. When a note is ready, Steno suggests follow-ups such as a Linear issue or an email draft. You review each one, edit it if needed, and approve it. Nothing runs until you do.
+Actions turn a meeting's action items into work in the apps you use. When a note is ready, Steno suggests follow-ups such as a Linear issue or an email draft. You review each one, edit it if needed, and approve it. Nothing runs until you do, unless you have chosen **Always allow** for that app (see [Approve an app once](#approve-an-app-once)).
 
 ## Connect an app
 
@@ -35,7 +35,7 @@ Actions turn a meeting's action items into work in the apps you use. When a note
 Until Slack is available, you can post to Slack through an n8n or Zapier workflow added as a [custom MCP server](/connect/custom-mcp-servers).
 </Tip>
 
-Your connected apps appear in **Settings → Connectors** under **Your connections**. Each card shows where the app runs, how many actions it offers, and buttons to **Refresh**, **Sign in** again or **Disconnect**. Use the switch on a card to stop using that app for suggestions without disconnecting it.
+Your connected apps appear in **Settings → Connectors** under **Your connections**. Each card shows where the app runs, how many actions it offers, a **Run actions without asking** switch, and buttons to **Refresh**, **Sign in** again or **Disconnect**. Use the switch at the top of a card to stop using that app for suggestions without disconnecting it.
 
 ## How suggestions work
 
@@ -47,10 +47,10 @@ Your connected apps appear in **Settings → Connectors** under **Your connectio
     Cards appear under the note in **Suggested actions**. Each card says what it will do and where, for example "Create issue in Linear", and which action item it came from.
   </Step>
   <Step title="Edit if needed">
-    Change any field on the card before you approve it. Required fields are marked. Click **Show what will be sent** to see exactly what Steno will send.
+    Change any field on the card before you approve it. Required fields are marked. For a tool whose fields cannot be edited on the card, the card lists what will be sent instead.
   </Step>
   <Step title="Approve or dismiss">
-    Click **Approve** to send that action, exactly as shown, and nothing else. Click **Dismiss** to discard it; nothing is sent. Once an action is done, the card shows **Done** with an **Open** link to the new item.
+    Click **Approve** to send that action, exactly as shown, and nothing else. Click **Always allow for &lt;app&gt;** to send it and let that app's future actions run without asking. Click **Dismiss** to discard it; nothing is sent. Once an action is done, the card shows **Done** with an **Open** link to the new item.
   </Step>
 </Steps>
 
@@ -58,7 +58,21 @@ To suggest again, or to get suggestions for an older note, click **Suggest actio
 
 To stop automatic suggestions, turn off **Suggest actions after each note** in **Settings → Connectors**. You can still click **Suggest actions** whenever you want them.
 
-**Recent actions** in **Settings → Connectors** lists what you have approved and whether it succeeded.
+**Recent actions** in **Settings → Connectors** lists what you have approved and whether it succeeded. Actions that ran because you chose **Always allow** are marked **ran automatically**.
+
+## Approve an app once
+
+You do not have to approve every action from an app you trust. On any card, click **Always allow for &lt;app&gt;** instead of **Approve**. That action runs, and from then on Steno runs that app's actions as soon as it suggests them: the card appears already marked **Done**, with an **Open** link, and chat actions on that app run without pausing.
+
+Steno still asks you first when:
+
+- a suggested action has a missing or invalid field, so you can fix it;
+- the connection is turned off or your organisation does not allow it;
+- the tool is one the app marks as destructive (these are never suggested at all).
+
+To turn it off, open **Settings → Connectors** and switch off **Run actions without asking** on that app's card. For email drafts, the switch is on the **Email** card on the Connect page. The next action from that app asks for approval again.
+
+Every action is still recorded in **Recent actions**, whether you approved it or it ran automatically.
 
 ## Email drafts
 
@@ -79,14 +93,14 @@ To stop email suggestions, turn off **Email** on the Connect page.
 
 ## Organisation policy
 
-If you are signed in to an organisation, your admin can turn actions off, limit which apps and servers you can connect, block commands on this computer, or turn off email drafts. Steno then shows a message such as "Your organisation has turned off actions." or marks a connection **Not allowed by your organisation**.
+If you are signed in to an organisation, your admin can turn actions off, limit which apps and servers you can connect, block commands on this computer, turn off email drafts, or require approval for every action (`mcp_auto_approve_allowed: false`, which hides **Always allow** and the **Run actions without asking** switch). Steno then shows a message such as "Your organisation has turned off actions." or marks a connection **Not allowed by your organisation**.
 
 If Steno cannot reach your organisation's settings, it keeps using the last policy it received for up to 24 hours. After that, actions are paused until Steno can reach them again.
 
 ---
 
 <Accordion title="Can Steno take actions from chat too?">
-Yes. With a capable AI model, chat can use your connected apps and asks you to approve each change. See [Chat](/features/ask-your-meetings#take-actions-in-connected-apps).
+Yes. With a capable AI model, chat can use your connected apps and asks you to approve each change, unless you chose **Always allow** for that app. See [Chat](/features/ask-your-meetings#take-actions-in-connected-apps).
 </Accordion>
 
 <Accordion title="Which model writes the suggestions?">

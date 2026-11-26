@@ -214,7 +214,7 @@ const stenoai = {
     chatGlobalStream: (id, q, folderId) => send('chat-global-stream', id, q, folderId ?? null),
     cancel: (id) => send('query-cancel', id),
     /** Approve / dismiss an action card a chat-agent turn is paused on. */
-    approveAction: (id, cardId, args) => invoke('chat-action-approve', id, cardId, args),
+    approveAction: (id, cardId, args, options) => invoke('chat-action-approve', id, cardId, args, options),
     dismissAction: (id, cardId) => invoke('chat-action-dismiss', id, cardId),
   },
 
@@ -408,9 +408,11 @@ const stenoai = {
     setEnabled: (id, enabled) => invoke('actions-set-enabled', id, enabled),
     remove: (id) => invoke('actions-remove', id),
     setAutoSuggest: (value) => invoke('actions-set-auto-suggest', value),
+    // "Always allow for <app>": actions on that connection run without a card.
+    setAutoApprove: (id, value) => invoke('actions-set-auto-approve', id, value),
     getCards: (summaryFile) => invoke('actions-get-cards', summaryFile),
     suggest: (summaryFile, options) => invoke('actions-suggest', summaryFile, options),
-    approve: (summaryFile, cardId, args) => invoke('actions-approve', summaryFile, cardId, args),
+    approve: (summaryFile, cardId, args, options) => invoke('actions-approve', summaryFile, cardId, args, options),
     dismiss: (summaryFile, cardId) => invoke('actions-dismiss', summaryFile, cardId),
     recent: (limit) => invoke('actions-recent', limit),
   },

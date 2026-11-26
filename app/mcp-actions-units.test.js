@@ -139,7 +139,15 @@ test('IPC: note paths are validated, ids type-checked, errors carry a code and n
   assert.equal((await handlers['actions-approve']({}, 'ok.json', 'c1', [1])).error_code, 'invalid-arguments');
   const ok = await handlers['actions-approve']({}, 'ok.json', 'c1', { a: 1 });
   assert.equal(ok.success, true);
-  assert.deepEqual(calls, [['/real/ok.json', 'c1', { a: 1 }]]);
+  // "Always allow" is only ever the literal true; anything else is an ordinary approve.
+  await handlers['actions-approve']({}, 'ok.json', 'c1', { a: 1 }, { alwaysAllow: true });
+  await handlers['actions-approve']({}, 'ok.json', 'c1', { a: 1 }, { alwaysAllow: 'yes' });
+  assert.deepEqual(calls, [
+    ['/real/ok.json', 'c1', { a: 1 }, { alwaysAllow: false }],
+    ['/real/ok.json', 'c1', { a: 1 }, { alwaysAllow: true }],
+    ['/real/ok.json', 'c1', { a: 1 }, { alwaysAllow: false }],
+  ]);
+  assert.equal((await handlers['actions-set-auto-approve']({}, 'c1', 'yes')).error_code, 'invalid-input');
   assert.deepEqual(await handlers['actions-list']({}), { success: false, error_code: 'error', error: 'Something went wrong' });
   assert.deepEqual(await handlers['actions-remove']({}, 'x'), { success: false, error_code: 'not-found', error: 'Connection not found' });
 });

@@ -3,19 +3,17 @@ import { Check, ExternalLink, Mail, SquareTerminal } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
-import {
-  formFields,
-  fromFormState,
-  parseArgumentsJson,
-  toFormState,
-  type FormField,
-  type FormState,
-} from '@/lib/actionForm';
+import { formFields, fromFormState, toFormState, type FormField, type FormState } from '@/lib/actionForm';
 import { actionErrorMessage } from '@/lib/actionErrors';
 import { actionPhrase, headlineValue, inlineFieldKeys } from '@/lib/actionCopy';
-import { fillTemplate } from '@/lib/actionTemplate';
 import { ActionValidationFailure } from '@/hooks/useActions';
-import { ipc, type ActionCard, type ActionLocality, type ActionValidationError } from '@/lib/ipc';
+import {
+  ipc,
+  type ActionCard,
+  type ActionLocality,
+  type ActionValidationError,
+  type ApproveActionOptions,
+} from '@/lib/ipc';
 import { BrandGlyph, IconGlyph } from '@/routes/connect/ConnectGlyph';
 import { brandForOrigin } from '@/routes/connect/brandLogos';
 import { t } from '@/i18n';
@@ -30,6 +28,40 @@ function localityNote(
   if (locality === 'device') return t('actions.card.sendsTo.device', { connection });
   if (locality === 'network') return t('actions.card.sendsTo.network', { connection });
   return t('actions.card.sendsTo.internet', { connection });
+}
+
+const SUMMARY_MAX_LINES = 8;
+const SUMMARY_MAX_VALUE = 120;
+
+function summaryValue(value: unknown): string {
+  let text: string;
+  if (value === null || value === undefined) text = '';
+  else if (Array.isArray(value)) {
+    text = value.every((v) => typeof v !== 'object' || v === null)
+      ? value.map((v) => String(v)).join(', ')
+      : t('actions.card.summaryItems', { count: value.length });
+  } else if (typeof value === 'object') text = t('actions.card.summaryFields', { count: Object.keys(value).length });
+  else text = String(value);
+  text = text.replace(/\s+/g, ' ').trim();
+  return text.length > SUMMARY_MAX_VALUE ? `${text.slice(0, SUMMARY_MAX_VALUE - 1)}…` : text;
+}
+
+/**
+ * A readable, read-only view of arguments the form cannot edit (a nested or
+ * undescribed schema): "key: value" lines, nested one level, truncated.
+ */
+export function summaryLines(args: Record<string, unknown>): { key: string; value: string }[] {
+  const lines: { key: string; value: string }[] = [];
+  for (const [key, value] of Object.entries(args)) {
+    if (value && typeof value === 'object' && !Array.isArray(value)) {
+      for (const [sub, v] of Object.entries(value as Record<string, unknown>)) {
+        lines.push({ key: `${key} › ${sub}`, value: summaryValue(v) });
+      }
+      continue;
+    }
+    lines.push({ key, value: summaryValue(value) });
+  }
+  return lines;
 }
 
 function FieldInput({
@@ -84,11 +116,15 @@ function FieldInput({
   );
 }
 
+const fieldMatches = (f: FormField, e: ActionValidationError) =>
+  e.path === `$.${f.key}` || e.path.startsWith(`$.${f.key}[`) || e.path.startsWith(`$.${f.key}.`);
+
 /**
  * One suggested action, written as a sentence ("Create page in Notion ·
  * Website content cleanup") with the two or three fields that matter
- * editable inline. The exact payload, and a raw JSON editor for everything
- * else, sit under "Show what will be sent". Nothing is sent until Approve;
+ * editable inline; a field with a problem is shown too. Arguments the form
+ * cannot edit are summarised read-only. Nothing is sent until Approve (or
+ * "Always allow for <app>", which approves and trusts the app from then on);
  * the main process validates the arguments again.
  */
 export function ActionCardView({
@@ -99,7 +135,7 @@ export function ActionCardView({
   compact = false,
 }: {
   card: ActionCard;
-  onApprove: (args: Record<string, unknown>) => Promise<unknown>;
+  onApprove: (args: Record<string, unknown>, options?: ApproveActionOptions) => Promise<unknown>;
   onDismiss: () => void;
   approving: boolean;
   /** Tighter spacing for the chat thread. */
@@ -110,90 +146,57 @@ export function ActionCardView({
     () => formFields(card.inputSchema, card.arguments),
     [card.inputSchema, card.arguments]
   );
-  const formPossible = React.useMemo(
-    () => formFields(card.inputSchema, {}) !== null,
-    [card.inputSchema]
-  );
-  const [rawMode, setRawMode] = React.useState(fields === null);
   const [formState, setFormState] = React.useState<FormState>(() =>
     fields ? toFormState(fields, card.arguments) : {}
   );
-  const [rawText, setRawText] = React.useState(() => JSON.stringify(card.arguments, null, 2));
   const [errors, setErrors] = React.useState<ActionValidationError[]>(card.validationErrors ?? []);
   const [message, setMessage] = React.useState('');
-  const [showPayload, setShowPayload] = React.useState(fields === null);
+  const [alwaysAllowing, setAlwaysAllowing] = React.useState(false);
 
-  const args: Record<string, unknown> | null = rawMode
-    ? parseArgumentsJson(rawText)
-    : fields
-      ? fromFormState(fields, formState, card.arguments)
-      : null;
-  // A simple action shows the vendor call its fields translate to: what Approve sends.
+  // No form for this schema: the arguments go exactly as proposed.
+  const args: Record<string, unknown> = fields
+    ? fromFormState(fields, formState, card.arguments)
+    : card.arguments;
+  // A simple action has only a few flat fields: show them all.
   const simple = card.sendTemplate !== undefined && card.sendTemplate !== null;
-  const payload = args
-    ? JSON.stringify(
-        { tool: card.tool, arguments: simple ? fillTemplate(card.sendTemplate, args) : args },
-        null,
-        2
-      )
-    : '';
   const finished = card.status === 'done';
   const running = card.status === 'running' || approving;
 
-  const inlineKeys = React.useMemo(
-    // A simple action has only a few flat fields: show them all.
-    () => (fields ? inlineFieldKeys(fields, card.arguments, simple ? 4 : 3) : []),
-    [fields, card.arguments, simple]
-  );
+  const inlineKeys = React.useMemo(() => {
+    if (!fields) return [];
+    const keys = inlineFieldKeys(fields, card.arguments, simple ? 4 : 3);
+    // A field with a problem is shown so it can be fixed.
+    for (const f of fields) {
+      if (!keys.includes(f.key) && errors.some((e) => fieldMatches(f, e))) keys.push(f.key);
+    }
+    return keys;
+  }, [fields, card.arguments, simple, errors]);
   // Email drafts read "Draft email · Subject": the mail app is not a place to put it "in".
   const isEmail = card.connectionKind === 'email';
   const inlineFields = fields ? fields.filter((f) => inlineKeys.includes(f.key)) : [];
   // A draft reads top to bottom like an email: To, Subject, Message.
   if (isEmail) inlineFields.sort((a, b) => inlineKeys.indexOf(a.key) - inlineKeys.indexOf(b.key));
-  // Errors on fields that are not shown inline are listed in the disclosure.
-  const hiddenErrors = errors.filter(
-    (e) =>
-      rawMode ||
-      !inlineFields.some((f) => e.path === `$.${f.key}` || e.path.startsWith(`$.${f.key}[`))
-  );
-  // A problem in a field that is not shown inline keeps the disclosure open.
-  const payloadOpen = showPayload || hiddenErrors.length > 0;
+  // Problems on nothing shown above are listed on their own.
+  const otherErrors = errors.filter((e) => !inlineFields.some((f) => fieldMatches(f, e)));
+  const summary = fields ? [] : summaryLines(card.arguments);
 
-  const switchMode = () => {
-    if (rawMode) {
-      const parsed = parseArgumentsJson(rawText);
-      const f = parsed ? formFields(card.inputSchema, parsed) : null;
-      if (!parsed || !f) {
-        setMessage(t('actions.card.cannotUseForm'));
-        return;
-      }
-      setFormState(toFormState(f, parsed));
-      setRawMode(false);
-    } else {
-      setRawText(JSON.stringify(args ?? card.arguments, null, 2));
-      setRawMode(true);
-    }
+  const approve = async (options?: ApproveActionOptions) => {
     setMessage('');
-  };
-
-  const approve = async () => {
-    if (!args) {
-      setMessage(t('actions.card.invalidJson'));
-      return;
-    }
-    setMessage('');
+    if (options?.alwaysAllow) setAlwaysAllowing(true);
     try {
-      await onApprove(args);
+      await onApprove(args, options);
       setErrors([]);
     } catch (e) {
       if (e instanceof ActionValidationFailure) setErrors(e.validationErrors);
       setMessage(actionErrorMessage(e));
+    } finally {
+      setAlwaysAllowing(false);
     }
   };
 
   const title = card.toolTitle || card.tool;
   const phrase = actionPhrase(card.tool, card.toolTitle, card.connectionName);
-  const subject = headlineValue(args ?? card.arguments);
+  const subject = headlineValue(args);
   return (
     <article
       aria-label={t('actions.card.aria', { tool: title, connection: card.connectionName })}
@@ -251,13 +254,11 @@ export function ActionCardView({
 
       {finished ? null : (
         <>
-          {!rawMode && inlineFields.length > 0 && (
+          {inlineFields.length > 0 && (
             <div className="mt-3 flex flex-col gap-2.5">
               {inlineFields.map((f) => {
                 const id = `${idBase}-${f.key}`;
-                const fieldErrors = errors.filter(
-                  (e) => e.path === `$.${f.key}` || e.path.startsWith(`$.${f.key}[`)
-                );
+                const fieldErrors = errors.filter((e) => fieldMatches(f, e));
                 return (
                   <div
                     key={f.key}
@@ -293,63 +294,42 @@ export function ActionCardView({
             </div>
           )}
 
-          <details
-            className="mt-3"
-            open={payloadOpen}
-            onToggle={(e) => setShowPayload((e.currentTarget as HTMLDetailsElement).open)}
-          >
-            <summary className="cursor-pointer text-[12.5px]" style={{ color: 'var(--fg-2)' }}>
-              {t('actions.card.preview')}
-            </summary>
-            {rawMode ? (
-              <label className="mt-2 block">
-                <span className="mb-1 block text-[12.5px]" style={{ color: 'var(--fg-2)' }}>
-                  {t('actions.card.argumentsJson')}
-                </span>
-                <textarea
-                  className="min-h-[120px] w-full rounded-md border border-border bg-transparent px-3 py-2 font-mono text-[12px] leading-relaxed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                  spellCheck={false}
-                  value={rawText}
-                  onChange={(e) => setRawText(e.currentTarget.value)}
-                />
-              </label>
-            ) : (
-              <pre
-                data-testid="action-payload"
-                className="mt-2 max-h-[220px] overflow-auto whitespace-pre-wrap break-all rounded-lg p-3 font-mono text-[11.5px] leading-relaxed"
-                style={{ background: 'var(--surface-sunken)', color: 'var(--fg-1)' }}
-              >
-                {payload || t('actions.card.invalidJson')}
-              </pre>
-            )}
-            {hiddenErrors.map((e) => (
-              <p
-                key={`${e.path}-${e.message}`}
-                className="mt-1 text-[12px]"
-                style={{ color: 'var(--fg-1)' }}
-              >
-                {t('actions.card.fieldError', {
-                  field: e.path.replace(/^\$\.?/, ''),
-                  message: e.message,
-                })}
-              </p>
-            ))}
-            <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1">
-              <p className="text-[12px]" style={{ color: 'var(--fg-muted)' }}>
-                {t('actions.card.previewHint', { origin: card.origin ?? card.connectionName })}
-              </p>
-              {formPossible && (
-                <button
-                  type="button"
-                  className="ml-auto text-[12px] underline underline-offset-2"
-                  style={{ color: 'var(--fg-muted)' }}
-                  onClick={switchMode}
-                >
-                  {rawMode ? t('actions.card.editAsForm') : t('actions.card.editAsJson')}
-                </button>
+          {summary.length > 0 && (
+            <dl
+              data-testid="action-summary"
+              className="mt-3 flex flex-col gap-1 text-[12.5px] leading-relaxed"
+              style={{ color: 'var(--fg-2)' }}
+            >
+              {summary.slice(0, SUMMARY_MAX_LINES).map((line) => (
+                <div key={line.key} className="flex min-w-0 gap-1.5">
+                  <dt className="shrink-0" style={{ color: 'var(--fg-muted)' }}>
+                    {t('actions.card.summaryKey', { key: line.key })}
+                  </dt>
+                  <dd className="min-w-0 truncate" style={{ color: 'var(--fg-1)' }}>
+                    {line.value}
+                  </dd>
+                </div>
+              ))}
+              {summary.length > SUMMARY_MAX_LINES && (
+                <div style={{ color: 'var(--fg-muted)' }}>
+                  {t('actions.card.summaryMore', { count: summary.length - SUMMARY_MAX_LINES })}
+                </div>
               )}
-            </div>
-          </details>
+            </dl>
+          )}
+
+          {otherErrors.map((e) => (
+            <p
+              key={`${e.path}-${e.message}`}
+              className="mt-2 text-[12px]"
+              style={{ color: 'var(--fg-1)' }}
+            >
+              {t('actions.card.fieldError', {
+                field: e.path.replace(/^\$\.?/, ''),
+                message: e.message,
+              })}
+            </p>
+          ))}
 
           {card.status === 'failed' && (
             <div role="alert" className="mt-2 text-[12.5px]" style={{ color: 'var(--fg-1)' }}>
@@ -386,12 +366,25 @@ export function ActionCardView({
               disabled={running || !card.connectionAvailable}
               onClick={() => void approve()}
             >
-              {running
+              {running && !alwaysAllowing
                 ? t('actions.card.sending')
                 : card.status === 'failed'
                   ? t('actions.card.retry')
                   : t('actions.card.approve')}
             </Button>
+            {card.autoApproveOffered && card.status !== 'failed' && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-[30px] px-3 text-[13px]"
+                disabled={running || !card.connectionAvailable}
+                onClick={() => void approve({ alwaysAllow: true })}
+              >
+                {alwaysAllowing
+                  ? t('actions.card.sending')
+                  : t('actions.card.alwaysAllow', { connection: card.connectionName })}
+              </Button>
+            )}
             <Button
               variant="ghost"
               size="sm"

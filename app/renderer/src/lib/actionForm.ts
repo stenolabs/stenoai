@@ -5,9 +5,10 @@ import type { JsonSchema } from './ipc';
  *
  * Only flat objects whose fields are strings, numbers, booleans, string enums
  * or lists of strings get a form. Anything else (nested objects, unions,
- * arguments the schema does not describe) falls back to editing the raw
- * JSON, so the form can never silently drop or reshape a value. The main
- * process validates the final arguments against the full schema either way.
+ * arguments the schema does not describe) gets no form: the card shows the
+ * arguments read-only and sends them as proposed, so the form can never
+ * silently drop or reshape a value. The main process validates the final
+ * arguments against the full schema either way.
  */
 
 export type FieldKind =
@@ -80,7 +81,7 @@ function fieldFor(key: string, schema: JsonSchema, required: boolean): FormField
   return null;
 }
 
-/** Fields for a schema, or null when only raw JSON can represent it faithfully. */
+/** Fields for a schema, or null when no form can represent it faithfully. */
 export function formFields(
   schema: JsonSchema | null,
   args: Record<string, unknown>
@@ -98,7 +99,7 @@ export function formFields(
     if (!field) return null;
     fields.push(field);
   }
-  // A proposed value the form cannot show as-is → raw JSON.
+  // A proposed value the form cannot show as-is → no form.
   for (const [key, value] of Object.entries(args)) {
     const field = fields.find((f) => f.key === key);
     if (!field) return null;
@@ -169,14 +170,4 @@ export function fromFormState(
     }
   }
   return out;
-}
-
-/** Parse raw JSON arguments; null when it is not a JSON object. */
-export function parseArgumentsJson(text: string): Record<string, unknown> | null {
-  try {
-    const v: unknown = JSON.parse(text);
-    return v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : null;
-  } catch {
-    return null;
-  }
 }

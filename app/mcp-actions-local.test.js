@@ -270,3 +270,46 @@ test('local command: org policy gates it (allowlist implies off unless allowed)'
   await assert.rejects(off.callReadTool(c.id, 'whoami', {}), { code: 'local-not-allowed' });
   assert.ok(!(await off.chatToolset()).some((t) => t.connectionId === c.id));
 });
+
+test('Email drafts: "Always allow" opens later suggested drafts without a card and survives the on/off switch', async () => {
+  let proposals = [];
+  const svc = service({ runSuggest: async () => ({ success: true, note: NOTE, proposals }) });
+  proposals = [{
+    connection_id: EMAIL_CONNECTION_ID, tool: 'draft_email', action_item: 1,
+    arguments: { to: ['dana@acme.co'], subject: 'Pricing sheet', body: 'Hi Dana, attached.' },
+  }];
+  const first = (await svc.suggest(summary)).cards[0];
+  assert.equal(first.status, 'proposed');
+  assert.equal(svc.opened.length, 0);
+  const done = await svc.approve(summary, first.id, first.arguments, { alwaysAllow: true });
+  assert.equal(done.status, 'done');
+  assert.equal(svc.opened.length, 1);
+  const listed = () => svc.list().then((l) => l.connections.find((c) => c.id === EMAIL_CONNECTION_ID));
+  assert.equal((await listed()).autoApprove, true);
+
+  // Turning Email off and on again keeps the choice; it only applies while on.
+  await svc.setEnabled(EMAIL_CONNECTION_ID, false);
+  assert.equal((await listed()).autoApprove, true);
+  await svc.setEnabled(EMAIL_CONNECTION_ID, true);
+
+  proposals = [{
+    connection_id: EMAIL_CONNECTION_ID, tool: 'draft_email', action_item: 1,
+    arguments: { to: ['dana@acme.co'], subject: 'Recap', body: 'Thanks for today.' },
+  }];
+  const second = (await svc.suggest(summary)).cards.find((c) => c.arguments.subject === 'Recap');
+  assert.equal(second.status, 'done');
+  assert.equal(second.autoApproved, true);
+  assert.equal(svc.opened.length, 2);
+  assert.match(svc.opened[1], /^mailto:dana@acme\.co\?subject=Recap/);
+  assert.equal(svc.recent()[0].autoApproved, true);
+
+  // Off again: the next draft waits for Approve.
+  await svc.setAutoApprove(EMAIL_CONNECTION_ID, false);
+  assert.equal((await listed()).autoApprove, false);
+  proposals = [{
+    connection_id: EMAIL_CONNECTION_ID, tool: 'draft_email', action_item: 1,
+    arguments: { subject: 'Later', body: 'x' },
+  }];
+  assert.equal((await svc.suggest(summary)).cards.find((c) => c.arguments.subject === 'Later').status, 'proposed');
+  assert.equal(svc.opened.length, 2);
+});

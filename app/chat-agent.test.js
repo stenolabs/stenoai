@@ -342,3 +342,26 @@ test('a tools-unavailable notice only for action-like questions with connected a
   assert.equal(toolsUnavailableStep({ question: 'summarise my week', connectionNames: names }), null);
   assert.equal(toolsUnavailableStep({ question: 'create a page', connectionNames: [] }), null);
 });
+
+test('a write on an "Always allow" app runs without pausing and the model is told it ran on its own', async () => {
+  const model = scriptedModel([
+    { text: '', tool_calls: [{ id: 'w', name: 'linear__create_issue', arguments: { title: 'Prep release notes' } }] },
+    { text: 'Created REL-2.', tool_calls: [] },
+  ]);
+  const proposed = [];
+  const out = await runAgentTurn({
+    request: REQUEST,
+    tools: buildAgentTools({ connectionTools: CONNECTION_TOOLS }),
+    step: model.step,
+    runRead: async () => assert.fail('no read expected'),
+    // The service ran it already (mcp-actions.js proposeChatAction → auto): no card to wait on.
+    proposeWrite: async (entry, args) => { proposed.push([entry.tool, args]); return { status: 'done', auto: true, text: 'Created REL-2 https://linear.app/x/REL-2' }; },
+  });
+  assert.deepEqual(proposed, [['create_issue', { title: 'Prep release notes' }]]);
+  assert.equal(out.text, 'Created REL-2.');
+  assert.equal(model.seen.length, 2, 'no pause: the model was called straight back');
+  const result = model.seen[1].turns[1].content;
+  assert.match(result, /^This action ran right away: the user has allowed Linear actions to run without asking\./);
+  assert.match(result, /untrusted data/);
+  assert.match(result, /Created REL-2/);
+});

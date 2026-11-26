@@ -5,7 +5,7 @@ import { navigate } from '@/lib/router';
 import { ActionCardView } from '@/components/actions/ActionCardView';
 import { ActionValidationFailure } from '@/hooks/useActions';
 import { actionPhrase, headlineValue } from '@/lib/actionCopy';
-import { ipc, type ActionCard, type ChatActionRecord, type ChatToolStep } from '@/lib/ipc';
+import { ipc, type ActionCard, type ApproveActionOptions, type ChatActionRecord, type ChatToolStep } from '@/lib/ipc';
 import { ResultError } from '@/lib/result';
 import { t } from '@/i18n';
 
@@ -120,7 +120,8 @@ export function ThinkingLine() {
 /**
  * A chat-agent turn in progress: the read steps it took and the action cards
  * it is waiting on. Approve and Dismiss go to main's chat-action-* handlers,
- * which use the same approval path as a note's cards.
+ * which use the same approval path as a note's cards. A card on an app the
+ * user chose "Always allow" for arrives already done and shows as one line.
  */
 export function LiveAgentTrail({
   queryId,
@@ -137,10 +138,10 @@ export function LiveAgentTrail({
   const [busy, setBusy] = React.useState<string | null>(null);
   const waitingOnCard = cards?.some((c) => c.status !== 'done' && c.status !== 'dismissed');
   if (!steps?.length && !cards?.length && !pending) return null;
-  const approve = async (card: ActionCard, args: Record<string, unknown>) => {
+  const approve = async (card: ActionCard, args: Record<string, unknown>, options?: ApproveActionOptions) => {
     setBusy(card.id);
     try {
-      const res = await ipc().query.approveAction(queryId, card.id, args);
+      const res = await ipc().query.approveAction(queryId, card.id, args, options);
       if (!res.success) {
         if ('validationErrors' in res && res.validationErrors) {
           throw new ActionValidationFailure(res.error, res.validationErrors);
@@ -166,7 +167,7 @@ export function LiveAgentTrail({
             card={card}
             compact
             approving={busy === card.id}
-            onApprove={(args) => approve(card, args)}
+            onApprove={(args, options) => approve(card, args, options)}
             onDismiss={() => void ipc().query.dismissAction(queryId, card.id)}
           />
         )

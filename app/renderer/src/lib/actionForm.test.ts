@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formFields, fromFormState, parseArgumentsJson, toFormState } from './actionForm';
+import { formFields, fromFormState, toFormState } from './actionForm';
 import type { JsonSchema } from './ipc';
 
 const schema: JsonSchema = {
@@ -56,11 +56,5 @@ describe('form state round trip', () => {
       title: 'A',
       estimate: 'abc',
     });
-  });
-
-  it('parses raw JSON objects only', () => {
-    expect(parseArgumentsJson('{"a":1}')).toEqual({ a: 1 });
-    expect(parseArgumentsJson('[1]')).toBeNull();
-    expect(parseArgumentsJson('nope')).toBeNull();
   });
 });

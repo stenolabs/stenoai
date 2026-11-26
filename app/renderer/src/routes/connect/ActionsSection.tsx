@@ -5,6 +5,7 @@ import { Switch } from '@/components/ui/switch';
 import {
   useActionsOverview,
   useConnectConnector,
+  useSetConnectionAutoApprove,
   useSetConnectionEnabled,
 } from '@/hooks/useActions';
 import { actionErrorMessage } from '@/lib/actionErrors';
@@ -98,6 +99,7 @@ export function ActionsSection() {
   const connections = allConnections.filter((c) => !c.builtin);
   const connectors = data?.connectors ?? [];
   const setEnabled = useSetConnectionEnabled();
+  const setAutoApprove = useSetConnectionAutoApprove();
 
   const startConnector = (c: ActionConnector) => {
     setConnectError(null);
@@ -156,6 +158,20 @@ export function ActionsSection() {
                 <p className="mt-0.5 text-[12.5px] leading-snug" style={{ color: 'var(--fg-2)' }}>
                   {t('connect.actions.email.description')}
                 </p>
+                {emailDrafts.enabled && policy?.autoApproveAllowed !== false && (
+                  <div className="mt-2 flex items-center justify-between gap-3">
+                    <span className="text-[12.5px]" style={{ color: 'var(--fg-2)' }}>
+                      {t('connect.actions.connection.autoApprove')}
+                    </span>
+                    <Switch
+                      checked={emailDrafts.autoApprove === true}
+                      aria-label={t('connect.actions.connection.autoApproveAria', {
+                        name: t('connect.actions.email.name'),
+                      })}
+                      onCheckedChange={(v) => setAutoApprove.mutate([emailDrafts.id, v])}
+                    />
+                  </div>
+                )}
               </div>
               <Switch
                 checked={emailDrafts.enabled}
