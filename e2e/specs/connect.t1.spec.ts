@@ -22,7 +22,11 @@ test('Connect: coding agents install the skill first, with MCP as the secondary 
 }, testInfo) => {
   const { page, app } = await launchApp({
     mockIpc: true,
-    env: { STENOAI_E2E_OPEN_EXTERNAL: '1', STENOAI_E2E_SEED_FOLDERS: '1' },
+    env: {
+      STENOAI_E2E_OPEN_EXTERNAL: '1',
+      STENOAI_E2E_SEED_FOLDERS: '1',
+      STENOAI_E2E_CONNECT_MCP_ONLY: '0',
+    },
   });
   await app.evaluate(({ shell }) => {
     const state = globalThis as unknown as { openedUrls: string[] };

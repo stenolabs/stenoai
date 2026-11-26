@@ -726,7 +726,7 @@ function install({ ipcMain }) {
     // STENOAI_E2E_CONNECT_MCP_ONLY swaps the coding agents: Claude Code has
     // nothing installed and Codex is connected over MCP without the skill, so
     // the spec covers the MCP-only card (no badge) and the fresh card too.
-    ...(process.env.STENOAI_E2E_CONNECT_MCP_ONLY
+    ...(process.env.STENOAI_E2E_CONNECT_MCP_ONLY === '1'
       ? {
           clients: { claudeDesktop: true, claudeCode: false, codex: true, cursor: false },
           skills: { claudeCode: false, codex: false },

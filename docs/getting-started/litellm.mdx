@@ -25,8 +25,10 @@ You need three things from whoever runs the proxy.
   <Step title="Enter the base URL and key">
     Paste the proxy URL into **API base URL** and the virtual key into **API key**.
   </Step>
-  <Step title="Test and pick a model">
-    Click **Test connection**. Steno asks the proxy for its model list; pick one from the list or type a name under **Custom…**.
+  <Step title="Connect and pick a model">
+    **During setup**: click **Connect** and finish setup. To choose the proxy's model, open **Settings → AI** afterwards.
+
+    **In Settings → AI**: click **Test connection** to load the proxy's model list. Pick a model from the list or choose **Custom…** to enter the name your proxy admin gave you. If there is no list, enter the name directly in the **Model** field.
   </Step>
 </Steps>
 
@@ -46,16 +48,16 @@ Steno sends a plain bearer key in the `Authorization` header and calls the OpenA
 
 ## What is sent to the proxy
 
-The same as any cloud provider: text, never audio.
+Steno sends the proxy text for these tasks.
 
 - **Notes**: the transcript and any notes you typed.
 - **Chat**: your question and the meeting context you selected.
 - **Suggested actions**: the note's title, summary and action items.
 
-Recording and transcription still run on your computer. Whatever the proxy logs or forwards upstream is under your organisation's control, not Steno's. See [Confidential use cases](/privacy/confidential-use-cases) before using a cloud model for confidential recordings.
+Recording runs on your computer. Transcription also runs on your computer by default. If you separately enable cloud transcription, Steno sends audio to the endpoint you configure for speech-to-text. Your organisation controls what its LiteLLM proxy logs or forwards upstream. See [Confidential use cases](/privacy/confidential-use-cases) before using a cloud model for confidential recordings.
 
 ## Troubleshooting
 
 - **401 or "invalid API key"**: the virtual key is wrong, expired or was revoked. Ask the proxy admin for a new one.
 - **404 on Test connection**: the base URL is probably missing `/v1`, or the proxy is served under a path prefix. Copy the URL exactly as the admin gave it.
-- **The model picker is empty**: the key has no models assigned, or the proxy blocks `/models`. Type the model name under **Custom…** instead.
+- **The model list is empty**: ask your proxy admin for the exact model name and enter it in **Settings → AI → Model**. Setup's **Connect** requires the proxy to answer `/models` successfully.
