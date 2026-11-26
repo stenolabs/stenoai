@@ -736,9 +736,12 @@ function install({ ipcMain }) {
 
   // Suggested actions (Connect page + action cards). Stateful so the
   // mcp-actions.t1 spec can assert what the renderer asked to send:
-  // global.__actionsApproved records every approve (card id + exact args),
+  // global.__actionsApproved records every approve (card id + exact args,
+  // and alwaysAllow: true when "Always allow for <app>" was chosen),
   // global.__actionsDismissed every dismiss. STENOAI_E2E_SEED_ACTIONS=1 starts
-  // with one connected endpoint and two proposals for the seed meeting.
+  // with one connected endpoint and two proposals for the seed meeting. A
+  // connection with autoApprove set runs new suggestions at once (cards come
+  // back done, marked autoApproved), as the real service does.
   const ACTION_TOOLS = [
     { name: 'create_issue', title: 'Create issue', description: 'Create an issue in the tracker.', readOnly: false },
     { name: 'send_message', title: 'Send message', description: 'Post a message to a channel.', readOnly: false },
@@ -795,6 +798,7 @@ function install({ ipcMain }) {
     auth: 'bearer',
     headerName: null,
     enabled: true,
+    autoApprove: false,
     account: null,
     status: 'ok',
     tools: ACTION_TOOLS,
@@ -825,17 +829,76 @@ function install({ ipcMain }) {
   global.__actionsDismissed = [];
   global.__actionsAdded = [];
   const actionsState = { connections: [], cards: [], autoSuggest: true, recent: [] };
+  const actionsPolicy = () => ({
+    actionsEnabled: process.env.STENOAI_E2E_ACTIONS_DISABLED !== '1',
+    managed: process.env.STENOAI_E2E_ACTIONS_DISABLED === '1' || process.env.STENOAI_E2E_ACTIONS_NO_AUTO_APPROVE === '1',
+    endpointAllowlist: null,
+    autoApproveAllowed: process.env.STENOAI_E2E_ACTIONS_NO_AUTO_APPROVE !== '1',
+    reason: null,
+  });
+  const connectionOf = (card) => [...actionsState.connections, emailConnection].find((c) => c.id === card.connectionId) || null;
+  // What the real enrichCard adds: whether "Always allow" is still on offer.
+  const enrichMockCard = (card) => {
+    const c = connectionOf(card);
+    return { ...card, autoApproveOffered: Boolean(c) && c.autoApprove !== true && actionsPolicy().autoApproveAllowed };
+  };
+  const recordRun = (card, { autoApproved = false } = {}) => {
+    actionsState.recent.unshift({
+      time: new Date(Date.UTC(2026, 11, 7, 10, 30)).toISOString(),
+      connectionId: card.connectionId,
+      connectionName: card.connectionName,
+      origin: card.origin,
+      tool: card.tool,
+      argumentsSha256: 'f'.repeat(64),
+      status: 'ok',
+      ...(autoApproved ? { autoApproved: true } : {}),
+      link: 'https://mock.example/items/1',
+    });
+  };
   const seedActionCards = () => {
     const c = actionsState.connections.find((x) => x.enabled) || actionsState.connections[0];
     if (!c) return;
-    actionsState.cards = [
+    const fresh = [
       mockCard(c, 'create_issue', { title: 'Prep the release notes', priority: 'high' }, 'Bob owns the release notes', 'Bob to prep the release notes'),
       mockCard(c, 'send_message', { channel: '#release', text: 'We ship on Friday.' }, 'Tell the team the date', 'Alice to tell the team we ship Friday'),
     ];
+    // "Always allow" on the connection: new suggestions run at once.
+    if (c.autoApprove && actionsPolicy().autoApproveAllowed) {
+      for (const card of fresh) {
+        Object.assign(card, { status: 'done', autoApproved: true, result: { status: 'ok', link: 'https://mock.example/items/1', text: '' } });
+        recordRun(card, { autoApproved: true });
+      }
+    }
+    actionsState.cards = [...actionsState.cards.filter((x) => x.status !== 'proposed'), ...fresh];
   };
   if (process.env.STENOAI_E2E_SEED_ACTIONS === '1') {
     actionsState.connections.push(mockConnection({}));
     seedActionCards();
+  }
+  // A tool whose schema the card form cannot edit (a nested object): the card
+  // shows the arguments read-only and sends them as proposed.
+  if (process.env.STENOAI_E2E_SEED_ACTIONS === 'nested') {
+    const c = mockConnection({
+      tools: [...ACTION_TOOLS, { name: 'create_record', title: 'Create record', description: 'Create a CRM record.', readOnly: false }],
+    });
+    actionsState.connections.push(c);
+    actionsState.cards = [{
+      ...mockCard(c, 'create_record', {
+        record: { name: 'Acme renewal', amount: 1200, owner: 'dana@acme.co' },
+        tags: ['q3', 'renewal'],
+        notify: true,
+      }, '', 'Log the Acme renewal in the CRM'),
+      toolTitle: 'Create record',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          record: { type: 'object', properties: { name: { type: 'string' }, amount: { type: 'number' }, owner: { type: 'string' } }, required: ['name'] },
+          tags: { type: 'array', items: { type: 'string' } },
+          notify: { type: 'boolean' },
+        },
+        required: ['record'],
+      },
+    }];
   }
   // A Notion connection and the note's concrete, Notion-ready action item.
   if (process.env.STENOAI_E2E_SEED_ACTIONS === 'notion') {
@@ -919,6 +982,7 @@ function install({ ipcMain }) {
     auth: 'none',
     headerName: null,
     enabled: true,
+    autoApprove: false,
     account: null,
     status: 'ok',
     tools: [{ name: 'draft_email', title: 'Draft email', description: '', readOnly: false }],
@@ -944,7 +1008,7 @@ function install({ ipcMain }) {
     connections: [...actionsState.connections, emailConnection],
     connectors: ACTION_CONNECTORS,
     autoSuggest: actionsState.autoSuggest,
-    policy: { actionsEnabled: process.env.STENOAI_E2E_ACTIONS_DISABLED !== '1', managed: process.env.STENOAI_E2E_ACTIONS_DISABLED === '1', endpointAllowlist: null, reason: null },
+    policy: actionsPolicy(),
     secureStorage: true,
   });
   const ACTIONS_MOCKS = {
@@ -995,20 +1059,33 @@ function install({ ipcMain }) {
       actionsState.autoSuggest = value;
       return { success: true, autoSuggest: value };
     },
+    'actions-set-auto-approve': async (_event, id, value) => {
+      if (!actionsPolicy().autoApproveAllowed && value) {
+        return { success: false, error_code: 'auto-approve-not-allowed', error: 'Your organisation requires approving each action' };
+      }
+      const c = id === emailConnection.id ? emailConnection : actionsState.connections.find((x) => x.id === id);
+      c.autoApprove = value === true;
+      return { success: true, connection: c };
+    },
     'actions-get-cards': async (_event, summaryFile) => ({
       success: true,
-      cards: DEMO && summaryFile !== DEMO_HERO_FILE ? [] : actionsState.cards,
+      cards: (DEMO && summaryFile !== DEMO_HERO_FILE ? [] : actionsState.cards).map(enrichMockCard),
       // Email drafts alone make every note offer actions in the real app; the
       // mock keeps other specs' notes quiet unless a spec seeds actions.
       available: actionsState.connections.some((c) => c.enabled) || (process.env.STENOAI_E2E_SEED_ACTIONS === 'email' && emailConnection.enabled),
     }),
     'actions-suggest': async () => {
       if (!actionsState.cards.some((c) => c.status === 'proposed')) seedActionCards();
-      return { success: true, skipped: false, cards: actionsState.cards };
+      return { success: true, skipped: false, cards: actionsState.cards.map(enrichMockCard) };
     },
-    'actions-approve': async (_event, _summaryFile, cardId, args) => {
-      global.__actionsApproved.push({ cardId, args });
+    'actions-approve': async (_event, _summaryFile, cardId, args, options) => {
+      const alwaysAllow = Boolean(options && options.alwaysAllow === true);
+      global.__actionsApproved.push({ cardId, args, ...(alwaysAllow ? { alwaysAllow: true } : {}) });
       const card = actionsState.cards.find((c) => c.id === cardId);
+      if (alwaysAllow) {
+        const c = connectionOf(card);
+        if (c) c.autoApprove = true;
+      }
       if (card.connectionKind === 'email') {
         // The real mailto builder and the real shell.openExternal (a spec stubs it).
         try {
@@ -1029,22 +1106,13 @@ function install({ ipcMain }) {
         return { success: true, card };
       }
       Object.assign(card, { status: 'done', arguments: args, result: { status: 'ok', link: 'https://mock.example/items/1', text: '' } });
-      actionsState.recent.unshift({
-        time: new Date(Date.UTC(2026, 11, 7, 10, 30)).toISOString(),
-        connectionId: card.connectionId,
-        connectionName: card.connectionName,
-        origin: card.origin,
-        tool: card.tool,
-        argumentsSha256: 'f'.repeat(64),
-        status: 'ok',
-        link: 'https://mock.example/items/1',
-      });
-      return { success: true, card };
+      recordRun(card);
+      return { success: true, card: enrichMockCard(card) };
     },
     'actions-dismiss': async (_event, _summaryFile, cardId) => {
       global.__actionsDismissed.push(cardId);
       actionsState.cards.find((c) => c.id === cardId).status = 'dismissed';
-      return { success: true, cards: actionsState.cards };
+      return { success: true, cards: actionsState.cards.map(enrichMockCard) };
     },
     'actions-recent': async () => ({ success: true, entries: actionsState.recent }),
   };
@@ -2556,13 +2624,22 @@ function install({ ipcMain }) {
   global.__mockIpcCalls = [];
 
   // Chat-agent turns waiting on an action card (STENOAI_E2E_CHAT_AGENT=1).
+  // The Linear connection the turn writes to is a real entry in the mock's
+  // connections, so Settings → Connectors can turn "Run actions without
+  // asking" on or off and the next turn behaves accordingly.
   const chatAgentTurns = new Map();
   global.__chatActionApproved = [];
-  MOCKS['chat-action-approve'] = async (_event, queryId, cardId, args) => {
+  const chatLinear = process.env.STENOAI_E2E_CHAT_AGENT === '1'
+    ? mockConnection({ id: 'conn-linear', name: 'Linear', url: 'https://mcp.linear.app/mcp', origin: 'https://mcp.linear.app', locality: 'internet', kind: 'linear', auth: 'oauth', account: 'sam@example.com' })
+    : null;
+  if (chatLinear) actionsState.connections.push(chatLinear);
+  MOCKS['chat-action-approve'] = async (_event, queryId, cardId, args, options) => {
     const turn = chatAgentTurns.get(queryId);
     if (!turn || turn.card.id !== cardId) return { success: false, error_code: 'not-found', error: 'This action is no longer waiting for approval' };
-    global.__chatActionApproved.push({ cardId, args });
-    const card = { ...turn.card, arguments: args, status: 'done', result: { status: 'ok', link: 'https://linear.app/acme/issue/REL-2', text: 'Created REL-2' } };
+    const alwaysAllow = Boolean(options && options.alwaysAllow === true);
+    global.__chatActionApproved.push({ cardId, args, ...(alwaysAllow ? { alwaysAllow: true } : {}) });
+    if (alwaysAllow && chatLinear) chatLinear.autoApprove = true;
+    const card = { ...turn.card, arguments: args, status: 'done', autoApproveOffered: false, result: { status: 'ok', link: 'https://linear.app/acme/issue/REL-2', text: 'Created REL-2' } };
     chatAgentTurns.delete(queryId);
     turn.send('query-action-card', { card });
     setTimeout(() => {
@@ -2625,16 +2702,24 @@ function install({ ipcMain }) {
           // A chat-agent turn (chat-agent.js): one read step, then an action
           // card the turn waits on; chat-action-approve / -dismiss finish it.
           const send = (channel, data) => { if (!event.sender.isDestroyed()) event.sender.send(channel, { queryId, ...data }); };
-          const conn = { id: 'conn-linear', name: 'Linear', origin: 'https://mcp.linear.app', locality: 'internet' };
           const card = {
-            ...mockCard(conn, 'create_issue', { title: 'Prep the release notes', priority: 'high' }, '', undefined),
+            ...mockCard(chatLinear, 'create_issue', { title: 'Prep the release notes', priority: 'high' }, '', undefined),
             actionItem: undefined,
+            autoApproveOffered: !chatLinear.autoApprove && actionsPolicy().autoApproveAllowed,
           };
-          chatAgentTurns.set(queryId, { send, card });
           setTimeout(() => {
             send('query-tool-step', { step: { id: 's1', source: 'connection', connection: 'Linear', tool: 'search_issues', title: 'Search issues' } });
             // A read on a custom endpoint carries what it asked for (chat-agent.js compactArguments).
             send('query-tool-step', { step: { id: 's2', source: 'connection', connection: 'Tracker', tool: 'search_issues', title: 'Search issues', detail: 'query: "release notes", limit: "5"' } });
+            if (chatLinear.autoApprove && actionsPolicy().autoApproveAllowed) {
+              // "Always allow" for Linear: the service ran it; the card arrives done and the turn goes on.
+              global.__chatActionApproved.push({ cardId: card.id, args: card.arguments, auto: true });
+              send('query-action-card', { card: { ...card, status: 'done', autoApproved: true, autoApproveOffered: false, result: { status: 'ok', link: 'https://linear.app/acme/issue/REL-3', text: 'Created REL-3' } } });
+              send('query-chunk', { chunk: `Done: I created REL-3, "${card.arguments.title}", in Linear.` });
+              send('query-done', { success: true });
+              return;
+            }
+            chatAgentTurns.set(queryId, { send, card });
             send('query-action-card', { card });
           }, 20);
           return;

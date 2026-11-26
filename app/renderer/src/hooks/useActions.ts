@@ -6,6 +6,7 @@ import {
   type ActionValidationError,
   type AddCustomEndpointInput,
   type AddLocalServerInput,
+  type ApproveActionOptions,
 } from '@/lib/ipc';
 import { ResultError, unwrap } from '@/lib/result';
 
@@ -87,6 +88,13 @@ export function useSetAutoSuggest() {
   );
 }
 
+/** "Run actions without asking" for one connection (or the built-in Email). */
+export function useSetConnectionAutoApprove() {
+  return useOverviewMutation(async (id: string, value: boolean) =>
+    unwrap(await ipc().actions.setAutoApprove(id, value))
+  );
+}
+
 export function useRecentActions() {
   return useQuery({
     queryKey: actionsKeys.recent(),
@@ -121,8 +129,16 @@ export function useSuggestActions(summaryFile: string) {
 export function useApproveAction(summaryFile: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async ({ cardId, args }: { cardId: string; args: Record<string, unknown> }) => {
-      const res = await ipc().actions.approve(summaryFile, cardId, args);
+    mutationFn: async ({
+      cardId,
+      args,
+      options,
+    }: {
+      cardId: string;
+      args: Record<string, unknown>;
+      options?: ApproveActionOptions;
+    }) => {
+      const res = await ipc().actions.approve(summaryFile, cardId, args, options);
       if (!res.success) {
         if ('validationErrors' in res && res.validationErrors) {
           throw new ActionValidationFailure(res.error, res.validationErrors);
@@ -132,8 +148,8 @@ export function useApproveAction(summaryFile: string) {
       return res.card as ActionCard;
     },
     onSettled: () => {
-      void qc.invalidateQueries({ queryKey: actionsKeys.cards(summaryFile) });
-      void qc.invalidateQueries({ queryKey: actionsKeys.recent() });
+      // "Always allow" changes the connection too, so the overview is refreshed as well.
+      void qc.invalidateQueries({ queryKey: actionsKeys.all });
     },
   });
 }

@@ -5,23 +5,61 @@ name: e2e
 # The Windows and Linux T2 jobs remain advisory while their headless-runner
 # behavior is still being hardened.
 #
-#   t1-renderer (Ubuntu) - required privacy/lint ratchets plus renderer mock IPC.
-#   build-backend-macos   -> t2-macos / t2-pipeline-macos   (whisper, CPU)
-#   build-backend-windows -> t2-windows / t2-pipeline-windows (parakeet onnx, CPU)
-#   build-backend-linux   -> t2-linux / t2-pipeline-linux     (parakeet onnx, CPU)
-#     real bundled backend + mock org adapter; proves the keystone
-#     path-isolation fix on every shipping platform.
+# Job graph (every tier still runs on every PR; nothing moved to nightly):
 #
-# Explicit per-OS jobs (not a strategy.matrix) — mirrors the repo's paradigm and
-# keeps the per-OS differences (exec bit, engine, process-kill, model cache)
-# obvious in the CI logs. All three tiers run on every PR so the keystone
-# isolation fix cannot silently regress on any platform.
+#   t1-gates (privacy scan + Ruff ratchet + main-process lint, once)  ─┐
+#   t1-shard 1..4 (renderer + mock IPC, --shard=i/4, one worker each) ─┴─> t1-renderer
+#                                              "T1 (renderer + mock IPC)" = required check
+#
+#   build-backend-macos  ─> t2-macos-shard 1..3 ─> t2-macos  "T2 (real backend + mock adapter)"
+#                        ─> t2-pipeline-macos            "T2 pipeline (transcribe + summarize)"
+#   build-backend-windows -> t2-windows-shard 1..3 -> t2-windows (advisory)
+#                         -> t2-pipeline-windows (advisory)
+#                         -> long-meeting-windows (T3; only when the caller asks for it)
+#   build-backend-linux   -> t2-linux-shard 1..3 -> t2-linux (advisory)
+#                         -> t2-pipeline-linux (advisory)
+#
+# The aggregate jobs (t1-renderer, t2-macos, t2-windows, t2-linux) carry the
+# check names branch protection has always required, so sharding changes
+# nothing in the repo settings: each one `needs:` its shards (+ gates) and
+# fails if any of them did not succeed.
+#
+# Backend bundles are cached per OS on a hash of the Python inputs (see
+# "Compute backend cache key"). A hit skips the PyInstaller build entirely and
+# every downstream job restores from the same cache, falling back to the
+# uploaded artifact only on a miss. The nightly passes `rebuild_backend: true`
+# so external drift (pip resolution, Ollama download, runner image) is still
+# exercised once a day.
+#
+# Explicit per-OS jobs (not one cross-OS strategy.matrix) — mirrors the repo's
+# paradigm and keeps the per-OS differences (exec bit, engine, process-kill,
+# model cache) obvious in the CI logs.
 
 on:
   workflow_dispatch:
-  # Callable so the scheduled e2e-nightly workflow can re-run this exact suite
-  # for flake/drift detection without duplicating the job definitions.
+    inputs:
+      rebuild_backend:
+        description: Ignore the cached backend bundles and rebuild them with PyInstaller
+        type: boolean
+        default: false
+      run_long_meeting:
+        description: Also run the T3 @long-meeting chunking smoke (Windows, parakeet onnx)
+        type: boolean
+        default: false
+  # Callable so the scheduled e2e-nightly workflow and the release gate can
+  # re-run this exact suite without duplicating the job definitions.
   workflow_call:
+    inputs:
+      rebuild_backend:
+        description: Ignore the cached backend bundles and rebuild them with PyInstaller
+        type: boolean
+        default: false
+        required: false
+      run_long_meeting:
+        description: Also run the T3 @long-meeting chunking smoke (Windows, parakeet onnx)
+        type: boolean
+        default: false
+        required: false
   push:
     branches:
       - main
@@ -33,6 +71,23 @@ on:
 
 permissions:
   contents: read
+
+# A force-push to a PR cancels the superseded run instead of queueing a second
+# full matrix behind it. main / release / nightly runs are never cancelled.
+concurrency:
+  group: e2e-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  # Bump to invalidate every cached backend bundle at once (e.g. after a
+  # PyInstaller or runner-image change that the input hash cannot see).
+  BACKEND_CACHE_VERSION: v1
+  # `inputs` is empty on push/pull_request, so `!null` = true: PRs use the cache.
+  USE_BACKEND_CACHE: ${{ !inputs.rebuild_backend }}
+  # Shard counts. Keep in step with the `matrix.shard` lists and the "i/N" in
+  # the shard job names below — a mismatch silently runs only part of a tier.
+  T1_SHARDS: 4
+  T2_SHARDS: 3
 
 jobs:
   # Hermetic renderer/main unit tests — node:test for the main-process
@@ -54,14 +109,20 @@ jobs:
 
       - name: Install dependencies
         working-directory: app
-        run: npm ci
+        run: npm ci --prefer-offline
 
       - name: Run unit tests (node:test + vitest)
         working-directory: app
         run: npm run test:unit
 
-  t1-renderer:
-    name: T1 (renderer + mock IPC)
+  # ---------------------------------------------------------------------------
+  # T1. The required-and-unconditional gates (privacy scan, Ruff ratchet,
+  # main-process lint) run ONCE here instead of inside every shard; the
+  # aggregate `t1-renderer` job below fails if this job fails, so they are as
+  # blocking as they were when they lived inside the single T1 job.
+  # ---------------------------------------------------------------------------
+  t1-gates:
+    name: T1 gates (privacy + Ruff + main lint)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -94,11 +155,36 @@ jobs:
 
       - name: Install Electron dependencies
         working-directory: app
-        run: npm ci
+        run: npm ci --prefer-offline
 
       - name: Lint main process
         working-directory: app
         run: npm run lint:main
+
+  # Renderer-only Playwright under xvfb, split four ways by `--shard`. Each
+  # shard keeps Playwright's `workers: 1`: every spec launches a real Electron
+  # app, so parallelism comes from more runners, never more workers.
+  t1-shard:
+    name: T1 shard ${{ matrix.shard }}/4
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: app/package-lock.json
+
+      - name: Install Electron dependencies
+        working-directory: app
+        run: npm ci --prefer-offline
 
       # Installs the shared libs Electron's Chromium needs on Linux, plus xvfb.
       - name: Install Linux system deps (+ xvfb)
@@ -114,20 +200,38 @@ jobs:
       # wall-clock work on a shared runner is not a number to block a PR on.
       # Run it by hand before and after a change to the live transcript
       # rendering (`--project=t1 --grep @perf`).
-      - name: Run T1 under xvfb
+      - name: Run T1 shard under xvfb
         working-directory: app
-        run: xvfb-run -a npm run test:e2e -- --project=t1 --grep-invert @perf
+        run: xvfb-run -a npm run test:e2e -- --project=t1 --grep-invert @perf --shard=${{ matrix.shard }}/${{ env.T1_SHARDS }}
 
       - name: Upload report on failure
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: e2e-t1-report
+          name: e2e-t1-report-shard-${{ matrix.shard }}
           path: |
             app/playwright-report
             app/test-results
           retention-days: 7
           if-no-files-found: ignore
+
+  # The required check. Its name is what branch protection pins, so it must
+  # stay exactly "T1 (renderer + mock IPC)". `if: always()` makes it run even
+  # when a shard failed; the step then turns any non-success into a failure.
+  t1-renderer:
+    name: T1 (renderer + mock IPC)
+    runs-on: ubuntu-latest
+    needs: [t1-gates, t1-shard]
+    if: always()
+    steps:
+      - name: Fail unless every gate and shard succeeded
+        env:
+          GATES_RESULT: ${{ needs.t1-gates.result }}
+          SHARDS_RESULT: ${{ needs.t1-shard.result }}
+        run: |
+          echo "t1-gates: $GATES_RESULT"
+          echo "t1-shard (all 4): $SHARDS_RESULT"
+          [ "$GATES_RESULT" = "success" ] && [ "$SHARDS_RESULT" = "success" ]
 
   lint-renderer:
     name: Lint (renderer)
@@ -145,7 +249,7 @@ jobs:
 
       - name: Install dependencies
         working-directory: app
-        run: npm ci
+        run: npm ci --prefer-offline
 
       - name: Lint renderer
         working-directory: app
@@ -220,20 +324,50 @@ jobs:
 
       - name: Install dependencies
         working-directory: app
-        run: npm ci
+        run: npm ci --prefer-offline
 
       - name: Typecheck renderer
         working-directory: app
         run: npm run typecheck:renderer
 
+  # ---------------------------------------------------------------------------
+  # macOS backend bundle. Cached on the Python inputs; on a hit every build
+  # step is skipped and the restored dist/stenoai is re-verified (exec bits)
+  # and re-uploaded so the artifact fallback always exists.
+  # ---------------------------------------------------------------------------
   build-backend-macos:
     name: Build backend bundle (macOS)
     runs-on: macos-latest
+    outputs:
+      bundle-key: ${{ steps.key.outputs.key }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # Everything that changes the bundle: the CLI, src/, the spec, pinned
+      # deps, every build/download script (Ollama version, ffmpeg build, MLX
+      # wheels, bundle guards), and the two Swift sidecars. ImageVersion is the
+      # hosted runner image, so a toolchain/SDK bump also rebuilds. bin/ is not
+      # tracked, so its inputs are covered via scripts/download-ollama.sh.
+      - name: Compute backend cache key
+        id: key
+        shell: bash
+        env:
+          INPUTS_HASH: ${{ hashFiles('simple_recorder.py', 'src/**', 'stenoai.spec', 'requirements.txt', 'scripts/**', 'diarize-sidecar/**', 'native-audio-helper/**') }}
+        run: |
+          key="backend-bundle-${BACKEND_CACHE_VERSION}-${RUNNER_OS}-${RUNNER_ARCH}-py311-img${ImageVersion:-local}-${INPUTS_HASH}"
+          echo "key=$key" | tee -a "$GITHUB_OUTPUT"
+
+      - name: Restore cached backend bundle
+        id: bundle-cache
+        if: env.USE_BACKEND_CACHE == 'true'
+        uses: actions/cache/restore@v4
+        with:
+          path: dist/stenoai
+          key: ${{ steps.key.outputs.key }}
+
       - name: Setup Python
+        if: steps.bundle-cache.outputs.cache-hit != 'true'
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
@@ -241,14 +375,16 @@ jobs:
           cache-dependency-path: requirements.txt
 
       # Partial speedup: skips PyInstaller Analysis when spec/deps are unchanged.
-      # Never cache dist/ — that's the artifact we ship to the T2 job.
+      # Never cache dist/ here — that is the bundle cache above.
       - name: Cache PyInstaller work dir
+        if: steps.bundle-cache.outputs.cache-hit != 'true'
         uses: actions/cache@v4
         with:
           path: build
           key: pyinstaller-${{ runner.os }}-${{ hashFiles('stenoai.spec', 'requirements.txt') }}
 
       - name: Install Python dependencies
+        if: steps.bundle-cache.outputs.cache-hit != 'true'
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
@@ -257,37 +393,58 @@ jobs:
       # Same macOS 14 MLX wheels as the release build (#531), so this gate tests
       # what ships.
       - name: Install macOS 14 builds of MLX
+        if: steps.bundle-cache.outputs.cache-hit != 'true'
         run: PYTHON=python scripts/install-mlx-macos14.sh
 
       - name: Download bundled binaries (Ollama + ffmpeg)
+        if: steps.bundle-cache.outputs.cache-hit != 'true'
         run: |
           chmod +x scripts/download-ollama.sh
           ./scripts/download-ollama.sh
 
       - name: Build native transfer audio helper
+        if: steps.bundle-cache.outputs.cache-hit != 'true'
         run: scripts/build-audio-helper.sh
 
       - name: Build speaker-diarization sidecar (Swift/Core ML)
+        if: steps.bundle-cache.outputs.cache-hit != 'true'
         run: |
           chmod +x scripts/build-diarize-sidecar.sh
           ./scripts/build-diarize-sidecar.sh "$(uname -m)"
           test -x bin/steno-diarize
 
       - name: Build backend with PyInstaller
-        run: |
-          pyinstaller stenoai.spec --noconfirm
-          test -x dist/stenoai/_internal/steno-audio-encode
-          test -x dist/stenoai/_internal/steno-diarize
+        if: steps.bundle-cache.outputs.cache-hit != 'true'
+        run: pyinstaller stenoai.spec --noconfirm
 
       # Guards the Ollama/pip-mlx libmlx.dylib ABI collision (see
       # scripts/verify_mlx_bundle.py). dlopen probes run here too - GitHub's
       # macos-latest arm64 runners resolve symbols fine without a Metal GPU.
       - name: Verify MLX bundle (libmlx ABI-collision guard)
+        if: steps.bundle-cache.outputs.cache-hit != 'true'
         run: python scripts/verify_mlx_bundle.py
 
       - name: Verify bundled binaries run on the minimum macOS
+        if: steps.bundle-cache.outputs.cache-hit != 'true'
         run: python scripts/verify_macos_minimum.py
 
+      # Runs on hit and miss alike: a cached bundle that lost its exec bits or
+      # its sidecars must fail here, not as a cryptic launch error in T2.
+      - name: Verify bundle layout and exec bits
+        run: |
+          test -x dist/stenoai/stenoai
+          test -x dist/stenoai/_internal/steno-audio-encode
+          test -x dist/stenoai/_internal/steno-diarize
+
+      - name: Save backend bundle to cache
+        if: steps.bundle-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: dist/stenoai
+          key: ${{ steps.key.outputs.key }}
+
+      # Always uploaded: the fallback for a downstream cache miss, and what the
+      # release gate / nightly T3 jobs read across the workflow_call boundary.
       - name: Upload backend bundle
         uses: actions/upload-artifact@v4
         with:
@@ -296,10 +453,17 @@ jobs:
           retention-days: 3
           if-no-files-found: error
 
-  t2-macos:
-    name: T2 (real backend + mock adapter)
+  # Model-free macOS T2, split three ways. Each shard restores the bundle from
+  # the cache (falling back to the artifact), rebuilds the renderer, and runs
+  # one third of the specs with Playwright's single worker.
+  t2-macos-shard:
+    name: T2 shard (macOS ${{ matrix.shard }}/3)
     runs-on: macos-latest
     needs: build-backend-macos
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -311,7 +475,16 @@ jobs:
           cache: 'npm'
           cache-dependency-path: app/package-lock.json
 
-      - name: Download backend bundle
+      - name: Restore backend bundle from cache
+        id: bundle-cache
+        if: env.USE_BACKEND_CACHE == 'true'
+        uses: actions/cache/restore@v4
+        with:
+          path: dist/stenoai
+          key: ${{ needs.build-backend-macos.outputs.bundle-key }}
+
+      - name: Download backend bundle (cache miss fallback)
+        if: steps.bundle-cache.outputs.cache-hit != 'true'
         uses: actions/download-artifact@v4
         with:
           name: e2e-backend-macos
@@ -321,6 +494,7 @@ jobs:
       # launch the bundled launcher / spawn ffmpeg or ollama (a cryptic-failure
       # trap, see the plan's risk #3). Match by name so the restore is agnostic
       # to PyInstaller's internal layout (e.g. the _internal/ contents dir).
+      # Harmless after a cache restore (tar keeps modes); kept unconditional.
       - name: Restore exec bits on bundled binaries
         run: |
           find dist/stenoai -type f \( -name stenoai -o -name ffmpeg -o -name ollama -o -name steno-diarize -o -name steno-audio-encode \) \
@@ -338,7 +512,7 @@ jobs:
 
       - name: Install Electron dependencies
         working-directory: app
-        run: npm ci
+        run: npm ci --prefer-offline
 
       - name: Build renderer
         working-directory: app
@@ -347,20 +521,34 @@ jobs:
       # Exclude @pipeline AND @summarize-real — both need a real model and run in
       # their own model-bearing jobs (t2-pipeline-macos / the nightly
       # summarize-real-windows) so this job stays fast and model-free.
-      - name: Run T2 (org-lock, model-free)
+      - name: Run T2 shard (model-free)
         working-directory: app
-        run: npm run test:e2e -- --project=t2 --grep-invert '@pipeline|@summarize-real'
+        run: npm run test:e2e -- --project=t2 --grep-invert '@pipeline|@summarize-real' --shard=${{ matrix.shard }}/${{ env.T2_SHARDS }}
 
       - name: Upload report on failure
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: e2e-t2-report
+          name: e2e-t2-macos-report-shard-${{ matrix.shard }}
           path: |
             app/playwright-report
             app/test-results
           retention-days: 7
           if-no-files-found: ignore
+
+  # Required check — name pinned by branch protection, see t1-renderer.
+  t2-macos:
+    name: T2 (real backend + mock adapter)
+    runs-on: ubuntu-latest
+    needs: t2-macos-shard
+    if: always()
+    steps:
+      - name: Fail unless every shard succeeded
+        env:
+          SHARDS_RESULT: ${{ needs.t2-macos-shard.result }}
+        run: |
+          echo "t2-macos-shard (all 3): $SHARDS_RESULT"
+          [ "$SHARDS_RESULT" = "success" ]
 
   # Uses whisper.cpp (CPU), NOT parakeet-mlx: GitHub-hosted macOS runners are
   # headless VMs with no Metal GPU, so MLX can't load there ("Failed to load the
@@ -382,7 +570,16 @@ jobs:
           cache: 'npm'
           cache-dependency-path: app/package-lock.json
 
-      - name: Download backend bundle
+      - name: Restore backend bundle from cache
+        id: bundle-cache
+        if: env.USE_BACKEND_CACHE == 'true'
+        uses: actions/cache/restore@v4
+        with:
+          path: dist/stenoai
+          key: ${{ needs.build-backend-macos.outputs.bundle-key }}
+
+      - name: Download backend bundle (cache miss fallback)
+        if: steps.bundle-cache.outputs.cache-hit != 'true'
         uses: actions/download-artifact@v4
         with:
           name: e2e-backend-macos
@@ -410,7 +607,7 @@ jobs:
 
       - name: Install Electron dependencies
         working-directory: app
-        run: npm ci
+        run: npm ci --prefer-offline
 
       - name: Build renderer
         working-directory: app
@@ -462,11 +659,31 @@ jobs:
   build-backend-windows:
     name: Build backend bundle (Windows)
     runs-on: windows-latest
+    outputs:
+      bundle-key: ${{ steps.key.outputs.key }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Compute backend cache key
+        id: key
+        shell: bash
+        env:
+          INPUTS_HASH: ${{ hashFiles('simple_recorder.py', 'src/**', 'stenoai.spec', 'requirements.txt', 'scripts/**') }}
+        run: |
+          key="backend-bundle-${BACKEND_CACHE_VERSION}-${RUNNER_OS}-${RUNNER_ARCH}-py311-img${ImageVersion:-local}-${INPUTS_HASH}"
+          echo "key=$key" | tee -a "$GITHUB_OUTPUT"
+
+      - name: Restore cached backend bundle
+        id: bundle-cache
+        if: env.USE_BACKEND_CACHE == 'true'
+        uses: actions/cache/restore@v4
+        with:
+          path: dist/stenoai
+          key: ${{ steps.key.outputs.key }}
+
       - name: Setup Python
+        if: steps.bundle-cache.outputs.cache-hit != 'true'
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
@@ -474,12 +691,14 @@ jobs:
           cache-dependency-path: requirements.txt
 
       - name: Cache PyInstaller work dir
+        if: steps.bundle-cache.outputs.cache-hit != 'true'
         uses: actions/cache@v4
         with:
           path: build
           key: pyinstaller-${{ runner.os }}-${{ hashFiles('stenoai.spec', 'requirements.txt') }}
 
       - name: Install Python dependencies
+        if: steps.bundle-cache.outputs.cache-hit != 'true'
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
@@ -487,13 +706,26 @@ jobs:
 
       # download-ollama.sh is a bash script; git bash is present on the runner.
       - name: Download bundled binaries (Ollama + ffmpeg)
+        if: steps.bundle-cache.outputs.cache-hit != 'true'
         shell: bash
         run: |
           chmod +x scripts/download-ollama.sh
           ./scripts/download-ollama.sh
 
       - name: Build backend with PyInstaller
+        if: steps.bundle-cache.outputs.cache-hit != 'true'
         run: pyinstaller stenoai.spec --noconfirm
+
+      - name: Verify bundle layout
+        shell: bash
+        run: test -f dist/stenoai/stenoai.exe
+
+      - name: Save backend bundle to cache
+        if: steps.bundle-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: dist/stenoai
+          key: ${{ steps.key.outputs.key }}
 
       - name: Upload backend bundle
         uses: actions/upload-artifact@v4
@@ -503,10 +735,14 @@ jobs:
           retention-days: 3
           if-no-files-found: error
 
-  t2-windows:
-    name: T2 (real backend + mock adapter, Windows)
+  t2-windows-shard:
+    name: T2 shard (Windows ${{ matrix.shard }}/3)
     runs-on: windows-latest
     needs: build-backend-windows
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -518,7 +754,16 @@ jobs:
           cache: 'npm'
           cache-dependency-path: app/package-lock.json
 
-      - name: Download backend bundle
+      - name: Restore backend bundle from cache
+        id: bundle-cache
+        if: env.USE_BACKEND_CACHE == 'true'
+        uses: actions/cache/restore@v4
+        with:
+          path: dist/stenoai
+          key: ${{ needs.build-backend-windows.outputs.bundle-key }}
+
+      - name: Download backend bundle (cache miss fallback)
+        if: steps.bundle-cache.outputs.cache-hit != 'true'
         uses: actions/download-artifact@v4
         with:
           name: e2e-backend-windows
@@ -534,7 +779,7 @@ jobs:
 
       - name: Install Electron dependencies
         working-directory: app
-        run: npm ci
+        run: npm ci --prefer-offline
 
       - name: Build renderer
         working-directory: app
@@ -543,20 +788,35 @@ jobs:
       # Quote the grep: the default Windows shell is pwsh, which treats a bare
       # @word as splatting ($pipeline) and errors. Single quotes make it literal.
       # Exclude @summarize-real too — it's the nightly real-model summary smoke.
-      - name: Run T2 (org-lock, model-free)
+      - name: Run T2 shard (model-free)
         working-directory: app
-        run: npm run test:e2e -- --project=t2 --grep-invert '@pipeline|@summarize-real'
+        run: npm run test:e2e -- --project=t2 --grep-invert '@pipeline|@summarize-real' --shard=${{ matrix.shard }}/${{ env.T2_SHARDS }}
 
       - name: Upload report on failure
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: e2e-t2-windows-report
+          name: e2e-t2-windows-report-shard-${{ matrix.shard }}
           path: |
             app/playwright-report
             app/test-results
           retention-days: 7
           if-no-files-found: ignore
+
+  # Advisory today (not in branch protection); same aggregate shape as t2-macos
+  # so it can be promoted by name without touching the workflow.
+  t2-windows:
+    name: T2 (real backend + mock adapter, Windows)
+    runs-on: ubuntu-latest
+    needs: t2-windows-shard
+    if: always()
+    steps:
+      - name: Fail unless every shard succeeded
+        env:
+          SHARDS_RESULT: ${{ needs.t2-windows-shard.result }}
+        run: |
+          echo "t2-windows-shard (all 3): $SHARDS_RESULT"
+          [ "$SHARDS_RESULT" = "success" ]
 
   # Windows transcription pipeline. Unlike t2-pipeline-macos (whisper, because
   # hosted Macs have no Metal for parakeet-mlx), Windows transcribes with
@@ -578,7 +838,16 @@ jobs:
           cache: 'npm'
           cache-dependency-path: app/package-lock.json
 
-      - name: Download backend bundle
+      - name: Restore backend bundle from cache
+        id: bundle-cache
+        if: env.USE_BACKEND_CACHE == 'true'
+        uses: actions/cache/restore@v4
+        with:
+          path: dist/stenoai
+          key: ${{ needs.build-backend-windows.outputs.bundle-key }}
+
+      - name: Download backend bundle (cache miss fallback)
+        if: steps.bundle-cache.outputs.cache-hit != 'true'
         uses: actions/download-artifact@v4
         with:
           name: e2e-backend-windows
@@ -599,7 +868,7 @@ jobs:
 
       - name: Install Electron dependencies
         working-directory: app
-        run: npm ci
+        run: npm ci --prefer-offline
 
       - name: Build renderer
         working-directory: app
@@ -644,6 +913,103 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: e2e-t2-pipeline-windows-report
+          path: |
+            app/playwright-report
+            app/test-results
+          retention-days: 7
+          if-no-files-found: ignore
+
+  # T3 long-meeting chunking smoke. NOT a per-PR job: it only runs when the
+  # caller (e2e-release-gate.yml, e2e-nightly.yml) passes run_long_meeting.
+  # It lives here rather than in those workflows so it can `needs:` the
+  # Windows bundle directly and run alongside the T2 shards, instead of waiting
+  # for the whole suite to finish first (a called workflow exposes no per-job
+  # dependency). Drives a multi-minute WAV through the REAL parakeet-onnx
+  # windowing path (PARAKEET_CHUNK_DURATION_S) on Windows CPU and asserts the
+  # pipeline completes — the long-file CHUNKING PLUMBING, not the MLX/Metal OOM.
+  long-meeting-windows:
+    name: T3 long-meeting (parakeet onnx, Windows)
+    runs-on: windows-latest
+    needs: build-backend-windows
+    if: inputs.run_long_meeting == true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: app/package-lock.json
+
+      - name: Restore backend bundle from cache
+        id: bundle-cache
+        if: env.USE_BACKEND_CACHE == 'true'
+        uses: actions/cache/restore@v4
+        with:
+          path: dist/stenoai
+          key: ${{ needs.build-backend-windows.outputs.bundle-key }}
+
+      - name: Download backend bundle (cache miss fallback)
+        if: steps.bundle-cache.outputs.cache-hit != 'true'
+        uses: actions/download-artifact@v4
+        with:
+          name: e2e-backend-windows
+          path: dist/stenoai
+
+      - name: Ensure no stray Ollama
+        shell: pwsh
+        run: Stop-Process -Name ollama -Force -ErrorAction SilentlyContinue
+
+      # Same key as t2-pipeline-windows, so the model restores instead of
+      # pulling the ~670 MB snapshot again.
+      - name: Cache parakeet ONNX model
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface/hub/models--istupakov--parakeet-tdt-0.6b-v3-onnx
+          key: parakeet-onnx-${{ runner.os }}-tdt-0.6b-v3
+
+      - name: Install Electron dependencies
+        working-directory: app
+        run: npm ci --prefer-offline
+
+      - name: Build renderer
+        working-directory: app
+        run: npm run build:renderer
+
+      - name: Ensure parakeet model present
+        shell: pwsh
+        run: |
+          ./dist/stenoai/stenoai.exe download-parakeet-model
+          $status = ./dist/stenoai/stenoai.exe parakeet-status | ConvertFrom-Json
+          if (-not $status.installed) {
+            Write-Error "Parakeet ONNX model not installed after download"
+            exit 1
+          }
+
+      # Assert the tagged spec is selected (Playwright exits 0 on a zero-match
+      # --grep). Capture first, then grep — `grep -q`'s early pipe-close crashes
+      # the node writer with EPIPE on Windows. A dropped @long-meeting tag must
+      # fail the gate, not silently run zero tests and pass green.
+      - name: Guard — @long-meeting test is selected
+        shell: bash
+        working-directory: app
+        run: |
+          out=$(npm run test:e2e -- --project=t3 --grep @long-meeting --list)
+          echo "$out" | grep -q '@long-meeting'
+
+      - name: Run T3 long-meeting (parakeet onnx)
+        working-directory: app
+        env:
+          STENOAI_E2E_ENGINE: parakeet
+        run: npm run test:e2e -- --project=t3 --grep '@long-meeting'
+
+      - name: Upload report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-t3-long-meeting-report
           path: |
             app/playwright-report
             app/test-results
@@ -808,14 +1174,43 @@ jobs:
             console.log('PASS: real PipeWire capture, both channels present, distinct, and correctly ordered.');
           "
 
+  # ---------------------------------------------------------------------------
+  # Linux backend bundle. Built with STENOAI_PRUNE_OLLAMA_GPU=1: hosted runners
+  # have no GPU, and Ollama's cuda_v12/cuda_v13/vulkan runners were ~3.3 GB of
+  # the 3.8 GB artifact every Linux job downloaded. The summariser still has
+  # its CPU runner (libggml-cpu*) and transcription is onnx-asr on CPU, so the
+  # T2 + pipeline lanes see the same code paths as before. Release bundles
+  # (build-linux.yml) never set the flag and keep their GPU backends; that
+  # workflow's verify step still asserts they are all present.
+  # ---------------------------------------------------------------------------
   build-backend-linux:
     name: Build backend bundle (Linux)
     runs-on: ubuntu-latest
+    outputs:
+      bundle-key: ${{ steps.key.outputs.key }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Compute backend cache key
+        id: key
+        shell: bash
+        env:
+          INPUTS_HASH: ${{ hashFiles('simple_recorder.py', 'src/**', 'stenoai.spec', 'requirements.txt', 'scripts/**') }}
+        run: |
+          key="backend-bundle-${BACKEND_CACHE_VERSION}-${RUNNER_OS}-${RUNNER_ARCH}-py311-gpupruned-img${ImageVersion:-local}-${INPUTS_HASH}"
+          echo "key=$key" | tee -a "$GITHUB_OUTPUT"
+
+      - name: Restore cached backend bundle
+        id: bundle-cache
+        if: env.USE_BACKEND_CACHE == 'true'
+        uses: actions/cache/restore@v4
+        with:
+          path: dist/stenoai
+          key: ${{ steps.key.outputs.key }}
+
       - name: Setup Python
+        if: steps.bundle-cache.outputs.cache-hit != 'true'
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
@@ -823,27 +1218,51 @@ jobs:
           cache-dependency-path: requirements.txt
 
       - name: Cache PyInstaller work dir
+        if: steps.bundle-cache.outputs.cache-hit != 'true'
         uses: actions/cache@v4
         with:
           path: build
-          key: pyinstaller-${{ runner.os }}-${{ hashFiles('stenoai.spec', 'requirements.txt') }}
+          key: pyinstaller-${{ runner.os }}-gpupruned-${{ hashFiles('stenoai.spec', 'requirements.txt') }}
 
       - name: Install Python dependencies
+        if: steps.bundle-cache.outputs.cache-hit != 'true'
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
           pip install pyinstaller
 
       - name: Download bundled binaries (Ollama + ffmpeg)
+        if: steps.bundle-cache.outputs.cache-hit != 'true'
         run: |
           chmod +x scripts/download-ollama.sh
           ./scripts/download-ollama.sh
 
-      - name: Build backend with PyInstaller
+      - name: Build backend with PyInstaller (GPU runners pruned, CI only)
+        if: steps.bundle-cache.outputs.cache-hit != 'true'
+        env:
+          STENOAI_PRUNE_OLLAMA_GPU: '1'
         run: pyinstaller stenoai.spec --noconfirm
 
-      - name: Verify bundled Ollama GPU backends
-        run: python scripts/verify_ollama_gpu_bundle.py bin dist/stenoai
+      # The download half of the release check still runs (a truncated Ollama
+      # archive fails here); the bundle half is inverted: no GPU payload may
+      # survive and the CPU runner must. Prints the resulting bundle size.
+      - name: Verify Ollama GPU runners were pruned (download still intact)
+        if: steps.bundle-cache.outputs.cache-hit != 'true'
+        run: |
+          output=$(python scripts/verify_ollama_gpu_bundle.py --expect-pruned bin dist/stenoai)
+          echo "$output"
+          echo "$output" >> "$GITHUB_STEP_SUMMARY"
+          du -sh dist/stenoai
+
+      - name: Verify bundle layout and exec bits
+        run: test -x dist/stenoai/stenoai
+
+      - name: Save backend bundle to cache
+        if: steps.bundle-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: dist/stenoai
+          key: ${{ steps.key.outputs.key }}
 
       - name: Upload backend bundle
         uses: actions/upload-artifact@v4
@@ -853,10 +1272,14 @@ jobs:
           retention-days: 3
           if-no-files-found: error
 
-  t2-linux:
-    name: T2 (real backend + mock adapter, Linux)
+  t2-linux-shard:
+    name: T2 shard (Linux ${{ matrix.shard }}/3)
     runs-on: ubuntu-latest
     needs: build-backend-linux
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -868,7 +1291,16 @@ jobs:
           cache: 'npm'
           cache-dependency-path: app/package-lock.json
 
-      - name: Download backend bundle
+      - name: Restore backend bundle from cache
+        id: bundle-cache
+        if: env.USE_BACKEND_CACHE == 'true'
+        uses: actions/cache/restore@v4
+        with:
+          path: dist/stenoai
+          key: ${{ needs.build-backend-linux.outputs.bundle-key }}
+
+      - name: Download backend bundle (cache miss fallback)
+        if: steps.bundle-cache.outputs.cache-hit != 'true'
         uses: actions/download-artifact@v4
         with:
           name: e2e-backend-linux
@@ -893,10 +1325,10 @@ jobs:
 
       - name: Install Electron dependencies
         working-directory: app
-        run: npm ci
+        run: npm ci --prefer-offline
 
       # Electron is headless-hostile on Linux without a display server —
-      # same reason t1-renderer needs this, see its comment above.
+      # same reason t1-shard needs this, see its comment above.
       - name: Install Linux system deps (+ xvfb)
         working-directory: app
         run: npx playwright install-deps
@@ -905,20 +1337,34 @@ jobs:
         working-directory: app
         run: npm run build:renderer
 
-      - name: Run T2 (org-lock, model-free)
+      - name: Run T2 shard (model-free)
         working-directory: app
-        run: xvfb-run -a npm run test:e2e -- --project=t2 --grep-invert '@pipeline|@summarize-real'
+        run: xvfb-run -a npm run test:e2e -- --project=t2 --grep-invert '@pipeline|@summarize-real' --shard=${{ matrix.shard }}/${{ env.T2_SHARDS }}
 
       - name: Upload report on failure
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: e2e-t2-linux-report
+          name: e2e-t2-linux-report-shard-${{ matrix.shard }}
           path: |
             app/playwright-report
             app/test-results
           retention-days: 7
           if-no-files-found: ignore
+
+  # Advisory today; same aggregate shape as t2-macos.
+  t2-linux:
+    name: T2 (real backend + mock adapter, Linux)
+    runs-on: ubuntu-latest
+    needs: t2-linux-shard
+    if: always()
+    steps:
+      - name: Fail unless every shard succeeded
+        env:
+          SHARDS_RESULT: ${{ needs.t2-linux-shard.result }}
+        run: |
+          echo "t2-linux-shard (all 3): $SHARDS_RESULT"
+          [ "$SHARDS_RESULT" = "success" ]
 
   # Same lane as Windows: onnx-asr on CPU, real parakeet path (not whisper —
   # that's only needed on macOS runners, which have no Metal for parakeet-mlx).
@@ -937,7 +1383,16 @@ jobs:
           cache: 'npm'
           cache-dependency-path: app/package-lock.json
 
-      - name: Download backend bundle
+      - name: Restore backend bundle from cache
+        id: bundle-cache
+        if: env.USE_BACKEND_CACHE == 'true'
+        uses: actions/cache/restore@v4
+        with:
+          path: dist/stenoai
+          key: ${{ needs.build-backend-linux.outputs.bundle-key }}
+
+      - name: Download backend bundle (cache miss fallback)
+        if: steps.bundle-cache.outputs.cache-hit != 'true'
         uses: actions/download-artifact@v4
         with:
           name: e2e-backend-linux
@@ -963,7 +1418,7 @@ jobs:
 
       - name: Install Electron dependencies
         working-directory: app
-        run: npm ci
+        run: npm ci --prefer-offline
 
       - name: Install Linux system deps (+ xvfb)
         working-directory: app

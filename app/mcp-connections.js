@@ -11,8 +11,11 @@
  * tools/list. A local command server (transport "stdio", kind "local") stores
  * its command, arguments and the NAMES of its environment variables; the
  * values are secrets. The on/off state of built-in actions (the Email
- * drafts) lives under `builtins`. What is never stored here: any token,
- * secret, environment value or OAuth client secret (mcp-secret-store.js).
+ * drafts) lives under `builtins`. `autoApprove` on a connection (or a
+ * builtin) means the user chose "Always allow" for that app: its actions run
+ * without an approval card (mcp-actions.js decides when that is safe). What
+ * is never stored here: any token, secret, environment value or OAuth client
+ * secret (mcp-secret-store.js).
  */
 
 const crypto = require('node:crypto');
@@ -233,11 +236,12 @@ function createConnectionsStore({ file, fs = nodeFs, path = nodePath, now = () =
     const i = data.connections.findIndex((c) => c.id === id);
     if (i === -1) return null;
     const allowed = {};
-    for (const key of ['name', 'enabled', 'account', 'tools', 'toolsFetchedAt', 'status', 'lastError']) {
+    for (const key of ['name', 'enabled', 'account', 'tools', 'toolsFetchedAt', 'status', 'lastError', 'autoApprove']) {
       if (Object.hasOwn(patch, key)) allowed[key] = patch[key];
     }
     if (Object.hasOwn(allowed, 'name')) allowed.name = cleanName(allowed.name, data.connections[i].name);
     if (Object.hasOwn(allowed, 'enabled')) allowed.enabled = allowed.enabled === true;
+    if (Object.hasOwn(allowed, 'autoApprove')) allowed.autoApprove = allowed.autoApprove === true;
     data.connections[i] = { ...data.connections[i], ...allowed };
     write(data);
     return data.connections[i];
@@ -269,12 +273,27 @@ function createConnectionsStore({ file, fs = nodeFs, path = nodePath, now = () =
 
   function setBuiltinEnabled(name, value) {
     const data = read();
-    data.builtins = { ...data.builtins, [name]: { enabled: value === true } };
+    data.builtins = { ...data.builtins, [name]: { ...(data.builtins?.[name] || {}), enabled: value === true } };
     write(data);
     return value === true;
   }
 
-  return { list, get, add, addLocal, update, remove, getAutoSuggest, setAutoSuggest, getBuiltinEnabled, setBuiltinEnabled, file };
+  /** Whether a built-in action runs without asking; off unless the user chose "Always allow". */
+  function getBuiltinAutoApprove(name) {
+    return read().builtins?.[name]?.autoApprove === true;
+  }
+
+  function setBuiltinAutoApprove(name, value) {
+    const data = read();
+    data.builtins = { ...data.builtins, [name]: { ...(data.builtins?.[name] || {}), autoApprove: value === true } };
+    write(data);
+    return value === true;
+  }
+
+  return {
+    list, get, add, addLocal, update, remove, getAutoSuggest, setAutoSuggest, getBuiltinEnabled, setBuiltinEnabled,
+    getBuiltinAutoApprove, setBuiltinAutoApprove, file,
+  };
 }
 
 module.exports = {

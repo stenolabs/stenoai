@@ -1,0 +1,20 @@
+---
+import "../readmore.css";
+
+interface Props {
+  as?: "ol" | "div";
+  id: string;
+  subject: string;
+  count: number;
+  class: string;
+}
+const { as: Tag = "div", id, subject, count, class: className } = Astro.props;
+---
+<Tag id={id} class={className} data-rm-row>
+  <slot />
+</Tag>
+<div class="rm-car-nav" data-rm-nav>
+  <button type="button" class="rm-control" data-rm-step="-1" aria-label={`Previous card: ${subject}`} aria-controls={id} aria-disabled="true">Previous</button>
+  <span class="mission-eyebrow" aria-live="polite" aria-atomic="true" data-rm-count>1 of {count}</span>
+  <button type="button" class="rm-control" data-rm-step="1" aria-label={`Next card: ${subject}`} aria-controls={id}>Next</button>
+</div>

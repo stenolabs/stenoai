@@ -13,7 +13,10 @@
  *   - any other tool pauses the turn on an action card in the chat. Approve
  *     runs it through the actions service's approve() (validation, org policy,
  *     audit) and the result goes back to the model; Dismiss tells the model it
- *     was declined. Nothing that writes ever runs without Approve;
+ *     was declined. Nothing that writes ever runs without Approve, except on
+ *     a connection the user marked "Always allow": there the service runs
+ *     the card at once and proposeWrite resolves { status: 'done', auto: true }
+ *     without pausing;
  *   - tool results and notes reach the model wrapped as untrusted data, and
  *     the loop stops after MAX_STEPS model calls (the last one has no tools,
  *     so it must answer).
@@ -237,7 +240,8 @@ class AgentCancelled extends Error {
  *   tools        buildAgentTools() result
  *   step(payload)            → { text, tool_calls: [{ id, name, arguments }] }
  *   runRead(entry, args)     → { text, isError } for steno/read tools
- *   proposeWrite(entry, args) → { status: 'done'|'failed'|'declined'|'rejected', text?, missing? }
+ *   proposeWrite(entry, args) → { status: 'done'|'failed'|'declined'|'rejected', text?, missing?, auto? }
+ *                               (auto: it ran without asking, the user having chosen "Always allow")
  *   emit(kind, data)         'text' (answer text) | 'step' ({ id, source, connection, tool, title })
  *   isCancelled()
  * Resolves { text, steps } (model calls made).
@@ -275,7 +279,8 @@ async function runAgentTurn({ request, tools, step, runRead, proposeWrite, emit 
         content = 'Unknown tool. Use only the tools offered.';
       } else if (entry.kind === 'write') {
         const outcome = await proposeWrite(entry, call.arguments);
-        if (outcome.status === 'done') content = `The user approved this action and it ran. ${untrusted(entry.connectionName, outcome.text || 'Done.')}`;
+        if (outcome.status === 'done' && outcome.auto) content = `This action ran right away: the user has allowed ${entry.connectionName} actions to run without asking. ${untrusted(entry.connectionName, outcome.text || 'Done.')}`;
+        else if (outcome.status === 'done') content = `The user approved this action and it ran. ${untrusted(entry.connectionName, outcome.text || 'Done.')}`;
         else if (outcome.status === 'failed') content = `The user approved this action but it failed. ${untrusted(entry.connectionName, outcome.text || 'No details.')}`;
         else if (outcome.status === 'rejected') content = `Not proposed: these required arguments were missing or placeholders: ${(outcome.missing || []).join(', ')}. Ask the user for them instead of guessing.`;
         else content = 'The user declined this action. Do not retry it; acknowledge it in your answer.';

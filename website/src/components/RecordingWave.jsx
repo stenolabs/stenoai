@@ -1,4 +1,4 @@
-// Animated audio-level bars in var(--recording) red — mirrors AudioWave in the real app
+// Animated audio-level bars in var(--recording) red (mirrors AudioWave in the real app)
 export function RecordingWave() {
   const delays = [0, 0.15, 0.3, 0.1, 0.25, 0.05, 0.2];
   return (

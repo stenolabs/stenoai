@@ -175,6 +175,13 @@ export function App() {
   const didSetupRedirectRef = React.useRef(false);
   const [setupGateResolved, setSetupGateResolved] = React.useState(false);
   const [initialSetup, setInitialSetup] = React.useState(false);
+  // Reflect the gate's final decision onto the root element
+  // (data-setup-gate="installed" | "setup" | "error") so e2e can wait for the
+  // one-shot /setup redirect to land, or know it never will, instead of racing
+  // it with a click. Mirrors data-privacy-gate; no effect on production.
+  const markSetupGate = (state: 'installed' | 'setup' | 'error') => {
+    document.documentElement.dataset.setupGate = state;
+  };
   React.useEffect(() => {
     if (didSetupGateRef.current) return;
     if (recording.isLoading) return;
@@ -183,9 +190,12 @@ export function App() {
       try {
         if (!await hasInstalledTranscriptionModel()) {
           setInitialSetup(true);
+        } else {
+          markSetupGate('installed');
         }
       } catch {
         // Best-effort onboarding gate; never block the app on it.
+        markSetupGate('error');
       } finally {
         setSetupGateResolved(true);
       }
@@ -208,8 +218,10 @@ export function App() {
         didSetupRedirectRef.current = true;
         if (installed) setInitialSetup(false);
         else navigate('/setup');
+        markSetupGate(installed ? 'installed' : 'setup');
       } catch {
         // A failed check must not send a configured user back through setup.
+        markSetupGate('error');
       }
     })();
     return () => { cancelled = true; };

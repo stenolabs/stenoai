@@ -13,9 +13,9 @@ const jsonLd = { '@context': 'https://schema.org', '@type': 'FAQPage', mainEntit
 <section id="faq" class="mission-faq mission-section" aria-labelledby="faq-heading">
   <script type="application/ld+json" set:html={JSON.stringify(jsonLd).replace(/</g, '\\u003c')} />
   <div class="mission-wrap mission-faq-layout">
-    <div><p class="mission-eyebrow">07 / Questions</p><h2 id="faq-heading">Good questions.<br />Clear answers.</h2><p>What your team needs to know<br />before getting started.</p><a class="mission-text-link mission-faq-compare" href="/vs/">Comparing notetakers? See StenoAI vs Otter, Granola and Fireflies <ArrowUpRight size={14} aria-hidden="true" /></a></div>
+    <div><h2 id="faq-heading">Good questions.<br />Clear answers.</h2><p>What your team needs to know<br />before getting started.</p><a class="mission-text-link mission-faq-compare" href="/vs/">Comparing notetakers? See StenoAI vs Otter, Granola and Fireflies <ArrowUpRight size={14} aria-hidden="true" /></a></div>
     <div class="mission-faq-items">
-      {faqs.map((f, index) => <details><summary><span class="mission-faq-number">0{index + 1}</span><span>{f.q}</span><span class="mission-faq-symbol" aria-hidden="true"></span></summary><p>{f.a}</p></details>)}
+      {faqs.map((f) => <details><summary><span>{f.q}</span><span class="mission-faq-symbol" aria-hidden="true"></span></summary><p>{f.a}</p></details>)}
     </div>
   </div>
 </section>

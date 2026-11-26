@@ -983,6 +983,8 @@ export interface ActionConnection {
   auth: ActionAuth;
   headerName: string | null;
   enabled: boolean;
+  /** "Always allow": actions on this connection run without an approval card. */
+  autoApprove?: boolean;
   account: string | null;
   status: 'ok' | 'needs-auth' | 'error';
   tools: ActionTool[];
@@ -1003,6 +1005,8 @@ export interface ActionsPolicy {
   /** Local command servers; off by default once an org restricts endpoints. */
   localCommandsAllowed?: boolean;
   emailDraftsAllowed?: boolean;
+  /** Whether "Always allow for <app>" may be chosen; a managed org can turn it off. */
+  autoApproveAllowed?: boolean;
   reason: string | null;
 }
 export interface ActionsOverview {
@@ -1054,6 +1058,10 @@ export interface ActionCard {
   /** The note action item this proposal carries out. */
   actionItem?: string;
   validationErrors: ActionValidationError[];
+  /** Whether the card may offer "Always allow for <app>" (not yet chosen, org allows it). */
+  autoApproveOffered?: boolean;
+  /** It ran without a card, the user having chosen "Always allow" for the app. */
+  autoApproved?: boolean;
   status: ActionCardStatus;
   /** detail: the endpoint's own failure message, trimmed and redacted. */
   result?: { status: string; link: string | null; text: string; detail?: string; clipboard?: boolean };
@@ -1081,8 +1089,14 @@ export interface ActionAuditEntry {
   tool: string;
   argumentsSha256: string;
   status: string;
+  /** It ran without a card ("Always allow"). */
+  autoApproved?: boolean;
   link?: string;
   error?: string;
+}
+/** Options for approving a card: alwaysAllow also marks the connection "Always allow". */
+export interface ApproveActionOptions {
+  alwaysAllow?: boolean;
 }
 export type ActionsFailure = { success: false; error: string; error_code?: string; validationErrors?: ActionValidationError[] };
 export type GetObsidianSyncResponse = Result<{ obsidian_sync_enabled: boolean }>;
@@ -1523,7 +1537,10 @@ export interface StenoaiBridge {
     askStream: SendFn<[id: string, file: string, q: string]>;
     chatGlobalStream: SendFn<[id: string, q: string, folderId?: string | null]>;
     cancel: SendFn<[id: string]>;
-    approveAction: RequestFn<[id: string, cardId: string, args: Record<string, unknown>], Result<{ card: ActionCard }> | ActionsFailure>;
+    approveAction: RequestFn<
+      [id: string, cardId: string, args: Record<string, unknown>, options?: ApproveActionOptions],
+      Result<{ card: ActionCard }> | ActionsFailure
+    >;
     dismissAction: RequestFn<[id: string, cardId: string], Result<{ card?: ActionCard }>>;
   };
 
@@ -1784,13 +1801,14 @@ export interface StenoaiBridge {
     setEnabled: RequestFn<[id: string, enabled: boolean], Result<{ connection: ActionConnection }>>;
     remove: RequestFn<[id: string], Result<{ removed: boolean }>>;
     setAutoSuggest: RequestFn<[value: boolean], Result<{ autoSuggest: boolean }>>;
+    setAutoApprove: RequestFn<[id: string, value: boolean], Result<{ connection: ActionConnection }>>;
     getCards: RequestFn<[summaryFile: string], Result<{ cards: ActionCard[]; available: boolean }>>;
     suggest: RequestFn<
       [summaryFile: string, options?: { auto?: boolean }],
       Result<{ skipped: boolean; cards: ActionCard[] }>
     >;
     approve: RequestFn<
-      [summaryFile: string, cardId: string, args: Record<string, unknown>],
+      [summaryFile: string, cardId: string, args: Record<string, unknown>, options?: ApproveActionOptions],
       Result<{ card: ActionCard }> | ActionsFailure
     >;
     dismiss: RequestFn<[summaryFile: string, cardId: string], Result<{ cards: ActionCard[] }>>;

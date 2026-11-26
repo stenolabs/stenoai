@@ -1,26 +1,36 @@
 ---
 import { ArrowUpRight, ArrowRight } from 'lucide-react';
 import { CTA_BRIEFING } from '../content/industries.data';
+import ScrollSeq from '../components/ScrollSeq.astro';
 // Editions and the buy path in one place: try it free, or take the
 // enterprise route from briefing to deployment.
 const path = [
-  { name: 'Brief', body: 'A briefing for your team and security lead.' },
-  { name: 'Pilot', body: 'A pilot on your own meetings and hardware.' },
-  { name: 'Assure', body: 'Source, build and data paths for your security review and DPO.' },
-  { name: 'Deploy', body: 'Roll out on devices or your infrastructure, through your procurement route.' },
+  { name: 'Brief', image: 'brief', body: 'A briefing for your team and security lead.' },
+  { name: 'Pilot', image: 'pilot', body: 'A pilot on your own meetings and hardware.' },
+  { name: 'Assure', image: 'assure', body: 'Source, build and data paths for your security review and DPO.' },
+  { name: 'Deploy', image: 'deploy', body: 'Roll out on devices or your infrastructure, through your procurement route.' },
 ];
 ---
 <section id="editions" class="mission-editions mission-section" aria-labelledby="editions-heading">
   <div class="mission-wrap">
-    <div class="mission-section-top"><p class="mission-eyebrow">06 / Get started</p><span class="mission-eyebrow">Two editions. One pipeline.</span></div>
     <div class="mission-section-heading">
       <h2 id="editions-heading">From one laptop to the<br />whole organisation.</h2>
       <p>Try the open-source app on a single laptop today. When a department, unit or force is ready, we take you from briefing to deployment.</p>
+    </div>
+    <div class="editions-wake" aria-hidden="true">
+      <noscript>
+        <picture>
+          <source media="(max-width: 767px)" srcset="/scroll/editions-p/0071.webp" width="770" height="440" />
+          <img src="/scroll/editions-d/0071.webp" alt="" width="1680" height="720" loading="lazy" decoding="async" />
+        </picture>
+      </noscript>
+      <ScrollSeq src="/scroll/editions-d" src-phone="/scroll/editions-p" frames={72} start=".95" centre=".48" />
     </div>
     <div class="mission-editions-grid">
       <div class="mission-edition">
         <p class="mission-eyebrow">Community</p>
         <h3>Free · MIT licence</h3>
+        <img class="editions-community-photo" src="/images/editions/b-community.webp" alt="" width="1200" height="800" loading="lazy" decoding="async" />
         <ul><li>The full on-device pipeline</li><li>No account and no usage caps</li><li>macOS · Windows alpha</li></ul>
         <a href="/download/?src=editions" class="mission-text-link">Download Community <ArrowRight size={16} aria-hidden="true" /></a>
       </div>
@@ -28,7 +38,13 @@ const path = [
         <p class="mission-eyebrow">Enterprise</p>
         <h3>For teams and organisations</h3>
         <ol class="mission-edition-path">
-          {path.map((step, i) => <li><span class="mission-small-index">0{i + 1}</span><div><strong>{step.name}</strong><p>{step.body}</p></div></li>)}
+          {path.map((step, i) => (
+            <li>
+              <span class="mission-small-index">0{i + 1}</span>
+              <div><strong>{step.name}</strong><p>{step.body}</p></div>
+              <img class="editions-step-photo" src={`/images/editions/c-${step.image}.webp`} alt="" width="704" height="528" loading="lazy" decoding="async" />
+            </li>
+          ))}
         </ol>
         <a href={CTA_BRIEFING} class="mission-button mission-button-light" data-track="demo_request" data-location="editions">Request a briefing <ArrowUpRight size={17} aria-hidden="true" /></a>
       </div>

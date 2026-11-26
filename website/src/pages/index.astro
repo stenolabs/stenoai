@@ -4,6 +4,7 @@ import { Nav } from "../sections/Nav";
 import Hero from "../sections/Hero.astro";
 import MissionTrust from "../sections/MissionTrust.astro";
 import MissionSectors from "../sections/MissionSectors.astro";
+import MissionFilms from "../sections/MissionFilms.astro";
 import { MissionPlatform } from "../components/MissionPlatform";
 import MissionEditions from "../sections/MissionEditions.astro";
 import MissionAssurance from "../sections/MissionAssurance.astro";
@@ -15,12 +16,14 @@ import Footer from "../sections/Footer.astro";
 import ScrollSeq from "../components/ScrollSeq.astro";
 import "../scroll.css";
 
-const title = "StenoAI — Private Meeting Notes for Government, Defence & Law Enforcement";
+const title = "StenoAI: Private Meeting Notes for Government, Defence & Law Enforcement";
 const description =
   "Turn sensitive conversations into clear records. StenoAI records, transcribes and summarises on your device or on infrastructure you control. Built for government, defence, law enforcement and confidential work.";
 ---
 
 <BaseLayout title={title} description={description} canonical="https://stenoai.co/">
+  <link slot="head" rel="preload" as="image" href="/images/enterprise/hero-film-m.webp" media="(max-width: 767px)" fetchpriority="high" />
+  <link slot="head" rel="preload" as="image" href="/images/enterprise/hero-film.webp" media="(min-width: 768px)" fetchpriority="high" />
   <!-- Scroll-driven footage: "on", or "still" for reduced motion and data saver; absent without JavaScript, which keeps the plain page. -->
   <script is:inline>
     (function (d, c) { d.dataset.ss = matchMedia('(prefers-reduced-motion: reduce)').matches || (c && c.saveData) ? 'still' : 'on'; })(document.documentElement, navigator.connection);
@@ -29,11 +32,19 @@ const description =
   <main id="main-content" class="mission-site">
     <Hero />
     <MissionTrust />
-    <div class="scroll-host">
-      <ScrollSeq src="/scroll/voice-d" src-phone="/scroll/voice-p" frames="97" start=".9" end=".45" target=".platform-console-wrap" anchor="770,415,891" anchor-phone="40,1290,700" dim=".7" />
-      <MissionPlatform client:visible />
-    </div>
+    <MissionPlatform client:visible>
+      <div class="platform-visual" aria-hidden="true">
+        <noscript>
+          <picture>
+            <source media="(max-width: 767px)" srcset="/scroll/voice-p/0096.webp" />
+            <img src="/scroll/voice-d/0096.webp" alt="" width="1920" height="1200" loading="lazy" decoding="async" />
+          </picture>
+        </noscript>
+        <ScrollSeq src="/scroll/voice-d" src-phone="/scroll/voice-p" frames="97" start=".9" centre=".52" target=".platform-visual" anchor="770,365,891" anchor-phone="40,1230,700" />
+      </div>
+    </MissionPlatform>
     <MissionSectors records />
+    <MissionFilms />
     <MissionDeploy />
     <MissionAssurance stage />
     <MissionThreats />
@@ -45,6 +56,10 @@ const description =
 </BaseLayout>
 
 <script>
-  import "../scripts/scroll-seq.js";
-  import "../scripts/scroll-records.js";
+  const boot = () => {
+    import("../scripts/scroll-seq.js");
+    import("../scripts/scroll-records.js");
+  };
+  if (document.readyState === 'complete' || location.hash) boot();
+  else addEventListener('load', boot, { once: true });
 </script>

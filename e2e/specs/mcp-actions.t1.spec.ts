@@ -5,12 +5,14 @@ import { test, expect } from '../fixtures/electron';
  * actions-*): the Connect page's "Actions" section
  * (connector cards, Coming soon, adding a custom endpoint, the enable toggle,
  * the tool preview, disconnect) and the action cards under a note (editable
- * arguments, the exact-payload preview, Approve sends the edited arguments,
- * Dismiss sends nothing, Recent actions). The real service, OAuth and the
- * MCP wire are covered by mcp-actions.t2 and the node unit tests.
+ * arguments, no JSON anywhere, Approve sends the edited arguments, Dismiss
+ * sends nothing, "Always allow for <app>" runs the app's later suggestions
+ * without a card until the Settings switch turns it off, Recent actions).
+ * The real service, OAuth and the MCP wire are covered by mcp-actions.t2 and
+ * the node unit tests.
  */
 
-type Approved = { cardId: string; args: Record<string, unknown> };
+type Approved = { cardId: string; args: Record<string, unknown>; alwaysAllow?: boolean };
 const approvedOf = (app: import('@playwright/test').ElectronApplication) =>
   app.evaluate(() => (globalThis as unknown as { __actionsApproved: Approved[] }).__actionsApproved);
 const dismissedOf = (app: import('@playwright/test').ElectronApplication) =>
@@ -117,21 +119,21 @@ test('Note: approve sends the edited arguments, dismiss sends nothing', async ({
   await expect(issue.getByText('Bob owns the release notes')).toBeVisible();
   await expect(issue.getByText('From: Bob to prep the release notes')).toBeVisible();
 
-  // The card reads as a sentence; only the important fields are inline.
+  // The card reads as a sentence; only the important fields are inline, and
+  // there is no JSON anywhere: no payload preview, no raw editor.
   await expect(issue.getByRole('heading', { name: 'Create issue in Team n8n · Prep the release notes' })).toBeVisible();
   await expect(issue.getByLabel('Priority')).toHaveCount(0);
-  const payload = issue.getByTestId('action-payload');
-  await expect(payload).toBeHidden();
+  await expect(issue.getByText('Show what will be sent')).toHaveCount(0);
+  await expect(issue.getByTestId('action-payload')).toHaveCount(0);
+  await expect(issue.getByRole('button', { name: 'Edit as JSON' })).toHaveCount(0);
+  await expect(issue.getByText('{', { exact: false })).toHaveCount(0);
+  await expect(issue.getByRole('button', { name: 'Always allow for Team n8n' })).toBeVisible();
 
-  // Edit the title, then check the exact payload preview before approving.
+  // Edit the title; the headline follows.
   const title = issue.getByLabel('Title (required)');
   await expect(title).toHaveValue('Prep the release notes');
   await title.fill('Prep release notes for v0.9.0');
   await expect(issue.getByRole('heading', { name: 'Create issue in Team n8n · Prep release notes for v0.9.0' })).toBeVisible();
-  await issue.getByText('Show what will be sent').click();
-  await expect(payload).toContainText('"tool": "create_issue"');
-  await expect(payload).toContainText('"title": "Prep release notes for v0.9.0"');
-  await expect(payload).toContainText('"priority": "high"');
   await page.screenshot({ path: testInfo.outputPath('action-cards.png'), fullPage: true });
   // Send message: text and its required channel are inline.
   await expect(message.getByLabel('Channel (required)')).toHaveValue('#release');
@@ -151,15 +153,132 @@ test('Note: approve sends the edited arguments, dismiss sends nothing', async ({
   await expect(issue.getByRole('button', { name: 'Approve' })).toHaveCount(0);
   const approved = await approvedOf(app);
   expect(approved).toHaveLength(1);
-  expect(approved[0]!.args).toEqual({ title: 'Prep release notes for v0.9.0', priority: 'high' });
+  // A plain Approve: the edited fields plus the ones not shown, and no "always allow".
+  expect(approved[0]).toEqual({ cardId: expect.any(String), args: { title: 'Prep release notes for v0.9.0', priority: 'high' } });
 
-  // The audit entry shows in Settings → Connectors.
+  // The audit entry shows in Settings → Connectors; a plain approve is not "ran automatically".
   await page.evaluate(() => {
     window.location.hash = '#/settings?tab=connectors';
   });
   const recent = page.getByRole('list', { name: 'Recent actions' });
   await expect(recent.getByText('create_issue')).toBeVisible();
-  await expect(recent.getByText('Sent')).toBeVisible();
+  await expect(recent.getByText('Sent', { exact: true })).toBeVisible();
+  await expect(recent.getByText('ran automatically')).toHaveCount(0);
+  // Nothing was trusted: the switch is off.
+  const card = page.getByRole('region', { name: 'Team n8n', exact: true });
+  await expect(card.getByRole('switch', { name: 'Run Team n8n actions without asking' })).not.toBeChecked();
+});
+
+test('Note: "Always allow" approves once; later suggestions run without a card until the Settings switch turns it off', async ({
+  launchApp,
+}, testInfo) => {
+  const { page, app } = await launchApp({
+    mockIpc: true,
+    env: { STENOAI_E2E_SEED_MEETING: '1', STENOAI_E2E_SEED_ACTIONS: '1' },
+  });
+  const openNote = () =>
+    page.evaluate(() => {
+      window.location.hash = `#/meetings/${encodeURIComponent('epsilon_summary.json')}`;
+    });
+  await openNote();
+  const section = page.getByTestId('suggested-actions');
+  const issue = section.getByRole('article', { name: 'Create issue via Team n8n' });
+  const message = section.getByRole('article', { name: 'Send message via Team n8n' });
+  await message.getByRole('button', { name: 'Dismiss' }).click();
+  await expect(message).toHaveCount(0);
+
+  // "Always allow for Team n8n" approves this action AND trusts the app.
+  await issue.getByRole('button', { name: 'Always allow for Team n8n' }).click();
+  await expect(issue.getByText('Done')).toBeVisible();
+  await expect(issue.getByRole('button', { name: 'Open' })).toBeVisible();
+  await expect.poll(() => approvedOf(app)).toEqual([
+    { cardId: expect.any(String), args: { title: 'Prep the release notes', priority: 'high' }, alwaysAllow: true },
+  ]);
+
+  // The next suggestions arrive already done: no Approve, no card to fill in.
+  await section.getByRole('button', { name: 'Suggest actions' }).click();
+  const issue2 = section.getByRole('article', { name: 'Create issue via Team n8n' }).last();
+  const message2 = section.getByRole('article', { name: 'Send message via Team n8n' });
+  await expect(message2.getByText('Done')).toBeVisible();
+  await expect(issue2.getByText('Done')).toBeVisible();
+  await expect(section.getByRole('button', { name: 'Approve' })).toHaveCount(0);
+  await expect(section.getByRole('button', { name: 'Always allow for Team n8n' })).toHaveCount(0);
+  await expect(section.getByLabel('Title (required)')).toHaveCount(0);
+  await expect(message2.getByRole('button', { name: 'Open' })).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath('action-cards-auto.png'), fullPage: true });
+
+  // The audit log still records every run, and says these ran on their own.
+  await page.evaluate(() => {
+    window.location.hash = '#/settings?tab=connectors';
+  });
+  const recent = page.getByRole('list', { name: 'Recent actions' });
+  await expect(recent.getByText('Sent · ran automatically')).toHaveCount(2);
+  await expect(recent.getByText('Sent', { exact: true })).toHaveCount(1);
+
+  // Turn it off on the connection card: the next suggestion asks again.
+  const card = page.getByRole('region', { name: 'Team n8n', exact: true });
+  await expect(card.getByText('Run actions without asking')).toBeVisible();
+  const toggle = card.getByRole('switch', { name: 'Run Team n8n actions without asking' });
+  await expect(toggle).toBeChecked();
+  await toggle.click();
+  await expect(toggle).not.toBeChecked();
+  await openNote();
+  await section.getByRole('button', { name: 'Suggest actions' }).click();
+  const issue3 = section.getByRole('article', { name: 'Create issue via Team n8n' }).last();
+  await expect(issue3.getByRole('button', { name: 'Approve' })).toBeVisible();
+  await expect(issue3.getByRole('button', { name: 'Always allow for Team n8n' })).toBeVisible();
+  await expect(issue3.getByLabel('Title (required)')).toHaveValue('Prep the release notes');
+});
+
+test('Note: a tool the form cannot edit shows a short read-only summary, never JSON', async ({ launchApp }, testInfo) => {
+  const { page, app } = await launchApp({
+    mockIpc: true,
+    env: { STENOAI_E2E_SEED_MEETING: '1', STENOAI_E2E_SEED_ACTIONS: 'nested' },
+  });
+  await page.evaluate(() => {
+    window.location.hash = `#/meetings/${encodeURIComponent('epsilon_summary.json')}`;
+  });
+  const card = page.getByTestId('suggested-actions').getByRole('article', { name: 'Create record via Team n8n' });
+  await expect(card.getByRole('heading', { name: 'Create record in Team n8n' })).toBeVisible();
+  const summary = card.getByTestId('action-summary');
+  const line = (key: string) => summary.locator('div').filter({ has: page.getByText(key, { exact: true }) });
+  await expect(line('record › name:')).toContainText('Acme renewal');
+  await expect(line('record › amount:')).toContainText('1200');
+  await expect(line('record › owner:')).toContainText('dana@acme.co');
+  await expect(line('tags:')).toContainText('q3, renewal');
+  await expect(line('notify:')).toContainText('true');
+  await expect(card.getByText('{', { exact: false })).toHaveCount(0);
+  await expect(card.getByLabel('Arguments (JSON)')).toHaveCount(0);
+  await expect(card.getByRole('textbox')).toHaveCount(0);
+  await expect(card.getByText('Sent to Team n8n on this computer.')).toBeVisible();
+  await card.screenshot({ path: testInfo.outputPath('action-card-summary.png') });
+  // Approve sends the arguments exactly as proposed.
+  await card.getByRole('button', { name: 'Approve' }).click();
+  await expect(card.getByText('Done')).toBeVisible();
+  expect((await approvedOf(app))[0]!.args).toEqual({
+    record: { name: 'Acme renewal', amount: 1200, owner: 'dana@acme.co' },
+    tags: ['q3', 'renewal'],
+    notify: true,
+  });
+});
+
+test('Org policy: approving each action required — no "Always allow", no switch', async ({ launchApp }) => {
+  const { page } = await launchApp({
+    mockIpc: true,
+    env: { STENOAI_E2E_SEED_MEETING: '1', STENOAI_E2E_SEED_ACTIONS: '1', STENOAI_E2E_ACTIONS_NO_AUTO_APPROVE: '1' },
+  });
+  await page.evaluate(() => {
+    window.location.hash = `#/meetings/${encodeURIComponent('epsilon_summary.json')}`;
+  });
+  const issue = page.getByTestId('suggested-actions').getByRole('article', { name: 'Create issue via Team n8n' });
+  await expect(issue.getByRole('button', { name: 'Approve' })).toBeVisible();
+  await expect(issue.getByRole('button', { name: 'Always allow for Team n8n' })).toHaveCount(0);
+  await page.evaluate(() => {
+    window.location.hash = '#/settings?tab=connectors';
+  });
+  const card = page.getByRole('region', { name: 'Team n8n', exact: true });
+  await expect(card.getByRole('switch', { name: 'Use Team n8n for suggestions' })).toBeVisible();
+  await expect(card.getByText('Run actions without asking')).toHaveCount(0);
 });
 
 test('Note: a failed action keeps the generic headline and shows the endpoint message under Details', async ({
@@ -194,7 +313,7 @@ test('Org policy off: no connect buttons, a notice instead', async ({ launchApp 
   await expect(page.getByRole('region', { name: 'Custom MCP server', exact: true })).toHaveCount(0);
 });
 
-test('Note: a Notion page card reads as a sentence, payload behind the disclosure', async ({ launchApp }, testInfo) => {
+test('Note: a Notion page card reads as a sentence with its flat fields and no payload', async ({ launchApp }, testInfo) => {
   const { page } = await launchApp({
     mockIpc: true,
     env: { STENOAI_E2E_SEED_MEETING: '1', STENOAI_E2E_SEED_ACTIONS: 'notion' },
@@ -212,20 +331,13 @@ test('Note: a Notion page card reads as a sentence, payload behind the disclosur
   await expect(card.getByLabel('Content')).toBeVisible();
   await expect(card.getByLabel('Parent page')).toHaveCount(0);
   await expect(card.getByText('Leaves your device for Notion.')).toBeVisible();
-  await card.scrollIntoViewIfNeeded();
-  await card.screenshot({ path: testInfo.outputPath('action-card-collapsed.png') });
-  await card.getByText('Show what will be sent').click();
-  // The flat fields translate to Notion's own nested call, edits included.
-  const payload = card.getByTestId('action-payload');
-  await expect(payload).toContainText('"tool": "notion-create-pages"');
-  await expect(payload).toContainText('"title": "Website content cleanup"');
+  await expect(card.getByRole('button', { name: 'Always allow for Notion' })).toBeVisible();
+  // The vendor call Notion receives is the main process's business, not the card's.
+  await expect(card.getByText('Show what will be sent')).toHaveCount(0);
+  await expect(card.getByText('notion-create-pages')).toHaveCount(0);
+  await expect(card.getByRole('button', { name: 'Edit as JSON' })).toHaveCount(0);
   await card.getByLabel('Title (required)').fill('Website cleanup');
-  await expect(payload).toContainText('"title": "Website cleanup"');
-  expect(JSON.parse((await payload.textContent()) ?? '{}')).toEqual({
-    tool: 'notion-create-pages',
-    arguments: { pages: [{ properties: { title: 'Website cleanup' }, content: 'Pages to trim:\n- Defence\n- Law enforcement' }] },
-  });
-  await card.getByRole('button', { name: 'Edit as JSON' }).click();
-  await expect(card.getByLabel('Arguments (JSON)')).toBeVisible();
-  await card.screenshot({ path: testInfo.outputPath('action-card-expanded.png') });
+  await expect(card.getByRole('heading', { name: 'Create page in Notion · Website cleanup' })).toBeVisible();
+  await card.scrollIntoViewIfNeeded();
+  await card.screenshot({ path: testInfo.outputPath('action-card.png') });
 });

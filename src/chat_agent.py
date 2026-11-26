@@ -99,9 +99,9 @@ def _result_text(turn):
 
 # ── provider adapters ──────────────────────────────────────────────────────
 # Each takes (summarizer, system, question, turns, tools, on_text) and returns
-# {"text": str, "tool_calls": [{"id", "name", "arguments"}]}. OpenAI,
-# Anthropic and Ollama stream, passing each text fragment to on_text as it
-# arrives; Bedrock answers in one piece.
+# {"text": str, "tool_calls": [{"id", "name", "arguments"}]}. Every provider
+# streams, passing each text fragment to on_text as it arrives; Bedrock falls
+# back to a single-piece answer only where converse-stream is refused.
 
 
 def _json_args(raw):
@@ -196,8 +196,7 @@ def _anthropic_step(s, system, question, turns, tools, on_text):
 
 
 def _bedrock_step(s, system, question, turns, tools, on_text):
-    import urllib.request
-    from src.summarizer import bedrock_converse_url
+    from src.summarizer import BedrockStreamingUnsupported, bedrock_converse_stream_events
     messages = [{'role': 'user', 'content': [{'text': question}]}]
     pending = []
     for turn in turns:
@@ -219,7 +218,47 @@ def _bedrock_step(s, system, question, turns, tools, on_text):
             'name': t['name'], 'description': t.get('description') or t['name'],
             'inputSchema': {'json': t.get('parameters') or {'type': 'object'}},
         }} for t in tools]}
-    url = bedrock_converse_url(s.bedrock_region, s.bedrock_inference_profile or s.model_name)
+    target = s.bedrock_inference_profile or s.model_name
+    # converse-stream: text arrives as contentBlockDelta.delta.text; a tool
+    # call opens with contentBlockStart.start.toolUse {toolUseId, name} and
+    # its JSON input streams as contentBlockDelta.delta.toolUse.input string
+    # fragments, keyed by contentBlockIndex (the Anthropic shape, renamed).
+    text, blocks = [], {}
+    try:
+        events = bedrock_converse_stream_events(s.bedrock_region, target, s.bedrock_api_key, body, 180)
+        for kind, payload in events:
+            if not isinstance(payload, dict):
+                continue
+            index = payload.get('contentBlockIndex', 0)
+            if kind == 'contentBlockStart':
+                use = (payload.get('start') or {}).get('toolUse')
+                if isinstance(use, dict):
+                    blocks[index] = {'id': str(use.get('toolUseId') or uuid.uuid4()),
+                                     'name': str(use.get('name')), 'arguments': ''}
+            elif kind == 'contentBlockDelta':
+                delta = payload.get('delta') or {}
+                piece = delta.get('text')
+                if piece:
+                    text.append(piece)
+                    on_text(piece)
+                use = delta.get('toolUse')
+                if isinstance(use, dict) and index in blocks:
+                    fragment = use.get('input')
+                    blocks[index]['arguments'] += fragment if isinstance(fragment, str) else json.dumps(fragment or {})
+    except BedrockStreamingUnsupported:
+        # Refused before any event (logging is disabled for the step, so no
+        # log line); the non-streaming path reports the real error if it fails.
+        return _bedrock_converse_step(s, target, body, on_text)
+    return {'text': ''.join(text).strip(), 'tool_calls': [
+        {'id': b['id'], 'name': b['name'], 'arguments': _json_args(b['arguments'])}
+        for _, b in sorted(blocks.items())]}
+
+
+def _bedrock_converse_step(s, target, body, on_text):
+    """Non-streaming ``converse``: the fallback when ``converse-stream`` is refused."""
+    import urllib.request
+    from src.summarizer import bedrock_converse_url
+    url = bedrock_converse_url(s.bedrock_region, target)
     req = urllib.request.Request(url, data=json.dumps(body).encode('utf-8'), method='POST', headers={
         'content-type': 'application/json', 'authorization': f'Bearer {s.bedrock_api_key}',
     })

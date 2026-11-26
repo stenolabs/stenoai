@@ -9,9 +9,9 @@ import { ArrowRight } from "lucide-react";
 
 const comparisons = await getCollection("comparisons");
 
-const title = "StenoAI vs Granola, Otter & Fireflies — Compare AI Meeting Notetakers";
+const title = "StenoAI vs Granola, Otter & Fireflies: Compare AI Meeting Notetakers";
 const description =
-  "How StenoAI's free, on-device meeting transcription compares with Granola, Otter.ai, and Fireflies — pricing, privacy, bots, and usage limits, stated as fairly as we can.";
+  "How StenoAI’s free, on-device meeting transcription compares with Granola, Otter.ai, and Fireflies: pricing, privacy, bots, and usage limits, stated as fairly as we can.";
 
 const breadcrumbJsonLd = {
   "@context": "https://schema.org",
@@ -42,19 +42,20 @@ const breadcrumbJsonLd = {
         </p>
         <h1
           style={{
-            fontFamily: "var(--font-serif)",
-            fontWeight: 400,
-            fontSize: "clamp(36px, 5vw, 58px)",
+            fontFamily: "var(--font-sans)",
+            fontWeight: 500,
+            fontSize: "clamp(32px, 4.45vw, 51.5px)",
             lineHeight: 1.05,
-            letterSpacing: "-0.025em",
+            letterSpacing: "-0.045em",
+            wordSpacing: "0.06em",
             color: "var(--fg-1)",
-            maxWidth: "22ch",
+            maxWidth: "30ch",
           }}
         >
           How StenoAI compares.
         </h1>
-        <p class="text-fg-2 text-lg leading-[1.6] mt-6" style="max-width: 66ch">
-          StenoAI transcribes and summarizes meetings entirely on your device — free, open source,
+        <p class="text-fg-2 text-lg leading-[1.6] mt-6" style="max-width: 74ch">
+          StenoAI transcribes and summarizes meetings entirely on your device: free, open source,
           no bot, no account. Here is how that stacks up against the tools you might be using
           instead, stated as fairly as we can. Competitor details verified {VERIFIED}.
         </p>
@@ -78,16 +79,16 @@ const breadcrumbJsonLd = {
                   <span
                     class="block text-fg-1"
                     style={{
-                      fontFamily: "var(--font-serif)",
-                      fontWeight: 400,
-                      fontSize: "clamp(22px, 2.8vw, 28px)",
-                      letterSpacing: "-0.015em",
+                      fontFamily: "var(--font-sans)",
+                      fontWeight: 500,
+                      fontSize: "clamp(20.3px, 2.59vw, 26px)",
+                      letterSpacing: "-0.03em",
                       lineHeight: 1.2,
                     }}
                   >
                     StenoAI vs {c.name}
                   </span>
-                  <span class="block text-fg-2 text-[15px] leading-[1.6] mt-2" style="max-width: 58ch">
+                  <span class="block text-fg-2 text-[15px] leading-[1.6] mt-2" style="max-width: 65ch">
                     {c.oneLiner}
                   </span>
                 </div>

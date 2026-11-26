@@ -457,3 +457,103 @@ test('simple actions: invalid simple fields are refused before anything is sent'
   await assert.rejects(svc.approve(summary, cards[0].id, { title: '', extra: 1 }), (e) => e.code === 'invalid-arguments' && e.validationErrors.length >= 1);
   assert.deepEqual(mock.calls(), []);
 });
+
+test('always allow: approve with alwaysAllow trusts the app; later suggestions and chat writes run at once, marked in the audit log; policy, validation and the switch still gate it', async () => {
+  mock = await startMockMcpServer({ auth: 'bearer', token: 't' });
+  let proposals = () => [];
+  let policyOverride = {};
+  const svc = service({
+    runSuggest: async (_s, toolsFile) => {
+      const id = JSON.parse(fs.readFileSync(toolsFile, 'utf8')).tools[0].connection_id;
+      return { success: true, note: NOTE, proposals: proposals(id) };
+    },
+    getPolicy: async () => ({ actionsEnabled: true, endpointAllowlist: null, managed: false, ...policyOverride }),
+  });
+  const added = await svc.addCustom({ name: 'n8n', url: mock.url, auth: 'bearer', token: 't' });
+  assert.equal(added.autoApprove, false, 'nothing is trusted by default');
+
+  // Not trusted yet: a card, offering "Always allow"; nothing runs.
+  proposals = (id) => [{ connection_id: id, tool: 'create_issue', arguments: { title: 'Prep release notes' }, action_item: 1 }];
+  const first = (await svc.suggest(summary)).cards;
+  assert.equal(first.length, 1);
+  assert.equal(first[0].status, 'proposed');
+  assert.equal(first[0].autoApproveOffered, true);
+  assert.equal(mock.calls().length, 0);
+
+  // Invalid arguments with "Always allow": refused, and the app stays untrusted.
+  await assert.rejects(svc.approve(summary, first[0].id, { title: '' }, { alwaysAllow: true }), { code: 'invalid-arguments' });
+  assert.equal((await svc.list()).connections.find((c) => c.id === added.id).autoApprove, false);
+  assert.equal(mock.calls().length, 0);
+
+  // "Always allow for n8n": this action runs, and the flag is persisted with the connection.
+  const done = await svc.approve(summary, first[0].id, { title: 'Prep release notes' }, { alwaysAllow: true });
+  assert.equal(done.status, 'done');
+  assert.equal(done.autoApproved, false, 'the user approved this one');
+  assert.equal(done.autoApproveOffered, false);
+  assert.equal((await svc.list()).connections.find((c) => c.id === added.id).autoApprove, true);
+  const stored = JSON.parse(fs.readFileSync(path.join(dir, 'mcp-connections.json'), 'utf8'));
+  assert.equal(stored.connections[0].autoApprove, true);
+  assert.equal(svc.recent()[0].autoApproved, undefined, 'a user approval is not marked automatic');
+
+  // Next suggestions: a valid one runs at once; one with a validation problem still asks.
+  proposals = (id) => [
+    { connection_id: id, tool: 'create_issue', arguments: { title: 'Second' }, action_item: 1 },
+    { connection_id: id, tool: 'create_issue', arguments: { title: 'Bad', priority: 'urgent' }, action_item: 1 },
+  ];
+  const second = (await svc.suggest(summary)).cards;
+  assert.deepEqual(second.map((c) => [c.arguments.title, c.status, c.autoApproved]), [
+    ['Prep release notes', 'done', false],
+    ['Second', 'done', true],
+    ['Bad', 'proposed', false],
+  ]);
+  assert.equal(second[1].result.link, 'https://mock.example/items/2');
+  assert.equal(second[2].autoApproveOffered, false, 'already trusted: nothing more to offer');
+  assert.deepEqual(mock.calls().map((c) => c.args.title), ['Prep release notes', 'Second']);
+  const log = svc.recent();
+  assert.equal(log.length, 2);
+  assert.equal(log[0].autoApproved, true, 'the automatic run is marked in the audit log');
+  assert.equal(log[0].tool, 'create_issue');
+  assert.ok(!fs.readFileSync(path.join(dir, 'mcp-actions-audit.jsonl'), 'utf8').includes('Second'), 'arguments still hashed');
+
+  // Chat: a write on the trusted app runs without a card, and says so.
+  const chat = await svc.proposeChatAction('chat-auto', { connectionId: added.id, tool: 'create_issue', arguments: { title: 'From chat' } });
+  assert.equal(chat.auto, true);
+  assert.equal(chat.card.status, 'done');
+  assert.equal(chat.card.autoApproved, true);
+  assert.equal(mock.calls().at(-1).args.title, 'From chat');
+  // ...but a chat write with a validation problem still becomes a card.
+  const chatBad = await svc.proposeChatAction('chat-auto', { connectionId: added.id, tool: 'create_issue', arguments: { title: 'x', priority: 'urgent' } });
+  assert.equal(chatBad.auto, undefined);
+  assert.equal(chatBad.card.status, 'proposed');
+  assert.equal(mock.calls().length, 3);
+
+  // A managed org that forbids it: suggestions ask again, and it cannot be turned on.
+  policyOverride = { managed: true, autoApproveAllowed: false };
+  proposals = (id) => [{ connection_id: id, tool: 'create_issue', arguments: { title: 'Third' }, action_item: 1 }];
+  const third = (await svc.suggest(summary)).cards.find((c) => c.arguments.title === 'Third');
+  assert.equal(third.status, 'proposed');
+  assert.equal(third.autoApproveOffered, false);
+  assert.equal(mock.calls().length, 3);
+  await assert.rejects(svc.setAutoApprove(added.id, true), { code: 'auto-approve-not-allowed' });
+  await assert.rejects(svc.approve(summary, third.id, { title: 'Third' }, { alwaysAllow: true }), { code: 'auto-approve-not-allowed' });
+  assert.equal(mock.calls().length, 3, 'a refused "always allow" sends nothing');
+  policyOverride = {};
+
+  // A disabled connection is not offered, so nothing of it can auto-run.
+  await svc.setEnabled(added.id, false);
+  proposals = (id) => [{ connection_id: id, tool: 'create_issue', arguments: { title: 'While off' }, action_item: 1 }];
+  assert.equal((await svc.suggest(summary)).cards.some((c) => c.arguments.title === 'While off'), false);
+  assert.equal(mock.calls().length, 3);
+  await svc.setEnabled(added.id, true);
+
+  // The switch turns it off: the next suggestion asks again.
+  const off = await svc.setAutoApprove(added.id, false);
+  assert.equal(off.autoApprove, false);
+  proposals = (id) => [{ connection_id: id, tool: 'create_issue', arguments: { title: 'Fourth' }, action_item: 1 }];
+  const fourth = (await svc.suggest(summary)).cards.find((c) => c.arguments.title === 'Fourth');
+  assert.equal(fourth.status, 'proposed');
+  assert.equal(fourth.autoApproveOffered, true);
+  assert.equal(mock.calls().length, 3);
+  // And it survives a restart either way.
+  assert.equal((await service().list()).connections.find((c) => c.id === added.id).autoApprove, false);
+});

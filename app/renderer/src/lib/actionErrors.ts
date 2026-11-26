@@ -13,6 +13,8 @@ export function actionErrorMessage(error: unknown): string {
       return t('actions.error.localNotAllowed');
     case 'email-not-allowed':
       return t('actions.error.emailNotAllowed');
+    case 'auto-approve-not-allowed':
+      return t('actions.error.autoApproveNotAllowed');
     case 'invalid-command':
     case 'invalid-args':
       return t('actions.error.invalidCommand');

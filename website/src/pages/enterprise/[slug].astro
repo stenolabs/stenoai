@@ -1,6 +1,7 @@
 ---
 import BaseLayout from "../../layouts/BaseLayout.astro";
 import IndustryPage from "../../components/IndustryPage.astro";
+import { governmentPictures } from "../../content/government-pictures";
 import { getCollection } from "astro:content";
 
 export async function getStaticPaths() {
@@ -43,5 +44,5 @@ const breadcrumbJsonLd = {
   structuredData={[faqJsonLd, breadcrumbJsonLd]}
 >
   {data.heroVideo && <link slot="head" rel="preload" as="image" href={data.heroVideo.poster} fetchpriority="high" />}
-  <IndustryPage data={data} />
+  <IndustryPage data={data} pictures={data.slug === "government" ? governmentPictures : undefined} />
 </BaseLayout>

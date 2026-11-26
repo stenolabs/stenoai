@@ -1,17 +1,51 @@
 ---
-import { Check, ArrowUpRight, X } from "lucide-react";
+import { Check, ArrowUpRight, X, Play } from "lucide-react";
 import { Nav } from "../sections/Nav";
 import Footer from "../sections/Footer.astro";
 import CTAFooter from "../sections/CTAFooter.astro";
+import Stage from "./Stage.astro";
+import ScrollSeq from "./ScrollSeq.astro";
 import { ALL, COMPLIANCE_BODY, CTA_BRIEFING, BREACHES_VERIFIED, SECTOR_VERIFIED } from "../content/industries.data.js";
+import FilmDialog from "./FilmDialog.astro";
+import { films } from "../content/films.js";
+import "../scroll.css";
 import "../sector.css";
+import LightRoom from "./LightRoom.astro";
+import TakeStill from "./TakeStill.astro";
+import "../def-motion.css";
+import "../le.css";
+import mastRegion from "../content/def-mast.json";
+import terrainRoute from "../content/def-route.json";
+import SectorPicture from "./SectorPicture.astro";
+import ReadMore from "./ReadMore.astro";
+import ReadCard from "./ReadCard.astro";
+import ReadCards from "./ReadCards.astro";
+import ReadCase from "./ReadCase.astro";
+import ReadPanel from "./ReadPanel.astro";
+import { taste } from "../content/taste.js";
+import type { governmentPictures } from "../content/government-pictures";
 
-const { data } = Astro.props;
+interface Props {
+  data: import("astro:content").CollectionEntry<"industries">["data"];
+  pictures?: typeof governmentPictures;
+}
+
+const { data, pictures } = Astro.props;
+const compliance = taste(COMPLIANCE_BODY);
+const complianceDetails = compliance.flatMap(({ folded }, i) => folded ? [`compliance-detail-${i}`] : []);
+const film = films.find((f) => f.slug === data.slug);
+// Defence scroll-motion preview (D1 terrain route, D2 mast, D3 posture stills, D4 doors). Other sectors are untouched.
+const mo = data.slug === "defense";
+// Deployment posture takes: Defence uses its own on-device laptop sequence (deploy-device-def-*); infra and cloud match the home page "Where it runs" cards, same timings.
+const postureSeq = [{ k: "device-def", frames: 61, sw: 1152, sh: 720, start: ".98", end: ".58" }, { k: "infra", frames: 49, sw: 960, sh: 600, start: ".93", end: ".55" }, { k: "cloud", frames: 61, sw: 1152, sh: 720, start: ".88", end: ".52" }];
 const others = ALL.filter((c) => c.slug !== data.slug);
+// Government and law enforcement wrap the use-cases in a light-room stage; other sectors keep the plain markup (defence has its own Stage).
+const GW = data.motion?.corridor ? "div" : Fragment;
+const motion = data.motion; // scroll motion for this sector (government for now); other sectors leave it off and render exactly as before
 
 // Sections are numbered in render order, skipping any the sector doesn't have.
 const order = [
-  data.film && "film",
+  film && "film",
   data.loop && "app",
   data.useCases && "use-cases",
   data.whyNow && "why-now",
@@ -25,6 +59,9 @@ const order = [
 const num = (id) => String(order.indexOf(id) + 1).padStart(2, "0");
 ---
 
+<script is:inline>
+  (function (d, c) { d.dataset.ss = matchMedia('(prefers-reduced-motion: reduce)').matches || (c && c.saveData) ? 'still' : 'on'; })(document.documentElement, navigator.connection);
+</script>
 <Nav subpage client:load />
 
 <main id="main-content" class="mission-site sector-page">
@@ -51,39 +88,37 @@ const num = (id) => String(order.indexOf(id) + 1).padStart(2, "0");
     )}
   </section>
 
-  {data.film && (
+  {film && (
     <section id="film" class="mission-section sector-section sector-film" aria-labelledby="film-heading">
       <div class="mission-wrap">
-        <div class="mission-section-top"><p class="mission-eyebrow">{num("film")} / The film</p></div>
         <div class="sector-film-grid">
           <div>
             <h2 id="film-heading">See it in the room.</h2>
-            <p>A short film on how StenoAI keeps {data.name.toLowerCase()} conversations on hardware you control.</p>
+            <p>A short video on how StenoAI keeps {data.name.toLowerCase()} conversations on hardware you control.</p>
           </div>
-          <video class="sector-film-video" controls playsinline preload="none" poster={data.film.poster} aria-label={data.film.title} width="720" height="1280">
-            <source src={data.film.src} type="video/mp4" />
-            <track kind="captions" srclang="en" label="English" src={data.film.src.replace(/\.mp4$/, ".vtt")} />
-          </video>
+          <a class="film-poster sector-film-picture" href={film.src} data-film-open={film.slug} tabindex="-1" aria-hidden="true"><img src={film.still} alt="" width="1024" height="1536" loading="lazy" decoding="async" /><span class="film-play"><Play size={22} fill="currentColor" strokeWidth={0} /></span></a>
+          <a class="mission-button mission-button-light sector-film-button" href={film.src} data-film-open={film.slug}>Watch video, {film.length}</a>
         </div>
       </div>
     </section>
+    <FilmDialog />
   )}
 
   {data.loop && (
     <section id="app" class="mission-section sector-section sector-loop" aria-labelledby="app-heading">
       <div class="mission-wrap">
-        <div class="mission-section-top"><p class="mission-eyebrow">{num("app")} / In the app</p></div>
         <div class="sector-loop-grid">
           <div>
             <h2 id="app-heading">{data.loop.heading}</h2>
             <p>{data.loop.body}</p>
             <p class="mission-eyebrow sector-loop-label">Illustrative product demo</p>
+            {pictures?.app && <SectorPicture picture={pictures.app} class="sector-app-picture" />}
           </div>
           <div class="sector-loop-media">
             <video class="sector-loop-video" muted loop playsinline preload="none" poster={data.loop.poster} aria-label="Illustrative product demo" disablepictureinpicture disableremoteplayback data-loop>
               <source src={data.loop.src} type="video/mp4" />
             </video>
-            <button type="button" class="mission-text-link sector-loop-toggle" hidden data-loop-toggle>Pause</button>
+            <button type="button" class="mission-text-link sector-loop-toggle" data-pending data-loop-toggle aria-label="Pause illustrative product demo">Pause</button>
           </div>
         </div>
       </div>
@@ -91,68 +126,84 @@ const num = (id) => String(order.indexOf(id) + 1).padStart(2, "0");
   )}
 
   {data.useCases && (
-    <section id="use-cases" class="mission-section sector-section" aria-labelledby="use-cases-heading">
-      <div class="mission-wrap">
-        <div class="mission-section-top"><p class="mission-eyebrow">{num("use-cases")} / Where it is used</p><span class="mission-eyebrow">Illustrative settings · {data.useCases.length}</span></div>
+    <section id="use-cases" class:list={["mission-section", "sector-section", { "has-cases-stage": !!motion?.corridor }]} aria-labelledby="use-cases-heading">
+      <Stage on={mo} ownFit class="stage-uses">
+      <GW {...(motion?.corridor ? { class: "cases-stage" } : {})}><GW {...(motion?.corridor ? { class: "cases-panel" } : {})}>
+      <div class:list={["mission-wrap", { "stage-text": mo }]}>
+        <div class="mission-section-top"><span class="mission-eyebrow">Illustrative settings</span></div>
         <div class="mission-section-heading">
           <h2 id="use-cases-heading">Where it is used,<br />room by room.</h2>
           <p>Settings where the conversation can’t be handed to a cloud vendor, and the record StenoAI produces in each, on your device or your infrastructure.</p>
         </div>
+        <GW {...(motion?.corridor ? { class: "sector-cases-wrap", "data-light-wrap": "" } : {})}>
+        {motion?.corridor && <div class="sector-corridor"><LightRoom {...motion.corridor} cards=".sector-case" /></div>}
+        {mo && <div class="def-pic def-terrain" aria-hidden="true" data-def-terrain data-src="/scroll/def" data-src-phone="/scroll/def/m" data-route={JSON.stringify(terrainRoute)}><div class="def-pic-in"><noscript><picture><source media="(max-width: 767px)" srcset="/scroll/def/m/terrain-lit.webp" /><img src="/scroll/def/terrain-lit.webp" alt="" loading="lazy" decoding="async" /></picture></noscript><canvas></canvas></div></div>}
         <ol class="sector-cases">
-          {data.useCases.map((u) => (
+          {data.useCases.map((u, i) => (
             <li class="sector-case">
-              <div class="sector-case-top"><span class="mission-small-index">{u.code}</span><span class="sector-tag">{u.env}</span></div>
+              <div class="sector-case-top"><span class="sector-tag">{u.env}</span></div>
               <h3>{u.title}</h3>
               <p class="sector-case-outcome">{u.outcome}</p>
-              <p class="sector-case-for"><span class="mission-eyebrow">For</span>{u.for}</p>
-              <ul class="sector-case-outputs">{u.outputs.map((o) => <li>{o}</li>)}</ul>
+              <p class="sector-case-for" id={`use-case-for-${i + 1}`} data-rm-fold="room"><span class="mission-eyebrow">For</span>{u.for}</p>
+              <ul class="sector-case-outputs" id={`use-case-outputs-${i + 1}`} data-rm-fold="room">{u.outputs.map((o) => <li>{o}</li>)}</ul>
+              <ReadMore subject={u.title} controls={`use-case-for-${i + 1} use-case-outputs-${i + 1}`} class="rm-room" />
             </li>
           ))}
         </ol>
+        </GW>
       </div>
+      </GW></GW>
+      </Stage>
     </section>
   )}
 
   {data.whyNow && (
     <section id="why-now" class="mission-section sector-section sector-sunken" aria-labelledby="why-now-heading">
       <div class="mission-wrap">
-        <div class="mission-section-top"><p class="mission-eyebrow">{num("why-now")} / Why now · Public record</p><span class="mission-eyebrow">Verified {SECTOR_VERIFIED}</span></div>
+        <div class="mission-section-top"><span class="mission-eyebrow">Verified {SECTOR_VERIFIED}</span></div>
         <div class="mission-section-heading">
           <h2 id="why-now-heading">{data.whyNow.heading}</h2>
           <p>{data.whyNow.intro}</p>
         </div>
-        <ol class="sector-timeline">
-          {data.whyNow.items.map((item) => (
-            <li>
+        {pictures?.gates && <SectorPicture picture={pictures.gates} class="sector-banner-picture" />}
+        <ReadCards as="ol" id="why-now-cards" class="sector-timeline" subject="Why now" count={data.whyNow.items.length}>
+          {data.whyNow.items.map((item, i) => (
+            <ReadCard as="li" id={`why-now-${i + 1}`} title={item.title}>
+              {pictures?.timeline[i] && <SectorPicture picture={pictures.timeline[i]} class="sector-card-picture" />}
               <p class="mission-eyebrow"><span class="sector-date">{item.date}</span> {item.place}</p>
               <h3>{item.title}</h3>
-              <p>{item.body}</p>
-              <div class="sector-sources">
+              <p class="rm-card-detail">{item.body}</p>
+              <div class="sector-sources rm-card-detail">
                 <a href={item.source.href} target="_blank" rel="noopener noreferrer">{item.source.label}<span class="sr-only"> (opens in a new tab)</span> <ArrowUpRight size={12} aria-hidden="true" /></a>
                 {item.extra && <a href={item.extra.href} target="_blank" rel="noopener noreferrer">{item.extra.label}<span class="sr-only"> (opens in a new tab)</span> <ArrowUpRight size={12} aria-hidden="true" /></a>}
               </div>
-            </li>
+            </ReadCard>
           ))}
-        </ol>
+        </ReadCards>
       </div>
     </section>
   )}
 
   <section id="cloud" class="mission-section sector-section" aria-labelledby="cloud-heading">
     <div class="mission-wrap">
-      <div class="mission-section-top"><p class="mission-eyebrow">{num("cloud")} / Structural risk</p><span class="mission-eyebrow">{data.pains.length} points</span></div>
-      <div class="sector-cloud">
+      <div class:list={["sector-cloud", { "sector-cloud-balanced": mo }]}>
         <div>
           <h2 id="cloud-heading">Why cloud tools don’t fit.</h2>
           <ul class="sector-pains">{data.pains.map((p) => <li>{p}</li>)}</ul>
         </div>
-        <div class="sector-points">
-          {data.points.map((pt) => (
+        <div class="sector-cloud-right">
+          {motion?.papers && <TakeStill {...motion.papers} class="take-still-side" />}
+          <div class="sector-points">
+          {mo && <div class="def-pic def-mast" aria-hidden="true" data-def-mast data-src="/scroll/def" data-src-phone="/scroll/def/m" data-region={JSON.stringify(mastRegion)}><div class="def-pic-in"><noscript><picture><source media="(max-width: 767px)" srcset="/scroll/def/m/mast-start.webp" /><img src="/scroll/def/mast-start.webp" alt="" loading="lazy" decoding="async" /></picture></noscript><canvas></canvas></div></div>}
+          {data.points.map((pt, i) => (
             <div>
               <h3><Check size={15} strokeWidth={2.2} aria-hidden="true" />{pt.h}</h3>
-              <p>{pt.b}</p>
+              <p id={`cloud-point-${i + 1}`} data-rm-fold>{pt.b}</p>
+              <ReadMore subject={pt.h} controls={`cloud-point-${i + 1}`} class="rm-phone" />
             </div>
           ))}
+          </div>
+          <ReadMore subject="Why cloud tools don’t fit" controls={data.points.map((_, i) => `cloud-point-${i + 1}`).join(" ")} class="rm-desktop" />
         </div>
       </div>
     </div>
@@ -161,26 +212,30 @@ const num = (id) => String(order.indexOf(id) + 1).padStart(2, "0");
   {data.policy && (
     <section id="policy" class="mission-section sector-section sector-dark" aria-labelledby="policy-heading">
       <div class="mission-wrap">
-        <div class="mission-section-top"><p class="mission-eyebrow">{num("policy")} / Law & policy</p><span class="mission-eyebrow">Verified {SECTOR_VERIFIED}</span></div>
+        <div class="mission-section-top"><span class="mission-eyebrow">Verified {SECTOR_VERIFIED}</span></div>
         <div class="mission-section-heading">
           <h2 id="policy-heading">{data.policy.heading}</h2>
           <p>{data.policy.intro}</p>
         </div>
-        <div class="sector-policy">
-          {data.policy.cards.map((c) => (
-            <article class="sector-policy-card">
+        {motion?.book && <div class="le-bd le-band" data-le="book" aria-hidden="true"><noscript><picture><source media="(max-width: 767px)" srcset="/scroll/rec/le-poster-m.webp" /><img src="/scroll/rec/le-poster-d.webp" alt="" loading="lazy" decoding="async" /></picture></noscript><canvas></canvas></div>}
+        {pictures?.library && <SectorPicture picture={pictures.library} class="sector-banner-picture" />}
+        <ReadCards id="policy-cards" class="sector-policy" subject="Law and policy" count={data.policy.cards.length}>
+          {data.policy.cards.map((c, i) => (
+            <ReadCard id={`policy-${i + 1}`} title={c.law} class="sector-policy-card">
+              {pictures?.policy[i] && <SectorPicture picture={pictures.policy[i]} class="sector-card-picture" />}
               <h3 class="mission-eyebrow">{c.law}</h3>
-              <dl>
+              <p class="rm-card-preview">{c.so}</p>
+              <dl class="rm-card-detail">
                 <div><dt>It says</dt><dd>{c.says}</dd></div>
                 <div><dt>So</dt><dd>{c.so}</dd></div>
                 <div><dt>Still yours</dt><dd>{c.yours}</dd></div>
               </dl>
-              <div class="sector-sources">
+              <div class="sector-sources rm-card-detail">
                 {c.sources.map((s) => <a href={s.href} target="_blank" rel="noopener noreferrer">{s.label}<span class="sr-only"> (opens in a new tab)</span> <ArrowUpRight size={12} aria-hidden="true" /></a>)}
               </div>
-            </article>
+            </ReadCard>
           ))}
-        </div>
+        </ReadCards>
       </div>
     </section>
   )}
@@ -188,22 +243,17 @@ const num = (id) => String(order.indexOf(id) + 1).padStart(2, "0");
   {data.breaches && (
     <section id="case-files" class="mission-section sector-section" aria-labelledby="case-files-heading">
       <div class="mission-wrap">
-        <div class="mission-section-top"><p class="mission-eyebrow">{num("case-files")} / Case files · Public record</p><span class="mission-eyebrow">Verified {BREACHES_VERIFIED}</span></div>
-        <div class="mission-section-heading">
-          <h2 id="case-files-heading">{data.breaches.heading}</h2>
-          <p>{data.breaches.intro}</p>
+        <div class="mission-section-top"><span class="mission-eyebrow">Verified {BREACHES_VERIFIED}</span></div>
+        <div class:list={["mission-section-heading", { "section-heading-with-picture": !!motion?.drawer }]}>
+          <div>
+            <h2 id="case-files-heading">{data.breaches.heading}</h2>
+            <p>{data.breaches.intro}</p>
+          </div>
+          {motion?.drawer && <TakeStill {...motion.drawer} class="take-still-side" />}
         </div>
-        <div class="sector-cases-files">
-          {data.breaches.items.map((b, i) => (
-            <article class="sector-file">
-              <p class="mission-eyebrow"><span class="mission-small-index">Case 0{i + 1}</span> {b.meta}</p>
-              <h3>{b.title}</h3>
-              <p class="sector-file-what">{b.what}</p>
-              <div class="sector-file-why"><p class="mission-eyebrow">What StenoAI changes</p><p>{b.why}</p></div>
-              <a class="mission-text-link" href={b.source.href} target="_blank" rel="noopener noreferrer">{b.source.label}<span class="sr-only"> (opens in a new tab)</span> <ArrowUpRight size={14} aria-hidden="true" /></a>
-            </article>
-          ))}
-        </div>
+        <ReadCards id="case-file-cards" class="sector-cases-files" subject="Case files" count={data.breaches.items.length}>
+          {data.breaches.items.map((b, i) => <ReadCase incident={b} index={i} variant="sector-file" />)}
+        </ReadCards>
         <p class="sector-note">Each incident is a matter of public record, summarised from the linked source and verified {BREACHES_VERIFIED}. StenoAI is not affiliated with any organisation named here.</p>
       </div>
     </section>
@@ -212,7 +262,6 @@ const num = (id) => String(order.indexOf(id) + 1).padStart(2, "0");
   {data.postures && (
     <section id="postures" class="mission-section sector-section sector-sunken" aria-labelledby="postures-heading">
       <div class="mission-wrap">
-        <div class="mission-section-top"><p class="mission-eyebrow">{num("postures")} / Deployment postures</p><span class="mission-eyebrow">Device → network → tenancy</span></div>
         <div class="mission-section-heading">
           <h2 id="postures-heading">Deployment postures<br />at the edge.</h2>
           <p>One application, three ways to run it. The product doesn’t change; the network around it does, and so does exactly what we can claim.</p>
@@ -220,6 +269,12 @@ const num = (id) => String(order.indexOf(id) + 1).padStart(2, "0");
         <div class="sector-postures">
           {data.postures.map((p, i) => (
             <article class="sector-posture">
+              {mo && (() => { const m = postureSeq[i]; return (
+                <div class="def-posture-media" aria-hidden="true">
+                  <noscript><picture><source media="(max-width: 767px)" srcset={`/scroll/deploy-${m.k}-still-p.webp`} /><img class="def-posture-still" src={`/scroll/deploy-${m.k}-still.webp`} alt="" width={m.sw} height={m.sh} /></picture></noscript>
+                  <ScrollSeq class="def-seq" src={`/scroll/deploy-${m.k}-d`} src-phone={`/scroll/deploy-${m.k}-p`} frames={m.frames} start={m.start} end={m.end} target={`#dpm-${m.k}`} />
+                  <i class="def-posture-mark" id={`dpm-${m.k}`}></i>
+                </div>); })()}
               <p class="mission-eyebrow"><span class="mission-small-index">Posture 0{i + 1}</span> {p.name}</p>
               <h3>{p.title}</h3>
               <p>{p.body}</p>
@@ -236,11 +291,11 @@ const num = (id) => String(order.indexOf(id) + 1).padStart(2, "0");
   {data.notFor && (
     <section id="not-for" class="mission-section sector-section sector-sunken" aria-labelledby="not-for-heading">
       <div class="mission-wrap">
-        <div class="mission-section-top"><p class="mission-eyebrow">{num("not-for")} / Not for</p><span class="mission-eyebrow">{data.notFor.length} lines</span></div>
         <div class="mission-section-heading">
           <h2 id="not-for-heading">What it is not for.</h2>
           <p>Lines StenoAI does not cross, and is never presented as crossing.</p>
         </div>
+        {motion?.recorder && <div class="le-bd le-band le-band-rec" data-le="recorder" aria-hidden="true"><noscript><picture><source media="(max-width: 767px)" srcset="/scroll/le/recorder3-dark-m.webp" /><img src="/scroll/le/recorder3-dark-d.webp" alt="" loading="lazy" decoding="async" /></picture></noscript><canvas></canvas></div>}
         <div class="sector-notfor">
           {data.notFor.map((n) => (
             <div>
@@ -255,31 +310,35 @@ const num = (id) => String(order.indexOf(id) + 1).padStart(2, "0");
 
   <section class="sector-section sector-compliance-wrap">
     <div class="mission-wrap">
-      <div class="sector-compliance">
+      <div class:list={["sector-compliance", { "sector-compliance-with-picture": pictures?.compliance }]}>
         <p class="mission-eyebrow">On compliance</p>
-        <p>{COMPLIANCE_BODY}</p>
+        <p>{compliance.map(({ text, folded }, i) => folded ? (
+          <span id={`compliance-detail-${i}`} data-rm-fold> {text}</span>
+        ) : <Fragment>{i ? " " : ""}{text}</Fragment>)}<ReadMore subject="On compliance" controls={complianceDetails.join(" ")} /></p>
+        {pictures?.compliance && <SectorPicture picture={pictures.compliance} class="sector-compliance-picture" />}
       </div>
     </div>
   </section>
 
   <section id="faq" class="mission-faq mission-section" aria-labelledby="faq-heading">
     <div class="mission-wrap mission-faq-layout">
-      <div><p class="mission-eyebrow">{num("questions")} / Questions</p><h2 id="faq-heading">Questions your<br />security team will ask.</h2></div>
+      <div><h2 id="faq-heading">Questions your<br />security team will ask.</h2>
+        {pictures?.questions && <SectorPicture picture={pictures.questions} class="sector-questions-picture" />}
+      </div>
       <div class="mission-faq-items">
-        {data.faqs.map((f, index) => <details><summary><span class="mission-faq-number">0{index + 1}</span><span>{f.q}</span><span class="mission-faq-symbol" aria-hidden="true"></span></summary><p>{f.a}</p></details>)}
+        {data.faqs.map((f) => <details><summary><span>{f.q}</span><span class="mission-faq-symbol" aria-hidden="true"></span></summary><p>{f.a}</p></details>)}
       </div>
     </div>
   </section>
 
   <section class="sector-section sector-related" aria-labelledby="related-heading">
     <div class="mission-wrap">
-      <div class="mission-section-top"><p class="mission-eyebrow" id="related-heading">Related briefings</p><span class="mission-eyebrow">Also built for</span></div>
+      <div class="mission-section-top"><p class="mission-eyebrow" id="related-heading">Related briefings</p></div>
       <div class="sector-related-grid">
         {others.map((c) => (
           <a class="sector-related-card" href={`/enterprise/${c.slug}/`}>
-            <img src={`/images/enterprise/${c.image}.webp`} alt="" width="1200" height="800" decoding="async" />
+            <img src={`/images/enterprise/${c.image}.webp`} alt="" width="1200" height="800" loading="lazy" decoding="async" />
             <div>
-              <p class="mission-eyebrow">{c.eyebrow}</p>
               <h3>{c.name} <ArrowUpRight size={20} aria-hidden="true" /></h3>
               <p>{c.h1}</p>
             </div>
@@ -289,10 +348,23 @@ const num = (id) => String(order.indexOf(id) + 1).padStart(2, "0");
     </div>
   </section>
 
-  <CTAFooter />
+  <CTAFooter settled />
 </main>
 
 <Footer />
+<ReadPanel />
+
+<script>
+  const boot = () => {
+    import("../scripts/scroll-seq.js");
+    // Scroll motion: only the players this page uses are fetched.
+    if (document.querySelector('[data-light-room]')) import("../scripts/scroll-rooms.js");
+    if (document.querySelector('[data-le]')) import("../scripts/scroll-le.js");
+    if (document.querySelector('[data-def-terrain], [data-def-mast]')) import("../scripts/scroll-def.js");
+  };
+  if (document.readyState === 'complete' || location.hash) boot();
+  else addEventListener('load', boot, { once: true });
+</script>
 
 <script>
   // Hero take: plays once when in view and holds at 4.9 s (the picture stops moving within 5 s), never loops.
@@ -316,11 +388,15 @@ const num = (id) => String(order.indexOf(id) + 1).padStart(2, "0");
   const toggle = document.querySelector<HTMLButtonElement>('[data-loop-toggle]');
   if (loop && toggle) {
     let held = quiet; // user (or reduced motion, data saver) holds it paused
-    const sync = () => { toggle.textContent = loop.paused ? 'Play' : 'Pause'; };
+    const sync = () => {
+      const p = loop.paused;
+      toggle.textContent = p ? 'Play' : 'Pause';
+      toggle.setAttribute('aria-label', p ? 'Play illustrative product demo' : 'Pause illustrative product demo');
+    };
     loop.addEventListener('play', sync);
     loop.addEventListener('pause', sync);
     sync();
-    toggle.hidden = false;
+    toggle.removeAttribute('data-pending');
     toggle.addEventListener('click', () => {
       held = !loop.paused;
       if (held) loop.pause(); else loop.play().catch(() => {});

@@ -11,21 +11,35 @@
 [data-scroll-seq] canvas { display: block; width: 100%; height: 100%; }
 html[data-ss] [data-scroll-seq] { display: block; }
 
-/* Voice waveform (01 / The app): sits behind the section, which paints above it. */
-.scroll-host { position: relative; }
-.scroll-host .mission-platform { position: relative; }
+/* Keep the scrolling waveform in a separate visual area beside the platform introduction. */
+.platform-heading-layout { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); align-items: start; gap: var(--section-content-gap); margin-bottom: var(--section-content-gap); }
+.mission-platform .platform-heading-layout > .mission-section-heading { margin-bottom: 0; }
+.platform-heading-layout .mission-text-link { margin-top: var(--section-content-gap); }
+.platform-visual { position: relative; overflow: hidden; height: clamp(100px, 13vw, 174px); }
+.platform-visual :is(img, [data-scroll-seq]) {
+  mask-image: linear-gradient(to right, transparent, #000 7%, #000 93%, transparent), linear-gradient(to bottom, transparent, #000 12%, #000 69%, transparent);
+  mask-composite: intersect;
+}
+.platform-visual img { position: absolute; left: -86.42%; width: 215.49%; max-width: none; height: auto; transform: translateY(-30.42%); }
+@media (max-width: 899px) {
+  .platform-heading-layout { grid-template-columns: minmax(0, 1fr); gap: 0; }
+}
+@media (max-width: 767px) {
+  .platform-visual img { left: -5.71%; width: 111.43%; transform: translateY(-87.86%); }
+}
 
-/* Cable and doors: the section takes the page colour so the footage floor (#121311) meets it exactly. */
-html[data-ss] .has-stage { background: #121311; }
+/* Cable and doors: the section takes the page colour so the footage floor (#000) meets it exactly. */
+html[data-ss] .has-stage { background: #000; }
 .stage-m { display: none; }
 .stage-m > [data-scroll-seq] { -webkit-mask-image: none; mask-image: none; }
-html[data-ss] .stage-m { display: block; position: relative; background: #121311; width: min(100%, 640px); aspect-ratio: 1024 / 720; margin: 0 auto 24px; }
+html[data-ss] .stage-m, .stage-m:has(> noscript img) { display: block; position: relative; background: #000; width: min(100%, 640px); aspect-ratio: 1024 / 720; margin: 0 auto 24px; }
+.stage-m > noscript img { display: block; width: 100%; height: 100%; object-fit: contain; }
 html[data-ss] .stage-m-doors { width: min(100%, 420px); aspect-ratio: 1; }
 
 /* Flow layout (phones and short windows): the footage sits in a normal-flow box above the text, never over it, and its progress follows its own
    travel through the screen. Phones run the box edge to edge. */
 @media (max-width: 767px) {
-  html[data-ss] .stage-m { width: calc(100% + 40px); margin: 0 -20px 16px; aspect-ratio: 780 / 518; }
+  html[data-ss] .stage-m, .stage-m:has(> noscript img) { width: calc(100% + 40px); margin: 0 -20px 16px; aspect-ratio: 780 / 518; }
   html[data-ss] .stage-m-doors { aspect-ratio: 390 / 300; }
 }
 
@@ -39,24 +53,22 @@ html[data-ss=on] .mission-cta.has-stage h2 > span { color: color-mix(in srgb, #F
 
 /* Tablets (800px tall) and laptops (720px tall) that hold the text: a pinned stage (mirrored in FLOW, scroll-env.js, which also falls back to flow when the text does not fit). The panel stays on screen for the extra scroll length while the footage plays. */
 @media (min-width: 912px) and (min-height: 720px), (min-width: 768px) and (max-width: 911px) and (min-height: 800px) {
-  html[data-ss=on]:not([data-nofit]) .has-stage { padding-top: 0; }
-  html[data-ss=on]:not([data-nofit]) .stage { position: relative; height: calc(100vh + 180vh); height: calc(100svh + 180svh); } /* vh first for browsers without svh */
+  html[data-ss=on]:not([data-nofit]) .has-stage:has(> .stage:not([data-nofit])) { padding-top: 0; scroll-margin-top: -125px; }
+  html[data-ss=on]:not([data-nofit]) .stage:not([data-own-fit]) { position: relative; height: calc(100vh + 180vh); height: calc(100svh + 180svh); } /* vh first for browsers without svh */
   html[data-ss=on]:not([data-nofit]) .stage-cable { height: calc(100vh + 240vh); height: calc(100svh + 240svh); }
-  html[data-ss=on]:not([data-nofit]) .stage-panel { position: sticky; top: 0; height: 100vh; height: 100svh; overflow: hidden; background: #121311; }
-  html[data-ss=on]:not([data-nofit]) .stage-m { position: absolute; inset: 0; z-index: -1; width: auto; aspect-ratio: auto; margin: 0; }
-  html[data-ss=on]:not([data-nofit]) .stage-text { height: 100%; display: flex; flex-direction: column; justify-content: center; padding-top: 84px; box-sizing: border-box; }
+  html[data-ss=on]:not([data-nofit]) .stage:not([data-own-fit]) .stage-panel { position: sticky; top: 0; height: 100vh; height: 100svh; overflow: hidden; background: #000; }
+  html[data-ss=on]:not([data-nofit]) .stage:not([data-own-fit]) .stage-m { position: absolute; inset: 0; z-index: -1; width: auto; aspect-ratio: auto; margin: 0; }
+  html[data-ss=on]:not([data-nofit]) .stage:not([data-own-fit]) .stage-text { height: 100%; display: flex; flex-direction: column; justify-content: center; padding-top: 92px; box-sizing: border-box; }
   html[data-ss=on]:not([data-nofit]) .stage-after { padding-top: 56px; }
 
   /* Cable: the list sits left, the footage fills the right. */
   html[data-ss=on]:not([data-nofit]) .stage-cable .stage-text { justify-content: flex-start; padding-top: 96px; }
   html[data-ss=on]:not([data-nofit]) .stage-cable .mission-assurance-layout { display: block; width: min(36%, 500px); }
-  html[data-ss=on]:not([data-nofit]) .stage-cable .mission-assurance-layout > div:first-child > .mission-lede { margin-top: 20px; }
   html[data-ss=on]:not([data-nofit]) .stage-cable .mission-principles { margin-top: 24px; }
 
   /* Doors: text stacked in the left 45%, footage in the right 55%, nothing over the footage. */
-  html[data-ss=on]:not([data-nofit]) .stage-doors .stage-text { margin-left: max(56px, calc((100% - 1440px) / 2)); width: calc(45% - 24px - max(56px, calc((100% - 1440px) / 2))); max-width: none; padding-top: 80px; }
+  html[data-ss=on]:not([data-nofit]) .stage-doors .stage-text { margin-left: max(56px, calc((100% - 1440px) / 2)); width: calc(45% - 24px - max(56px, calc((100% - 1440px) / 2))); max-width: none; padding-top: 92px; }
   html[data-ss=on]:not([data-nofit]) .stage-doors .mission-cta-content { grid-template-columns: 1fr; gap: 24px; padding: 20px 0 24px; align-items: start; }
-  html[data-ss=on]:not([data-nofit]) .stage-doors .mission-cta-content > div > p { margin-bottom: 22px; }
   html[data-ss=on]:not([data-nofit]) .stage-doors .mission-cta-content .mission-text-link { margin-top: 14px; }
   html[data-ss=on]:not([data-nofit]) .stage-doors .mission-cta-bottom { padding: 16px 0; gap: 12px; flex-wrap: wrap; }
 }
@@ -65,9 +77,8 @@ html[data-ss=on] .mission-cta.has-stage h2 > span { color: color-mix(in srgb, #F
 @media (min-width: 1181px) and (min-height: 720px) { html[data-ss=on]:not([data-nofit]) .stage-doors .stage-text { width: max(calc(45% - 24px - max(56px, calc((100% - 1440px) / 2))), calc(7.15 * clamp(56px, 6.7vw, 96px))); } }
 /* Short laptop screens: tighter spacing inside the cable stage only (type styles unchanged) so the whole list fits the panel. */
 @media (min-width: 912px) and (min-height: 720px) and (max-height: 899px), (min-width: 768px) and (max-width: 911px) and (min-height: 800px) and (max-height: 899px) {
-  html[data-ss=on]:not([data-nofit]) .stage-cable .stage-text { padding-top: 84px; }
+  html[data-ss=on]:not([data-nofit]) .stage-cable .stage-text { padding-top: 92px; }
   html[data-ss=on]:not([data-nofit]) .stage-cable .mission-section-top { margin-bottom: 24px; }
-  html[data-ss=on]:not([data-nofit]) .stage-cable .mission-assurance-layout > div:first-child > .mission-lede { margin-top: 12px; }
   html[data-ss=on]:not([data-nofit]) .stage-cable .mission-assurance-layout .mission-text-link { margin-top: 16px; }
   html[data-ss=on]:not([data-nofit]) .stage-cable .mission-principles { margin-top: 12px; }
   html[data-ss=on]:not([data-nofit]) .stage-cable .mission-principles > div { padding-bottom: 14px; }

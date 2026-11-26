@@ -3,7 +3,7 @@ import type { FormField } from './actionForm';
 /**
  * Plain-language pieces of an action card: "Create page in Notion ·
  * Website content cleanup", and which two or three fields are worth showing
- * inline. Everything else stays under "Show what will be sent".
+ * inline. Everything else is sent as proposed.
  */
 
 /** "Create page" from a tool's title, or from its name ("notion-create-pages"). */

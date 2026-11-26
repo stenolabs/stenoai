@@ -99,11 +99,19 @@ function registerMcpActionsIpc({ ipcMain, getService, validateMeetingFilePath, l
     return getService().suggest(realPath, { auto });
   }));
 
-  ipcMain.handle('actions-approve', wrap('actions-approve', async (summaryFile, cardId, args) => {
+  // options.alwaysAllow: "Always allow for <app>" — approve this and mark the
+  // connection autoApprove (the service checks the org policy).
+  ipcMain.handle('actions-approve', wrap('actions-approve', async (summaryFile, cardId, args, options) => {
     const realPath = await notePath(summaryFile);
     if (!args || typeof args !== 'object' || Array.isArray(args)) throw new ActionError('invalid-arguments', 'Arguments must be an object');
     if (Buffer.byteLength(JSON.stringify(args)) > MAX_ARGS_BYTES) throw new ActionError('invalid-arguments', 'Arguments are too large');
-    return { card: await getService().approve(realPath, requireId(cardId), args) };
+    const alwaysAllow = Boolean(options && typeof options === 'object' && options.alwaysAllow === true);
+    return { card: await getService().approve(realPath, requireId(cardId), args, { alwaysAllow }) };
+  }));
+
+  ipcMain.handle('actions-set-auto-approve', wrap('actions-set-auto-approve', async (id, value) => {
+    if (typeof value !== 'boolean') throw new ActionError('invalid-input', 'Invalid setting');
+    return { connection: await getService().setAutoApprove(requireId(id), value) };
   }));
 
   ipcMain.handle('actions-dismiss', wrap('actions-dismiss', async (summaryFile, cardId) => {

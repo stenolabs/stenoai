@@ -1,5 +1,5 @@
 ---
-import { ArrowUpRight, AudioLines, FileText, HardDrive, Cpu, ShieldCheck } from 'lucide-react';
+import { ArrowUpRight, AudioLines, FileText, HardDrive, Cpu } from 'lucide-react';
 import Stage from '../components/Stage.astro';
 import ScrollSeq from '../components/ScrollSeq.astro';
 // stage: the home page pins this part while the cable is pulled out (scroll.css, scripts/scroll-seq.js). Other pages leave it off.
@@ -17,8 +17,14 @@ const egress = [
 <section id="security" class:list={["mission-assurance mission-section", { "has-stage": stage }]} aria-labelledby="assurance-heading">
   <Stage on={stage} class="stage-cable">
   <div class:list={["mission-wrap", { "stage-text": stage }]}>
-    <div class="mission-section-top"><p class="mission-eyebrow">04 / Verify, don’t trust</p><ShieldCheck size={21} aria-hidden="true" /></div>
-    {stage && <div class="stage-m"><ScrollSeq src="/scroll/cable-d" src-phone="/scroll/cable-p" frames="97" map="-0.27,1.22" place="right" place-phone="fill" start-phone=".8" end-phone=".2" target-phone="bottom" lit="0,.06,.15,.85" lit-phone="0,.25,.5,.75" lit-items=".mission-principles > div" /></div>}
+    {stage && <div class="stage-m">
+      <noscript>
+        <picture>
+          <source media="(max-width: 767px)" srcset="/scroll/cable-p/0048.webp" width="780" height="518" />
+          <img src="/scroll/cable-d/0048.webp" alt="" width="1280" height="900" loading="lazy" decoding="async" />
+        </picture>
+      </noscript>
+      <ScrollSeq src="/scroll/cable-d" src-phone="/scroll/cable-p" frames="49" map="0.15,0.85" map-phone="0,1" place="region" region=".38" region-after=".mission-assurance-layout" region-top="84" place-phone="fill" start-phone=".62" end-phone=".40" target-phone="bottom" lit="0,.06,.15,.85" lit-phone="0,.25,.5,.75" lit-items=".mission-principles > div" /></div>}
     <div class="mission-assurance-layout">
       <div>
         <h2 id="assurance-heading">Don’t take our word for it.<br />Check it.</h2>
@@ -26,17 +32,17 @@ const egress = [
         <a class="mission-text-link" href="https://github.com/stenolabs/stenoai" target="_blank" rel="noopener noreferrer" data-track="github" data-location="assurance">Inspect the source <ArrowUpRight size={16} aria-hidden="true" /></a>
       </div>
       <div class="mission-principles">
-        <div><span>01</span><div><h3>Read the code that touches the audio.</h3><p>MIT-licensed source. Your security team can review every line and every dependency.</p></div></div>
-        <div><span>02</span><div><h3>Trust a build, not a binary.</h3><p>Compile it in your own environment and evaluate it against your own requirements.</p></div></div>
-        <div><span>03</span><div><h3>Pull the cable. It keeps working.</h3><p>Once the app and models are installed, local mode runs with no network connection at all.</p></div></div>
-        <div><span>04</span><div><h3>We tell you what does go out.</h3><p>The full list is below. Meeting content only ever goes to an endpoint you run or choose.</p></div></div>
+        <div class="is-lit"><div><h3>Read the code that touches the audio.</h3><p>MIT-licensed source. Your security team can review every line and every dependency.</p></div></div>
+        <div><div><h3>Trust a build, not a binary.</h3><p>Compile it in your own environment and evaluate it against your own requirements.</p></div></div>
+        <div><div><h3>Pull the cable. It keeps working.</h3><p>Once the app and models are installed, local mode runs with no network connection at all.</p></div></div>
+        <div><div><h3>We tell you what does go out.</h3><p>The full list is below. Meeting content only ever goes to an endpoint you run or choose.</p></div></div>
       </div>
     </div>
   </div>
   </Stage>
   <div class:list={["mission-wrap", { "stage-after": stage }]}>
     <div class="mission-boundary">
-      <div class="mission-boundary-top"><span class="mission-eyebrow">Your boundary / device or your infrastructure</span><span class="mission-eyebrow">Meeting content stays inside <span class="mission-status-dot"></span></span></div>
+      <div class="mission-boundary-top"><span class="mission-eyebrow">Your boundary: device or your infrastructure</span><span class="mission-eyebrow">Meeting content stays inside <span class="mission-status-dot"></span></span></div>
       <div class="mission-pipeline">
         {steps.map(({icon: Icon, title, detail}, index) => <div class="mission-pipeline-step"><span class="mission-pipeline-index">0{index + 1}</span><Icon size={27} strokeWidth={1} aria-hidden="true" /><div><h3>{title}</h3><p>{detail}</p></div>{index < 3 && <span class="mission-pipeline-arrow" aria-hidden="true">→</span>}</div>)}
       </div>

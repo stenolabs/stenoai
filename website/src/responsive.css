@@ -32,20 +32,29 @@
   .mission-site .platform-meeting-header p, .mission-site .platform-meeting-header span,
   .mission-site .platform-audio-sources span, .mission-site dl dt { font-size: 10px; }
 
-  /* Touch targets: standalone text links get a 44px tall hit area; small links grow their hit area without
-     moving anything; footer links get a little more room between them. */
+  /* Small inline links can grow their hit area without moving the surrounding copy. */
   .mission-site .mission-text-link, .mission-cta .mission-text-link { min-height: 44px; }
-  .mission-header .mission-utility a, .mission-header .mission-brand, .mission-footer-brand > a,
-  .mission-site .mission-hero-bottom > a, .mission-site .sector-sources a, .mission-site dd > a,
-  .mission-footer .mission-footer-bottom a { position: relative; }
-  .mission-header .mission-utility a::after, .mission-header .mission-brand::after, .mission-footer-brand > a::after,
-  .mission-site .mission-hero-bottom > a::after, .mission-site .sector-sources a::after, .mission-site dd > a::after,
-  .mission-footer .mission-footer-bottom a::after { content: ''; position: absolute; left: -6px; right: -6px; top: 50%; height: 40px; transform: translateY(-50%); }
-  .mission-footer li + li { margin-top: 4px; }
-  .mission-footer li a { padding-block: 8px; }
+  .mission-header .mission-brand, .mission-site .mission-hero-bottom > a,
+  .mission-site .sector-sources a, .mission-site dd > a { position: relative; }
+  .mission-header .mission-brand::after, .mission-site .mission-hero-bottom > a::after,
+  .mission-site .sector-sources a::after, .mission-site dd > a::after { content: ''; position: absolute; left: -6px; right: -6px; top: 50%; height: 44px; transform: translateY(-50%); }
 
   /* Customer logos: an even three by two grid instead of a ragged wrap. */
   .mission-trust ul { display: grid; grid-template-columns: repeat(3, 1fr); justify-items: center; gap: 26px 12px; }
+}
+
+@media (max-width: 767px), (orientation: landscape) and (max-height: 500px) and (pointer: coarse) {
+  .mission-header { top: -45px; }
+  .mission-header .mission-utility { height: 45px; }
+  .mission-header .mission-utility a { min-height: 44px; }
+  .mission-nav-github { width: 44px; height: 44px; }
+  .mission-footer li + li { margin-top: 0; }
+  .mission-footer a, .legal-nav .back {
+    display: inline-flex; align-items: center; min-width: 44px; min-height: 44px;
+  }
+  .comparison-installers .btn-base, main.container-site > .btn-base[href="/"],
+  .briefing-sectors label > span { min-width: 44px; min-height: 44px; }
+  .briefing-sectors label > span { display: flex; align-items: center; }
 }
 
 /* ---- Comparison table on phones: one row per feature, the two products side by side under its name ---- */

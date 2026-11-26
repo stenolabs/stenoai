@@ -1,0 +1,152 @@
+/* Epilogue across the marketing pages: one family replaces Inter and JetBrains Mono.
+   Loaded after every other sheet. The triple :root lifts these over the page-scoped rules without !important. */
+
+/* Local fallback sized to Epilogue so the swap does not move the layout. */
+@font-face {
+  font-family: 'Epilogue Fallback';
+  src: local('Arial');
+  size-adjust: 110%;
+  ascent-override: 71.8%;
+  descent-override: 21.8%;
+  line-gap-override: 0%;
+}
+
+/* The drawn app screen keeps its own app fonts. */
+:root:root:root .platform-console {
+  --font-sans: 'Inter', -apple-system, 'Segoe UI', 'Helvetica Neue', sans-serif;
+  --font-mono: 'JetBrains Mono', 'SF Mono', 'Menlo', 'Consolas', monospace;
+  font-family: var(--font-sans);
+  letter-spacing: normal;
+}
+:root:root:root .platform-console :is(h3, h4, strong) { letter-spacing: normal; }
+
+/* Body text: no tracking, a slightly open word space so words never run together. */
+:root:root:root body { letter-spacing: 0; word-spacing: .06em; }
+
+/* ── Headings: 500, tracking eases from -0.04em at display sizes to -0.01em at small ── */
+:root:root:root :is(h1, h2, h3, h4):not(.platform-console *) { font-weight: 500; text-wrap: balance; }
+:root:root:root :is(.mission-hero h1, .mission-site h2, .mission-cta h2, .industry-hero h1, .download-page h1, .briefing-intro h1, .mission-capability-value) { letter-spacing: -.045em; word-spacing: .06em; }
+:root:root:root :is(.mission-sector-image h3, .download-options h2, .download-install h2) { letter-spacing: -.035em; }
+:root:root:root :is(.mission-edition h3, .sector-related-card h3) { letter-spacing: -.035em; }
+:root:root:root :is(.mission-threat h3, .mission-sector-body h4, .mission-deploy-mode h3, .sector-file h3, .sector-posture h3, .sector-timeline h3) { letter-spacing: -.03em; }
+:root:root:root :is(.sector-case h3) { letter-spacing: -.03em; }
+:root:root:root .sector-timeline h3 { letter-spacing: -.035em; word-spacing: .05em; margin-right: -18px; }
+:root:root:root :is(.mission-principles h3, .mission-workflow-tabs strong) { letter-spacing: -.02em; }
+:root:root:root :is(.sector-points h3, .sector-notfor h3) { letter-spacing: -.02em; }
+:root:root:root :is(.mission-capability-value, .ent-compare, .mission-deploy-models, .mega-n) { font-variant-numeric: tabular-nums; }
+
+/* Epilogue runs about 8 percent wider than Inter, so every heading size below is today's size x 0.89 to hold the same line counts. */
+:root { --hs: .89; }
+:root:root:root .mission-hero h1 { font-size: calc(clamp(60px, 6.15vw, 98px) * var(--hs)); max-width: 16ch; }
+:root:root:root .mission-site h2 { font-size: calc(clamp(36px, 3.8vw, 58px) * var(--hs)); }
+:root:root:root .mission-assurance h2 { font-size: calc(clamp(34px, 3.4vw, 52px) * var(--hs)); }
+:root:root:root .mission-faq h2 { font-size: calc(clamp(34px, 3.3vw, 48px) * var(--hs)); }
+:root:root:root .mission-cta h2 { font-size: calc(clamp(56px, 6.7vw, 96px) * var(--hs)); }
+:root:root:root .industry-hero h1 { font-size: calc(clamp(40px, 4.3vw, 66px) * var(--hs)); }
+:root:root:root .download-page h1 { font-size: calc(clamp(45px, 5vw, 72px) * var(--hs)); }
+:root:root:root .briefing-intro h1 { font-size: calc(clamp(38px, 4.2vw, 62px) * var(--hs)); }
+:root:root:root .mission-capability-value { font-size: calc(46px * var(--hs)); }
+:root:root:root .mission-sector-image h3 { font-size: calc(42px * var(--hs)); }
+:root:root:root .download-options h2 { font-size: calc(30px * var(--hs)); }
+:root:root:root .download-install h2 { font-size: calc(32px * var(--hs)); }
+:root:root:root .mission-edition h3 { font-size: calc(30px * var(--hs)); }
+:root:root:root .sector-related-card h3 { font-size: calc(26px * var(--hs)); }
+:root:root:root :is(.mission-sector-body h4, .mission-deploy-mode h3) { font-size: calc(25px * var(--hs)); }
+:root:root:root .mission-threat h3 { font-size: calc(24px * var(--hs)); }
+:root:root:root .sector-posture h3 { font-size: calc(23px * var(--hs)); }
+:root:root:root .sector-file h3 { font-size: calc(22px * var(--hs)); }
+:root:root:root .sector-timeline h3 { font-size: calc(20px * var(--hs)); }
+:root:root:root .sector-case h3 { font-size: calc(19px * var(--hs)); }
+:root:root:root :is(.mission-principles h3, .mission-workflow-tabs strong) { font-size: calc(17px * var(--hs)); }
+:root:root:root :is(.sector-points h3, .sector-notfor h3) { font-size: calc(16px * var(--hs)); }
+@media (max-width: 1099px) {
+  :root:root:root .mission-hero h1 { font-size: calc(clamp(66px, 7.5vw, 83px) * var(--hs)); }
+  :root:root:root .mission-capability-value { font-size: calc(35px * var(--hs)); }
+  :root:root:root .mission-sector-image h3 { font-size: calc(38px * var(--hs)); }
+  :root:root:root .mission-workflow-tabs strong { font-size: calc(15px * var(--hs)); }
+}
+@media (max-width: 767px) {
+  :root:root:root .mission-site h2 { font-size: calc(clamp(32px, 7.9vw, 44px) * var(--hs)); }
+  :root:root:root .mission-hero h1 { font-size: calc(clamp(48px, 10.2vw, 76px) * var(--hs)); }
+  :root:root:root .mission-cta h2 { font-size: calc(clamp(52px, 12vw, 70px) * var(--hs)); }
+  :root:root:root .mission-capability-value { font-size: calc(38px * var(--hs)); }
+  :root:root:root .mission-sector-image h3 { font-size: calc(44px * var(--hs)); }
+  :root:root:root .mission-deploy-mode h3 { font-size: calc(22px * var(--hs)); }
+  :root:root:root .mission-edition h3 { font-size: calc(25px * var(--hs)); }
+  :root:root:root .mission-threat h3 { font-size: calc(21px * var(--hs)); }
+  :root:root:root .mission-workflow-tabs strong { font-size: calc(17px * var(--hs)); }
+}
+
+/* ── Labels and buttons: 500, never under 12 px, capitals kept readable ── */
+:root:root:root :where(
+  .mission-eyebrow, .mission-button, .mission-utility, .mission-hero-caption, .mission-hero-caption > span:first-child,
+  .mission-hero-bottom > span, .mission-small-index, .mission-workflow-number, .mission-sector-tags, .mission-principles > div > span,
+  .mission-pipeline-index, .mission-pipeline p, .mission-faq-number, .mission-cta-bottom, .mission-footer-bottom,
+  .mission-deploy-models li span, .mission-mobile-menu a > span, .mission-section-top .mission-text-link,
+  .industry-hero-chips span, .sector-tag, .sector-case-outputs li, .sector-policy-card dt, .sector-policy-card h3,
+  .ent-compare thead th, .ent-compare td::before, .ent-flow .tm,
+  .mega-h, .mega-fk, .mega-tag, .mega-open, .mega-n, .mega-ro dt,
+  .platform-demo-caption, .platform-demo-caption > span, .mission-architecture-note, .mission-cta-content .mission-text-link, .vs-table thead th
+) { font-size: 12px; font-weight: 500; letter-spacing: .06em; word-spacing: .1em; font-variant-numeric: tabular-nums; }
+:root:root:root :is(.mission-button, .mission-hero-bottom > span, .mission-cta-bottom, .mission-footer-bottom, .mission-pipeline p) { letter-spacing: .04em; }
+:root:root:root :is(.mission-utility, .mission-small-index, .mission-faq-number, .mission-pipeline-index) { letter-spacing: .04em; }
+:root:root:root :is(.mission-nav-item > a, .mission-text-link) { font-weight: 500; letter-spacing: .01em; word-spacing: .06em; }
+:root:root:root .mission-capabilities h3 { font-size: 13px; }
+:root:root:root .mission-capabilities p { font-size: 12px; }
+:root:root:root .mission-site .mission-eyebrow { font-weight: 500; }
+
+/* Form text 16 px on phones so Safari does not zoom. */
+@media (max-width: 767px) {
+  :root:root:root .briefing-form :is(input, textarea) { font-size: 16px; }
+}
+
+/* ── Optical centring ──
+   Epilogue sits about .09em high in its line box for capitals and figures. Boxed labels get that much more
+   space above than below (same box height); loose labels move down by the same amount. */
+:root:root:root :is(.mission-button) { padding-block: calc(15px + .09em) calc(15px - .09em); }
+:root:root:root .mission-nav .mission-button { padding-block: calc(11px + .09em) calc(11px - .09em); }
+:root:root:root :is(.sector-tag, .sector-case-outputs li, .mega-tag) { padding-block: calc(4px + .09em) calc(4px - .09em); }
+:root:root:root .btn-base { padding-block: calc(10px + .04em) calc(10px - .04em); }
+:root:root:root .btn-base.btn-sm { padding-block: calc(7px + .04em) calc(7px - .04em); }
+:root:root:root .gh-stars-chip { padding-block: calc(1px + .06em) calc(1px - .06em); }
+:root:root:root :is(.mission-eyebrow, .mission-small-index, .mission-faq-number, .industry-hero-chips span, .mission-hero-bottom > span, .mission-utility > span, .mission-mobile-menu a > span, .mega-h, .mega-fk, .mega-open, .mega-n, .sector-policy-card dt, .briefing-facts dt, .briefing-label, .download-steps b, .ent-compare thead th) { position: relative; top: .09em; }
+:root:root:root :is(.mission-capability-value, .mission-workflow-number) { position: relative; top: .05em; }
+:root:root:root :is(.mission-nav-item > a, .mission-text-link, .mission-utility a) { position: relative; top: .04em; }
+
+/* Phones: the 7 px utility bar becomes 12 px; capitals would need more than the screen is wide, so it reads in sentence case. */
+@media (max-width: 767px) {
+  :root:root:root .mission-utility { text-transform: none; letter-spacing: 0; word-spacing: .1em; }
+  :root:root:root .mission-boundary-top .mission-eyebrow { text-transform: none; letter-spacing: .02em; word-spacing: .1em; }
+}
+
+/* Page-scoped sheets (download, briefing) carry extra attribute selectors, so these four-root-plus rules out-rank them. */
+:root:root:root:root:root :is(.download-options h2 span, .download-steps b, .briefing-facts dt, .briefing-label) { font-size: 12px; font-weight: 500; letter-spacing: .06em; word-spacing: .1em; word-spacing: .1em; font-variant-numeric: tabular-nums; }
+:root:root:root:root:root .download-options article > span { font-size: 12px; }
+:root:root:root:root:root:root:root :is(.download-steps b, .briefing-facts dt, .briefing-label) { position: relative; top: .09em; }
+:root:root:root:root[data-ss=on] .stage-rooms:not([data-nofit]) .sector-note { font-size: 12px; }
+@media (max-width: 767px) {
+  :root:root:root .mission-egress dt { font-size: 12px; }
+}
+:root:root:root :is(.platform-demo-caption, .mission-sector-tags) { letter-spacing: .04em; }
+@media (max-width: 900px) {
+  :root:root:root .platform-demo-caption { text-transform: none; letter-spacing: .04em; }
+}
+@media (min-width: 768px) and (max-width: 1099px) {
+  :root:root:root .mission-sector-tags { text-transform: none; font-weight: 400; letter-spacing: 0; word-spacing: .06em; }
+}
+
+/* Measures set in ch: the Epilogue "0" is a little narrower than the text it sets, so give each measure back 12 percent. */
+:root { --chx: 1.12; }
+:root:root:root .mission-films .mission-section-heading > p { max-width: calc(43ch * var(--chx)); }
+:root:root:root .mission-hero-description { max-width: calc(43ch * var(--chx)); }
+:root:root:root .mission-sector-body p { max-width: calc(49ch * var(--chx)); }
+:root:root:root .mission-deploy-mode p { max-width: calc(42ch * var(--chx)); }
+:root:root:root .mission-lede { max-width: calc(41ch * var(--chx)); }
+:root:root:root .sector-film-grid p, :root:root:root .sector-loop-grid p:not(.mission-eyebrow) { max-width: calc(43ch * var(--chx)); }
+:root:root:root :is(.ent-deploy-lead, .download-install details > p) { max-width: calc(70ch * var(--chx)); }
+:root:root:root .briefing-intro > p:not(.mission-eyebrow) { max-width: calc(46ch * var(--chx)); }
+:root:root:root .briefing-intro h1 { max-width: calc(13ch * var(--chx)); }
+@media (max-width: 767px) {
+  :root:root:root .mission-hero-description { max-width: calc(36ch * var(--chx)); }
+}
+:root:root:root .mission-faq-compare { max-width: calc(34ch * var(--chx)); }

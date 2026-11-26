@@ -93,5 +93,22 @@ class BedrockConverseUrlTests(unittest.TestCase):
             bedrock_converse_url("us-east-1\n", "model-x")
 
 
+
+class BedrockConverseStreamUrlTests(unittest.TestCase):
+    def test_stream_flag_targets_converse_stream_with_same_encoding(self):
+        arn = "arn:aws:bedrock:eu-west-2:745078845594:application-inference-profile/acgdk9re2ouo"
+        url = bedrock_converse_url("eu-west-2", arn, stream=True)
+        self.assertEqual(
+            url,
+            "https://bedrock-runtime.eu-west-2.amazonaws.com/model/"
+            "arn%3Aaws%3Abedrock%3Aeu-west-2%3A745078845594%3A"
+            "application-inference-profile%2Facgdk9re2ouo/converse-stream",
+        )
+
+    def test_stream_url_rejects_malformed_region_too(self):
+        with self.assertRaises(ValueError):
+            bedrock_converse_url("x@127.0.0.1:8443/", "m", stream=True)
+
+
 if __name__ == "__main__":
     unittest.main()

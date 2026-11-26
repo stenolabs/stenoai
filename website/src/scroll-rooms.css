@@ -1,0 +1,95 @@
+/* Light rooms (scripts/scroll-rooms.js, components/LightRoom.astro): the picture IS the page background there, no frame or visible box.
+   html[data-ss] is "on" (scroll-driven), "still" (reduced motion, data saver) or absent (no JavaScript). */
+.light-room { --dark: var(--dark-d); --lit: var(--lit-d); position: relative; width: 100%; pointer-events: none; overflow: hidden;
+  -webkit-mask-image: linear-gradient(to right, transparent 0, #000 6%, #000 94%, transparent 100%), linear-gradient(to bottom, transparent 0, #000 8%, #000 92%, transparent 100%);
+  -webkit-mask-composite: source-in;
+  mask-image: linear-gradient(to right, transparent 0, #000 6%, #000 94%, transparent 100%), linear-gradient(to bottom, transparent 0, #000 8%, #000 92%, transparent 100%);
+  mask-composite: intersect; }
+.light-room-lighten { mix-blend-mode: lighten; }
+@media (max-width: 767px) { .light-room { --dark: var(--dark-p); --lit: var(--lit-p); } }
+.lr-dark, .lr-full, .lr-l { position: absolute; display: none; background-repeat: no-repeat; }
+.lr-dark, .lr-full { inset: 0; background-size: 100% 100%; }
+.lr-l { left: calc(var(--x) * 100%); top: calc(var(--y) * 100%); width: calc(var(--w) * 100%); height: calc(var(--h) * 100%);
+  background-image: var(--lit); background-size: calc(100% / var(--w)) calc(100% / var(--h)); background-position: var(--px) var(--py); opacity: 0; will-change: opacity;
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 10%, #000 90%, transparent), linear-gradient(to bottom, transparent, #000 10%, #000 90%, transparent); -webkit-mask-composite: source-in;
+  mask-image: linear-gradient(to right, transparent, #000 10%, #000 90%, transparent), linear-gradient(to bottom, transparent, #000 10%, #000 90%, transparent); mask-composite: intersect; }
+.lr-dark { background-image: var(--dark); }
+.lr-full { background-image: var(--lit); }
+/* No JavaScript: the settled lit picture. */
+html:not([data-ss]) .lr-full { display: block; }
+/* Reduced motion, data saver: the settled lit picture, fetched near the screen only. */
+html[data-ss=still] .light-room.is-near .lr-full { display: block; }
+/* Scroll-driven: the dark picture, and the lit one through a soft window per door. */
+html[data-ss=on] .light-room { opacity: 0; }
+html[data-ss=on] .light-room.is-ready { opacity: 1; transition: opacity .6s; }
+html[data-ss=on] .light-room.is-near .lr-dark, html[data-ss=on] .light-room.is-near .lr-l { display: block; }
+@media (prefers-reduced-motion: reduce) { html[data-ss=on] .light-room.is-ready { transition: none; } }
+
+/* Government and Law enforcement use-cases. The corridor sits above the cards in flow layout and sticks below the header on taller phones. */
+.sector-corridor { width: 100%; margin: 0 0 28px; }
+.sector-corridor .light-room { width: min(100%, 620px); margin: 0 auto; }
+@media (max-width: 767px) {
+  .sector-corridor { width: calc(100% + 40px); margin: 0 -20px 20px; }
+  .sector-corridor .light-room { width: calc(100% - 40px); }
+}
+@media (max-width: 767px) and (orientation: portrait), (max-width: 767px) and (min-height: 501px) {
+  html[data-ss=on] .sector-corridor { position: sticky; top: var(--hdr, 72px); z-index: 4; background: #000; padding-bottom: 6px; }
+  html[data-ss=on] .sector-corridor::after { content: ""; position: absolute; left: 0; right: 0; bottom: -18px; height: 18px; pointer-events: none; background: linear-gradient(#000, rgba(0, 0, 0, 0)); }
+}
+
+/* Laptops and wider that are tall enough for the text: a pinned stage (about 240svh) like the home cable stage. The eight cards become a list on the left (the active one opens),
+   the corridor fills the right at full brightness, one door light per card. The cards' text stays in the DOM; mirrored in scripts/scroll-rooms.js (PIN). */
+.cases-stage.is-measuring * { transition: none !important; }
+@media (min-width: 1100px) and (min-height: 860px) {
+  html[data-ss=on] .has-cases-stage:has(> .cases-stage:not([data-nofit])) { padding: 0; scroll-margin-top: -125px; }
+  html[data-ss=on] .cases-stage:not([data-nofit]) { position: relative; height: calc(100vh + 140vh); height: calc(100svh + 140svh); }
+  html[data-ss=on] .cases-stage:not([data-nofit]) .cases-panel { position: sticky; top: 0; height: 100vh; height: 100svh; overflow: hidden; box-sizing: border-box; padding-top: 96px; background: #000; }
+  html[data-ss=on] .cases-stage:not([data-nofit]) .cases-panel .mission-section-top { margin-bottom: 24px; }
+  html[data-ss=on] .cases-stage:not([data-nofit]) .cases-panel .mission-section-heading { --section-content-gap: 24px; }
+  html[data-ss=on] .cases-stage:not([data-nofit]) .sector-cases-wrap { display: grid; grid-template-columns: minmax(420px, 36fr) minmax(0, 64fr); gap: 48px; align-items: center; }
+  html[data-ss=on] .cases-stage:not([data-nofit]) .sector-corridor { grid-column: 2; grid-row: 1; margin: 0; width: 100%; }
+  html[data-ss=on] .cases-stage:not([data-nofit]) .sector-corridor .light-room { width: 100%; }
+  /* Every row keeps its closed height and lower rows shift with transform (0 CLS); .sector-cases holds exact room for the tallest open card so the corridor never shifts. */
+  html[data-ss=on] .cases-stage:not([data-nofit]) .sector-cases { grid-column: 1; grid-row: 1; display: block; align-self: start; overflow: hidden; border-bottom: 1px solid var(--border-strong); }
+  html[data-ss=on] .cases-stage:not([data-nofit]) .sector-case, html[data-ss=on] .cases-stage:not([data-nofit]) .sector-case:not(:nth-child(4n + 1)) { display: grid; grid-template-columns: minmax(0, 1fr); align-content: start; box-sizing: border-box; padding: 10px 0; border-left: 0; border-bottom: 0; opacity: .74; transition: opacity .2s ease, transform .22s cubic-bezier(.2, 0, 0, 1); }
+  html[data-ss=on] .cases-stage:not([data-nofit]) .sector-case + .sector-case { border-top: 1px solid var(--border-strong); padding-bottom: 10px; }
+  html[data-ss=on] .cases-stage:not([data-nofit]) .sector-case > * { grid-column: 1; }
+  html[data-ss=on] .cases-stage:not([data-nofit]) .sector-case-top { display: contents; }
+  html[data-ss=on] .cases-stage:not([data-nofit]) .sector-case-top > .sector-tag { grid-column: 1; grid-row: 2; justify-self: start; margin-top: 8px; padding: 3px 8px; }
+  html[data-ss=on] .cases-stage:not([data-nofit]) .sector-case h3 { grid-column: 1; grid-row: 1; margin-top: 0; font-size: 18px; line-height: 22px; }
+  html[data-ss=on] .cases-stage:not([data-nofit]) .sector-case-outcome { grid-row: 3; margin-top: 8px; }
+  html[data-ss=on] .cases-stage:not([data-nofit]) .sector-case-for { grid-row: 4; margin-top: 8px; }
+  html[data-ss=on] .cases-stage:not([data-nofit]) .sector-case-outputs { grid-row: 5; padding-top: 8px; }
+  html[data-ss=on] .cases-stage:not([data-nofit]) .sector-case:not(.is-active) :is(.sector-tag, .sector-case-outcome, .sector-case-for, .sector-case-outputs) { opacity: 0; pointer-events: none; clip-path: inset(0 0 100% 0); transition: opacity .1s ease; }
+  html[data-ss=on] .cases-stage:not([data-nofit]) .sector-case.is-active { opacity: 1; }
+  html[data-ss=on] .cases-stage:not([data-nofit]) .sector-case.is-active :is(.sector-tag, .sector-case-outcome, .sector-case-for, .sector-case-outputs) { opacity: 1; pointer-events: auto; clip-path: inset(0 0 0 0); transition: opacity .18s ease .04s, clip-path .22s ease; }
+  html[data-ss=on] .cases-stage.is-measuring .sector-case:not(.is-active) :is(.sector-tag, .sector-case-outcome, .sector-case-for, .sector-case-outputs) { max-height: 0; margin: 0; padding: 0; border-width: 0; overflow: hidden; }
+}
+@media (min-width: 1100px) and (min-height: 860px) and (max-height: 899px) {
+  html[data-ss=on] .cases-stage:not([data-nofit]) .cases-panel { padding-top: 92px; }
+  html[data-ss=on] .cases-stage:not([data-nofit]) .cases-panel .mission-section-top { margin-bottom: 14px; }
+  html[data-ss=on] .cases-stage:not([data-nofit]) .cases-panel .mission-section-heading { --section-content-gap: 14px; }
+}
+
+/* Takes (papers, drawer): the start still of a later take, beside the heading, in its own clear space at full brightness. */
+.take-still { position: relative; width: min(100%, var(--tw, 1100px)); margin: 0 auto; pointer-events: none; overflow: hidden;
+  -webkit-mask-image: linear-gradient(to right, transparent 0, #000 8%, #000 92%, transparent 100%), linear-gradient(to bottom, transparent 0, #000 10%, #000 90%, transparent 100%);
+  -webkit-mask-composite: source-in;
+  mask-image: linear-gradient(to right, transparent 0, #000 8%, #000 92%, transparent 100%), linear-gradient(to bottom, transparent 0, #000 10%, #000 90%, transparent 100%);
+  mask-composite: intersect; }
+.take-still img { display: block; width: 100%; height: 100%; object-fit: contain; }
+.take-still-side { width: 100%; }
+.sector-cloud-right { display: flex; flex-direction: column; gap: 28px; min-width: 0; }
+@media (max-width: 1099px) { .sector-cloud-right .take-still { margin-bottom: 8px; } }
+@media (max-width: 767px) { .take-still-side { width: calc(100% + 40px); margin-left: -20px; } }
+@media (max-width: 899px) { .section-heading-with-picture > .take-still { width: min(100%, 440px); margin: 0 auto; } }
+@media (max-width: 767px) { .section-heading-with-picture > .take-still { width: min(100%, 340px); margin: 0 auto; } }
+
+/* Takes as scroll sequences (papers, drawer): the frames are plain black where there is no object, so screen-blending them over the page leaves the page colour untouched (no box).
+   Without JavaScript the start still stays; the player draws the settled last frame under reduced motion and data saver. */
+.take-seq { -webkit-mask-image: none; mask-image: none; overflow: visible; }
+.take-mark { position: absolute; left: 0; top: 50%; width: 1px; height: 1px; pointer-events: none; }
+html[data-ss] .take-seq .take-fallback { display: none; }
+.take-seq [data-scroll-seq], html[data-ss] .take-seq [data-scroll-seq] { mix-blend-mode: screen;
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 8%, #000 92%, transparent), linear-gradient(to bottom, transparent, #000 3%, #000 97%, transparent); -webkit-mask-composite: source-in;
+  mask-image: linear-gradient(to right, transparent, #000 8%, #000 92%, transparent), linear-gradient(to bottom, transparent, #000 3%, #000 97%, transparent); mask-composite: intersect; } /* the table's far edge fades out at both sides: no line crosses the box */

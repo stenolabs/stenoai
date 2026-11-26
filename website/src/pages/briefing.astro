@@ -8,7 +8,7 @@ import { ArrowUpRight, Copy, Mail } from "lucide-react";
 // Briefing requests. The site is static, so nothing is submitted to a server: the form composes an email to the
 // briefing address and offers four ways to send it, because a bare mailto: link does nothing on devices with no
 // default mail app (most managed and webmail-only machines).
-const title = "Request a briefing — StenoAI";
+const title = "Request a briefing | StenoAI";
 const description = "Request a StenoAI briefing for your organisation: deployment on your devices or your own infrastructure, security review and evaluation.";
 const SECTORS = ["Government", "Defence", "Law enforcement", "Other"];
 ---
@@ -27,13 +27,26 @@ const SECTORS = ["Government", "Defence", "Law enforcement", "Other"];
         </dl>
       </div>
 
-      <form class="briefing-form" data-briefing novalidate>
+      <div data-briefing-fallback>
+        <p>You send it from your own email account.</p>
+        <a href={`mailto:${BRIEFING_EMAIL}`}>{BRIEFING_EMAIL}</a>
+      </div>
+      <form class="briefing-form ph-no-capture" data-briefing method="post" novalidate hidden>
         <div class="briefing-row">
-          <label><span class="briefing-label">Name</span><input name="name" autocomplete="name" required /></label>
-          <label><span class="briefing-label">Work email</span><input name="email" type="email" autocomplete="email" required /></label>
+          <div>
+            <label><span class="briefing-label">Name</span><input name="name" autocomplete="name" aria-describedby="briefing-error-name" required /></label>
+            <p class="briefing-error" id="briefing-error-name" hidden></p>
+          </div>
+          <div>
+            <label><span class="briefing-label">Work email</span><input name="email" type="email" autocomplete="email" spellcheck="false" aria-describedby="briefing-error-email" required /></label>
+            <p class="briefing-error" id="briefing-error-email" hidden></p>
+          </div>
         </div>
         <div class="briefing-row">
-          <label><span class="briefing-label">Organisation</span><input name="org" autocomplete="organization" required /></label>
+          <div>
+            <label><span class="briefing-label">Organisation</span><input name="org" autocomplete="organization" aria-describedby="briefing-error-org" required /></label>
+            <p class="briefing-error" id="briefing-error-org" hidden></p>
+          </div>
           <label><span class="briefing-label">Team size</span><input name="size" inputmode="numeric" placeholder="Optional" /></label>
         </div>
         <fieldset class="briefing-sectors">
@@ -41,8 +54,8 @@ const SECTORS = ["Government", "Defence", "Law enforcement", "Other"];
           {SECTORS.map((s, i) => <label><input type="radio" name="sector" value={s} checked={i === 0} /><span>{s}</span></label>)}
         </fieldset>
         <label><span class="briefing-label">What should the briefing cover?</span><textarea name="note" rows="4" placeholder="Optional: the meetings you want to record, where it must run, timelines"></textarea></label>
-        <p class="briefing-error" data-briefing-error hidden>Please add your name, a work email and your organisation.</p>
-        <button type="submit" class="mission-button mission-button-dark" data-track="demo_request" data-location="briefing_form">Write the email <ArrowUpRight size={16} aria-hidden="true" /></button>
+        <span class="sr-only" data-briefing-status role="status"></span>
+        <button type="submit" class="mission-button mission-button-dark" data-track="demo_request" data-location="briefing_form">Write the email</button>
 
         <div class="briefing-send" data-briefing-send hidden>
           <p class="briefing-send-h">Your email is ready. Send it from:</p>
@@ -72,10 +85,12 @@ const SECTORS = ["Government", "Defence", "Law enforcement", "Other"];
   .briefing-facts a { text-decoration: underline; text-underline-offset: 4px; }
 
   .briefing-form { display: grid; gap: 18px; padding: clamp(22px, 3vw, 36px); background: var(--surface-raised); border: 1px solid var(--border-strong); }
+  .briefing-form[hidden], .briefing-send[hidden] { display: none; }
+  [data-briefing-fallback] a { text-decoration: underline; text-underline-offset: 4px; }
   .briefing-row { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
   .briefing-form label { display: grid; gap: 8px; }
   .briefing-label { font: 10px var(--font-mono); letter-spacing: .1em; text-transform: uppercase; color: var(--fg-2); }
-  .briefing-form input:not([type='radio']), .briefing-form textarea { width: 100%; padding: 12px 14px; font: 15px var(--font-sans); color: var(--fg-1); background: var(--page); border: 1px solid var(--border-strong); border-radius: 0; }
+  .briefing-form input:not([type='radio']), .briefing-form textarea { width: 100%; padding: 12px 14px; font: 16px var(--font-sans); color: var(--fg-1); background: var(--page); border: 1px solid var(--border-strong); border-radius: 0; }
   .briefing-form input:focus-visible, .briefing-form textarea:focus-visible { outline: 2px solid var(--fg-1); outline-offset: 1px; }
   .briefing-form textarea { resize: vertical; min-height: 104px; }
   .briefing-form [aria-invalid='true'] { border-color: var(--recording); }
@@ -86,7 +101,7 @@ const SECTORS = ["Government", "Defence", "Law enforcement", "Other"];
   .briefing-sectors label span { padding: 9px 14px; font-size: 13.5px; border: 1px solid var(--border-strong); transition: background .15s, color .15s; }
   .briefing-sectors input:checked + span { background: var(--fg-1); color: var(--page); border-color: var(--fg-1); }
   .briefing-sectors input:focus-visible + span { outline: 2px solid var(--fg-1); outline-offset: 2px; }
-  .briefing-error { margin: 0; font-size: 13.5px; color: var(--recording); }
+  .briefing-error { margin: 6px 0 0; font-size: 13.5px; color: var(--recording); }
   .briefing-form > .mission-button { justify-self: start; }
 
   .briefing-send { display: grid; gap: 14px; margin-top: 6px; padding-top: 22px; border-top: 1px solid var(--border-strong); }
@@ -106,23 +121,50 @@ const SECTORS = ["Government", "Defence", "Law enforcement", "Other"];
   const form = document.querySelector('[data-briefing]');
   if (form) {
     const send = form.querySelector('[data-briefing-send]');
-    const error = form.querySelector('[data-briefing-error]');
+    const status = form.querySelector('[data-briefing-status]');
     const copyLabel = form.querySelector('[data-copy-label]');
+    const links = Object.fromEntries([...send.querySelectorAll('[data-send]')].map((link) => [link.dataset.send, link]));
+    const messages = {
+      name: 'Please add your name.',
+      email: 'Please add a valid work email.',
+      org: 'Please add your organisation.',
+    };
     let mail = null;
-    const required = ['name', 'email', 'org'];
+    const clearDraft = () => {
+      mail = null;
+      send.hidden = true;
+      for (const link of Object.values(links)) link.removeAttribute('href');
+      copyLabel.textContent = 'Copy the email';
+      status.textContent = '';
+    };
+    const setError = (input, message) => {
+      const error = document.getElementById(input.getAttribute('aria-describedby'));
+      error.textContent = message;
+      error.hidden = !message;
+      if (message) input.setAttribute('aria-invalid', 'true');
+      else input.removeAttribute('aria-invalid');
+    };
+    form.addEventListener('input', (event) => {
+      clearDraft();
+      if (event.target.getAttribute('aria-invalid') === 'true') setError(event.target, '');
+    });
     form.addEventListener('submit', (event) => {
       event.preventDefault();
+      clearDraft();
       const data = new FormData(form);
-      const get = (k) => String(data.get(k) || '').trim();
-      let ok = true;
-      for (const k of required) {
-        const input = form.elements[k];
-        const bad = !get(k) || (k === 'email' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(get(k)));
-        input.setAttribute('aria-invalid', bad ? 'true' : 'false');
-        if (bad && ok) { input.focus(); ok = false; }
+      const get = (key) => String(data.get(key) || '').trim();
+      let firstInvalid;
+      for (const [key, message] of Object.entries(messages)) {
+        const input = form.elements.namedItem(key);
+        const bad = !get(key) || (key === 'email' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(get(key)));
+        setError(input, bad ? message : '');
+        if (bad && !firstInvalid) firstInvalid = input;
       }
-      error.hidden = ok;
-      if (!ok) return;
+      if (firstInvalid) {
+        status.textContent = 'Please check the highlighted fields.';
+        firstInvalid.focus();
+        return;
+      }
       const subject = `StenoAI briefing request: ${get('org')}`;
       const body = [
         'Hi StenoAI team,',
@@ -142,20 +184,24 @@ const SECTORS = ["Government", "Defence", "Law enforcement", "Other"];
       ].join('\n').replace(/\n{3,}/g, '\n\n');
       mail = { subject, body };
       const q = (s) => encodeURIComponent(s);
-      form.querySelector('[data-send="mailto"]').href = `mailto:${to}?subject=${q(subject)}&body=${q(body)}`;
-      form.querySelector('[data-send="gmail"]').href = `https://mail.google.com/mail/?view=cm&fs=1&to=${q(to)}&su=${q(subject)}&body=${q(body)}`;
-      form.querySelector('[data-send="outlook"]').href = `https://outlook.office.com/mail/deeplink/compose?to=${q(to)}&subject=${q(subject)}&body=${q(body)}`;
+      links.mailto.href = `mailto:${to}?subject=${q(subject)}&body=${q(body)}`;
+      links.gmail.href = `https://mail.google.com/mail/?view=cm&fs=1&to=${q(to)}&su=${q(subject)}&body=${q(body)}`;
+      links.outlook.href = `https://outlook.office.com/mail/deeplink/compose?to=${q(to)}&subject=${q(subject)}&body=${q(body)}`;
       send.hidden = false;
-      copyLabel.textContent = 'Copy the email';
-      send.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      status.textContent = 'Your email is ready.';
+      send.scrollIntoView({ block: 'nearest' });
       // Try the device's mail app straight away; the other options stay on screen in case nothing opens.
-      window.location.href = form.querySelector('[data-send="mailto"]').href;
+      window.location.href = links.mailto.href;
     });
     form.querySelector('[data-copy]')?.addEventListener('click', async () => {
       if (!mail) return;
-      const text = `To: ${to}\nSubject: ${mail.subject}\n\n${mail.body}`;
-      try { await navigator.clipboard.writeText(text); copyLabel.textContent = 'Copied'; }
-      catch { copyLabel.textContent = `Email ${to}`; }
+      const draft = mail;
+      const text = `To: ${to}\nSubject: ${draft.subject}\n\n${draft.body}`;
+      try { await navigator.clipboard.writeText(text); if (mail === draft) copyLabel.textContent = 'Copied'; }
+      catch { if (mail === draft) copyLabel.textContent = `Email ${to}`; }
     });
+    clearDraft();
+    form.hidden = false;
+    document.querySelector('[data-briefing-fallback]').hidden = true;
   }
 </script>

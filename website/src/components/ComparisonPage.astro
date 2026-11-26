@@ -1,10 +1,8 @@
 ---
-import { Check, Minus, X, Plus, ArrowRight } from "lucide-react";
+import { Check, Minus, X, Plus, ArrowRight, ArrowDown } from "lucide-react";
 import { Nav } from "../sections/Nav";
 import Footer from "../sections/Footer.astro";
 import CTAFooter from "../sections/CTAFooter.astro";
-import AppleIcon from "./icons/AppleIcon.astro";
-import WindowsIcon from "./icons/WindowsIcon.astro";
 import { ALL, VERIFIED } from "../content/comparisons.data.js";
 
 const { data } = Astro.props;
@@ -14,11 +12,11 @@ const DOWNLOAD_ARM = "https://github.com/stenolabs/stenoai/releases/latest/downl
 const DOWNLOAD_WIN = "https://github.com/stenolabs/stenoai/releases/latest/download/stenoAI-windows-x64.exe";
 
 const H2_STYLE = {
-  fontFamily: "var(--font-serif)",
-  fontWeight: 400,
-  fontSize: "clamp(28px, 3.6vw, 40px)",
+  fontFamily: "var(--font-sans)",
+  fontWeight: 500,
+  fontSize: "clamp(26px, 3.33vw, 37px)",
   lineHeight: 1.1,
-  letterSpacing: "-0.02em",
+  letterSpacing: "-0.035em",
   color: "var(--fg-1)",
 };
 
@@ -42,38 +40,39 @@ function toneIconMarkup(tone) {
       </p>
       <h1
         style={{
-          fontFamily: "var(--font-serif)",
-          fontWeight: 400,
-          fontSize: "clamp(36px, 5vw, 58px)",
+          fontFamily: "var(--font-sans)",
+          fontWeight: 500,
+          fontSize: "clamp(32px, 4.45vw, 51.5px)",
           lineHeight: 1.05,
-          letterSpacing: "-0.025em",
+          letterSpacing: "-0.045em",
+          wordSpacing: "0.06em",
           color: "var(--fg-1)",
-          maxWidth: "24ch",
+          maxWidth: "27ch",
         }}
       >
         {data.h1}
       </h1>
-      <p class="text-fg-2 text-lg leading-[1.6] mt-6" style="max-width: 66ch">
+      <p class="text-fg-2 text-lg leading-[1.6] mt-6" style="max-width: 74ch">
         {data.intro}
       </p>
-      <div class="flex gap-[10px] flex-wrap mt-8">
+      <div class="comparison-installers flex gap-[10px] flex-wrap mt-8">
         <a
           href={DOWNLOAD_ARM}
           data-track="download"
           data-location={`vs_${data.slug}`}
           data-arch="arm64"
-          class="btn-base btn-primary inline-flex items-center gap-2 no-underline hover:no-underline"
+          class="mission-button mission-button-dark"
         >
-          <AppleIcon size={15} /> Download for macOS
+          Download for macOS <ArrowDown size={15} aria-hidden="true" />
         </a>
         <a
           href={DOWNLOAD_WIN}
           data-track="download"
           data-location={`vs_${data.slug}`}
           data-arch="win-x64"
-          class="btn-base btn-ghost inline-flex items-center gap-2 no-underline hover:no-underline"
+          class="mission-button mission-button-outline"
         >
-          <WindowsIcon size={15} /> Windows (alpha)
+          Windows (alpha) <ArrowDown size={15} aria-hidden="true" />
         </a>
       </div>
     </div>
@@ -118,9 +117,9 @@ function toneIconMarkup(tone) {
           </tbody>
         </table>
       </div>
-      <p class="text-fg-muted text-[13px] mt-4" style="max-width: 70ch">
+      <p class="text-fg-muted text-[13px] mt-4" style="max-width: 78ch">
         {data.name} details taken from its public website and documentation, verified {VERIFIED}. Pricing
-        and features change — check their site for current terms.
+        and features change; check their site for current terms.
       </p>
     </div>
   </section>
@@ -130,13 +129,13 @@ function toneIconMarkup(tone) {
       <blockquote class="m-0 py-2 pl-6 md:pl-8" style="border-left: 2px solid var(--fg-1)">
         <p
           style={{
-            fontFamily: "var(--font-serif)",
+            fontFamily: "var(--font-sans)",
             fontWeight: 400,
-            fontSize: "clamp(20px, 2.6vw, 26px)",
+            fontSize: "clamp(18.5px, 2.4vw, 24px)",
             lineHeight: 1.4,
-            letterSpacing: "-0.01em",
+            letterSpacing: "-0.025em",
             color: "var(--fg-1)",
-            maxWidth: "52ch",
+            maxWidth: "64ch",
           }}
         >
           {data.verdict}
@@ -194,7 +193,7 @@ function toneIconMarkup(tone) {
               </span>
             </button>
             <div class="faq-panel overflow-hidden" style="height: 0">
-              <p class="text-fg-2 text-[15px] leading-[1.6] pb-6" style="max-width: 62ch">{f.a}</p>
+              <p class="text-fg-2 text-[15px] leading-[1.6] pb-6" style="max-width: 69ch">{f.a}</p>
             </div>
           </div>
         ))}
@@ -222,7 +221,7 @@ function toneIconMarkup(tone) {
 <Footer />
 
 <script>
-  // Plain accordion — no React hydration needed for a show/hide toggle.
+  // Plain accordion: no React hydration needed for a show/hide toggle.
   // Both Plus/Minus icons are pre-rendered; this just swaps which is visible
   // and animates the panel height.
   document.querySelectorAll("[data-faq-toggle]").forEach((btn) => {

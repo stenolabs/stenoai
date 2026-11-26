@@ -4108,6 +4108,13 @@ function runChatAgent({ queryId, payload, tools, entry, send, cleanup, runPlain 
     if (proposed.rejected) return { status: 'rejected', missing: proposed.missing };
     if (cancelled) return { status: 'declined' };
     send('query-action-card', { card: proposed.card });
+    // "Always allow" for this app: the service already ran it. Done feeds the
+    // model straight away; a failure keeps the card open to retry or dismiss,
+    // exactly as a failed Approve does.
+    if (proposed.auto && proposed.card.status === 'done') {
+      const card = proposed.card;
+      return { status: 'done', auto: true, text: [card.result?.text, card.result?.link].filter(Boolean).join('\n') };
+    }
     return pending.wait(proposed.card.id);
   };
   const emit = (kind, data) => {
@@ -4156,15 +4163,17 @@ function chatActionFailure(e) {
 // Approve an action card the chat agent paused on: the same approve() as a
 // note's cards (schema validation, org policy, audit). A failure keeps the
 // card open so the user can retry or dismiss; success feeds the result back.
-ipcMain.handle('chat-action-approve', async (event, queryId, cardId, args) => {
+// options.alwaysAllow marks the connection "Always allow" as well.
+ipcMain.handle('chat-action-approve', async (event, queryId, cardId, args, options) => {
   const found = chatAgentFor(event, queryId, cardId);
   if (!found) return { success: false, error_code: 'not-found', error: 'This action is no longer waiting for approval' };
   if (!args || typeof args !== 'object' || Array.isArray(args) || Buffer.byteLength(JSON.stringify(args)) > 256 * 1024) {
     return { success: false, error_code: 'invalid-arguments', error: 'Arguments must be an object' };
   }
+  const alwaysAllow = Boolean(options && typeof options === 'object' && options.alwaysAllow === true);
   const { entry, agent } = found;
   try {
-    const card = await agent.service.approve(agent.chatKey, cardId, args);
+    const card = await agent.service.approve(agent.chatKey, cardId, args, { alwaysAllow });
     if (!entry.sender.isDestroyed()) entry.sender.send('query-action-card', { queryId, card });
     if (card.status === 'done') {
       agent.pending.settle(cardId, { status: 'done', text: [card.result?.text, card.result?.link].filter(Boolean).join('\n') });
@@ -9327,13 +9336,15 @@ async function getActionsPolicy() {
       // endpoint allowlist they are off unless it says yes (mcp-actions.js).
       ...(typeof p?.mcp_local_commands_enabled === 'boolean' ? { localCommandsAllowed: p.mcp_local_commands_enabled } : {}),
       emailDraftsAllowed: p?.mcp_email_drafts_enabled !== false,
+      // "Always allow for <app>" (actions without a card): on unless the org says no.
+      autoApproveAllowed: p?.mcp_auto_approve_allowed !== false,
       managed: true,
     };
     actionsPolicyCache = { at: nowMs, value };
     return value;
   } catch (_) {
     if (actionsPolicyCache && nowMs - actionsPolicyCache.at < ACTIONS_POLICY_STALE_MS) return actionsPolicyCache.value;
-    return { actionsEnabled: false, endpointAllowlist: [], localCommandsAllowed: false, emailDraftsAllowed: false, managed: true, reason: 'policy-unavailable' };
+    return { actionsEnabled: false, endpointAllowlist: [], localCommandsAllowed: false, emailDraftsAllowed: false, autoApproveAllowed: false, managed: true, reason: 'policy-unavailable' };
   }
 }
 

@@ -1,0 +1,89 @@
+/* /enterprise/ page: the few rules the sector classes do not already cover. Same tokens, type and rules as sector.css. */
+.ent-adds-actions { margin-top: 40px; }
+
+/* Community and Enterprise, row by row. */
+.ent-compare { width: 100%; border-collapse: collapse; border-top: 1px solid var(--border-strong); }
+.ent-compare th, .ent-compare td { text-align: left; vertical-align: top; padding: 22px 28px 22px 0; border-bottom: 1px solid var(--border-strong); }
+.ent-compare thead th { padding-top: 16px; padding-bottom: 16px; font: 10px var(--font-mono); letter-spacing: .115em; text-transform: uppercase; color: var(--fg-2); }
+.ent-compare thead th:last-child { color: var(--green-text); }
+.ent-compare tbody th { width: 18%; font-size: 16px; font-weight: 500; letter-spacing: -.015em; }
+.ent-compare td { width: 41%; font-size: 14px; line-height: 1.65; color: var(--fg-2); }
+.ent-compare td + td { padding-left: 28px; padding-right: 0; border-left: 1px solid var(--border-strong); color: var(--fg-1); }
+
+/* With your Enterprise deployment: the Enterprise edition card, full width, one line per item. */
+.ent-deploy { margin-top: 40px; }
+.ent-deploy-lead { font-size: 14px; line-height: 1.7; color: var(--fg-2); margin-top: 14px; max-width: 70ch; }
+.ent-deploy ul { margin-bottom: 22px; }
+.ent-deploy li { display: grid; grid-template-columns: minmax(0, 1fr) 2fr; gap: 12px 28px; }
+.ent-deploy li strong { font-weight: 500; color: var(--fg-1); }
+.ent-deploy-more { font-size: 13px; color: var(--fg-1); }
+@media (max-width: 767px) { .ent-deploy li { grid-template-columns: 1fr; gap: 4px; } }
+
+.ent-boundary { margin-top: 0; }
+
+/* Diagram: lines and boxes in the site's thin line style. */
+.ent-flow { padding: 36px 32px 40px; }
+.ent-flow svg { display: block; width: 100%; height: auto; overflow: visible; }
+.ent-flow .ph { display: none; }
+.ent-flow rect, .ent-flow path { fill: none; stroke: var(--fg-1); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.ent-flow [data-flow-line] { stroke: var(--fg-2); }
+.ent-flow .flow-highlight { stroke-width: 2; stroke-dasharray: 1; stroke-dashoffset: 1; }
+@media (prefers-reduced-motion: reduce) { .ent-flow .flow-highlight { display: none; } }
+.ent-flow .dash { stroke: var(--fg-2); stroke-dasharray: 3 6; }
+.ent-flow text { fill: var(--fg-1); font-family: var(--font-sans); }
+.ent-flow .tm { font: 11px var(--font-mono); letter-spacing: .1em; text-transform: uppercase; fill: var(--fg-2); }
+.ent-flow .t1 { font-size: 22px; letter-spacing: -.025em; }
+.ent-flow .t1s { font-size: 17px; letter-spacing: -.02em; }
+.ent-flow .t2 { font-size: 14px; fill: var(--fg-2); }
+.ent-flow .t2s { font-size: 12.5px; fill: var(--fg-2); }
+.ent-flow .t3 { font-size: 16px; fill: var(--fg-2); }
+.ent-flow image { mix-blend-mode: screen; }
+
+/* Six rooms: three across on wide screens (the sector pages have eight, four across). */
+@media (min-width: 1100px) {
+  .ent-cases { grid-template-columns: repeat(3, 1fr); }
+  .ent-cases .sector-case { padding-left: 28px; padding-right: 28px; border-left: 1px solid var(--border-strong); }
+  .ent-cases .sector-case:nth-child(3n + 1) { padding-left: 0; border-left: 0; }
+}
+
+/* Public sector strip. */
+.ent-strip-wrap { padding-bottom: 72px; }
+.ent-strip { align-items: center; }
+.ent-strip-links { display: flex; flex-wrap: wrap; gap: 14px 36px; }
+
+@media (max-width: 767px) {
+  .ent-flow { padding: 24px 12px 28px; }
+  .ent-flow .dk { display: none; }
+  .ent-flow .ph { display: block; }
+  .ent-compare, .ent-compare tbody, .ent-compare tr, .ent-compare th, .ent-compare td { display: block; width: auto; }
+  .ent-compare thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+  .ent-compare tr { padding: 22px 0; border-bottom: 1px solid var(--border-strong); }
+  .ent-compare th, .ent-compare td, .ent-compare tbody th, .ent-compare td + td { padding: 0; border: 0; }
+  .ent-compare tbody th { width: auto; margin-bottom: 10px; }
+  .ent-compare td + td { margin-top: 14px; }
+  .ent-compare td::before { content: attr(data-label); display: block; margin-bottom: 4px; font: 9px var(--font-mono); letter-spacing: .115em; text-transform: uppercase; color: var(--fg-2); }
+  .ent-compare td + td::before { color: var(--green-text); }
+}
+
+/* Critical no-JS / pre-load rules for scroll-light & sequence stills (prevents eager fallback fetches under html[data-ss=on]). */
+[data-scroll-light] { position: relative; width: 100%; height: 100%; pointer-events: none; }
+[data-scroll-light] picture, [data-scroll-light] img { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+[data-scroll-light] img { object-fit: contain; mix-blend-mode: screen; -webkit-mask-image: linear-gradient(to bottom, #000 86%, transparent 99.5%); mask-image: linear-gradient(to bottom, #000 86%, transparent 99.5%); }
+html[data-ss=on] [data-scroll-light] picture, html[data-ss=on] [data-scroll-light] img { display: none; }
+.ent-obj { position: relative; aspect-ratio: 16 / 10; margin: -6px 0 14px; }
+.sector-points .ent-obj + h3 { margin-top: 0; }
+@media (max-width: 767px) { .ent-obj { aspect-ratio: 4 / 3; } }
+.ent-obj img { -webkit-mask-image: linear-gradient(to bottom, #000 86%, transparent 99.5%), linear-gradient(to right, transparent, #000 12%, #000 88%, transparent); -webkit-mask-composite: source-in; mask-image: linear-gradient(to bottom, #000 86%, transparent 99.5%), linear-gradient(to right, transparent, #000 12%, #000 88%, transparent); mask-composite: intersect; }
+.stage-m-rooms { display: none; mix-blend-mode: screen; }
+html[data-ss] .ent-card-fig img, html[data-ss] .ent-fleet img { display: none; }
+.ent-card-fig { position: relative; display: block; width: min(100%, 380px); aspect-ratio: 860 / 648; mix-blend-mode: screen; }
+.ent-card-fig img { display: block; width: 100%; height: auto; -webkit-mask-image: linear-gradient(to bottom, transparent, #000 12%, #000 70%, transparent), linear-gradient(to right, transparent, #000 16%, #000 84%, transparent); -webkit-mask-composite: source-in; mask-image: linear-gradient(to bottom, transparent, #000 12%, #000 70%, transparent), linear-gradient(to right, transparent, #000 16%, #000 84%, transparent); mask-composite: intersect; }
+@media (min-width: 1100px) {
+  .ent-card-fig { justify-self: end; }
+}
+@media (max-width: 1099px) {
+  .ent-card-fig img { -webkit-mask-image: linear-gradient(to bottom, transparent, #000 18%, #000 66%, transparent), linear-gradient(to right, transparent, #000 24%, #000 76%, transparent); mask-image: linear-gradient(to bottom, transparent, #000 18%, #000 66%, transparent), linear-gradient(to right, transparent, #000 24%, #000 76%, transparent); }
+}
+.ent-fleet { position: relative; margin: 0 0 40px; aspect-ratio: 1178 / 608; overflow: visible; mix-blend-mode: screen; }
+.ent-fleet img { display: block; width: 100%; height: 100%; object-fit: contain; object-position: 50% 50%; }
+@media (max-width: 767px) { .ent-fleet { aspect-ratio: 580 / 498; } }

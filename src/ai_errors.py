@@ -39,11 +39,16 @@ class ContextTooLargeError(ValueError):
 
 
 # Machine-readable provider codes / error types (never message text).
+# The Bedrock entries are the ``x-amzn-ErrorType`` / event-stream
+# ``:exception-type`` class names (lower-cased), e.g. ``throttlingException``.
 _QUOTA_CODES = {'insufficient_quota', 'billing_error', 'billing_hard_limit_reached', 'credit_balance_too_low'}
 _CONTEXT_CODES = {'context_length_exceeded', 'request_too_large', 'string_above_max_length'}
-_AUTH_CODES = {'invalid_api_key', 'authentication_error', 'permission_error', 'invalid_x_api_key'}
-_RATE_CODES = {'rate_limit_exceeded', 'rate_limit_error', 'overloaded_error'}
-_MODEL_CODES = {'model_not_found', 'not_found_error'}
+_AUTH_CODES = {'invalid_api_key', 'authentication_error', 'permission_error', 'invalid_x_api_key',
+               'accessdeniedexception'}
+_RATE_CODES = {'rate_limit_exceeded', 'rate_limit_error', 'overloaded_error',
+               'throttlingexception', 'serviceunavailableexception'}
+_MODEL_CODES = {'model_not_found', 'not_found_error', 'resourcenotfoundexception'}
+_TIMEOUT_CODES = {'modeltimeoutexception'}
 
 _TYPE_NAMES = {
     'OllamaNotRunningError': OLLAMA_UNREACHABLE,
@@ -125,6 +130,8 @@ def _classify_one(exc):
         return MODEL_MISSING
     if codes & _RATE_CODES:
         return RATE_LIMIT
+    if codes & _TIMEOUT_CODES:
+        return TIMEOUT
     status = _status(exc)
     if status is not None:
         # The server answered: classify by status alone (an HTTPError is also

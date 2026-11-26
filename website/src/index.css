@@ -3,7 +3,7 @@
 /* ── Dark mode variant (class-based) ── */
 @custom-variant dark (&:where(.dark, .dark *));
 
-/* Ovo (brand wordmark/serif), self-hosted — avoids a Google Fonts dependency. */
+/* Ovo (brand wordmark/serif), self-hosted; avoids a Google Fonts dependency. */
 @font-face {
   font-family: 'Ovo';
   font-style: normal;
@@ -61,8 +61,8 @@
   --shadow-demo: 0 0 0 1px rgba(27, 27, 25, 0.06), 0 0 40px rgba(27, 27, 25, 0.12), 0 16px 40px -8px rgba(27, 27, 25, 0.16);
 
   --font-serif: 'Ovo', Georgia, serif;
-  --font-sans:  'Inter', -apple-system, 'Segoe UI', 'Helvetica Neue', sans-serif;
-  --font-mono:  'JetBrains Mono', 'SF Mono', 'Menlo', 'Consolas', monospace;
+  --font-sans:  'Epilogue', 'Epilogue Fallback', -apple-system, 'Segoe UI', 'Helvetica Neue', sans-serif;
+  --font-mono:  'Epilogue', 'Epilogue Fallback', -apple-system, 'Segoe UI', 'Helvetica Neue', sans-serif;
 
   --ease: cubic-bezier(0.2, 0, 0, 1);
   --dur-fast: 120ms;
@@ -74,13 +74,13 @@
    Semantic tokens - dark mode
    ═══════════════════════════════════════════════════ */
 .dark {
-  --page:                #121311;
-  --surface:             #121311;
-  --surface-raised:      #1B1D1A;
-  --surface-sunken:      #0C0D0B;
-  --surface-hover:       #1B1D1A;
+  --page:                #000;
+  --surface:             #000;
+  --surface-raised:      #0A0B0A;
+  --surface-sunken:      #000;
+  --surface-hover:       #141513;
   --surface-active:      #242722;
-  --surface-translucent: rgba(18, 19, 17, 0.82);
+  --surface-translucent: rgba(0, 0, 0, 0.82);
 
   --fg-1:      #FFFFFF;
   --fg-2:      #B4B8AF;
@@ -274,7 +274,7 @@
   color: var(--primary-fg);
 }
 
-/* How it works — step cards */
+/* How it works: step cards */
 .step-card {
   position: relative;
   height: 100%;
@@ -375,7 +375,7 @@
 }
 
 /* ═══════════════════════════════════════════════════
-   /vs/ comparison pages — ledger-style table
+   /vs/ comparison pages: ledger-style table
    ═══════════════════════════════════════════════════ */
 .vs-table-wrap {
   overflow-x: auto;

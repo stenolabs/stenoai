@@ -87,10 +87,10 @@ export function SuggestedActions({
             <ActionCardView
               card={card}
               approving={approvingId === card.id}
-              onApprove={async (args) => {
+              onApprove={async (args, options) => {
                 setApprovingId(card.id);
                 try {
-                  await approve.mutateAsync({ cardId: card.id, args });
+                  await approve.mutateAsync({ cardId: card.id, args, options });
                 } finally {
                   setApprovingId(null);
                 }

@@ -3,9 +3,9 @@ import { ALL as ALL_COMPARISONS } from './content/comparisons.data.js'
 import { ALL as ALL_INDUSTRIES } from './content/industries.data.js'
 
 // Both collections are backed by a small custom loader (not `glob`) so the
-// plain-JS data modules — which use a shared `STENO` object + `ROW()` helper
+// plain-JS data modules (which use a shared `STENO` object + `ROW()` helper
 // constructor to dedupe Steno's own claims across every comparison page, and
-// a shared `COMPLIANCE_BODY` string across every industry page — keep
+// a shared `COMPLIANCE_BODY` string across every industry page) keep
 // working exactly as authored, instead of being flattened into per-entry
 // JSON/YAML/MD files that can't share computed values.
 
@@ -106,6 +106,8 @@ const industries = defineCollection({
     heroVideo: z.object({ src: z.string(), poster: z.string(), position: z.string().optional() }).optional(),
     loop: z.object({ src: z.string(), poster: z.string(), heading: z.string(), body: z.string() }).optional(),
     film: z.object({ src: z.string(), poster: z.string(), title: z.string() }).optional(),
+    // Scroll motion assets for the page (corridor lights, take stills, doors stage); see components/LightRoom.astro.
+    motion: z.any().optional(),
     faqs: z.array(faqSchema),
   }),
 })

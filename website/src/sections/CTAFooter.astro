@@ -4,16 +4,25 @@ import { CTA_BRIEFING } from '../content/industries.data';
 import Stage from '../components/Stage.astro';
 import ScrollSeq from '../components/ScrollSeq.astro';
 // stage: the home page pins this banner while the doors close (scroll.css, scripts/scroll-seq.js). Every other page leaves it off.
-const { stage = false } = Astro.props;
+const { stage = false, settled = false } = Astro.props;
 ---
-<section id="download" class:list={["mission-cta", { "has-stage": stage }]}>
+<section id="download" class:list={["mission-cta", { "has-stage": stage, "cta-with-still": settled }]}>
   <Stage on={stage} class="stage-doors">
   <div class:list={["mission-wrap", { "stage-text": stage }]}>
-    <p class="mission-eyebrow">Your next conversation deserves better.</p>
     {stage && <div class="stage-m stage-m-doors"><ScrollSeq src="/scroll/doors-d" src-phone="/scroll/doors-p" frames="97" map="0.1,0.85" place="region" region=".45" region-after=".stage-text" region-top="84" place-phone="center" start-phone=".85" end-phone=".45" target-phone="bottom" light=".45,.85" /></div>}
     <div class="mission-cta-content">
-      <h2>Keep the record.<br /><span>Keep control.</span></h2>
-      <div><p>See what private meeting intelligence<br />can do for your organisation.</p><a href={CTA_BRIEFING} class="mission-button mission-button-light" data-track="demo_request" data-location="cta_footer">Request a briefing <ArrowUpRight size={17} aria-hidden="true" /></a><a href="/download/?src=cta_footer" class="mission-text-link">Download the open-source app <ArrowRight size={16} aria-hidden="true" /></a></div>
+      <div>
+        <h2>Keep the record.<br /><span>Keep control.</span></h2>
+        <p>See what private meeting intelligence<br />can do for your organisation.</p>
+        <a href={CTA_BRIEFING} class="mission-button mission-button-light" data-track="demo_request" data-location="cta_footer">Request a briefing <ArrowUpRight size={17} aria-hidden="true" /></a>
+        <a href="/download/?src=cta_footer" class="mission-text-link">Download the open-source app <ArrowRight size={16} aria-hidden="true" /></a>
+      </div>
+      {(settled || stage) && (
+        <picture class:list={["cta-door-still", { "cta-stage-fallback": stage }]}>
+          <source media="(max-width: 767px)" srcset="/scroll/doors-p/0096.webp" width="400" height="411" />
+          <img src="/scroll/doors-d/0096.webp" alt="" width="900" height="970" loading="lazy" decoding="async" />
+        </picture>
+      )}
     </div>
     <div class="mission-cta-bottom"><span>Your device or your infrastructure. Never ours.</span><span>macOS · Windows alpha</span></div>
   </div>

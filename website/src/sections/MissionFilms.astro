@@ -1,0 +1,27 @@
+---
+import { Play } from "lucide-react";
+import FilmDialog from "../components/FilmDialog.astro";
+import { films } from "../content/films.js";
+import "../films.css";
+---
+<section id="films" class="mission-section" aria-labelledby="films-heading">
+  <div class="mission-wrap">
+    <div class="mission-section-heading">
+      <h2 id="films-heading">See it in the room.</h2>
+      <p>Short videos for government, defence and law enforcement.</p>
+    </div>
+    <ul class="film-gallery" role="list">
+      {films.map((film) => (
+        <li class="film-card">
+          <span class="film-poster"><img src={film.still} alt={film.alt} width="1024" height="1536" loading="lazy" decoding="async" /><span class="film-play" aria-hidden="true"><Play size={22} fill="currentColor" strokeWidth={0} /></span></span>
+          <h3>{film.name}</h3>
+          <a class="film-gallery-watch" href={film.src} data-film-open={film.slug} aria-label={`Watch video: ${film.name}, ${film.length}`}>
+            <span>Watch video</span>
+            <span class="film-length">{film.length}</span>
+          </a>
+        </li>
+      ))}
+    </ul>
+  </div>
+</section>
+<FilmDialog />
