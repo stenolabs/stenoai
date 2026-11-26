@@ -146,6 +146,9 @@ test('Save notes as PDF exports the open template report, not the Standard note'
     expect(html).toContain('<li>Pipeline healthy</li>');
     expect(html).toContain('<li>Next: open the reqs</li>');
     expect(html).not.toContain('- Pipeline healthy');
+    expect(html).toContain('<table>');
+    expect(html).toContain(`<td><code>${'M'.repeat(128)}</code></td>`);
+    expect(html).toContain('<td>Passed</td>');
     // Labelled with the template it came from.
     expect(html).toContain('>Status Report</h2>');
     // The Standard note's sections did NOT ride along.

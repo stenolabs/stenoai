@@ -916,6 +916,19 @@
     border-top: 1px solid var(--border-subtle);
     margin: 1em 0;
   }
+  .stream-markdown table {
+    display: block;
+    overflow-x: auto;
+    border-collapse: collapse;
+    margin: 0.6em 0;
+  }
+  .stream-markdown th,
+  .stream-markdown td {
+    padding: 0.375rem 0.625rem;
+    border-bottom: 1px solid var(--border-subtle);
+    text-align: left;
+  }
+  .stream-markdown th { font-weight: 600; color: var(--fg-1); }
 }
 
 /* Chat uses semantic Markdown too: list counters belong to the enclosing ol,
