@@ -1281,6 +1281,9 @@ export function Setup() {
                               autoComplete="off"
                               spellCheck={false}
                             />
+                            <p className="mt-1 text-[11.5px] text-muted-foreground">
+                              {t('settings.ai.cloud.baseUrlHint')}
+                            </p>
                           </div>
                         )}
                       </Panel>

@@ -249,6 +249,9 @@ export function CloudProviderConfig() {
             onBlur={() => apiUrl && setCloudUrl.mutate(apiUrl)}
             className={COMPACT_INPUT}
           />
+          <p className="mt-1 text-[11.5px]" style={{ color: 'var(--fg-muted)' }}>
+            {t('settings.ai.cloud.baseUrlHint')}
+          </p>
         </div>
       )}
       <div>
