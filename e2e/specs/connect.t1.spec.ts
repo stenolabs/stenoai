@@ -6,7 +6,9 @@ import { test, expect } from '../fixtures/electron';
  * in Settings → Connectors), MCP as
  * the primary coding-agent connection with the Steno skill install sheet
  * (formerly the Agents page) second, the launcher-based MCP install sheets,
- * the Connected / Skill installed / Last used states, the old /agents
+ * the Connected / Skill installed / Last used states (Install skill is gone
+ * once MCP is connected; a Skill installed badge takes its place when the
+ * skill is also on disk), the old /agents
  * redirect, and the scope controls writing through the `connect` bridge. Mocks: app/e2e-mock-ipc.js (connect-*). The server itself
  * and the real handlers are covered by steno-mcp.t2 and the node unit tests.
  */
@@ -72,14 +74,19 @@ test('Connect: coding agents install the skill first, with MCP as the secondary 
   await expect(claudeCode.getByText('Last used 5 min ago')).toBeVisible();
   await expect(codex.getByText('Connected', { exact: true })).toBeVisible();
   await expect(codex.getByText('via skill', { exact: true })).toBeVisible();
-  await expect(page.getByText('Skill installed', { exact: true })).toHaveCount(0);
   // A last-used stamp without an MCP config (removed since) is not shown.
   await expect(codex.getByText(/Last used/)).toHaveCount(0);
-  // Primary: Install skill; secondary: Connect MCP, or View MCP setup once connected.
+  // Not connected over MCP (Codex): Install skill primary, Connect MCP secondary.
   await expect(codex.getByRole('button', { name: 'Install the Steno skill in Codex' })).toHaveText('Install skill');
   await expect(codex.getByRole('button', { name: 'Connect Codex over MCP' })).toHaveText('Connect MCP');
+  await expect(codex.getByText('Skill installed', { exact: true })).toHaveCount(0);
+  // Connected over MCP (Claude Code): no Install skill call to action any more;
+  // View MCP setup is the one action, with a Skill installed badge beside it.
   await expect(claudeCode.getByRole('button', { name: 'View the MCP setup for Claude Code' })).toHaveText('View MCP setup');
-  await expect(claudeCode.getByRole('button', { name: 'Install the Steno skill in Claude Code' })).toHaveText('Install skill');
+  await expect(claudeCode.getByRole('button', { name: 'Install the Steno skill in Claude Code' })).toHaveCount(0);
+  await expect(claudeCode.getByRole('button', { name: 'Connect Claude Code over MCP' })).toHaveCount(0);
+  await expect(claudeCode.getByText('Skill installed', { exact: true })).toBeVisible();
+  await expect(claudeCode.getByRole('button')).toHaveCount(1);
   await expect(apps.getByRole('region', { name: 'Cursor', exact: true }).getByText('Connected')).toHaveCount(0);
   await expect(apps.getByRole('region', { name: 'Claude', exact: true }).getByText('Last used 2 days ago')).toBeVisible();
 
@@ -91,25 +98,24 @@ test('Connect: coding agents install the skill first, with MCP as the secondary 
   await expect(chatgpt.getByText(/tunnel/)).toHaveCount(0);
 
   // Install skill: the prompts and setup guides the Agents page used to hold.
-  for (const name of ['Claude Code', 'Codex']) {
-    await page.getByRole('button', { name: `Install the Steno skill in ${name}` }).click();
+  // Only Codex still offers it here (Claude Code is connected over MCP); the
+  // Claude Code prompt is covered by the MCP-only scenario below.
+  {
+    await page.getByRole('button', { name: 'Install the Steno skill in Codex' }).click();
     const sheet = page.getByRole('dialog');
-    await expect(sheet.getByRole('heading', { name: `Install the Steno skill in ${name}` })).toBeVisible();
+    await expect(sheet.getByRole('heading', { name: 'Install the Steno skill in Codex' })).toBeVisible();
     await sheet.getByRole('button', { name: 'Copy install prompt' }).click();
     await expect(sheet.getByRole('button', { name: 'Copied', exact: true })).toBeVisible();
     const text = await app.evaluate(({ clipboard }) => clipboard.readText());
     expect(text).toContain('https://github.com/stenolabs/stenoai/tree/main/skills/steno');
-    expect(text).toContain(name === 'Codex' ? '$skill-installer' : '~/.claude/skills/steno');
+    expect(text).toContain('$skill-installer');
     await sheet.getByRole('button', { name: 'Setup instructions' }).click();
     await page.keyboard.press('Escape');
     await expect(sheet).toHaveCount(0);
   }
   await expect
     .poll(() => app.evaluate(() => (globalThis as unknown as { openedUrls: string[] }).openedUrls))
-    .toEqual([
-      'https://github.com/stenolabs/stenoai/blob/main/docs/features/agents.mdx#claude-code',
-      'https://github.com/stenolabs/stenoai/blob/main/docs/features/agents.mdx#codex',
-    ]);
+    .toEqual(['https://github.com/stenolabs/stenoai/blob/main/docs/features/agents.mdx#codex']);
 
   // Clipboard and browser failures keep the prompt reachable and say why.
   await app.evaluate(({ shell }) => {
@@ -141,6 +147,59 @@ test('Connect: coding agents install the skill first, with MCP as the secondary 
   await expect(page.getByRole('dialog').getByText('command = "/Users/sam/Library/Application Support/stenoai/bin/steno-mcp"')).toBeVisible();
   await page.keyboard.press('Escape');
   await page.screenshot({ path: testInfo.outputPath('connect-coding-agents.png'), fullPage: true });
+});
+
+test('Connect: an MCP-only coding agent shows the connected state without Install skill or the badge', async ({
+  launchApp,
+}, testInfo) => {
+  const { page, app } = await launchApp({
+    mockIpc: true,
+    env: { STENOAI_E2E_OPEN_EXTERNAL: '1', STENOAI_E2E_CONNECT_MCP_ONLY: '1' },
+  });
+  await app.evaluate(({ shell }) => {
+    shell.openExternal = async () => {};
+  });
+  await page.evaluate(() => {
+    window.location.hash = '#/connect';
+  });
+  const coding = page.getByRole('region', { name: 'Coding agents' });
+  const claudeCode = coding.getByRole('region', { name: 'Claude Code', exact: true });
+  const codex = coding.getByRole('region', { name: 'Codex', exact: true });
+
+  // Codex: MCP connected, no skill. Connected + last used, View MCP setup as
+  // the only action, no Install skill, no Skill installed badge.
+  await expect(codex.getByText('Connected', { exact: true })).toBeVisible();
+  await expect(codex.getByText('via MCP', { exact: true })).toBeVisible();
+  await expect(codex.getByText('Last used 1 min ago')).toBeVisible();
+  await expect(codex.getByRole('button', { name: 'View the MCP setup for Codex' })).toHaveText('View MCP setup');
+  await expect(codex.getByRole('button', { name: 'Install the Steno skill in Codex' })).toHaveCount(0);
+  await expect(codex.getByRole('button', { name: 'Connect Codex over MCP' })).toHaveCount(0);
+  await expect(codex.getByText('Skill installed', { exact: true })).toHaveCount(0);
+  await expect(codex.getByRole('button')).toHaveCount(1);
+  await codex.getByRole('button', { name: 'View the MCP setup for Codex' }).click();
+  await expect(page.getByRole('dialog').getByText('[mcp_servers.steno]')).toBeVisible();
+  await page.keyboard.press('Escape');
+
+  // Claude Code: nothing installed. No status; Install skill is the primary
+  // action and Connect MCP the secondary one, and the skill prompt still copies.
+  await expect(claudeCode.getByText('Connected', { exact: true })).toHaveCount(0);
+  await expect(claudeCode.getByText(/Last used/)).toHaveCount(0);
+  await expect(claudeCode.getByRole('button', { name: 'Install the Steno skill in Claude Code' })).toHaveText('Install skill');
+  await expect(claudeCode.getByRole('button', { name: 'Connect Claude Code over MCP' })).toHaveText('Connect MCP');
+  await expect(claudeCode.getByRole('button', { name: 'View the MCP setup for Claude Code' })).toHaveCount(0);
+  await claudeCode.getByRole('button', { name: 'Install the Steno skill in Claude Code' }).click();
+  const sheet = page.getByRole('dialog');
+  await expect(sheet.getByRole('heading', { name: 'Install the Steno skill in Claude Code' })).toBeVisible();
+  await sheet.getByRole('button', { name: 'Copy install prompt' }).click();
+  await expect(sheet.getByRole('button', { name: 'Copied', exact: true })).toBeVisible();
+  const text = await app.evaluate(({ clipboard }) => clipboard.readText());
+  expect(text).toContain('https://github.com/stenolabs/stenoai/tree/main/skills/steno');
+  expect(text).toContain('~/.claude/skills/steno');
+  await page.keyboard.press('Escape');
+  await claudeCode.getByRole('button', { name: 'Connect Claude Code over MCP' }).click();
+  await expect(page.getByRole('dialog').getByRole('heading', { name: 'Connect Claude Code' })).toBeVisible();
+  await page.keyboard.press('Escape');
+  await page.screenshot({ path: testInfo.outputPath('connect-coding-agents-mcp-only.png'), fullPage: true });
 });
 
 test('Connect: AI apps install over MCP and scope controls save', async ({ launchApp }, testInfo) => {

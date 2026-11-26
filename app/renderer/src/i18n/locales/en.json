@@ -878,6 +878,7 @@
   "connect.codingAgents.intro": "Install the Steno skill so your agent can find decisions, recap your week and turn conversations into work. Prefer MCP? Connect it to keep the “What assistants can see” limits.",
   "connect.codingAgents.installSkill": "Install skill",
   "connect.codingAgents.installSkillAria": "Install the Steno skill in {{name}}",
+  "connect.codingAgents.skillInstalled": "Skill installed",
   "connect.codingAgents.useMcpAria": "Connect {{name}} over MCP",
   "connect.codingAgents.viewSetup": "View MCP setup",
   "connect.codingAgents.viewSetupAria": "View the MCP setup for {{name}}",
