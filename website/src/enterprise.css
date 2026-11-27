@@ -262,15 +262,39 @@ html:not([data-ss]) .sector-loop-toggle { display: none; }
 .mission-edition li:last-child { border-bottom: 1px solid var(--border-strong); }
 .mission-edition-path { list-style: none; padding: 0; margin: 26px 0 34px; width: 100%; }
 .editions-community-photo { display: block; width: 100%; height: auto; margin-top: 22px; }
-.mission-edition-path li { display: grid; grid-template-columns: 28px minmax(0, 1fr) min(38%, 220px); align-items: center; gap: 10px; padding: 13px 0; border-top: 1px solid var(--border-strong); }
+.mission-edition-path li { border-top: 1px solid var(--border-strong); }
+.mission-edition-path summary { display: grid; grid-template-columns: 28px minmax(0, 1fr) 18px; align-items: center; gap: 10px; padding: 16px 0; min-height: 44px; cursor: pointer; list-style: none; }
+.mission-edition-path summary::-webkit-details-marker { display: none; }
+.edition-path-chev { color: var(--fg-2); transition: transform 220ms cubic-bezier(0.77, 0, 0.175, 1); }
+.mission-edition-path details[open] .edition-path-chev { transform: rotate(180deg); }
+.mission-edition-path details { interpolate-size: allow-keywords; }
+.mission-edition-path details::details-content { block-size: 0; overflow: clip; transition: block-size 250ms cubic-bezier(0.77, 0, 0.175, 1), content-visibility 250ms allow-discrete; }
+.mission-edition-path details[open]::details-content { block-size: auto; }
+.edition-path-body { padding: 0 0 18px 38px; }
+.edition-path-body .editions-step-photo { margin-top: 14px; }
+@media (hover: hover) and (pointer: fine) { .mission-edition-path summary:hover strong { text-decoration: underline; text-underline-offset: .2em; text-decoration-thickness: 1px; } }
 .editions-step-photo { display: block; width: 100%; height: auto; }
 .mission-edition-path li:last-child { border-bottom: 1px solid var(--border-strong); }
 .mission-edition-path strong { font-size: 15px; font-weight: 500; }
-.mission-edition-path p { font-size: 13px; line-height: 1.6; color: var(--fg-2); margin-top: 4px; }
-.mission-edition-path .mission-small-index { padding-top: 4px; }
+.mission-edition-path p { font-size: 13px; line-height: 1.6; color: var(--fg-2); }
+
 .mission-deploy-models { margin-top: 44px; padding-top: 24px; border-top: 1px solid var(--border-strong); display: grid; grid-template-columns: 220px minmax(0, 1fr) clamp(280px, 24vw, 340px); gap: 14px 40px; align-items: baseline; }
 .deploy-model-media { position: relative; aspect-ratio: 7 / 5; grid-column: 3; grid-row: 1 / span 2; align-self: start; }
 .deploy-model-media img { display: block; width: 100%; height: 100%; }
+.deploy-box { overflow: hidden; -webkit-mask-image: radial-gradient(ellipse 72% 70% at 50% 50%, #000 62%, transparent 100%); mask-image: radial-gradient(ellipse 72% 70% at 50% 50%, #000 62%, transparent 100%); }
+.deploy-box img { object-fit: cover; }
+.deploy-box-led { position: absolute; left: 62%; top: 68.9%; width: 9%; aspect-ratio: 1; translate: -50% -50%; border-radius: 50%; background: radial-gradient(circle, rgb(120 255 120 / .55) 0, rgb(80 220 90 / .18) 35%, transparent 70%); pointer-events: none; }
+.deploy-box-sheen { position: absolute; inset: 0; background: linear-gradient(105deg, transparent 38%, rgb(255 255 255 / .16) 50%, transparent 62%); translate: -100% 0; mix-blend-mode: screen; pointer-events: none; }
+@media (prefers-reduced-motion: no-preference) {
+  .deploy-box-led { animation: deploy-led 2.6s ease-in-out infinite; }
+  @supports (animation-timeline: view()) {
+    .deploy-box img { animation: deploy-box-in linear both; animation-timeline: view(); animation-range: entry 0% cover 45%; }
+    .deploy-box-sheen { animation: deploy-sheen linear both; animation-timeline: view(); animation-range: cover 20% cover 65%; }
+  }
+}
+@keyframes deploy-led { 0%, 100% { opacity: .55; scale: .85; } 50% { opacity: 1; scale: 1.1; } }
+@keyframes deploy-box-in { from { opacity: .35; scale: 1.08; translate: 0 6%; } to { opacity: 1; scale: 1; translate: 0 0; } }
+@keyframes deploy-sheen { from { translate: -100% 0; } to { translate: 100% 0; } }
 .mission-deploy-models .mission-eyebrow { color: var(--fg-2); }
 .mission-deploy-models ul { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 10px 28px; }
 .mission-deploy-models li { font-size: 14px; }
@@ -466,8 +490,7 @@ html[data-ss] .cta-stage-fallback { display: none; }
   .mission-editions-grid { grid-template-columns: 1fr; gap: 20px; }
   .mission-edition { padding: 26px 22px; }
   .mission-edition h3 { font-size: 25px; }
-  .mission-edition-path li { grid-template-columns: 28px minmax(0, 1fr); align-items: start; }
-  .editions-step-photo { grid-column: 1 / -1; }
+  .edition-path-body { padding-left: 0; }
   .mission-egress dl { grid-template-columns: 1fr; gap: 18px; }
   .mission-assurance-layout { grid-template-columns: 1fr; gap: 40px; }
   .mission-assurance .mission-section-top { margin-bottom: 35px; }

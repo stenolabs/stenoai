@@ -38,9 +38,11 @@ const localModels = [
       ))}
     </div>
     <div class="mission-deploy-models">
-      <div class="deploy-model-media" aria-hidden="true">
-        <noscript><img src="/scroll/deploy-model/0035.webp" alt="" width="840" height="600" loading="lazy" decoding="async" /></noscript>
-        <ScrollSeq src="/scroll/deploy-model" src-phone="/scroll/deploy-model" frames={36} start=".95" centre=".52" />
+      {/* Owner 26 Nov 2026: "a better animation thats more easy to see" and the logo on top and green light were missing. */}
+      <div class="deploy-model-media deploy-box" aria-hidden="true">
+        <img src="/images/deploy/box-hero.webp" alt="" width="1120" height="800" loading="lazy" decoding="async" />
+        <i class="deploy-box-sheen"></i>
+        <i class="deploy-box-led"></i>
       </div>
       <p class="mission-eyebrow">Open-weight models on the device</p>
       <ul>{localModels.map((m) => <li><strong>{m.name}</strong> <span>{m.size}</span></li>)}</ul>
