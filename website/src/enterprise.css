@@ -297,7 +297,8 @@ html:not([data-ss]) .sector-loop-toggle { display: none; }
 @keyframes deploy-sheen { from { translate: -100% 0; } to { translate: 100% 0; } }
 .mission-deploy-models .mission-eyebrow { color: var(--fg-2); }
 .mission-deploy-models ul { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 10px 28px; }
-.mission-deploy-models li { font-size: 14px; }
+.mission-deploy-models li { font-size: 14px; display: inline-flex; align-items: center; }
+.deploy-model-logo { width: 18px; height: 18px; margin-right: 8px; flex: none; }
 .mission-deploy-models li span { font: 10px var(--font-mono); color: var(--fg-2); margin-left: 4px; }
 .mission-deploy-models-note { grid-column: 2; font-size: 13px; color: var(--fg-2); }
 .mission-faq-compare { margin-top: var(--section-content-gap); font-size: 12px; gap: 8px; max-width: 34ch; }

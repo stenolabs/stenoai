@@ -12,8 +12,8 @@ const modes = [
   { media: 'cloud', frames: 61, sw: 1152, sh: 720, start: '.88', end: '.52', icon: Cloud, name: 'In your cloud tenancy', body: 'Use your organisation’s own cloud account, such as AWS Bedrock or your OpenAI or Anthropic agreement, or route through your organisation’s gateway so desktops never hold provider keys.', tags: 'Bedrock · Organisation gateway' },
 ];
 const localModels = [
-  { name: 'Gemma 4 E2B', size: '2B' }, { name: 'Gemma 4 E4B', size: '4B' }, { name: 'Llama 3.2', size: '3B' },
-  { name: 'Qwen 3.5', size: '9B' }, { name: 'Gemma 4', size: '12B' }, { name: 'GPT-OSS', size: '20B' },
+  { name: 'Gemma 4 E2B', size: '2B', logo: 'gemma' }, { name: 'Gemma 4 E4B', size: '4B', logo: 'gemma' }, { name: 'Llama 3.2', size: '3B', logo: 'meta' },
+  { name: 'Qwen 3.5', size: '9B', logo: 'qwen' }, { name: 'Gemma 4', size: '12B', logo: 'gemma' }, { name: 'GPT-OSS', size: '20B', logo: 'openai' },
 ];
 ---
 <section id="deploy" class="mission-deploy mission-section" aria-labelledby="deploy-heading">
@@ -45,7 +45,7 @@ const localModels = [
         <i class="deploy-box-led"></i>
       </div>
       <p class="mission-eyebrow">Open-weight models on the device</p>
-      <ul>{localModels.map((m) => <li><strong>{m.name}</strong> <span>{m.size}</span></li>)}</ul>
+      <ul>{localModels.map((m) => <li><img class="deploy-model-logo" src={`/logos/models/${m.logo}.svg`} alt="" width="18" height="18" loading="lazy" decoding="async" /><strong>{m.name}</strong> <span>{m.size}</span></li>)}</ul>
       <p class="mission-deploy-models-note">Downloaded once during setup, then they run offline. Or point it at your own endpoint.</p>
     </div>
   </div>
