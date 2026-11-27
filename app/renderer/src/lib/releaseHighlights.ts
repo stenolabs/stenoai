@@ -28,7 +28,7 @@ export const RELEASE_HIGHLIGHTS: readonly ReleaseHighlight[] = [
     icon: 'sparkles',
     title: 'Approve follow-ups after each note',
     description:
-      'Connect Linear, Notion or Jira, and Steno suggests follow-ups. Nothing is sent until you approve it.',
+      'Connect Linear, Notion or Jira, and Steno suggests follow-ups. Approve each one, or choose Always allow to let an app run them.',
     action: 'Connect an app',
     route: '/connect',
   },

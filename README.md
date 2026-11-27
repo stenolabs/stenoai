@@ -43,10 +43,10 @@ If you're looking for a hosted desktop recording API, consider checking out [Rec
 
 ## 📢 What's New
 
+- **2026-11-26** ✅ Approve an app once: Choose Always allow on an action card and that app's follow-ups run without asking. Turn it off in Settings → Connectors.
 - **2026-11-24** 🔌 Connect your AI apps: Claude, Cursor, Claude Code and Codex can read your meetings through Steno's read-only MCP server. Set it up on the new Connect page.
 - **2026-11-24** ⚡ Actions: Connect Linear, Notion, Jira or any MCP server, and Steno suggests follow-ups after each note that run only when you approve them.
 - **2026-11-24** ⏱️ Instant transcripts: With Parakeet, your transcript and a first summary are ready the moment you press Stop, then refine in the background.
-- **2026-11-24** 🧑‍🍳 Cookbooks and recipes: Templates are now Cookbooks, and recipes are saved chat prompts you run by typing `/` in Chat.
 
 ## Features
 

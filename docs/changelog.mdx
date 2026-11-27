@@ -3,6 +3,20 @@ title: "Changelog"
 description: "What's new in Steno -- recent releases and notable changes."
 ---
 
+<Update label="v0.9.1" description="November 27, 2026">
+**New**
+- **Approve an app once**: choose **Always allow for <App>** on an action card, and that app's follow-ups run without asking from then on. Turn it off with **Run actions without asking** in Settings → Connectors.
+- **LiteLLM**: connect a LiteLLM proxy or another OpenAI-compatible gateway with **Custom endpoint (LiteLLM, vLLM, …)** in Settings → AI. See [Use LiteLLM with Steno](/getting-started/litellm).
+
+**Improved**
+- **Simpler action cards**: cards show only readable fields. The JSON view is gone.
+- **AWS Bedrock**: chat answers and notes now appear as they are written instead of all at once.
+- **Connect**: once Claude Code or Codex is connected over MCP, its card shows Connected and no longer offers Install skill.
+
+**Fixed**
+- **Windows and Linux releases**: installers attach to the release reliably, and the Linux build no longer depends on a single download host.
+</Update>
+
 <Update label="v0.9.0" description="November 24, 2026">
 **New**
 - **Connect page**: open [Connect](/connect/overview) in the sidebar to link Steno with the Claude desktop app, Cursor, Claude Code and Codex. They read your meetings through a read-only Steno MCP server that runs on your computer.
