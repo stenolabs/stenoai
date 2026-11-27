@@ -32,12 +32,28 @@ function codingAgents(): CodingAgent[] {
 
 type Sheet = { agent: CodingAgent; kind: 'skill' | 'mcp' };
 
+/** A quiet pill: the Steno skill is on disk for this agent. */
+function SkillInstalledBadge() {
+  return (
+    <span
+      className="shrink-0 rounded-full px-2 py-0.5 text-[11.5px]"
+      style={{ background: 'var(--surface-sunken)', color: 'var(--fg-2)' }}
+    >
+      {t('connect.codingAgents.skillInstalled')}
+    </span>
+  );
+}
+
 /**
  * Coding agents (Claude Code, Codex): the Steno skill is the primary install
  * (it finds decisions, recaps the week, turns conversations into work); MCP
  * is the secondary connection, read-only and bound by "What assistants can
  * see". The status reports what the main process found on disk: Connected,
  * via the skill, MCP or both.
+ *
+ * Once MCP is connected the card is done: the Install skill call to action
+ * goes away, View MCP setup is the one remaining action, and a "Skill
+ * installed" badge notes the skill when it is also on disk.
  */
 export function CodingAgentsSection() {
   const info = useConnectInfo();
@@ -76,29 +92,42 @@ export function CodingAgentsSection() {
                 </div>
               </div>
               <div className="mt-auto flex flex-wrap items-center gap-1.5 pl-12 pt-4">
-                <Button
-                  variant={skill ? 'outline' : 'default'}
-                  size="sm"
-                  className="h-[30px] px-3 text-[13px]"
-                  aria-label={t('connect.codingAgents.installSkillAria', { name: a.name })}
-                  onClick={() => setSheet({ agent: a, kind: 'skill' })}
-                >
-                  {t('connect.codingAgents.installSkill')}
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-[30px] px-2.5 text-[12.5px]"
-                  style={{ color: 'var(--fg-2)' }}
-                  aria-label={
-                    mcp
-                      ? t('connect.codingAgents.viewSetupAria', { name: a.name })
-                      : t('connect.codingAgents.useMcpAria', { name: a.name })
-                  }
-                  onClick={() => setSheet({ agent: a, kind: 'mcp' })}
-                >
-                  {mcp ? t('connect.codingAgents.viewSetup') : t('connect.codingAgents.connectMcp')}
-                </Button>
+                {mcp ? (
+                  <>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-[30px] px-3 text-[13px]"
+                      aria-label={t('connect.codingAgents.viewSetupAria', { name: a.name })}
+                      onClick={() => setSheet({ agent: a, kind: 'mcp' })}
+                    >
+                      {t('connect.codingAgents.viewSetup')}
+                    </Button>
+                    {skill && <SkillInstalledBadge />}
+                  </>
+                ) : (
+                  <>
+                    <Button
+                      variant={skill ? 'outline' : 'default'}
+                      size="sm"
+                      className="h-[30px] px-3 text-[13px]"
+                      aria-label={t('connect.codingAgents.installSkillAria', { name: a.name })}
+                      onClick={() => setSheet({ agent: a, kind: 'skill' })}
+                    >
+                      {t('connect.codingAgents.installSkill')}
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-[30px] px-2.5 text-[12.5px]"
+                      style={{ color: 'var(--fg-2)' }}
+                      aria-label={t('connect.codingAgents.useMcpAria', { name: a.name })}
+                      onClick={() => setSheet({ agent: a, kind: 'mcp' })}
+                    >
+                      {t('connect.codingAgents.connectMcp')}
+                    </Button>
+                  </>
+                )}
               </div>
             </section>
           );

@@ -1275,12 +1275,16 @@ export function Setup() {
                             </label>
                             <Input
                               id="setup-custom-api"
+                              aria-describedby="setup-custom-api-hint"
                               value={apiUrl}
                               onChange={(e) => setApiUrl(e.target.value)}
                               placeholder={t('settings.ai.cloud.baseUrlPlaceholder')}
                               autoComplete="off"
                               spellCheck={false}
                             />
+                            <p id="setup-custom-api-hint" className="mt-1 text-[11.5px] text-muted-foreground">
+                              {t('settings.ai.cloud.baseUrlHint')}
+                            </p>
                           </div>
                         )}
                       </Panel>

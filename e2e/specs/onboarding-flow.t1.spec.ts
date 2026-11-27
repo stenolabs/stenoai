@@ -208,6 +208,33 @@ test('the ready state offers to start a first note', async ({ launchApp }) => {
     .toContain('set-privacy-notice-seen');
 });
 
+test('the custom endpoint URL has an accessible hint in Setup and Settings', async ({ launchApp }) => {
+  const { page } = await launchApp({
+    mockIpc: true,
+    env: { STENOAI_E2E_MOCK_PARAKEET_INSTALLED: '1' },
+  });
+  const customEndpoint = 'Custom endpoint (LiteLLM, vLLM, …)';
+  const hint = 'Any OpenAI-compatible API, such as a LiteLLM proxy your organisation runs.';
+  const baseUrl = page.getByRole('textbox', { name: 'API base URL' });
+
+  await openSetup(page);
+  await page.getByRole('button', { name: 'Continue', exact: true }).click();
+  await page.getByRole('radio', { name: /Cloud/ }).click();
+  await page.getByRole('button', { name: /^Other providers/ }).click();
+  await page.locator('#setup-cloud-provider').click();
+  await page.getByRole('option', { name: customEndpoint }).click();
+  await expect(baseUrl).toHaveAccessibleDescription(hint);
+
+  await page.evaluate(() => {
+    window.location.hash = '#/settings?tab=ai';
+  });
+  await page.getByTestId('ai-provider-select').click();
+  await page.getByRole('option', { name: /Cloud/ }).click();
+  await page.getByTestId('cloud-service-select').click();
+  await page.getByRole('option', { name: customEndpoint }).click();
+  await expect(baseUrl).toHaveAccessibleDescription(hint);
+});
+
 test('Settings offers OpenRouter with friendly model names and a key link', async ({ launchApp }) => {
   const { app, page } = await launchApp({
     mockIpc: true,

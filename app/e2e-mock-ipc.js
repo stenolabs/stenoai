@@ -211,7 +211,8 @@ const SEED_REPORT = {
   // Leading <think> block: the copy path must strip reasoning like the
   // rendered view does, so the spec can assert it never reaches the clipboard.
   content:
-    '<think>secret chain of thought</think>\n## Status Report\n\n- Pipeline healthy\n- Next: open the reqs',
+    '<think>secret chain of thought</think>\n## Status Report\n\n- Pipeline healthy\n- Next: open the reqs\n\n'
+    + '| Identifier | Result |\n| --- | --- |\n| `' + 'M'.repeat(128) + '` | Passed |',
   created_at: '2026-06-19T13:00:00Z',
 };
 
@@ -228,7 +229,8 @@ const SEED_FRONTMATTER_REPORT = {
     '---\ntitle: "Erika Mustermann: Empty Bcc field"\ndate: 2026-06-19\n'
     + 'client: Erika Mustermann\norganisation: Example Ltd\nissue: Empty Bcc field\n'
     + 'symptoms:\n  - Bcc stays empty on send\nresolved: true\n---\n\n'
-    + '## Summary\nThe Bcc field stayed empty until the signature was recreated.',
+    + '## Summary\nThe Bcc field stayed empty until the signature was recreated.\n\n'
+    + '| Step | Result |\n| --- | --- |\n| Recreate signature | Bcc kept |\n| Send test mail | Delivered |',
   created_at: '2026-06-19T13:00:00Z',
 };
 
@@ -721,10 +723,20 @@ function install({ ipcMain }) {
     snippets: connectInstall.snippets(CONNECT_LAUNCHER, 'darwin'),
     launch: CONNECT_LAUNCHER,
     // Claude Code: MCP + the skill; Codex: the skill only; Claude: MCP. So the
-    // spec covers Connected (+ Skill installed hint), Skill installed alone,
-    // the not-connected state, and Last used on both kinds of card.
-    clients: { claudeDesktop: true, claudeCode: true, codex: false, cursor: false },
-    skills: { claudeCode: true, codex: true },
+    // spec covers Connected (+ the Skill installed badge), Skill installed
+    // alone, the not-connected state, and Last used on both kinds of card.
+    // STENOAI_E2E_CONNECT_MCP_ONLY swaps the coding agents: Claude Code has
+    // nothing installed and Codex is connected over MCP without the skill, so
+    // the spec covers the MCP-only card (no badge) and the fresh card too.
+    ...(process.env.STENOAI_E2E_CONNECT_MCP_ONLY === '1'
+      ? {
+          clients: { claudeDesktop: true, claudeCode: false, codex: true, cursor: false },
+          skills: { claudeCode: false, codex: false },
+        }
+      : {
+          clients: { claudeDesktop: true, claudeCode: true, codex: false, cursor: false },
+          skills: { claudeCode: true, codex: true },
+        }),
     lastUsed: {
       any: new Date(Date.now() - 5 * 60_000).toISOString(),
       claudeCode: new Date(Date.now() - 5 * 60_000).toISOString(),

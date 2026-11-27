@@ -6,6 +6,8 @@ import { test, expect } from '../fixtures/electron';
  * right end of the view-switch row and opens all of them, in order, except
  * those the note's header already shows.
  *
+ * The body also carries a pipe table, which must render as a table.
+ *
  * Seams: STENOAI_E2E_SEED_MEETING=1 + STENOAI_E2E_SEED_REPORT=frontmatter seed
  * one meeting carrying one such report (app/e2e-mock-ipc.js).
  */
@@ -32,6 +34,10 @@ test("a report's frontmatter is folded away until asked for", async ({ launchApp
   await expect(report).toContainText('The Bcc field stayed empty');
   // The frontmatter no longer leaks into the prose.
   await expect(report).not.toContainText('organisation');
+  // A GFM pipe table in the body renders as a table, not as one paragraph of pipes.
+  await expect(report.locator('table tr')).toHaveCount(3);
+  await expect(report.locator('td').first()).toHaveText('Recreate signature');
+  await expect(report).not.toContainText('| ---');
 
   // Closed by default, with the number of properties on the toggle.
   await expect(toggle).toHaveAttribute('aria-expanded', 'false');

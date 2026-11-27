@@ -1,9 +1,8 @@
 import { t } from '@/i18n';
 import * as React from 'react';
 // Serialises the report markdown to an HTML string for the branded PDF, using
-// the same react-markdown renderer the detail view renders on screen.
+// the same NoteMarkdown renderer the detail view renders on screen.
 import { renderToStaticMarkup } from 'react-dom/server';
-import ReactMarkdown from 'react-markdown';
 import {
   Calendar as CalendarIcon,
   Check,
@@ -92,7 +91,7 @@ import { buildNotesHtml, hasNotesContent } from '@/lib/notesPdf';
 import { unwrap } from '@/lib/result';
 import { cn } from '@/lib/utils';
 import { navigate, setNavigationGuard } from '@/lib/router';
-import { ReportProperties, splitFrontmatter, stripReasoning } from '@/lib/markdown';
+import { NoteMarkdown, ReportProperties, splitFrontmatter, stripReasoning } from '@/lib/markdown';
 import {
   PROPERTIES_OPEN_KEY,
   PROPERTIES_PANEL_ID,
@@ -857,7 +856,7 @@ function DetailContent({
             contentHtml: renderToStaticMarkup(
               <>
                 <ReportProperties properties={reportParts.properties} />
-                <ReactMarkdown>{reportParts.body}</ReactMarkdown>
+                <NoteMarkdown>{reportParts.body}</NoteMarkdown>
               </>,
             ),
           }
@@ -1787,7 +1786,7 @@ function DetailContent({
                 data-testid="report-content"
                 style={{ color: 'var(--fg-1)', maxWidth: '72ch' }}
               >
-                <ReactMarkdown>{reportParts.body}</ReactMarkdown>
+                <NoteMarkdown>{reportParts.body}</NoteMarkdown>
               </section>
             )
           ) : (

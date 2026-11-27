@@ -60,6 +60,7 @@ function ModelOption({ id }: { id: string }) {
 }
 
 export function CloudProviderConfig() {
+  const baseUrlId = React.useId();
   const provider = useAiProvider();
   const setCloudProvider = useSetCloudProvider();
   const setCloudUrl = useSetCloudApiUrl();
@@ -237,18 +238,24 @@ export function CloudProviderConfig() {
       {cloudProvider === 'custom' && (
         <div>
           <label
+            htmlFor={baseUrlId}
             className="mb-1 block text-[12px] font-medium uppercase"
             style={{ letterSpacing: '0.06em', color: 'var(--fg-muted)' }}
           >
             {t('settings.ai.cloud.baseUrl')}
           </label>
           <Input
+            id={baseUrlId}
+            aria-describedby={`${baseUrlId}-hint`}
             value={apiUrl}
             onChange={(e) => setApiUrl(e.target.value)}
             placeholder={t('settings.ai.cloud.baseUrlPlaceholder')}
             onBlur={() => apiUrl && setCloudUrl.mutate(apiUrl)}
             className={COMPACT_INPUT}
           />
+          <p id={`${baseUrlId}-hint`} className="mt-1 text-[11.5px]" style={{ color: 'var(--fg-muted)' }}>
+            {t('settings.ai.cloud.baseUrlHint')}
+          </p>
         </div>
       )}
       <div>

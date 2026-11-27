@@ -92,6 +92,14 @@ function normalizeBullets(text: string): string {
     .join('\n');
 }
 
+/** Markdown for notes and reports: the report view, its PDF export, the
+ * inline report and the streaming preview. GFM so pipe tables, task lists and
+ * strikethrough render as they do in chat. Raw HTML is never interpreted.
+ */
+export function NoteMarkdown({ children }: { children: string }) {
+  return <ReactMarkdown remarkPlugins={[remarkGfm]}>{children}</ReactMarkdown>;
+}
+
 /** Shared safe Markdown rendering for saved and in-flight chat answers.
  * CommonMark keeps loose lists (blank lines between items) in a single ol,
  * preserves explicit starts and nesting, and handles incomplete streaming text.

@@ -6,7 +6,6 @@ import {
   Loader2,
   PencilLine,
 } from 'lucide-react';
-import ReactMarkdown from 'react-markdown';
 import { create } from 'zustand';
 import { MeetingsShell } from '@/components/MeetingsShell';
 import { useNavigate } from '@/lib/router';
@@ -14,7 +13,7 @@ import { useRecording } from '@/hooks/useRecording';
 import { useUpdateMeeting } from '@/hooks/useMeetings';
 import { getLiveDraft, useLiveDraftStore } from '@/hooks/liveDraftStore';
 import { ipc } from '@/lib/ipc';
-import { stripReasoning } from '@/lib/markdown';
+import { NoteMarkdown, stripReasoning } from '@/lib/markdown';
 import { UI_LOCALE } from '@/lib/locale';
 import { t } from '@/i18n';
 
@@ -529,7 +528,7 @@ export function Processing() {
 // this it'd re-render on every parent re-render (stage transitions, draft
 // updates, etc.) and re-walk the markdown tree unnecessarily.
 const StreamMarkdown = React.memo(function StreamMarkdown({ text }: { text: string }) {
-  return <ReactMarkdown>{stripReasoning(text)}</ReactMarkdown>;
+  return <NoteMarkdown>{stripReasoning(text)}</NoteMarkdown>;
 });
 
 function StageCard({
