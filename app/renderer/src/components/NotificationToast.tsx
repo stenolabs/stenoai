@@ -42,19 +42,19 @@ type IconComponent = React.ComponentType<{ size?: number; className?: string }>;
  */
 export function notificationIconMeta(
   iconType?: NotificationIconType,
-): { Icon: IconComponent; className: string } | null {
+): { Icon: IconComponent; color: string } | null {
   switch (iconType) {
     case 'alert':
-      return { Icon: AlertCircle, className: 'text-red-500' };
+      return { Icon: AlertCircle, color: 'var(--danger)' };
     case 'success':
-      return { Icon: CheckCircle2, className: 'text-green-500' };
+      return { Icon: CheckCircle2, color: 'var(--success)' };
     case 'recording':
-      return { Icon: Mic, className: 'text-blue-500' };
+      return { Icon: Mic, color: 'var(--recording)' };
     case 'app':
     case undefined:
       return null; // brand AppIcon
     default:
-      return { Icon: Info, className: 'text-gray-400' };
+      return { Icon: Info, color: 'var(--fg-2)' };
   }
 }
 
@@ -136,18 +136,29 @@ export function NotificationToast() {
           background: transparent !important;
         }
       `}</style>
-      <div className="flex h-screen w-screen items-center justify-center bg-transparent p-3">
+      <div className="flex h-screen w-screen items-center justify-center bg-transparent p-3" role="status" aria-live="polite">
         <div
-          className="group relative flex w-full cursor-pointer items-center justify-between rounded-[20px] bg-white p-2.5 pr-3 border border-gray-200 shadow-sm dark:bg-[#1E1E1E] dark:border-white/10"
-          style={{ fontFamily: 'system-ui, -apple-system, sans-serif' }}
+          className="group relative flex w-full cursor-pointer items-center justify-between rounded-[20px] p-2.5 pr-3 border shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          style={{
+            fontFamily: 'var(--font-sans)',
+            background: 'var(--surface-raised)',
+            borderColor: 'var(--border-subtle)',
+            color: 'var(--fg-1)',
+          }}
           onClick={handleBody}
         >
           <button
+            type="button"
             onClick={handleClose}
-            className="absolute -top-1.5 -left-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-white shadow-sm border border-gray-200 text-gray-500 opacity-0 transition-opacity hover:bg-gray-50 hover:text-gray-700 group-hover:opacity-100 dark:bg-[#2C2C2E] dark:border-white/10 dark:text-gray-400 dark:hover:bg-[#3C3C3E] dark:hover:text-gray-200"
-            title="Close"
+            aria-label={t('notificationToast.close')}
+            className="absolute -top-2 -left-2 flex h-6 w-6 items-center justify-center rounded-full border shadow-sm opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring bg-[color:var(--surface-raised)] hover:bg-[color:var(--surface-hover)]"
+            style={{
+              borderColor: 'var(--border-subtle)',
+              color: 'var(--fg-2)',
+            }}
+            title={t('notificationToast.close')}
           >
-            <svg width="8" height="8" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <svg width="8" height="8" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
               <path d="M1 1L13 13M1 13L13 1" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
             </svg>
           </button>
@@ -157,20 +168,26 @@ export function NotificationToast() {
                 — the action/status toasts otherwise show a button or a ✓ in the
                 right slot and nothing said "Steno", especially floating top-right
                 with the window hidden. */}
-            <div className="shrink-0 ml-1 text-gray-800 dark:text-gray-100">
+            <div className="shrink-0 ml-1" style={{ color: 'var(--fg-1)' }}>
               <AppIcon size={20} color="currentColor" />
             </div>
             <div
               data-testid="toast-accent-bar"
-              className={`h-8 w-1 rounded-full ml-2 shrink-0${barColor ? '' : ' bg-gray-300 dark:bg-white/20'}`}
-              style={barColor ? { backgroundColor: barColor } : undefined}
+              className="h-8 w-1 rounded-full ml-2 shrink-0"
+              style={{ backgroundColor: barColor || 'var(--border-strong)' }}
             ></div>
             <div className="flex flex-col justify-center ml-3 min-w-0">
-              <span className="text-[14px] font-medium text-gray-900 tracking-tight leading-tight truncate max-w-[220px] dark:text-gray-100">
+              <span
+                className="text-[14px] font-medium tracking-tight leading-tight truncate max-w-[220px]"
+                style={{ color: 'var(--fg-1)' }}
+              >
                 {[data.title, data.detail].filter(Boolean).join(' · ')}
               </span>
               {(data.body || data.time) && (
-                <span className="text-[12px] font-normal text-gray-500 leading-tight mt-0.5 truncate max-w-[220px] dark:text-gray-400">
+                <span
+                  className="text-[12px] font-normal leading-tight mt-0.5 truncate max-w-[220px]"
+                  style={{ color: 'var(--fg-2)' }}
+                >
                   {data.body || data.time}
                 </span>
               )}
@@ -181,9 +198,14 @@ export function NotificationToast() {
             <div className="flex items-center gap-1.5 shrink-0 pl-2">
               {data.actions!.map((action) => (
                 <button
+                  type="button"
                   key={action.id}
                   onClick={(e) => handleGenericAction(action.id, e)}
-                  className="flex items-center justify-center rounded-[10px] border border-gray-200 bg-white px-3 py-1.5 text-[12px] font-medium text-gray-900 transition-all hover:bg-gray-50 hover:shadow-sm active:bg-gray-100 active:scale-[0.98] shrink-0 dark:border-white/10 dark:bg-[#2C2C2E] dark:text-gray-100 dark:hover:bg-[#3C3C3E] dark:active:bg-[#1C1C1E]"
+                  className="flex items-center justify-center rounded-[10px] border px-3 py-1.5 text-[12px] font-medium transition-all bg-[color:var(--surface-raised)] hover:bg-[color:var(--surface-hover)] hover:shadow-sm active:scale-[0.98] shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  style={{
+                    borderColor: 'var(--border-subtle)',
+                    color: 'var(--fg-1)',
+                  }}
                 >
                   {action.text}
                 </button>
@@ -192,8 +214,13 @@ export function NotificationToast() {
           ) : isPremeeting ? (
             hasValidUrl ? (
               <button
+                type="button"
                 onClick={data.autoOpen === 'ask' ? handleOpen : handleJoin}
-                className="flex items-center gap-2 rounded-[10px] border border-gray-200 bg-white px-3 py-1.5 text-[13px] font-medium text-gray-900 transition-all hover:bg-gray-50 hover:shadow-sm active:bg-gray-100 active:scale-[0.98] shrink-0 dark:border-white/10 dark:bg-[#2C2C2E] dark:text-gray-100 dark:hover:bg-[#3C3C3E] dark:active:bg-[#1C1C1E]"
+                className="flex items-center gap-2 rounded-[10px] border px-3 py-1.5 text-[13px] font-medium transition-all bg-[color:var(--surface-raised)] hover:bg-[color:var(--surface-hover)] hover:shadow-sm active:scale-[0.98] shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                style={{
+                  borderColor: 'var(--border-subtle)',
+                  color: 'var(--fg-1)',
+                }}
               >
                 {data.autoOpen === 'ask' ? (
                   <ExternalLink className="h-4 w-4" aria-hidden="true" />
@@ -206,9 +233,11 @@ export function NotificationToast() {
               </button>
             ) : null
           ) : (
-            <div className="flex items-center justify-center shrink-0 pr-1 text-gray-500 dark:text-gray-400">
+            <div className="flex items-center justify-center shrink-0 pr-1" style={{ color: 'var(--fg-2)' }}>
               {iconMeta ? (
-                <iconMeta.Icon size={20} className={iconMeta.className} />
+                <span className="flex" style={{ color: iconMeta.color }} aria-hidden="true">
+                  <iconMeta.Icon size={20} />
+                </span>
               ) : (
                 <AppIcon size={24} color="currentColor" />
               )}

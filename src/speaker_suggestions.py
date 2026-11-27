@@ -2443,6 +2443,8 @@ def extract_speaker_sample_audio(
     start = max(0.0, target.get("start", 0) - SAMPLE_AUDIO_PADDING_SECONDS)
     duration = span + 2 * SAMPLE_AUDIO_PADDING_SECONDS
 
+    from src.transcriber import _non_asr_subprocess_env
+
     try:
         result = subprocess.run(
             [
@@ -2453,6 +2455,7 @@ def extract_speaker_sample_audio(
                 str(output_path),
             ],
             capture_output=True, timeout=SAMPLE_AUDIO_EXTRACTION_TIMEOUT_SECONDS,
+            env=_non_asr_subprocess_env(),
         )
         return (
             result.returncode == 0

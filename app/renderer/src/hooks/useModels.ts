@@ -129,7 +129,7 @@ function useByteRateTracker() {
   const [bytesPerSecond, setBytesPerSecond] = React.useState<Record<string, number>>({});
   const rateSamplesRef = React.useRef<Record<string, { bytes: number; at: number }>>({});
 
-  const sample = (model: string, progress: string) => {
+  const sample = React.useCallback((model: string, progress: string) => {
     const byteMatch = progress.match(/\((\d+)\/(\d+)\)/);
     if (!byteMatch) return;
     const completed = Number(byteMatch[1]);
@@ -140,15 +140,15 @@ function useByteRateTracker() {
       setBytesPerSecond((prev) => ({ ...prev, [model]: rate }));
     }
     rateSamplesRef.current[model] = { bytes: completed, at: now };
-  };
+  }, []);
 
-  const drop = (model: string) => {
+  const drop = React.useCallback((model: string) => {
     delete rateSamplesRef.current[model];
     setBytesPerSecond((prev) => {
       const { [model]: _drop, ...rest } = prev;
       return rest;
     });
-  };
+  }, []);
 
   return { bytesPerSecond, sample, drop };
 }
@@ -161,31 +161,33 @@ export function usePullModel() {
   // Ollama, which on Apple Silicon is the NVFP4 sibling (see pullAndSelect
   // below) -- IPC progress/completion events report THAT string, so
   // matching against it (not `name`) is what lets this resolve correctly.
-  const [pendingSelect, setPendingSelect] = React.useState<{ name: string; pullTarget: string } | null>(null);
-  const rate = useByteRateTracker();
+  const pendingSelectRef = React.useRef<{ name: string; pullTarget: string } | null>(null);
+  const inFlightPullsRef = React.useRef(new Set<string>());
+  const { bytesPerSecond, sample, drop } = useByteRateTracker();
 
   React.useEffect(() => {
     const offProgress = ipc().on.modelPullProgress(({ model, progress: p }) => {
       setProgress((prev) => ({ ...prev, [model]: p }));
-      rate.sample(model, p);
+      sample(model, p);
     });
     const offComplete = ipc().on.modelPullComplete(async ({ model, success }) => {
       setProgress((prev) => {
         const { [model]: _drop, ...rest } = prev;
         return rest;
       });
-      rate.drop(model);
+      drop(model);
       // Clear pendingSelect on ANY outcome for its own pullTarget, not just
       // success -- modelPullComplete is a global event with no per-hook
       // filtering, so a stale pendingSelect left behind by a cancelled/failed
       // pull could otherwise be matched later by an unrelated pull of the
       // same tag (e.g. a "switch to faster build" for the same model),
       // silently calling models.set() for a selection change nothing asked for.
-      if (pendingSelect?.pullTarget === model) {
+      const pending = pendingSelectRef.current;
+      if (pending?.pullTarget === model) {
+        pendingSelectRef.current = null;
         if (success) {
-          await ipc().models.set(pendingSelect.name);
+          await ipc().models.set(pending.name);
         }
-        setPendingSelect(null);
       }
       qc.invalidateQueries({ queryKey: modelsKeys.all });
     });
@@ -193,15 +195,30 @@ export function usePullModel() {
       offProgress();
       offComplete();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [qc, pendingSelect]);
+  }, [qc, sample, drop]);
 
   // `pullTarget` defaults to `name` (the pre-existing behavior) for callers
   // that don't need MLX resolution (e.g. off Apple Silicon, or no MLX
   // equivalent exists for this model).
   const pullAndSelect = async ({ name, pullTarget }: { name: string; pullTarget: string }) => {
-    setPendingSelect({ name, pullTarget });
-    unwrap(await ipc().models.pull(pullTarget));
+    // A second request for a tag already being pulled (a double-click before
+    // the button disables) is refused by main. Its failure must not drop the
+    // selection the first, still-running pull will apply on completion.
+    const duplicate = inFlightPullsRef.current.has(pullTarget);
+    if (!duplicate) {
+      inFlightPullsRef.current.add(pullTarget);
+      pendingSelectRef.current = { name, pullTarget };
+    }
+    try {
+      unwrap(await ipc().models.pull(pullTarget));
+    } catch (err) {
+      if (!duplicate && pendingSelectRef.current?.pullTarget === pullTarget) {
+        pendingSelectRef.current = null;
+      }
+      throw err;
+    } finally {
+      if (!duplicate) inFlightPullsRef.current.delete(pullTarget);
+    }
   };
 
   const mutation = useMutation({
@@ -212,7 +229,7 @@ export function usePullModel() {
     void ipc().models.cancelPull(pullTarget);
   };
 
-  return { ...mutation, progress, bytesPerSecond: rate.bytesPerSecond, cancel };
+  return { ...mutation, progress, bytesPerSecond, cancel };
 }
 
 // ---------------------------------------------------------------------------
@@ -242,7 +259,16 @@ export function useSwitchToFasterBuild(onVerified?: (mlxTag: string) => void) {
   // the `model !== activeTag` check.
   const activeTagRef = React.useRef<string | null>(null);
   const onVerifiedRef = React.useRef(onVerified);
-  onVerifiedRef.current = onVerified;
+  const mountedRef = React.useRef(true);
+  React.useLayoutEffect(() => {
+    onVerifiedRef.current = onVerified;
+  });
+  React.useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   const rate = useByteRateTracker();
 
@@ -282,6 +308,7 @@ export function useSwitchToFasterBuild(onVerified?: (mlxTag: string) => void) {
     }
     setState('verifying');
     const verifyResult = await ipc().models.verify(model);
+    if (!mountedRef.current) return;
     // Deferred until after verify (not right after the download) so that
     // navigating away mid-verify and back replays this whole outcome --
     // including a redundant but harmless re-verify -- on the new mount,
@@ -562,7 +589,7 @@ export function useSetWhisperModel() {
 export function usePullWhisperModel() {
   const qc = useQueryClient();
   const [progress, setProgress] = React.useState<Record<string, string>>({});
-  const [pendingSelect, setPendingSelect] = React.useState<string | null>(null);
+  const pendingSelectRef = React.useRef<string | null>(null);
 
   React.useEffect(() => {
     const offProgress = ipc().on.whisperPullProgress(({ model, progress: p }) => {
@@ -573,10 +600,12 @@ export function usePullWhisperModel() {
         const { [model]: _drop, ...rest } = prev;
         return rest;
       });
-      if (success && pendingSelect === model) {
-        await ipc().whisperModels.set(model);
-        await ipc().transcriptionEngine.set('whisper');
-        setPendingSelect(null);
+      if (pendingSelectRef.current === model) {
+        pendingSelectRef.current = null;
+        if (success) {
+          await ipc().whisperModels.set(model);
+          await ipc().transcriptionEngine.set('whisper');
+        }
       }
       qc.invalidateQueries({ queryKey: whisperKeys.all });
       qc.invalidateQueries({ queryKey: transcriptionEngineKeys.all });
@@ -585,11 +614,16 @@ export function usePullWhisperModel() {
       offProgress();
       offComplete();
     };
-  }, [qc, pendingSelect]);
+  }, [qc]);
 
   const pullAndSelect = async (name: string) => {
-    setPendingSelect(name);
-    unwrap(await ipc().whisperModels.pull(name));
+    pendingSelectRef.current = name;
+    try {
+      unwrap(await ipc().whisperModels.pull(name));
+    } catch (err) {
+      if (pendingSelectRef.current === name) pendingSelectRef.current = null;
+      throw err;
+    }
   };
 
   const mutation = useMutation({
@@ -630,7 +664,8 @@ export function usePullParakeetModel() {
   // Parakeet only has the one model today, but keyed-by-id state still
   // matches the Whisper hook shape so the UI doesn't fork on engine.
   const [progress, setProgress] = React.useState<Record<string, ParakeetPullProgressEvent>>({});
-  const [pendingSelect, setPendingSelect] = React.useState<string | null>(null);
+  const pendingSelectRef = React.useRef<string | null>(null);
+  const inFlightPullsRef = React.useRef(new Set<string>());
 
   React.useEffect(() => {
     const offProgress = ipc().on.parakeetPullProgress((event) => {
@@ -646,16 +681,18 @@ export function usePullParakeetModel() {
         const { [key]: _drop, ...rest } = prev;
         return rest;
       });
-      if (success && pendingSelect === key) {
-        // Same coercion as an explicit switch: auto-selecting Parakeet after a
-        // download must not leave a Whisper-only pin (e.g. 'ja') in config.
-        await coerceLanguageForParakeet();
-        await ipc().transcriptionEngine.set('parakeet');
-        setPendingSelect(null);
-        // Coercion may have reset the pin to 'auto'; refresh the language query
-        // so the Settings dropdown + live dock toggle don't show the stale
-        // pre-coercion code. Mirrors useSetActiveTranscription's onSuccess.
-        qc.invalidateQueries({ queryKey: ['settings', 'language'] });
+      if (pendingSelectRef.current === key) {
+        pendingSelectRef.current = null;
+        if (success) {
+          // Same coercion as an explicit switch: auto-selecting Parakeet after a
+          // download must not leave a Whisper-only pin (e.g. 'ja') in config.
+          await coerceLanguageForParakeet();
+          await ipc().transcriptionEngine.set('parakeet');
+          // Coercion may have reset the pin to 'auto'; refresh the language query
+          // so the Settings dropdown + live dock toggle don't show the stale
+          // pre-coercion code. Mirrors useSetActiveTranscription's onSuccess.
+          qc.invalidateQueries({ queryKey: ['settings', 'language'] });
+        }
       }
       qc.invalidateQueries({ queryKey: parakeetKeys.all });
       qc.invalidateQueries({ queryKey: transcriptionEngineKeys.all });
@@ -664,11 +701,23 @@ export function usePullParakeetModel() {
       offProgress();
       offComplete();
     };
-  }, [qc, pendingSelect]);
+  }, [qc]);
 
   const pullAndSelect = async (id: string) => {
-    setPendingSelect(id);
-    unwrap(await ipc().parakeetModels.pull(id));
+    // Main does not reject a second pull of the same model; it would run a
+    // second downloader whose completion could clear the selection the first
+    // one still owes. Join the running pull instead (its events drive the UI).
+    if (inFlightPullsRef.current.has(id)) return;
+    inFlightPullsRef.current.add(id);
+    pendingSelectRef.current = id;
+    try {
+      unwrap(await ipc().parakeetModels.pull(id));
+    } catch (err) {
+      if (pendingSelectRef.current === id) pendingSelectRef.current = null;
+      throw err;
+    } finally {
+      inFlightPullsRef.current.delete(id);
+    }
   };
 
   const mutation = useMutation({

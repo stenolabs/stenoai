@@ -692,7 +692,7 @@ export function Home({ mode }: HomeProps) {
                       aria-label={t('home.search.aria')}
                       className="h-[26px] w-[180px] rounded-md border-0 pl-7 pr-7 text-[12.5px] outline-none transition-colors focus:shadow-[inset_0_0_0_1px_hsl(var(--border))]"
                       style={{
-                        background: 'rgba(27,27,25,0.04)',
+                        background: 'var(--surface-sunken)',
                         color: 'var(--fg-1)',
                         fontFamily: 'var(--font-sans)',
                       }}

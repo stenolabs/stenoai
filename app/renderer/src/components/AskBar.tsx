@@ -246,7 +246,9 @@ export function AskBar({ visible = true }: { visible?: boolean }) {
   const session = chat.activeSession;
   const selectedSessionId = session?.id;
   const scopeOwnerRef = React.useRef(selectedSessionId);
-  scopeOwnerRef.current = selectedSessionId;
+  React.useLayoutEffect(() => {
+    scopeOwnerRef.current = selectedSessionId;
+  });
   const selectedScope = session?.scopeFolderId;
   React.useEffect(() => {
     setScope(selectedSessionId && selectedScope !== undefined ? selectedScope : MEETING_SCOPE);

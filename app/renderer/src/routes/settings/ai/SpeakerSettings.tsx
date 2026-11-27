@@ -150,7 +150,7 @@ export function SpeakerSeparationSetting() {
         </div>
       </SettingRow>
       {alert && (
-        <div role="alert" className="-mt-2 flex items-center gap-2 pb-3 text-[12px]" style={{ color: 'var(--fg-2)' }}>
+        <div role="alert" className="-mt-2 flex items-center gap-2 pb-3 text-[12px]" style={{ color: 'var(--danger)' }}>
           <span>{alert}</span>
           {engine.isError && (
             <Button

@@ -180,7 +180,7 @@ function HebrewModelSetting({ language }: { language: string }) {
       >
         {control}
         {pull.isError && (
-          <p role="alert" className="mt-2 max-w-[240px] text-xs text-muted-foreground">
+          <p role="alert" className="mt-2 max-w-[240px] text-xs" style={{ color: 'var(--danger)' }}>
             {t('settings.ai.hebrewModel.failed')}
           </p>
         )}
@@ -309,11 +309,14 @@ function TranscriptionModelList() {
       if (parakeetModel.installed) {
         setActive.mutate({ engine: 'parakeet' });
       } else {
+        // Only the download just started should report an error.
+        pullWhisper.reset();
         pullParakeet.mutate(parakeetModel.name);
       }
     } else if (whisperModel.installed) {
       setActive.mutate({ engine: 'whisper', whisperModel: whisperModel.name });
     } else {
+      pullParakeet.reset();
       pullWhisper.mutate(whisperModel.name);
     }
   };
@@ -377,7 +380,11 @@ function TranscriptionModelList() {
             {parakeetProgressLabel(pullParakeet.progress[parakeetModel.name])}
           </p>
         )}
-        {pullParakeet.isError && <p role="alert">{String(pullParakeet.error.message)}</p>}
+        {(pullParakeet.isError || pullWhisper.isError) && (
+          <p role="alert" className="mt-2 max-w-[240px] text-xs" style={{ color: 'var(--danger)' }}>
+            {String((pullParakeet.isError ? pullParakeet.error : pullWhisper.error)?.message ?? '')}
+          </p>
+        )}
       </SettingRow>
 
       {activeEngine === 'openai-asr' && <OpenAiAsrConfig />}

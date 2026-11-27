@@ -140,6 +140,12 @@
       "!build/**/*",
       "!assets/**/*",
       "!.git/**/*",
+      "!**/*.test.js",
+      "!**/*.test.mjs",
+      "!**/*.test.ts",
+      "!**/*.test.tsx",
+      "!e2e-mock-ipc.js",
+      "!renderer/src/**/*",
       "!steno-mcp/**/*",
       "renderer/dist/**",
       "preload.js"

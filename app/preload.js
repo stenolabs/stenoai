@@ -34,6 +34,7 @@ const subscribe = (channel, cb) => {
 // gets events for the stream they asked for. Returns an unsubscribe fn
 // that also sends query-cancel to the main process.
 const subscribeQueryStream = (queryId, { onChunk, onDone, onError, onToolStep, onActionCard } = {}) => {
+  let settled = false;
   const chunkHandler = (_event, payload) => {
     if (payload && payload.queryId === queryId && onChunk) onChunk(payload.chunk);
   };
@@ -47,6 +48,7 @@ const subscribeQueryStream = (queryId, { onChunk, onDone, onError, onToolStep, o
   };
   const doneHandler = (_event, payload) => {
     if (!payload || payload.queryId !== queryId) return;
+    settled = true;
     cleanup();
     if (payload.success) {
       if (onDone) onDone();
@@ -68,7 +70,10 @@ const subscribeQueryStream = (queryId, { onChunk, onDone, onError, onToolStep, o
   ipcRenderer.on('query-done', doneHandler);
   return () => {
     cleanup();
-    ipcRenderer.send('query-cancel', queryId);
+    if (!settled) {
+      settled = true;
+      ipcRenderer.send('query-cancel', queryId);
+    }
   };
 };
 

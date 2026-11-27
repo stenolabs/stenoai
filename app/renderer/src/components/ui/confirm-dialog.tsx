@@ -17,6 +17,8 @@ export interface ConfirmDialogProps {
   description?: React.ReactNode;
   confirmLabel?: string;
   cancelLabel?: string;
+  /** Confirm-button label while the action runs. */
+  pendingLabel?: string;
   destructive?: boolean;
   onConfirm: () => void | Promise<void>;
   isPending?: boolean;
@@ -29,6 +31,7 @@ export function ConfirmDialog({
   description,
   confirmLabel = 'Confirm',
   cancelLabel = 'Cancel',
+  pendingLabel = 'Working...',
   destructive,
   onConfirm,
   isPending,
@@ -74,7 +77,7 @@ export function ConfirmDialog({
             onClick={() => void handleConfirm()}
             disabled={pending}
           >
-            {pending ? 'Working...' : confirmLabel}
+            {pending ? pendingLabel : confirmLabel}
           </Button>
         </DialogFooter>
       </DialogContent>

@@ -7,7 +7,6 @@ except ImportError:
 import json
 import logging
 import re
-import subprocess
 import time
 from typing import Optional, Dict, Any
 from .models import MeetingTranscript, ActionItem, Decision
@@ -290,7 +289,6 @@ class OllamaSummarizer:
         self.cloud_client = None
         self.anthropic_client = None
         self.cloud_provider = None
-        self.ollama_process = None
         self.remote_url = config.get_remote_ollama_url()
         # Bedrock-specific state. Lazily populated only when cloud_provider == 'bedrock'.
         self.bedrock_api_key: Optional[str] = None
@@ -1818,29 +1816,6 @@ TRANSCRIPT:
         except Exception as e:
             logger.error(f"Error setting model: {e}")
             return False
-    
-    def cleanup(self):
-        """Clean up Ollama process if we started it."""
-        if self.ollama_process:
-            try:
-                self.ollama_process.terminate()
-                self.ollama_process.wait(timeout=10)
-                logger.info("Ollama service process terminated")
-            except (subprocess.TimeoutExpired, ProcessLookupError, OSError) as e:
-                # terminate didn't take (or the process is already gone) —
-                # escalate to SIGKILL. ProcessLookupError on the second
-                # try just means it died in the gap, which is fine.
-                logger.warning(f"Ollama terminate failed ({e}); escalating to kill")
-                try:
-                    self.ollama_process.kill()
-                    logger.info("Ollama service process killed")
-                except (ProcessLookupError, OSError):
-                    pass
-            self.ollama_process = None
-    
-    def __del__(self):
-        """Cleanup when object is destroyed."""
-        self.cleanup()
 
     def generate_title(self, summary: str, transcript: str, language: str = "en") -> Optional[str]:
         """

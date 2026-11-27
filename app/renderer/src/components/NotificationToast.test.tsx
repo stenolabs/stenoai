@@ -8,28 +8,28 @@ describe('notificationIconMeta', () => {
     expect(notificationIconMeta('app')).toBeNull();
   });
 
-  it('maps alert -> red AlertCircle', () => {
+  it('maps alert -> danger AlertCircle', () => {
     const meta = notificationIconMeta('alert');
     expect(meta?.Icon).toBe(AlertCircle);
-    expect(meta?.className).toContain('red');
+    expect(meta?.color).toBe('var(--danger)');
   });
 
-  it('maps success -> green CheckCircle2', () => {
+  it('maps success -> success CheckCircle2', () => {
     const meta = notificationIconMeta('success');
     expect(meta?.Icon).toBe(CheckCircle2);
-    expect(meta?.className).toContain('green');
+    expect(meta?.color).toBe('var(--success)');
   });
 
-  it('maps recording -> blue Mic', () => {
+  it('maps recording -> recording Mic', () => {
     const meta = notificationIconMeta('recording');
     expect(meta?.Icon).toBe(Mic);
-    expect(meta?.className).toContain('blue');
+    expect(meta?.color).toBe('var(--recording)');
   });
 
   it('falls back to Info for an unknown iconType', () => {
     // @ts-expect-error - intentionally exercising an out-of-contract value
     const meta = notificationIconMeta('bogus');
     expect(meta?.Icon).toBe(Info);
-    expect(meta?.className).toContain('gray');
+    expect(meta?.color).toBe('var(--fg-2)');
   });
 });

@@ -120,11 +120,13 @@ def get_ollama_env() -> dict:
             "STENOAI_OAI_API_KEY",
             "STENOAI_OAI_API_ORIGIN",
             "STENOAI_OAI_API_URL",
+            "STENOAI_CLOUD_API_KEY",
+            "STENOAI_ADAPTER_TOKEN",
         }
     }
-    # The cloud-ASR credential is injected only so the short-lived backend can
-    # upload audio. Ollama is unrelated to transcription and may outlive that
-    # backend process, so never copy the credential into its server or runners.
+    # Cloud-ASR, cloud-LLM, and org-adapter credentials are injected only for
+    # the short-lived backend CLI. Ollama is detached and may outlive that
+    # process, so never copy those credentials into its server or runners.
 
     bundled_dir = get_bundled_ollama_dir()
     if bundled_dir:
@@ -134,7 +136,7 @@ def get_ollama_env() -> dict:
             # macOS uses DYLD_LIBRARY_PATH for dylib resolution
             existing = env.get('DYLD_LIBRARY_PATH', '')
             env['DYLD_LIBRARY_PATH'] = (
-                f"{ollama_dir_str}:{existing}" if existing else ollama_dir_str
+                f"{ollama_dir_str}{os.pathsep}{existing}" if existing else ollama_dir_str
             )
             # Do NOT set MLX_METAL_PATH: Ollama (v0.31.1+) ships its Metal
             # library under versioned subdirectories (mlx_metal_v3/,
@@ -150,13 +152,13 @@ def get_ollama_env() -> dict:
             # ollama/lib/ollama/ (preserved by stenoai.spec's recursive walk).
             existing = env.get('PATH', '')
             env['PATH'] = (
-                f"{ollama_dir_str};{existing}" if existing else ollama_dir_str
+                f"{ollama_dir_str}{os.pathsep}{existing}" if existing else ollama_dir_str
             )
         else:
             # Linux: LD_LIBRARY_PATH for .so resolution
             existing = env.get('LD_LIBRARY_PATH', '')
             env['LD_LIBRARY_PATH'] = (
-                f"{ollama_dir_str}:{existing}" if existing else ollama_dir_str
+                f"{ollama_dir_str}{os.pathsep}{existing}" if existing else ollama_dir_str
             )
 
     return env
@@ -179,16 +181,18 @@ def is_ollama_running() -> bool:
 
 
 def _get_pid_file() -> Path:
-    """Get the path to the Ollama PID file."""
-    if getattr(sys, 'frozen', False):
-        return Path(sys._MEIPASS) / 'ollama.pid'
-    return Path(__file__).parent.parent / 'ollama.pid'
+    """Get the path to the Ollama PID file in the user data directory."""
+    from src.config import get_user_data_dir
+
+    return get_user_data_dir() / 'ollama.pid'
 
 
 def _write_pid(pid: int) -> None:
     """Write Ollama's PID to a file so Electron can kill it on quit."""
     try:
-        _get_pid_file().write_text(str(pid))
+        pid_file = _get_pid_file()
+        pid_file.parent.mkdir(parents=True, exist_ok=True)
+        pid_file.write_text(str(pid), encoding='utf-8')
     except Exception as e:
         logger.debug(f"Could not write Ollama PID file: {e}")
 
@@ -199,6 +203,11 @@ def _clear_pid() -> None:
         _get_pid_file().unlink(missing_ok=True)
     except Exception:
         pass
+
+
+# How long to keep polling after our own `ollama serve` exited, in case a
+# concurrently started server owns the port and is still starting.
+OLLAMA_EXIT_GRACE_SECONDS = 5
 
 
 def start_ollama_server(wait: bool = True, timeout: int = 30) -> bool:
@@ -241,19 +250,42 @@ def start_ollama_server(wait: bool = True, timeout: int = 30) -> bool:
         else:
             popen_kwargs["start_new_session"] = True
         proc = subprocess.Popen([str(ollama_binary), 'serve'], **popen_kwargs)
-        _write_pid(proc.pid)
 
         if not wait:
+            _write_pid(proc.pid)
             return True
 
-        # Wait for server to be ready
+        # Record our PID only once we know our process is the one serving (or
+        # still running at the deadline). Writing it at spawn would overwrite
+        # the PID of a concurrently started server that wins the port, and
+        # Electron's quit handler would then kill our dead PID instead.
+
+        # Wait for server to be ready (bail early if ollama serve exits)
         start_time = time.time()
         while time.time() - start_time < timeout:
             if is_ollama_running():
+                if proc.poll() is None:
+                    _write_pid(proc.pid)
                 logger.info("Ollama server is ready")
                 return True
+            if proc.poll() is not None:
+                # Our process is gone. It may have lost the port to another
+                # `ollama serve` that is still coming up, so give that one a
+                # short grace period before reporting failure. Its PID was
+                # never recorded, so the PID file is left alone.
+                grace_deadline = min(start_time + timeout, time.time() + OLLAMA_EXIT_GRACE_SECONDS)
+                while time.time() < grace_deadline:
+                    if is_ollama_running():
+                        logger.info("Ollama server is ready (started by another process)")
+                        return True
+                    time.sleep(0.5)
+                logger.error(f"Ollama server exited prematurely with code {proc.returncode}")
+                return False
             time.sleep(0.5)
 
+        if proc.poll() is None:
+            # Still starting: keep it tracked so quit can stop it.
+            _write_pid(proc.pid)
         logger.error(f"Ollama server did not start within {timeout} seconds")
         return False
 

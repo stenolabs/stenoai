@@ -102,7 +102,7 @@ export function OpenAiAsrConfig() {
         <label
           htmlFor="openai-asr-api-url"
           className="mb-1 block text-[12px] font-medium uppercase"
-          style={{ letterSpacing: '0.06em', color: 'var(--fg-muted)' }}
+          style={{ letterSpacing: '0.06em', color: 'var(--fg-2)' }}
         >
           {t('settings.ai.cloudAsr.apiBaseUrlLabel')}
         </label>
@@ -131,7 +131,7 @@ export function OpenAiAsrConfig() {
         <label
           htmlFor="openai-asr-model"
           className="mb-1 block text-[12px] font-medium uppercase"
-          style={{ letterSpacing: '0.06em', color: 'var(--fg-muted)' }}
+          style={{ letterSpacing: '0.06em', color: 'var(--fg-2)' }}
         >
           {t('settings.ai.cloudAsr.modelLabel')}
         </label>
@@ -159,7 +159,7 @@ export function OpenAiAsrConfig() {
         <label
           htmlFor="openai-asr-api-key"
           className="mb-1 block text-[12px] font-medium uppercase"
-          style={{ letterSpacing: '0.06em', color: 'var(--fg-muted)' }}
+          style={{ letterSpacing: '0.06em', color: 'var(--fg-2)' }}
         >
           {t('settings.ai.cloudAsr.apiKeyLabel')}
         </label>

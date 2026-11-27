@@ -54,9 +54,12 @@ interface ChatConversationProps {
 
 export function ChatConversation({ sessionId }: ChatConversationProps) {
   const scopeOwnerRef = React.useRef(sessionId);
-  scopeOwnerRef.current = sessionId;
+  React.useLayoutEffect(() => {
+    scopeOwnerRef.current = sessionId;
+  });
   const allSessions = useAllChatSessions();
   const chat = useChatSessions(GLOBAL_SCOPE, null);
+  const { setActiveId } = chat;
   const streaming = useGlobalStreaming();
   const provider = useAiProvider();
 
@@ -86,8 +89,8 @@ export function ChatConversation({ sessionId }: ChatConversationProps) {
   // chat.activeSession / chat.appendMessage operate on the right record
   // instead of whichever one useChatSessions's auto-restore landed on.
   React.useEffect(() => {
-    chat.setActiveId(sessionId);
-  }, [sessionId, chat]);
+    setActiveId(sessionId);
+  }, [sessionId, setActiveId]);
 
   // Pick up an in-flight stream the entry page kicked off right before
   // navigating, so we don't lose its tokens during the route change.

@@ -446,6 +446,20 @@ function DetailContent({
     streamCache.set(summaryFile, { text: streamText, phase: streamPhase });
   }, [summaryFile, streamText, streamPhase]);
 
+  // Pending 400 ms stream resets outlive the listener effect below on purpose:
+  // that effect re-runs when the note is renamed (info.name), which happens
+  // right as processing completes, and dropping the reset there would leave
+  // the finished note stuck in the streaming view. Only a switch to another
+  // note (or unmount) cancels them.
+  const streamClearTimersRef = React.useRef(new Set<ReturnType<typeof setTimeout>>());
+  React.useEffect(() => {
+    const timers = streamClearTimersRef.current;
+    return () => {
+      for (const timer of timers) clearTimeout(timer);
+      timers.clear();
+    };
+  }, [summaryFile]);
+
   React.useEffect(() => {
     const sessionName = info.name;
     const offChunk = ipc().on.summaryChunk((e) => {
@@ -459,6 +473,16 @@ function DetailContent({
       setStreamPhase((prev) => (prev === 'analyzing' || prev === 'idle' ? 'generating' : prev));
       setStreamText((prev) => prev + e.chunk);
     });
+    const clearTimers = streamClearTimersRef.current;
+    const scheduleStreamClear = () => {
+      const id = setTimeout(() => {
+        clearTimers.delete(id);
+        setStreamText('');
+        setStreamPhase('idle');
+        streamCache.delete(summaryFile);
+      }, 400);
+      clearTimers.add(id);
+    };
     const offComplete = ipc().on.summaryComplete((e) => {
       if (e.summaryFile !== summaryFile) return;
       if (!e.success) {
@@ -490,11 +514,7 @@ function DetailContent({
           if (fresh?.active_report) setActiveReportId(fresh.active_report);
         });
         setChunkProgress(null);
-        setTimeout(() => {
-          setStreamText('');
-          setStreamPhase('idle');
-          streamCache.delete(summaryFile);
-        }, 400);
+        scheduleStreamClear();
       }
     });
     const offProcessing = ipc().on.processingComplete((e) => {
@@ -526,11 +546,7 @@ function DetailContent({
         return;
       }
       void qc.invalidateQueries({ queryKey: meetingsKeys.all });
-      setTimeout(() => {
-        setStreamText('');
-        setStreamPhase('idle');
-        streamCache.delete(summaryFile);
-      }, 400);
+      scheduleStreamClear();
     });
     const offProgress = ipc().on.processingProgress((e) => {
       // Ignore progress from a different meeting's concurrent reprocess — without
@@ -1579,7 +1595,7 @@ function DetailContent({
             aria-label={t('meeting.regenerateTitleAria')}
             title={t('meeting.regenerateTitleAria')}
             className={cn(
-              'inline-flex items-center justify-center opacity-0 transition-opacity group-hover:opacity-100 disabled:pointer-events-none',
+              'inline-flex items-center justify-center opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 disabled:pointer-events-none',
               titleRegening && 'opacity-100'
             )}
             style={{
@@ -1621,7 +1637,18 @@ function DetailContent({
               {info.name}
             </span>
           ) : (
-            <span className="cursor-text" onClick={() => setIsEditingTitle(true)}>
+            <span
+              role="button"
+              tabIndex={0}
+              className="cursor-text rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--focus-ring)]"
+              onClick={() => setIsEditingTitle(true)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  setIsEditingTitle(true);
+                }
+              }}
+            >
               {info.name}
             </span>
           )}
@@ -2159,7 +2186,7 @@ function NoteViewToggle({
             <span
               aria-hidden="true"
               className="size-1.5 rounded-full"
-              style={{ background: 'var(--accent-primary)' }}
+              style={{ background: 'hsl(var(--accent-primary))' }}
             />
           )}
         </button>

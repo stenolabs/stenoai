@@ -29,7 +29,7 @@ import { ImportDropZone } from '@/components/ImportDropZone';
 import { CommandPaletteProvider, useCommandPalette } from '@/components/CommandPalette';
 import { AskBarProvider } from '@/lib/askBarContext';
 import {
-  useRecording,
+  useRecordingShellState,
   useRecordingEvents,
   useRecordingProcessingEffects,
 } from '@/hooks/useRecording';
@@ -49,7 +49,7 @@ async function hasInstalledTranscriptionModel() {
   ]);
   return (parakeet.success && parakeet.installed === true) ||
     (whisper.success && Object.values(whisper.supported_models ?? {}).some(
-      model => (model as { installed?: boolean }).installed === true,
+      model => model.installed === true,
     ));
 }
 
@@ -131,7 +131,7 @@ export function App() {
   // Cold-reload mid-processing: if we restart the app while the backend is
   // still summarizing, drop the user on /meetings/processing so they don't
   // sit on Home wondering what happened. Only fires once on first render.
-  const recording = useRecording();
+  const recording = useRecordingShellState();
 
   // Reset the inline transcript panel to closed on every new recording
   // session. Without this, a user who opened the panel in session A would

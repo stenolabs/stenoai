@@ -604,37 +604,15 @@
     border-radius: 20px;
     background: var(--surface-raised);
     border: 1px solid var(--border-subtle);
-    box-shadow: 0 8px 32px -8px rgba(0, 0, 0, 0.3);
+    box-shadow: var(--shadow-md);
     backdrop-filter: saturate(180%) blur(12px);
     -webkit-backdrop-filter: saturate(180%) blur(12px);
-    transition: all var(--dur) var(--ease);
+    transition: border-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease), transform var(--dur) var(--ease);
   }
   .glass-input-wrapper:focus-within {
-    border-color: rgba(237, 234, 224, 0.20);
-    box-shadow: 0 12px 48px -12px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(237, 234, 224, 0.05);
-    transform: translateY(-2px);
-  }
-  .glass-input-wrapper::before {
-    content: "";
-    position: absolute;
-    inset: -1px;
-    border-radius: 21px;
-    padding: 1px;
-    background: linear-gradient(120deg, rgba(142, 142, 147, 0.2), rgba(99, 102, 241, 0.2), rgba(142, 142, 147, 0.2));
-    -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-    -webkit-mask-composite: xor;
-    mask-composite: exclude;
-    opacity: 0;
-    transition: opacity var(--dur) var(--ease);
-    pointer-events: none;
-  }
-  .glass-input-wrapper:focus-within::before {
-    opacity: 1;
-    animation: border-rotate 4s linear infinite;
-  }
-  @keyframes border-rotate {
-    from { filter: hue-rotate(0deg); }
-    to { filter: hue-rotate(360deg); }
+    border-color: var(--border-strong);
+    box-shadow: var(--shadow-lg), 0 0 0 2px var(--focus-ring);
+    transform: translateY(-1px);
   }
 
   /* ==========================================================================
@@ -910,7 +888,7 @@
     margin: 0.6em 0;
   }
   .stream-markdown pre code { background: transparent; padding: 0; }
-  .stream-markdown a { color: var(--accent-primary); text-decoration: underline; }
+  .stream-markdown a { color: hsl(var(--accent-primary)); text-decoration: underline; }
   .stream-markdown hr {
     border: 0;
     border-top: 1px solid var(--border-subtle);
@@ -941,6 +919,22 @@
 .chat-markdown h1, .chat-markdown h2, .chat-markdown h3,
 .chat-markdown h4, .chat-markdown h5, .chat-markdown h6 {
   margin: 0.75rem 0 0.375rem; font-size: 1em; font-weight: 600;
+}
+
+@keyframes cursor-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+/* Reduced motion drops movement from transitions and smooth scrolling.
+   Animations are left alone: spinners and indeterminate bars are status, and
+   freezing them reads as a hung app. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  .glass-input-wrapper:focus-within { transform: none; }
 }
 .chat-markdown pre { overflow-x: auto; padding: 0.75rem; margin: 0.5rem 0; border-radius: 6px; background: var(--surface-active); }
 .chat-markdown code { font-family: var(--font-mono); font-size: 0.9em; background: var(--surface-active); border-radius: 3px; padding: 0.1em 0.25em; }

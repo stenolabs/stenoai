@@ -7,7 +7,7 @@ import { startLinuxLoopbackStream, type LinuxLoopbackStream } from '@/lib/linuxL
 import { flushNotesThenProcess } from '@/lib/notesFlush';
 import { unwrap } from '@/lib/result';
 import { getLiveDraft } from './liveDraftStore';
-import { useRecording } from './useRecording';
+import { useRecordingShellState } from './useRecording';
 import { useTranscriptionEngine } from './useModels';
 import {
   settingsKeys,
@@ -46,7 +46,7 @@ const SILENCE_SAMPLE_INTERVAL_MS = 1_000;
  * subprocess fallback — capture always happens here, on every platform.
  */
 export function useSystemAudioCapture() {
-  const { status, sessionName, recordingId } = useRecording();
+  const { status, sessionName, recordingId } = useRecordingShellState();
   const systemAudio = useSystemAudioSetting();
   const systemAudioSupport = useSystemAudioSupport();
   const engineQuery = useTranscriptionEngine();

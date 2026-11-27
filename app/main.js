@@ -202,7 +202,7 @@ const IS_E2E = process.env.STENOAI_E2E === '1';
 // the dock, the scheduler and telemetry, and re-gating those on packaging would
 // be a far wider behavioural change than closing this hole.
 const ALLOW_E2E_PATH_SEAMS = IS_E2E && !app.isPackaged;
-const IS_E2E_MOCK_IPC = process.env.STENOAI_E2E_MOCK_IPC === '1';
+const IS_E2E_MOCK_IPC = !app.isPackaged && process.env.STENOAI_E2E_MOCK_IPC === '1';
 const IS_E2E_HEADLESS = IS_E2E && process.env.STENOAI_E2E_HEADLESS === '1';
 
 // Carry chat history over from v0.8.0, the one release named "StenoAI".
@@ -1854,10 +1854,18 @@ function createWindow(options = {}) {
     }
     // Wait until React signals it has mounted. Fall back to showing after
     // 4s in case the signal never arrives.
-    const fallback = setTimeout(showWhenReady, 4000);
-    ipcMain.once('renderer-ready-to-show', () => {
+    const onRendererReady = () => {
       clearTimeout(fallback);
       showWhenReady();
+    };
+    const fallback = setTimeout(() => {
+      ipcMain.removeListener('renderer-ready-to-show', onRendererReady);
+      showWhenReady();
+    }, 4000);
+    ipcMain.once('renderer-ready-to-show', onRendererReady);
+    mainWindow.once('closed', () => {
+      clearTimeout(fallback);
+      ipcMain.removeListener('renderer-ready-to-show', onRendererReady);
     });
   });
 
@@ -2656,14 +2664,28 @@ if (!gotSingleInstanceLock) {
   app.on('will-quit', async () => {
     globalShortcut.unregisterAll();
     destroyTray();
+    stopMicMonitor();
+    if (premeetingRescheduleTimer) {
+      clearInterval(premeetingRescheduleTimer);
+      premeetingRescheduleTimer = null;
+    }
+    clearPreMeetingTimers();
+    if (autoUpdaterInitialTimer) {
+      clearTimeout(autoUpdaterInitialTimer);
+      autoUpdaterInitialTimer = null;
+    }
+    if (autoUpdaterIntervalTimer) {
+      clearInterval(autoUpdaterIntervalTimer);
+      autoUpdaterIntervalTimer = null;
+    }
     // Local MCP servers (Connect -> Custom MCP server -> Command on this
     // computer): kill each process tree so none outlives the app.
     try { if (mcpActionsService) mcpActionsService.shutdown(); } catch (_) {}
     // Kill Ollama on quit. The process may have been started by Electron or
-    // the Python backend — both write the PID to ollama.pid in _internal/.
+    // the Python backend — both write the PID to ollama.pid in user data dir.
     // killProcessTree tears down ollama's child runner subprocesses too, so
     // they don't orphan on Windows.
-    const pidFile = path.join(getBackendCwd(), '_internal', 'ollama.pid');
+    const pidFile = path.join(getUserDataDir(), 'ollama.pid');
     try {
       const pid = parseInt(require('fs').readFileSync(pidFile, 'utf8').trim(), 10);
       if (pid) killProcessTree(pid);
@@ -3961,7 +3983,7 @@ ipcMain.on('chat-context-stream', async (event, queryId, request) => {
     if (cancelled || sender.isDestroyed()) { cleanup(); return; }
     const runPlain = () => {
       const query = runChatQuery({
-        spawn: require('child_process').spawn,
+        spawn,
         backend: getBackendPath(), env: getBackendEnv(getAiEnv()), cwd: getBackendCwd(),
         payload, send, onFinish: cleanup,
       });
@@ -4224,8 +4246,14 @@ ipcMain.on('query-cancel', (_event, queryId) => {
 });
 
 ipcMain.on('query-transcript-stream', async (event, queryId, summaryFile, question) => {
-  console.log(`[QUERY] IPC received: question="${question.substring(0, 50)}" file="${summaryFile}"`);
-  sendDebugLog(`🤖 Streaming query (${String(question || '').length} chars)`);
+  if (typeof question !== 'string') {
+    if (!event.sender.isDestroyed()) {
+      event.sender.send('query-done', { queryId, success: false, error: 'Invalid question' });
+    }
+    return;
+  }
+  console.log(`[QUERY] IPC received: question_len=${question.length} file="${summaryFile}"`);
+  sendDebugLog(`🤖 Streaming query (${question.length} chars)`);
   const env = getBackendEnv(getAiEnv());
 
   // chat_message_sent restores visibility into single-meeting chat (dormant
@@ -4310,10 +4338,9 @@ ipcMain.on('query-transcript-stream', async (event, queryId, summaryFile, questi
   let proc;
   try {
     const backendPath = getBackendPath();
-    proc = require('child_process').spawn(backendPath, ['query-streaming', validated.realPath, '-q', question], {
+    proc = spawn(backendPath, ['query-streaming', validated.realPath, '-q', question], {
       env,
       cwd: getBackendCwd(),
-      windowsHide: true,
     });
   } catch (err) {
     sendDone({ success: false, error: err.message });
@@ -4440,10 +4467,10 @@ ipcMain.on('chat-global-stream', (event, queryId, question, folderId) => {
 
   let proc;
   try {
-    proc = require('child_process').spawn(
+    proc = spawn(
       getBackendPath(),
       args,
-      { env, cwd: getBackendCwd(), windowsHide: true },
+      { env, cwd: getBackendCwd() },
     );
   } catch (err) {
     event.sender.send('query-done', { queryId, success: false, error: err.message });
@@ -4678,6 +4705,29 @@ ipcMain.handle('export-transcript', async (event, defaultFilename, content) => {
 // document's own `@page { size: A4; margin: … }` so page geometry lives with the
 // template, not here. Cross-platform: printToPDF is Chromium, identical on both.
 const PDF_RENDER_TIMEOUT_MS = 15000;
+const PDF_RENDER_PARTITION = 'pdf-render';
+let pdfRenderSessionHardened = false;
+
+function getHardenedPdfSession() {
+  const pdfSession = session.fromPartition(PDF_RENDER_PARTITION, { cache: false });
+  if (!pdfRenderSessionHardened) {
+    pdfRenderSessionHardened = true;
+    pdfSession.webRequest.onBeforeRequest((details, callback) => {
+      callback({ cancel: !details.url.startsWith('data:') });
+    });
+    pdfSession.webRequest.onHeadersReceived((details, callback) => {
+      callback({
+        responseHeaders: {
+          ...details.responseHeaders,
+          'Content-Security-Policy': [
+            "default-src 'none'; img-src data:; font-src data:; style-src 'unsafe-inline'",
+          ],
+        },
+      });
+    });
+  }
+  return pdfSession;
+}
 
 async function renderHtmlToPdf(html) {
   const win = new BrowserWindow({
@@ -4686,6 +4736,7 @@ async function renderHtmlToPdf(html) {
       nodeIntegration: false,
       contextIsolation: true,
       sandbox: true,
+      session: getHardenedPdfSession(),
       // No preload / IPC surface: this window only ever renders a static,
       // renderer-supplied document to PDF.
     },
@@ -8100,15 +8151,19 @@ function setupAutoUpdater() {
   });
 
   // Check on launch (after a short delay to not block startup)
-  setTimeout(() => {
+  autoUpdaterInitialTimer = setTimeout(() => {
+    autoUpdaterInitialTimer = null;
     autoUpdater.checkForUpdates().catch(() => {});
   }, 10000);
 
   // Re-check every 30 minutes
-  setInterval(() => {
+  autoUpdaterIntervalTimer = setInterval(() => {
     autoUpdater.checkForUpdates().catch(() => {});
   }, 30 * 60 * 1000);
 }
+
+let autoUpdaterInitialTimer = null;
+let autoUpdaterIntervalTimer = null;
 
 ipcMain.on('install-update', () => {
   // Defense in depth for #432: today the renderer only shows "Restart to
@@ -8609,14 +8664,9 @@ function setupAutoMeetingDetector() {
   startMicMonitor();
 }
 
-app.on('before-quit', () => {
-  stopMicMonitor();
-  if (premeetingRescheduleTimer) {
-    clearInterval(premeetingRescheduleTimer);
-    premeetingRescheduleTimer = null;
-  }
-  clearPreMeetingTimers();
-});
+// Mic monitor and pre-meeting timers are torn down in app.on('will-quit')
+// rather than 'before-quit' so cancelling the quit confirmation dialog during
+// an active recording/processing job does not silently disable them.
 
 // sendDebugLog now comes from ./debug-log via createDebugLog(...) wired near the
 // top of this file (the main-window sink is injected as an accessor).
@@ -8766,8 +8816,12 @@ ipcMain.handle('setup-ollama-and-model', async () => {
       sendDebugLog(`$ ${finalOllamaPath} serve`);
       ollamaProcess = spawn(finalOllamaPath, ['serve'], { detached: true, stdio: ['ignore', 'ignore', 'pipe'], env: getOllamaEnv() });
       ollamaPid = ollamaProcess.pid;
-      // Write PID file so quit handler can find the process
-      try { require('fs').writeFileSync(path.join(getBackendCwd(), '_internal', 'ollama.pid'), String(ollamaPid)); } catch (_) {}
+      // Write PID file in user data dir so quit handler can find the process
+      try {
+        const userDataDir = getUserDataDir();
+        require('fs').mkdirSync(userDataDir, { recursive: true });
+        require('fs').writeFileSync(path.join(userDataDir, 'ollama.pid'), String(ollamaPid));
+      } catch (_) {}
       ollamaProcess.stderr.on('data', (data) => {
         const msg = data.toString().trim();
         if (msg) sendDebugLog(`Ollama: ${msg}`);
@@ -9587,11 +9641,18 @@ ipcMain.handle('get-transcription-engine', async () => {
   } catch (e) { return { success: false, error: e.message }; }
 });
 
+const ALLOWED_TRANSCRIPTION_ENGINES = new Set(['parakeet', 'whisper', 'openai-asr']);
+
 ipcMain.handle('set-transcription-engine', async (event, engine) => {
+  if (typeof engine !== 'string' || !ALLOWED_TRANSCRIPTION_ENGINES.has(engine)) {
+    return { success: false, error: 'Unknown transcription engine' };
+  }
   try {
     const result = await runPythonScript('simple_recorder.py', ['set-transcription-engine', engine]);
     const jsonData = JSON.parse(result.trim());
-    trackEvent('model_changed', { model: engine, kind: 'transcription_engine' });
+    if (jsonData.success) {
+      trackEvent('model_changed', { model: engine, kind: 'transcription_engine' });
+    }
     return { success: true, ...jsonData };
   } catch (e) { return { success: false, error: e.message }; }
 });
@@ -9736,6 +9797,9 @@ ipcMain.handle('get-active-whisper-pulls', () => {
 });
 
 ipcMain.handle('pull-whisper-model', (event, modelName) => {
+  if (typeof modelName !== 'string' || !modelName.trim()) {
+    return Promise.resolve({ success: false, error: 'Invalid model name' });
+  }
   const active = activeWhisperPulls.get(modelName);
   if (active) return active.promise;
   const entry = { progress: '', promise: null };
@@ -11664,11 +11728,13 @@ async function queueSystemAudioRecording(audioFilePath, sessionName) {
         const draft = fs.readFileSync(notesFile, 'utf-8');
         fs.unlinkSync(notesFile);
         if (draft.trim()) {
+          const notesTmpDir = path.join(getUserDataDir(), 'tmp-notes');
+          fs.mkdirSync(notesTmpDir, { recursive: true, mode: 0o700 });
           notesPath = path.join(
-            os.tmpdir(),
-            `stenoai-notes-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.txt`,
+            notesTmpDir,
+            `stenoai-notes-${Date.now()}-${require('crypto').randomBytes(8).toString('hex')}.txt`,
           );
-          fs.writeFileSync(notesPath, draft, 'utf-8');
+          fs.writeFileSync(notesPath, draft, { encoding: 'utf-8', mode: 0o600, flag: 'wx' });
         }
       } catch (e) {
         sendDebugLog(`[notes] failed to snapshot draft notes: ${e.message}`);
@@ -14639,9 +14705,12 @@ async function _ssoOpenLoopback() {
             const error = u.searchParams.get('error');
             sres.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
             if (error) {
+              const safeError = String(error)
+                .slice(0, 80)
+                .replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
               sres.end(
                 `<html><body style="font:14px -apple-system;padding:40px">` +
-                `Sign-in failed: <code>${String(error).slice(0, 80)}</code>. ` +
+                `Sign-in failed: <code>${safeError}</code>. ` +
                 `You can close this window.</body></html>`,
               );
               cleanup();
@@ -14707,8 +14776,19 @@ ipcMain.handle('org-sso-google-start', async (_event, payload) => {
       return { success: false, error: startBody.detail || `HTTP ${startRes.status}` };
     }
 
-    // 4. Open browser.
-    await shell.openExternal(startBody.authorize_url);
+    // 4. Validate and open browser.
+    let authorizeUrl;
+    try {
+      const parsed = new URL(startBody.authorize_url);
+      if (parsed.protocol !== 'https:' || parsed.username || parsed.password) {
+        throw new Error('non-https or credentialed authorize URL');
+      }
+      authorizeUrl = parsed.toString();
+    } catch (_) {
+      try { loopback.server.close(); } catch (_err) {}
+      return { success: false, error: 'Adapter returned an invalid sign-in URL' };
+    }
+    await shell.openExternal(authorizeUrl);
 
     // 5. Wait for the callback (5-minute hard cap). waitForCallback closes
     //    the server itself on resolve/reject.

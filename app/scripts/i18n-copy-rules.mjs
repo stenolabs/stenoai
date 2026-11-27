@@ -48,6 +48,7 @@ export const COPY_ATTRIBUTES = [
   'message',
   'confirmLabel',
   'cancelLabel',
+  'pendingLabel',
   'submitLabel',
 ];
 

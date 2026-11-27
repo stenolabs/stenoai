@@ -40,8 +40,8 @@ export function UpcomingCard({ event }: UpcomingCardProps) {
     if (meetingUrl) void ipc().shell.openExternal(meetingUrl, event.id);
   };
 
-  // Use the explicit calendar color if provided by the backend, otherwise default to a pleasant blue
-  const color = event.color || '#3B82F6';
+  // Use the explicit calendar color if provided by the backend, otherwise default to Paper + Ink neutral
+  const color = event.color || 'var(--fg-2)';
 
   return (
     <div
@@ -50,25 +50,26 @@ export function UpcomingCard({ event }: UpcomingCardProps) {
         urgent && 'opacity-100',
         !urgent && 'opacity-90 hover:opacity-100'
       )}
-      role="button"
-      tabIndex={0}
-      onClick={onStart}
-      onKeyDown={(e) => {
-        if (e.target !== e.currentTarget) return;
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault();
-          onStart();
-        }
+      // Padding, the colour bar and the CTA strip sit outside the inner
+      // button but still highlight on hover; a click there starts the
+      // recording as before. Clicks on any button keep their own action.
+      onClick={(e) => {
+        if (!(e.target as HTMLElement).closest('button')) onStart();
       }}
     >
       {/* Left indicator bar */}
-      <div 
-        className="absolute left-0 top-2 bottom-2 w-0.5 rounded-full" 
-        style={{ backgroundColor: color }} 
+      <div
+        aria-hidden="true"
+        className="absolute left-0 top-2 bottom-2 w-0.5 rounded-full"
+        style={{ backgroundColor: color }}
       />
 
-      {/* Main content */}
-      <div className="flex min-w-0 flex-1 flex-col pl-3">
+      {/* Main clickable content (sibling to CTA button so interactive elements are not nested) */}
+      <button
+        type="button"
+        onClick={onStart}
+        className="flex min-w-0 flex-1 cursor-pointer flex-col border-0 bg-transparent p-0 pl-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--focus-ring)] rounded"
+      >
         <div className="flex items-center gap-2">
           <div
             className="truncate text-[13.5px] font-medium tracking-[-0.005em]"
@@ -77,15 +78,16 @@ export function UpcomingCard({ event }: UpcomingCardProps) {
             {event.title || 'Untitled meeting'}
           </div>
           {(isLive && !!meetingUrl) && (
-            <span 
-              className="inline-block size-1.5 rounded-full" 
-              style={{ background: 'var(--recording)', animation: 'record-pulse 1.6s ease-out infinite' }} 
+            <span
+              aria-hidden="true"
+              className="inline-block size-1.5 rounded-full"
+              style={{ background: 'var(--recording)', animation: 'record-pulse 1.6s ease-out infinite' }}
             />
           )}
         </div>
         <div
           className="flex items-center gap-1.5 text-[11.5px] font-medium"
-          style={{ color: 'var(--fg-muted)' }}
+          style={{ color: 'var(--fg-2)' }}
         >
           {meta.timeRange || meta.primary}
           {relative.urgent && (
@@ -95,7 +97,7 @@ export function UpcomingCard({ event }: UpcomingCardProps) {
              </>
           )}
         </div>
-      </div>
+      </button>
 
       {/* CTA */}
       <div className="flex flex-shrink-0 items-center gap-2 pl-4 opacity-0 transition-opacity pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto group-focus-within:opacity-100 group-focus-within:pointer-events-auto focus-within:opacity-100 focus-within:pointer-events-auto">

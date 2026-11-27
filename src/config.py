@@ -794,7 +794,7 @@ class Config:
         last_error = None
         for attempt in range(2):
             try:
-                with open(self.config_path, 'r') as f:
+                with open(self.config_path, 'r', encoding='utf-8') as f:
                     config = json.load(f)
                     if not isinstance(config, dict):
                         # `null` / `[]` parse fine but crash every get/set
@@ -878,7 +878,7 @@ class Config:
         if not self.config_path.exists():
             return None
         try:
-            with open(self.config_path, 'r') as f:
+            with open(self.config_path, 'r', encoding='utf-8') as f:
                 data = json.load(f)
         except Exception:
             return None
@@ -892,7 +892,7 @@ class Config:
         a malformed or inaccessible one must instead fail the transaction.
         """
         try:
-            with open(self.config_path, "r") as file_handle:
+            with open(self.config_path, "r", encoding="utf-8") as file_handle:
                 data = json.load(file_handle)
         except FileNotFoundError:
             return True, None
