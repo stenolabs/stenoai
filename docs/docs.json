@@ -20,6 +20,7 @@
               "getting-started/what-is-steno",
               "getting-started/installation",
               "getting-started/api-key",
+              "getting-started/litellm",
               "getting-started/first-recording"
             ]
           },

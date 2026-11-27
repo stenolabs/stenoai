@@ -1,0 +1,63 @@
+---
+title: "Use LiteLLM with Steno"
+description: "Point Steno's custom endpoint at a LiteLLM proxy, or any other OpenAI-compatible gateway, and use whichever models your organisation routes through it."
+icon: "route"
+---
+
+[LiteLLM](https://docs.litellm.ai) is an open-source proxy that puts one OpenAI-compatible API in front of many model providers, with the keys, routing, spend limits and logging managed centrally. If your organisation runs one, Steno can use it as its cloud model: pick **Custom endpoint** and point it at the proxy. The same steps work for any other OpenAI-compatible gateway, such as vLLM or a self-hosted server.
+
+## Set it up
+
+You need three things from whoever runs the proxy.
+
+| Field | What to enter |
+|-------|---------------|
+| **API base URL** | The proxy's address with the `/v1` path, for example `https://litellm.example.com/v1`. Steno calls `/chat/completions` and `/models` below it. |
+| **API key** | A LiteLLM virtual key (it starts with `sk-`). A proxy admin creates it in the LiteLLM UI or with `POST /key/generate`; it decides which models you can reach and how much you can spend. |
+| **Model** | A model name the proxy exposes, such as `gpt-4o-mini`. Names are whatever the proxy's `model_list` defines, not necessarily the upstream provider's id. |
+
+<Steps>
+  <Step title="Choose the custom endpoint">
+    **During setup**: on **How should Steno think?**, choose **Cloud**, open **Other providers** and pick **Custom endpoint (LiteLLM, vLLM, …)**.
+
+    **Later**: open **Settings → AI**, set **AI provider** to **Cloud API** and set **Service** to **Custom endpoint (LiteLLM, vLLM, …)**.
+  </Step>
+  <Step title="Enter the base URL and key">
+    Paste the proxy URL into **API base URL** and the virtual key into **API key**.
+  </Step>
+  <Step title="Connect and pick a model">
+    **During setup**: click **Connect** and finish setup. To choose the proxy's model, open **Settings → AI** afterwards.
+
+    **In Settings → AI**: click **Test connection** to load the proxy's model list. Pick a model from the list or choose **Custom…** to enter the name your proxy admin gave you. If there is no list, enter the name directly in the **Model** field.
+  </Step>
+</Steps>
+
+The key is stored encrypted on this device and is only ever sent to the proxy.
+
+## What works through the proxy
+
+Steno talks to a custom endpoint exactly as it talks to OpenAI, so everything the OpenAI path supports works here:
+
+- **Streaming**: notes and chat answers stream as the model writes them.
+- **Tool calling**: Ask uses OpenAI-style tool calls to search your meetings and look up notes. The model behind the proxy needs to support tools; most current hosted models do.
+- **Model list**: **Test connection** reads `/models`, so the picker shows what your key is allowed to use.
+
+<Note>
+Steno sends a plain bearer key in the `Authorization` header and calls the OpenAI chat-completions API. Gateways that need a different header or an extra query parameter, such as Azure OpenAI's `api-key` header and `api-version`, are not supported directly; put LiteLLM or a similar proxy in front of them instead.
+</Note>
+
+## What is sent to the proxy
+
+Steno sends the proxy text for these tasks.
+
+- **Notes**: the transcript and any notes you typed.
+- **Chat**: your question and the meeting context you selected.
+- **Suggested actions**: the note's title, summary and action items.
+
+Recording runs on your computer. Transcription also runs on your computer by default. If you separately enable cloud transcription, Steno sends audio to the endpoint you configure for speech-to-text. Your organisation controls what its LiteLLM proxy logs or forwards upstream. See [Confidential use cases](/privacy/confidential-use-cases) before using a cloud model for confidential recordings.
+
+## Troubleshooting
+
+- **401 or "invalid API key"**: the virtual key is wrong, expired or was revoked. Ask the proxy admin for a new one.
+- **404 on Test connection**: the base URL is probably missing `/v1`, or the proxy is served under a path prefix. Copy the URL exactly as the admin gave it.
+- **The model list is empty**: ask your proxy admin for the exact model name and enter it in **Settings → AI → Model**. Setup's **Connect** requires the proxy to answer `/models` successfully.

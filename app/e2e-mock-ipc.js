@@ -723,10 +723,20 @@ function install({ ipcMain }) {
     snippets: connectInstall.snippets(CONNECT_LAUNCHER, 'darwin'),
     launch: CONNECT_LAUNCHER,
     // Claude Code: MCP + the skill; Codex: the skill only; Claude: MCP. So the
-    // spec covers Connected (+ Skill installed hint), Skill installed alone,
-    // the not-connected state, and Last used on both kinds of card.
-    clients: { claudeDesktop: true, claudeCode: true, codex: false, cursor: false },
-    skills: { claudeCode: true, codex: true },
+    // spec covers Connected (+ the Skill installed badge), Skill installed
+    // alone, the not-connected state, and Last used on both kinds of card.
+    // STENOAI_E2E_CONNECT_MCP_ONLY swaps the coding agents: Claude Code has
+    // nothing installed and Codex is connected over MCP without the skill, so
+    // the spec covers the MCP-only card (no badge) and the fresh card too.
+    ...(process.env.STENOAI_E2E_CONNECT_MCP_ONLY === '1'
+      ? {
+          clients: { claudeDesktop: true, claudeCode: false, codex: true, cursor: false },
+          skills: { claudeCode: false, codex: false },
+        }
+      : {
+          clients: { claudeDesktop: true, claudeCode: true, codex: false, cursor: false },
+          skills: { claudeCode: true, codex: true },
+        }),
     lastUsed: {
       any: new Date(Date.now() - 5 * 60_000).toISOString(),
       claudeCode: new Date(Date.now() - 5 * 60_000).toISOString(),
