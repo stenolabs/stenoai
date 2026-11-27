@@ -3,6 +3,7 @@ import json, tempfile, unittest
 from pathlib import Path
 from unittest import mock
 from src.config import Config
+from src.templates import BUILTIN_TEMPLATES
 import simple_recorder
 from src import report_store
 
@@ -32,6 +33,42 @@ def _cfg(tmp, default_id):
 
 
 class DefaultTemplateReportTests(unittest.TestCase):
+    def test_upgrade_keeps_custom_and_builtin_default_report_prompts_distinct(self):
+        custom = [
+            {"id": "detailed", "name": "Detailed", "prompt": "Synthetic custom Detailed prompt.",
+             "language": "auto", "format": "markdown"},
+            {"id": "builtin-detailed", "name": "Builtin Detailed",
+             "prompt": "Synthetic custom Builtin Detailed prompt.",
+             "language": "auto", "format": "markdown"},
+        ]
+        for template in [*custom, BUILTIN_TEMPLATES["builtin_detailed"]]:
+            with self.subTest(default=template["id"]), tempfile.TemporaryDirectory() as tmp:
+                path = Path(tmp) / "config.json"
+                path.write_text(json.dumps({
+                    "templates_seeded": True, "custom_templates": custom,
+                    "default_template_id": template["id"],
+                }), encoding="utf-8")
+                c = Config(config_path=path)
+                mp = Path(tmp) / "m_summary.md"
+                original = "---\n---\n\n## Summary\nSynthetic original summary\n"
+                mp.write_text(original, encoding="utf-8")
+                summarizer = mock.Mock(model_name="synthetic-model")
+                summarizer.summarize_transcript_streaming.return_value = iter(["## Custom report\nSynthetic body"])
+                report = simple_recorder.generate_default_template_report(
+                    mp, "Alice: Synthetic transcript.", None, "en", 1, c, summarizer)
+                self.assertIsNotNone(report)
+                self.assertEqual(summarizer.summarize_transcript_streaming.call_args.kwargs["template_prompt"],
+                                 template["prompt"])
+                self.assertEqual(report["template_id"], template["id"])
+                self.assertEqual(report["template_name"], template["name"])
+                sidecar = report_store.load_sidecar(mp)
+                self.assertEqual(sidecar["reports"], [report])
+                self.assertEqual(sidecar["active_report"], report["id"])
+                self.assertEqual(mp.read_text(encoding="utf-8"), original)
+                persisted = json.loads(path.read_text())
+                self.assertEqual(persisted["custom_templates"], custom)
+                self.assertEqual(persisted["default_template_id"], template["id"])
+
     def test_noop_when_default_is_standard(self):
         with tempfile.TemporaryDirectory() as tmp:
             c, _ = _cfg(tmp, "standard")

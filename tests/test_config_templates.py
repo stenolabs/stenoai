@@ -110,6 +110,45 @@ class TemplateCrudTests(unittest.TestCase):
             self.assertTrue(c.reset_template("does-not-exist"))
 
 
+class DetailedTemplateUpgradeTests(unittest.TestCase):
+    def test_persisted_custom_templates_and_default_survive_gallery_upgrade(self):
+        custom = [
+            {"id": "detailed", "name": "Detailed", "prompt": "Synthetic custom Detailed prompt.",
+             "language": "auto", "format": "markdown", "icon": "doc"},
+            {"id": "builtin-detailed", "name": "Builtin Detailed",
+             "prompt": "Synthetic custom Builtin Detailed prompt.",
+             "language": "auto", "format": "markdown", "icon": "doc"},
+        ]
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "config.json"
+            # Persist the pre-upgrade state directly: creating these through the
+            # new gallery's save_template would de-duplicate away the collision.
+            path.write_text(json.dumps({
+                "templates_seeded": True, "custom_templates": custom,
+                "default_template_id": "builtin-detailed",
+            }), encoding="utf-8")
+            c = Config(config_path=path)
+            ids = [t["id"] for t in c.get_templates()]
+            self.assertEqual(len(ids), len(set(ids)))
+            for template in custom:
+                self.assertEqual(c.get_template(template["id"]),
+                                 {**template, "builtin": False, "locked": False})
+            original = next(t for t in c.get_templates() if t["builtin"] and t["name"] == "Detailed")
+            tid = original["id"]
+            ok, err, _ = c.save_template({**original, "prompt": "Synthetic built-in edit."})
+            self.assertTrue(ok, err)
+            edited = Config(config_path=path)
+            self.assertEqual(edited.get_template(tid)["prompt"], "Synthetic built-in edit.")
+            self.assertTrue(edited.reset_template(tid))
+            reloaded = Config(config_path=path)
+            self.assertEqual(reloaded.get_template(tid), original)
+            self.assertEqual(reloaded.get_default_template_id(), "builtin-detailed")
+            self.assertEqual(reloaded.get_template("builtin-detailed")["prompt"], custom[1]["prompt"])
+            self.assertEqual(json.loads(path.read_text())["custom_templates"], custom)
+            self.assertTrue(reloaded.set_default_template(tid))
+            self.assertEqual(Config(config_path=path).get_default_template_id(), tid)
+
+
 class AlreadySeededMalformedConfigTests(unittest.TestCase):
     """A malformed-but-parseable config that is ALREADY seeded must still be
     repaired on load — the normalization can't be gated behind the one-time
